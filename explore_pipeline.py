@@ -9,7 +9,10 @@ import json
 import torch
 from pathlib import Path
 from datasets import load_dataset
+from huggingface_hub import snapshot_download
+from safetensors.torch import load_file, save_file
 from circuit_tracer import ReplacementModel, attribute
+from circuit_tracer.transcoder.cross_layer_transcoder import load_clt
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 DTYPE = torch.bfloat16
@@ -27,27 +30,114 @@ def load_gsm8k_example(idx: int = 0):
 
 # ── 2. Format prompt ──────────────────────────────────────────────────────
 
-def format_prompt(question: str) -> str:
-    return (
-        f"Question: {question}\n"
-        f"Please solve this step by step and end with 'Final answer: <number>'.\n"
-        f"Answer:"
+def format_prompt(tokenizer, question: str) -> str:
+    """Format using the model's chat template (required by Gemma-3-IT transcoders)."""
+    messages = [
+        {"role": "user", "content": (
+            f"Question: {question}\n"
+            f"Please solve this step by step and end with 'Final answer: <number>'."
+        )},
+    ]
+    # add_generation_prompt=True appends <start_of_turn>model\n
+    return tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True,
     )
 
 
 # ── 3. Load model + transcoders ───────────────────────────────────────────
+
+HF_REPO = "google/gemma-scope-2-1b-it"
+CLT_SUBFOLDER = "clt/width_262k_l0_medium_affine"
+NATIVE_CLT_DIR = Path("data/clt_native")
+
+
+def convert_google_to_native():
+    """One-time conversion from Google's format to circuit-tracer native format.
+
+    Processes one layer at a time to keep peak memory at ~1.3 GB.
+    Native format supports lazy loading (decoders stay on disk until needed).
+    """
+    print(f"Converting {HF_REPO}/{CLT_SUBFOLDER} to native format...")
+    print("  (This only needs to run once)")
+
+    # Download Google format files
+    local_dir = snapshot_download(
+        HF_REPO,
+        allow_patterns=[f"{CLT_SUBFOLDER}/params_layer_*.safetensors"],
+    )
+    google_dir = Path(local_dir) / CLT_SUBFOLDER
+    layer_files = sorted(google_dir.glob("params_layer_*.safetensors"))
+    n_layers = len(layer_files)
+    print(f"  Found {n_layers} layer files")
+
+    NATIVE_CLT_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Convert one layer at a time to minimize memory
+    for i, layer_file in enumerate(layer_files):
+        print(f"  Converting layer {i}/{n_layers}...", end="\r")
+        params = load_file(str(layer_file), device="cpu")
+
+        # Google format: w_enc is [d_model, d_sae], circuit-tracer wants [d_sae, d_model]
+        w_enc_i = params["w_enc"].T.contiguous().to(DTYPE)
+        b_enc_i = params["b_enc"].to(DTYPE)
+        b_dec_i = params["b_dec"].to(DTYPE)
+        threshold_i = params["threshold"].to(DTYPE)
+
+        # Save encoder file (W_enc, b_enc, b_dec, threshold)
+        enc_dict = {
+            f"W_enc_{i}": w_enc_i,
+            f"b_enc_{i}": b_enc_i,
+            f"b_dec_{i}": b_dec_i,
+            f"threshold_{i}": threshold_i,
+        }
+        save_file(enc_dict, str(NATIVE_CLT_DIR / f"W_enc_{i}.safetensors"))
+
+        # Google format: w_dec is [d_sae, n_layers, d_model]
+        # For layer i, only outputs to layers i..n_layers-1
+        w_dec_i = params["w_dec"][:, i:, :].contiguous().to(DTYPE)
+        dec_dict = {f"W_dec_{i}": w_dec_i}
+        save_file(dec_dict, str(NATIVE_CLT_DIR / f"W_dec_{i}.safetensors"))
+
+        # Handle affine skip connection if present
+        if "affine_skip_connection" in params:
+            # Save per-layer skip weights alongside encoder for simplicity
+            # We'll reconstruct the full W_skip after loading
+            skip_dict = {f"W_skip_{i}": params["affine_skip_connection"].to(DTYPE)}
+            save_file(skip_dict, str(NATIVE_CLT_DIR / f"W_skip_{i}.safetensors"))
+
+        del params, w_enc_i, b_enc_i, b_dec_i, threshold_i, w_dec_i
+
+    print(f"\n  Saved native format to {NATIVE_CLT_DIR}")
+
+
+def load_transcoders():
+    """Load CLT with lazy decoder loading (~1 MB GPU instead of ~12 GB)."""
+    if not (NATIVE_CLT_DIR / "W_enc_0.safetensors").exists():
+        convert_google_to_native()
+
+    print("Loading transcoders (lazy decoder mode)...")
+    transcoders = load_clt(
+        str(NATIVE_CLT_DIR),
+        feature_input_hook="hook_resid_mid",
+        feature_output_hook="hook_mlp_out",
+        lazy_decoder=True,
+        lazy_encoder=True,
+        dtype=DTYPE,
+        device=torch.device("cpu"),  # load params to CPU first
+    )
+    return transcoders
+
 
 def load_model():
     print("Loading Gemma-3-1B-IT with transcoders...")
     print(f"  Device: {DEVICE}, Dtype: {DTYPE}")
     print(f"  GPU memory before load: {torch.cuda.memory_allocated()/1e9:.2f} GB")
 
-    # Gemma-3 requires nnsight backend
-    # Transcoder set: adjust if needed based on what's available
-    # Check https://huggingface.co/google/gemma-scope-2-1b-it/tree/main/clt
-    model = ReplacementModel.from_pretrained(
+    transcoders = load_transcoders()
+
+    model = ReplacementModel.from_pretrained_and_transcoders(
         model_name="google/gemma-3-1b-it",
-        transcoder_set="gemma",  # May need HF repo path for Gemma-3 transcoders 
+        transcoders=transcoders,
         dtype=DTYPE,
         backend="nnsight",
     )
@@ -60,19 +150,13 @@ def load_model():
 
 def generate_completion(model, prompt: str, max_new_tokens: int = 200):
     print("\nGenerating completion...")
-    # Use the model's underlying HF model for generation
-    # This is just to verify the model works before tracing
     tokenizer = model.tokenizer
-    inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
+    input_ids = tokenizer.encode(prompt, return_tensors="pt").to(DEVICE)
 
     with torch.inference_mode():
-        outputs = model.model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            do_sample=False,
-        )
+        outputs = model.generate(input_ids, max_new_tokens=max_new_tokens, do_sample=False)
 
-    completion = tokenizer.decode(outputs[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+    completion = tokenizer.decode(outputs[0][input_ids.shape[1]:], skip_special_tokens=True)
     print(f"Completion: {completion[:500]}")
     return completion
 
@@ -90,7 +174,7 @@ def extract_graph(model, prompt: str):
         desired_logit_prob=0.9,  # mass coverage for logit selection
         batch_size=64,           # reduce for lower VRAM usage on consumer GPU
         max_feature_nodes=4096,  # cap features to save memory
-        offload="cpu",           # offload transcoders to CPU RAM
+        offload="cpu",           # offload model layers to CPU after forward pass
         verbose=True,
     )
 
@@ -120,7 +204,7 @@ def inspect_graph(graph):
     if hasattr(graph, "active_features"):
         af = graph.active_features
         print(f"\nActive features shape: {af.shape}")
-        print(f"  (rows = features, cols = [layer, position, feature_idx])")
+        print("  (rows = features, cols = [layer, position, feature_idx])")
         print(f"Number of active features: {af.shape[0]}")
         if af.shape[0] > 0:
             print(f"Layers represented: {sorted(af[:, 0].unique().tolist())}")
@@ -167,27 +251,32 @@ if __name__ == "__main__":
     print(f"CUDA available: {torch.cuda.is_available()}")
     if torch.cuda.is_available():
         print(f"GPU: {torch.cuda.get_device_name(0)}")
-        print(f"VRAM total: {torch.cuda.get_device_properties(0).total_mem / 1e9:.1f} GB")
+        print(f"VRAM total: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
         print(f"VRAM used: {torch.cuda.memory_allocated()/1e9:.2f} GB")
     print()
 
-    # Step 1-2: Load and format a GSM8K example
+    # Step 1: Load model (need tokenizer for prompt formatting)
+    model = load_model()
+
+    # Step 2: Load and format a GSM8K example
     example = load_gsm8k_example(idx=0)
-    prompt = format_prompt(example["question"])
+    prompt = format_prompt(model.tokenizer, example["question"])
     print(f"\nFormatted prompt:\n{prompt}")
     print()
-
-    # Step 3: Load model
-    model = load_model()
 
     # Step 4: Quick generation test (no tracing)
     completion = generate_completion(model, prompt)
 
-    # Step 5: Extract attribution graph for the prompt
-    # NOTE: This traces the PROMPT, not a full generation.
-    # For per-token tracing during generation, you'd loop:
-    #   for each new token, extend prompt and call attribute() again.
-    graph = extract_graph(model, prompt)
+    # Step 5: Extract attribution graph
+    # Use a minimal prompt first to verify the pipeline fits in VRAM.
+    # Full GSM8K prompts (~50+ tokens) need >16 GB for 262k CLT attribution.
+    tiny_prompt = model.tokenizer.apply_chat_template(
+        [{"role": "user", "content": "2+2="}],
+        tokenize=False, add_generation_prompt=True,
+    )
+    n_tokens = len(model.tokenizer.encode(tiny_prompt))
+    print(f"\nUsing tiny prompt for attribution test ({n_tokens} tokens): {tiny_prompt!r}")
+    graph = extract_graph(model, tiny_prompt)
 
     # Step 6: Inspect what we got
     inspect_graph(graph)
@@ -195,7 +284,7 @@ if __name__ == "__main__":
     # Step 7: Save
     save_graph(graph)
 
-    print("\n✓ Pipeline exploration complete!")
+    print("\nPipeline exploration complete!")
     print("  Next steps:")
     print("  - Check experiments/explore/ for saved outputs")
     print("  - Adjust batch_size / max_feature_nodes if OOM")
