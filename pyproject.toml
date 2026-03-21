@@ -1,0 +1,15 @@
+[project]
+name = "research-project"
+version = "0.1.0"
+description = "Temporal Circuit Stability for LLM Reliability"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "circuit-tracer",
+    "datasets",
+    "torch",
+    "accelerate",
+]
+
+[tool.uv.sources]
+circuit-tracer = { git = "https://github.com/safety-research/circuit-tracer" }
