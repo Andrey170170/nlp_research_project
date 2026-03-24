@@ -20,7 +20,7 @@ DTYPE = torch.bfloat16
 OUTPUT_DIR = Path("experiments/explore")
 TRACE_DIR = Path("experiments/traces")
 ATTRIBUTION_BATCH_SIZE = 256
-ATTRIBUTION_MAX_FEATURE_NODES = 8192
+ATTRIBUTION_MAX_FEATURE_NODES = 32768
 ATTRIBUTION_PRECOMPUTE_FEATURE_CAP = 8192
 ATTRIBUTION_OFFLOAD = "cpu"
 MAX_TRACE_STEPS = 256
@@ -239,10 +239,10 @@ def load_model():
         dtype=DTYPE,
         backend="nnsight",
     )
-    install_memory_safe_attribution_patch(
-        model.transcoders,
-        max_active_features=ATTRIBUTION_PRECOMPUTE_FEATURE_CAP,
-    )
+    # install_memory_safe_attribution_patch(
+    #     model.transcoders,
+    #     max_active_features=ATTRIBUTION_PRECOMPUTE_FEATURE_CAP,
+    # )
 
     print(f"  GPU memory after load: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
     return model
@@ -345,14 +345,16 @@ def trace_generation_steps(
     input_ids = model.ensure_tokenized(prompt).unsqueeze(0)
     generated_token_ids: list[int] = []
     step_records: list[dict[str, Any]] = []
-    stop_token_ids = {
-        token_id
-        for token_id in (
-            tokenizer.eos_token_id,
-            tokenizer.pad_token_id,
-        )
-        if token_id is not None
-    }
+    # Gemma-3 uses <end_of_turn> (id 106) to signal generation end, not <eos>.
+    # Collect all plausible stop tokens so we don't waste GPU steps on junk.
+    _candidate_stop_ids = [
+        tokenizer.eos_token_id,
+        tokenizer.pad_token_id,
+    ]
+    _eot = tokenizer.convert_tokens_to_ids("<end_of_turn>")
+    if isinstance(_eot, int) and _eot != tokenizer.unk_token_id:
+        _candidate_stop_ids.append(_eot)
+    stop_token_ids = {tid for tid in _candidate_stop_ids if tid is not None}
 
     for step_idx in range(max_new_tokens):
         print(f"\nStep {step_idx:03d}")

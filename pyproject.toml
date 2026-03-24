@@ -9,6 +9,7 @@ dependencies = [
     "datasets",
     "torch",
     "accelerate",
+    "tqdm>=4.67.3",
 ]
 
 [tool.uv.sources]
