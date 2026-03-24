@@ -27,6 +27,11 @@ load_dotenv()
 import openai  # noqa: E402
 
 
+def is_complete_completion(completion_dir: Path) -> bool:
+    """Return True if a traced completion finished and has a manifest."""
+    return (completion_dir / "completion.json").exists()
+
+
 def extract_numeric_answer(text: str) -> str | None:
     """Extract the final numeric answer from model output.
 
@@ -181,6 +186,13 @@ def run_evaluation(args: argparse.Namespace) -> None:
 
         completion_dirs = sorted(prompt_dir.glob("completion_*"))
         for comp_dir in completion_dirs:
+            if not is_complete_completion(comp_dir):
+                print(
+                    f"  Warning: skipping {comp_dir.name} "
+                    "(missing completion.json; run likely interrupted)"
+                )
+                continue
+
             # Skip if already evaluated
             if (comp_dir / "evaluation.json").exists() and not args.force:
                 existing = json.loads((comp_dir / "evaluation.json").read_text())
