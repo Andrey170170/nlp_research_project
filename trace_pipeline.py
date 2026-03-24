@@ -50,6 +50,63 @@ HF_REPO = "google/gemma-scope-2-1b-it"
 CLT_SUBFOLDER = "clt/width_262k_l0_medium_affine"
 
 
+# ── feature cap patch ────────────────────────────────────────────────
+# The 262K-width cross-layer transcoders produce ~100K+ active features
+# per forward pass.  select_decoder_vectors() gathers decoder vectors
+# for ALL of them, which needs ~86 GB on GPU — more than a single H100.
+# This patch prunes the sparse feature tensor to the top-K by activation
+# magnitude BEFORE decoder selection, keeping memory manageable.
+# circuit-tracer's own max_feature_nodes only prunes later (Phase 4),
+# after the OOM point.
+
+
+def install_feature_cap_patch(transcoders, max_features: int) -> None:
+    """Monkey-patch compute_attribution_components to cap features before
+    decoder selection.  This is the only way to control peak GPU memory
+    with large cross-layer transcoders on a single GPU.
+    """
+    from types import MethodType
+
+    def patched(self, inputs, zero_positions=slice(0, 1)):
+        features, encoder_vectors = self.encode_sparse(
+            inputs, zero_positions=zero_positions
+        )
+        # Prune before the expensive decoder selection
+        features = features.coalesce()
+        nnz = features._nnz()
+        if nnz > max_features:
+            keep = torch.topk(
+                features.values().abs(), k=max_features, sorted=False
+            ).indices
+            features = torch.sparse_coo_tensor(
+                features.indices()[:, keep],
+                features.values()[keep],
+                size=features.shape,
+                device=features.device,
+                dtype=features.dtype,
+            ).coalesce()
+            encoder_vectors = encoder_vectors[keep]
+            print(f"    Feature cap: {max_features}/{nnz} kept")
+
+        pos_ids, layer_ids, feat_ids, decoder_vectors, encoder_to_decoder_map = (
+            self.select_decoder_vectors(features)
+        )
+        reconstruction = self.compute_reconstruction(
+            pos_ids, layer_ids, decoder_vectors, inputs
+        )
+        return {
+            "activation_matrix": features,
+            "reconstruction": reconstruction,
+            "encoder_vecs": encoder_vectors,
+            "decoder_vecs": decoder_vectors,
+            "encoder_to_decoder_map": encoder_to_decoder_map,
+            "decoder_locations": torch.stack((layer_ids, pos_ids)),
+        }
+
+    transcoders.compute_attribution_components = MethodType(patched, transcoders)
+    print(f"  Installed feature cap patch (max_features={max_features})")
+
+
 # ── model loading ────────────────────────────────────────────────────
 
 
@@ -72,11 +129,14 @@ def load_gemma_scope_2_clt_compat(
         device = torch.device(DEVICE)
 
     ordered_paths = [paths[idx] for idx in sorted(paths)]
-    params_list = [load_file(path, device=device.type) for path in ordered_paths]
+    # Load and stack on CPU to avoid OOM on smaller GPUs (40 GB A100).
+    # The per-layer files total ~30 GB; stacking doubles peak memory briefly.
+    params_list = [load_file(path, device="cpu") for path in ordered_paths]
     state_dict_raw = {
         key: torch.stack([params[key] for params in params_list])
         for key in params_list[0].keys()
     }
+    del params_list  # free the individual layer dicts
 
     W_enc = (
         state_dict_raw["w_enc"]
@@ -394,6 +454,7 @@ def trace_completion(
 
 def run_pipeline(args: argparse.Namespace) -> None:
     model = load_model()
+    install_feature_cap_patch(model.transcoders, args.max_feature_nodes)  # type: ignore[union-attr]
     examples = load_gsm8k_examples(args.prompts)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
