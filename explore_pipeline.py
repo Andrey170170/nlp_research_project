@@ -9,6 +9,7 @@ import json
 import gc
 from pathlib import Path
 from types import MethodType
+from typing import Any
 
 import torch
 from circuit_tracer import ReplacementModel, attribute
@@ -17,10 +18,12 @@ from datasets import load_dataset
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 DTYPE = torch.bfloat16
 OUTPUT_DIR = Path("experiments/explore")
+TRACE_DIR = Path("experiments/traces")
 ATTRIBUTION_BATCH_SIZE = 256
 ATTRIBUTION_MAX_FEATURE_NODES = 8192
 ATTRIBUTION_PRECOMPUTE_FEATURE_CAP = 8192
 ATTRIBUTION_OFFLOAD = "cpu"
+MAX_TRACE_STEPS = 256
 
 HF_REPO = "google/gemma-scope-2-1b-it"
 CLT_SUBFOLDER = "clt/width_262k_l0_medium_affine"
@@ -245,24 +248,62 @@ def load_model():
     return model
 
 
-def generate_completion(model, prompt: str, max_new_tokens: int = 200):
-    print("\nGenerating completion...")
+def greedy_generate_next_token(model, input_ids: torch.Tensor) -> dict[str, Any]:
     tokenizer = model.tokenizer
-    input_ids = tokenizer.encode(prompt, return_tensors="pt").to(DEVICE)
 
     with torch.inference_mode():
         outputs = model.generate(
-            input_ids, max_new_tokens=max_new_tokens, do_sample=False
+            input_ids,
+            max_new_tokens=1,
+            do_sample=False,
+            return_dict_in_generate=True,
+            output_scores=True,
         )
 
-    completion = tokenizer.decode(
-        outputs[0][input_ids.shape[1] :], skip_special_tokens=True
-    )
-    print(f"Completion: {completion[:500]}")
-    return completion
+    next_token_id = int(outputs.sequences[0, -1].item())
+    next_token_text = tokenizer.decode([next_token_id], skip_special_tokens=False)
+    logprob = None
+    if outputs.scores:
+        token_scores = outputs.scores[0][0].float()
+        logprob = float(torch.log_softmax(token_scores, dim=-1)[next_token_id].item())
+
+    return {
+        "next_input_ids": outputs.sequences,
+        "token_id": next_token_id,
+        "token_text": next_token_text,
+        "token_logprob": logprob,
+    }
 
 
-def extract_graph(model, prompt: str):
+def save_graph(graph, output_stem: Path, extra_meta: dict[str, Any] | None = None):
+    output_stem.parent.mkdir(parents=True, exist_ok=True)
+
+    pt_path = output_stem.with_suffix(".pt")
+    graph.to_pt(str(pt_path))
+
+    meta = {
+        "n_active_features": (
+            graph.active_features.shape[0]
+            if hasattr(graph, "active_features")
+            else None
+        ),
+        "adjacency_shape": (
+            list(graph.adjacency_matrix.shape)
+            if hasattr(graph, "adjacency_matrix")
+            else None
+        ),
+        "input_string": graph.input_string if hasattr(graph, "input_string") else None,
+    }
+    if extra_meta:
+        meta.update(extra_meta)
+
+    meta_path = output_stem.with_name(f"{output_stem.name}_meta.json")
+    meta_path.write_text(json.dumps(meta, indent=2))
+    print(f"  Saved graph to {pt_path}")
+    print(f"  Saved metadata to {meta_path}")
+
+
+def extract_graph(model, prompt: str | torch.Tensor | list[int]):
     print("\nExtracting attribution graph...")
     gc.collect()
     if torch.cuda.is_available():
@@ -286,6 +327,90 @@ def extract_graph(model, prompt: str):
         f"  GPU memory after attribution: {torch.cuda.memory_allocated() / 1e9:.2f} GB"
     )
     return graph
+
+
+def trace_generation_steps(
+    model,
+    prompt: str,
+    *,
+    prompt_id: str = "prompt_000",
+    completion_id: str = "completion_000",
+    max_new_tokens: int = MAX_TRACE_STEPS,
+):
+    print("\nTracing generation step by step...")
+    tokenizer = model.tokenizer
+    completion_dir = TRACE_DIR / prompt_id / completion_id
+    completion_dir.mkdir(parents=True, exist_ok=True)
+
+    input_ids = model.ensure_tokenized(prompt).unsqueeze(0)
+    generated_token_ids: list[int] = []
+    step_records: list[dict[str, Any]] = []
+    stop_token_ids = {
+        token_id
+        for token_id in (
+            tokenizer.eos_token_id,
+            tokenizer.pad_token_id,
+        )
+        if token_id is not None
+    }
+
+    for step_idx in range(max_new_tokens):
+        print(f"\nStep {step_idx:03d}")
+        prefix_text = tokenizer.decode(input_ids[0], skip_special_tokens=False)
+        graph = extract_graph(model, input_ids[0])
+
+        token_result = greedy_generate_next_token(model, input_ids)
+        next_token_id = token_result["token_id"]
+        next_token_text = token_result["token_text"]
+        generated_token_ids.append(next_token_id)
+        generated_text = tokenizer.decode(generated_token_ids, skip_special_tokens=True)
+
+        step_record = {
+            "step_index": step_idx,
+            "prompt_id": prompt_id,
+            "completion_id": completion_id,
+            "prefix_token_count": int(input_ids.shape[1]),
+            "prefix_text": prefix_text,
+            "generated_token_ids": list(generated_token_ids),
+            "generated_text": generated_text,
+            "next_token_id": next_token_id,
+            "next_token_text": next_token_text,
+            "next_token_logprob": token_result["token_logprob"],
+            "stop_reason": "eos" if next_token_id in stop_token_ids else None,
+        }
+        save_graph(
+            graph, completion_dir / f"step_{step_idx:03d}", extra_meta=step_record
+        )
+        step_records.append(step_record)
+
+        print(
+            f"  Next token: id={next_token_id} text={next_token_text!r} "
+            f"logprob={token_result['token_logprob']}"
+        )
+
+        input_ids = token_result["next_input_ids"]
+        if next_token_id in stop_token_ids:
+            print("  Encountered stop token, ending generation trace.")
+            break
+
+    completion_text = tokenizer.decode(generated_token_ids, skip_special_tokens=True)
+    run_manifest = {
+        "prompt_id": prompt_id,
+        "completion_id": completion_id,
+        "prompt": prompt,
+        "final_input_text": tokenizer.decode(input_ids[0], skip_special_tokens=False),
+        "completion_text": completion_text,
+        "n_steps_traced": len(step_records),
+        "step_files": [
+            f"step_{record['step_index']:03d}.pt" for record in step_records
+        ],
+        "steps": step_records,
+    }
+    manifest_path = completion_dir / "completion.json"
+    manifest_path.write_text(json.dumps(run_manifest, indent=2))
+    print(f"\nSaved completion manifest to {manifest_path}")
+    print(f"Completion text: {completion_text[:500]}")
+    return run_manifest
 
 
 def inspect_graph(graph):
@@ -323,31 +448,6 @@ def inspect_graph(graph):
     return graph
 
 
-def save_graph(graph, name: str = "test_graph"):
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    pt_path = OUTPUT_DIR / f"{name}.pt"
-    graph.to_pt(str(pt_path))
-    print(f"\nSaved graph to {pt_path} ({pt_path.stat().st_size / 1e6:.1f} MB)")
-
-    meta = {
-        "n_active_features": (
-            graph.active_features.shape[0]
-            if hasattr(graph, "active_features")
-            else None
-        ),
-        "adjacency_shape": (
-            list(graph.adjacency_matrix.shape)
-            if hasattr(graph, "adjacency_matrix")
-            else None
-        ),
-        "input_string": graph.input_string if hasattr(graph, "input_string") else None,
-    }
-    meta_path = OUTPUT_DIR / f"{name}_meta.json"
-    meta_path.write_text(json.dumps(meta, indent=2))
-    print(f"Saved metadata to {meta_path}")
-
-
 if __name__ == "__main__":
     print(f"PyTorch: {torch.__version__}")
     print(f"CUDA available: {torch.cuda.is_available()}")
@@ -366,12 +466,20 @@ if __name__ == "__main__":
     print(f"\nFormatted prompt:\n{prompt}")
     print()
 
-    generate_completion(model, prompt)
-    graph = extract_graph(model, prompt)
-    inspect_graph(graph)
-    save_graph(graph)
+    manifest = trace_generation_steps(
+        model,
+        prompt,
+        prompt_id="prompt_000",
+        completion_id="completion_000",
+    )
+    final_step_path = (
+        TRACE_DIR
+        / manifest["prompt_id"]
+        / manifest["completion_id"]
+        / f"step_{manifest['n_steps_traced'] - 1:03d}.pt"
+    )
 
     print("\nPipeline exploration complete!")
     print("  Next steps:")
-    print("  - Check experiments/explore/ for saved outputs")
-    print("  - Try tracing per-token during generation for temporal graphs")
+    print(f"  - Check {final_step_path.parent} for per-step graph artifacts")
+    print("  - Use completion.json as the run manifest for downstream processing")

@@ -7,9 +7,9 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gpus-per-task=1
 #SBATCH --mem=96G
-#SBATCH --time=06:00:00
-#SBATCH --output=slurm-%x-%j.out
-#SBATCH --error=slurm-%x-%j.err
+#SBATCH --time=02:00:00
+#SBATCH --output=logs/slurm-%x-%j.out
+#SBATCH --error=logs/slurm-%x-%j.err
 
 set -euo pipefail
 
@@ -24,6 +24,8 @@ cd "$SLURM_SUBMIT_DIR"
 # Example fallback:
 # module load cuda/12.3.0
 
+source .venv/bin/activate
+
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
@@ -34,6 +36,6 @@ echo "Start: $(date)"
 echo "Working directory: ${SLURM_SUBMIT_DIR}"
 echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-unset}"
 
-srun --ntasks=1 uv run python explore_pipeline.py
+python explore_pipeline.py
 
 echo "End: $(date)"
