@@ -10,6 +10,11 @@ dependencies = [
     "torch",
     "accelerate",
     "tqdm>=4.67.3",
+    "openai",
+    "matplotlib",
+    "python-dotenv",
+    "numpy",
+    "scipy",
 ]
 
 [tool.uv.sources]

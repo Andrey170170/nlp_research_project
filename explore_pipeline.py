@@ -21,7 +21,6 @@ OUTPUT_DIR = Path("experiments/explore")
 TRACE_DIR = Path("experiments/traces")
 ATTRIBUTION_BATCH_SIZE = 256
 ATTRIBUTION_MAX_FEATURE_NODES = 32768
-ATTRIBUTION_PRECOMPUTE_FEATURE_CAP = 8192
 ATTRIBUTION_OFFLOAD = "cpu"
 MAX_TRACE_STEPS = 256
 
@@ -140,47 +139,6 @@ def _select_active_encoder_vectors(transcoder, features: torch.Tensor) -> torch.
     )
 
 
-def install_memory_safe_attribution_patch(
-    transcoder,
-    *,
-    max_active_features: int | None,
-) -> None:
-    original_compute = transcoder.compute_attribution_components
-
-    def compute_attribution_components_pruned(self, inputs, zero_positions=slice(0, 1)):
-        features, _ = self.encode_sparse(inputs, zero_positions=zero_positions)
-        original_nnz = features._nnz()
-        features = _prune_sparse_features(
-            features, max_active_features=max_active_features
-        )
-        if features._nnz() != original_nnz:
-            print(
-                f"  Pruned active features for attribution: {original_nnz} -> {features._nnz()}"
-            )
-
-        encoder_vectors = _select_active_encoder_vectors(self, features)
-        pos_ids, layer_ids, feat_ids, decoder_vectors, encoder_to_decoder_map = (
-            self.select_decoder_vectors(features)
-        )
-        reconstruction = self.compute_reconstruction(
-            pos_ids, layer_ids, decoder_vectors, inputs
-        )
-
-        return {
-            "activation_matrix": features,
-            "reconstruction": reconstruction,
-            "encoder_vecs": encoder_vectors,
-            "decoder_vecs": decoder_vectors,
-            "encoder_to_decoder_map": encoder_to_decoder_map,
-            "decoder_locations": torch.stack((layer_ids, pos_ids)),
-        }
-
-    compute_attribution_components_pruned.__name__ = original_compute.__name__
-    transcoder.compute_attribution_components = MethodType(
-        compute_attribution_components_pruned, transcoder
-    )
-
-
 def load_gsm8k_example(idx: int = 0):
     ds = load_dataset("openai/gsm8k", "main", split="test")
     example = ds[idx]
@@ -239,10 +197,6 @@ def load_model():
         dtype=DTYPE,
         backend="nnsight",
     )
-    # install_memory_safe_attribution_patch(
-    #     model.transcoders,
-    #     max_active_features=ATTRIBUTION_PRECOMPUTE_FEATURE_CAP,
-    # )
 
     print(f"  GPU memory after load: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
     return model

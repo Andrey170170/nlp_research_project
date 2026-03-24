@@ -29,18 +29,36 @@ on login nodes.
 ## Repo layout
 
 ```
-explore_pipeline.py          # main tracing pipeline (runs in SLURM)
-explore_pipeline.cardinal.sbatch  # SLURM submission script
-explore_analysis.py          # exploratory analysis of traced graphs
+# ── Pipeline scripts (HPC) ──
+trace_pipeline.py            # multi-prompt tracing (runs in SLURM GPU job)
+trace_pipeline.sbatch        # SLURM script: 10 prompts × 3 completions
+evaluate.py                  # correctness evaluation (regex + GPT judge)
+evaluate.sbatch              # SLURM script: CPU-only, calls OpenAI API
+analyze.py                   # batch analysis with correct/incorrect comparison
+analyze.sbatch               # SLURM script: CPU-only, 8 workers
+circuit_utils.py             # shared utilities (sparsification, metrics, .npz I/O)
+
+# ── Exploratory (archived) ──
+explore_pipeline.py          # original single-prompt tracing (reference)
+explore_pipeline.cardinal.sbatch
+explore_analysis.py          # original single-completion analysis (reference)
+
+# ── Docs ──
 plan.md                      # weekly implementation plan
 project_proposal.pdf         # original project proposal
-experiments/                 # (gitignored) traced graph artifacts
-  traces/
-    prompt_XXX/
-      completion_XXX/
-        step_NNN.pt          # per-step attribution graph
-        step_NNN_meta.json   # per-step metadata
-        completion.json      # run manifest
+
+# ── Data (on scratch, not in repo) ──
+/fs/scratch/PAS3272/kopanev.1/traces/
+  run_config.json            # tracing run configuration
+  prompt_XXX/
+    prompt_meta.json         # question, ground truth, GSM8K index
+    completion_XXX/
+      step_NNN.npz           # compact circuit data (~1-5 MB)
+      step_NNN.pt            # raw attribution graph (~460 MB, optional)
+      completion.json        # run manifest with per-step metadata
+      evaluation.json        # correctness evaluation result
+  analysis_summary.json      # aggregate metrics + H2 test results
+  comparison_analysis.png    # correct vs incorrect temporal curves
 ```
 
 ## Key data structures
@@ -60,9 +78,16 @@ Node ordering in adjacency matrix: `[features, errors, tokens, logits]`.
 ## Running
 
 ```bash
-# Submit a tracing job
-sbatch explore_pipeline.cardinal.sbatch
+# 1. Trace: submit GPU job (10 prompts × 3 completions → scratch)
+sbatch trace_pipeline.sbatch
+
+# 2. Evaluate: submit CPU job (needs OPENAI_KEY in .env)
+sbatch evaluate.sbatch
+
+# 3. Analyze: submit CPU job (reads .npz, produces plots + stats)
+sbatch analyze.sbatch
 
 # Local lint (safe on login node)
 uv run ruff check .
+uv run ty check .
 ```
