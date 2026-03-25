@@ -1,0 +1,49 @@
+{
+  "defaults": {
+    "completions": 1,
+    "temperature": 0.0,
+    "max_feature_nodes": 8192,
+    "max_edges": 20000,
+    "max_n_logits": 3,
+    "desired_logit_prob": 0.8,
+    "verbose_attribution": true,
+    "profile_attribution": true,
+    "profile_log_interval": 1,
+    "attribution_update_interval": 4,
+    "save_raw": false,
+    "no_offload": false,
+    "no_lazy_encoder": false,
+    "no_lazy_decoder": false,
+    "max_steps": 2,
+    "attribution_batch_size": 32,
+    "decoder_chunk_size": 512
+  },
+  "metadata": {
+    "prompt_sets_file": "experiments/sparsification_prompt_sets.json",
+    "stage": "calibration",
+    "per_layer_position_topk": 16,
+    "calibration_budgets": [16000, 32000, 64000, 128000]
+  },
+  "scenarios": [
+    {"name": "cal_exact_p0828", "stage": "calibration", "method": "exact", "gsm8k_indices": [828]},
+    {"name": "cal_old_cap_p0828", "stage": "calibration", "method": "old_patch", "gsm8k_indices": [828]},
+    {"name": "cal_sparse_016k_p0828", "stage": "calibration", "method": "sparse", "gsm8k_indices": [828], "sparsify_per_layer_position_topk": 16, "sparsify_global_cap": 16000},
+    {"name": "cal_sparse_032k_p0828", "stage": "calibration", "method": "sparse", "gsm8k_indices": [828], "sparsify_per_layer_position_topk": 16, "sparsify_global_cap": 32000},
+    {"name": "cal_sparse_064k_p0828", "stage": "calibration", "method": "sparse", "gsm8k_indices": [828], "sparsify_per_layer_position_topk": 16, "sparsify_global_cap": 64000},
+    {"name": "cal_sparse_128k_p0828", "stage": "calibration", "method": "sparse", "gsm8k_indices": [828], "sparsify_per_layer_position_topk": 16, "sparsify_global_cap": 128000},
+
+    {"name": "cal_exact_p0094", "stage": "calibration", "method": "exact", "gsm8k_indices": [94]},
+    {"name": "cal_old_cap_p0094", "stage": "calibration", "method": "old_patch", "gsm8k_indices": [94]},
+    {"name": "cal_sparse_016k_p0094", "stage": "calibration", "method": "sparse", "gsm8k_indices": [94], "sparsify_per_layer_position_topk": 16, "sparsify_global_cap": 16000},
+    {"name": "cal_sparse_032k_p0094", "stage": "calibration", "method": "sparse", "gsm8k_indices": [94], "sparsify_per_layer_position_topk": 16, "sparsify_global_cap": 32000},
+    {"name": "cal_sparse_064k_p0094", "stage": "calibration", "method": "sparse", "gsm8k_indices": [94], "sparsify_per_layer_position_topk": 16, "sparsify_global_cap": 64000},
+    {"name": "cal_sparse_128k_p0094", "stage": "calibration", "method": "sparse", "gsm8k_indices": [94], "sparsify_per_layer_position_topk": 16, "sparsify_global_cap": 128000},
+
+    {"name": "cal_exact_p0361", "stage": "calibration", "method": "exact", "gsm8k_indices": [361]},
+    {"name": "cal_old_cap_p0361", "stage": "calibration", "method": "old_patch", "gsm8k_indices": [361]},
+    {"name": "cal_sparse_016k_p0361", "stage": "calibration", "method": "sparse", "gsm8k_indices": [361], "sparsify_per_layer_position_topk": 16, "sparsify_global_cap": 16000},
+    {"name": "cal_sparse_032k_p0361", "stage": "calibration", "method": "sparse", "gsm8k_indices": [361], "sparsify_per_layer_position_topk": 16, "sparsify_global_cap": 32000},
+    {"name": "cal_sparse_064k_p0361", "stage": "calibration", "method": "sparse", "gsm8k_indices": [361], "sparsify_per_layer_position_topk": 16, "sparsify_global_cap": 64000},
+    {"name": "cal_sparse_128k_p0361", "stage": "calibration", "method": "sparse", "gsm8k_indices": [361], "sparsify_per_layer_position_topk": 16, "sparsify_global_cap": 128000}
+  ]
+}

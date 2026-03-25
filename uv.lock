@@ -227,7 +227,7 @@ wheels = [
 [[package]]
 name = "circuit-tracer"
 version = "0.4.1"
-source = { git = "https://github.com/safety-research/circuit-tracer#6d64f60b09db96ce1622ba3a309181c0f1d1c5ec" }
+source = { editable = "../circuit-tracer_chunked" }
 dependencies = [
     { name = "einops" },
     { name = "huggingface-hub" },
@@ -244,6 +244,32 @@ dependencies = [
     { name = "transformer-lens" },
     { name = "transformers" },
 ]
+
+[package.metadata]
+requires-dist = [
+    { name = "einops", specifier = ">=0.8.0" },
+    { name = "huggingface-hub", specifier = "<1.0.0" },
+    { name = "ipykernel", specifier = ">=6.29.5,<7.0.0" },
+    { name = "ipython", marker = "extra == 'dev'", specifier = ">=8.37.0" },
+    { name = "ipywidgets", specifier = ">=8.1.7" },
+    { name = "nnsight", specifier = "==0.6.1" },
+    { name = "numpy", specifier = ">=1.24.0" },
+    { name = "pydantic", specifier = ">=2.0.0" },
+    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.403" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.7" },
+    { name = "safetensors", specifier = ">=0.5.0" },
+    { name = "seaborn", specifier = ">=0.13.2" },
+    { name = "tokenizers", specifier = ">=0.21.0" },
+    { name = "torch", specifier = ">=2.0.0" },
+    { name = "tqdm", specifier = ">=4.60.0" },
+    { name = "transformer-lens", specifier = ">=2.16.0" },
+    { name = "transformers", specifier = ">=4.56.0,<=4.57.3" },
+]
+provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.4.2" }]
 
 [[package]]
 name = "click"
@@ -1537,7 +1563,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "accelerate" },
-    { name = "circuit-tracer", git = "https://github.com/safety-research/circuit-tracer" },
+    { name = "circuit-tracer", editable = "../circuit-tracer_chunked" },
     { name = "datasets" },
     { name = "matplotlib" },
     { name = "numpy" },

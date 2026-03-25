@@ -1,280 +1,88 @@
-"""
-Exact chunked-decoder variant of the multi-prompt tracing pipeline.
+"""Fork-native exact chunked-decoder tracing pipeline.
 
-This keeps circuit-tracer's original attribution semantics much more closely
-than the activation top-K monkey patch in trace_pipeline.py by avoiding full
-decoder materialization during setup_attribution while preserving the full
-active feature set until circuit-tracer's normal Phase-4 pruning.
-
-Key idea:
-- compute CLT reconstruction exactly, but in chunks
-- defer feature->decoder expansion until AttributionContext needs a specific
-  destination layer during backward scoring
-- keep circuit-tracer's normal max_feature_nodes behavior in Phase 4
-
-This should let us compare:
-- trace_pipeline.py          : approximate early feature-cap patch
-- trace_pipeline_chunked.py  : exact chunked decoder patch
+This variant relies on the chunked `circuit-tracer` fork directly instead of
+installing runtime monkey patches. For GemmaScope-2 CLTs, the fork handles the
+exact chunked decoder path internally and preserves the full active feature set
+until normal Phase-4 feature selection.
 """
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from types import MethodType
-from typing import Any
 
 import torch
 
 import trace_pipeline as base
 
 
-def _select_active_encoder_vectors(transcoder, features: torch.Tensor) -> torch.Tensor:
-    """Return encoder vectors in the exact order of features.indices()."""
-    layer_idx, _, feat_idx = features.indices()
-    encoder_vectors = []
-
-    for layer_id in range(transcoder.n_layers):
-        current_layer = layer_idx == layer_id
-        if bool(current_layer.any()):
-            encoder_vectors.append(
-                transcoder._get_encoder_weights(layer_id)[feat_idx[current_layer]]
-            )
-
-    if encoder_vectors:
-        return torch.cat(encoder_vectors, dim=0)
-
-    return torch.empty(
-        (0, transcoder.d_model), device=features.device, dtype=transcoder.dtype
-    )
-
-
-def _get_decoder_slice(
-    transcoder, source_layer: int, feat_ids: torch.Tensor, output_offset: int
-) -> torch.Tensor:
-    """Return decoder vectors for one destination-layer offset only."""
-    decoder_block = transcoder._get_decoder_vectors(source_layer, feat_ids.cpu())
-    return decoder_block[:, output_offset, :].to(
-        device=feat_ids.device, dtype=transcoder.dtype
-    )
-
-
-def _compute_reconstruction_chunked(
-    transcoder,
-    features: torch.Tensor,
-    inputs: torch.Tensor,
-    *,
-    chunk_size: int,
-) -> torch.Tensor:
-    """Compute exact reconstruction without materializing all decoder rows."""
-    features = features.coalesce()
-    layer_idx, pos_idx, feat_idx = features.indices()
-    activations = features.values().to(dtype=transcoder.dtype)
-    n_layers, n_pos, _ = features.shape
-
-    reconstruction = torch.zeros(
-        (n_layers, n_pos, transcoder.d_model),
-        device=inputs.device,
-        dtype=transcoder.dtype,
-    )
-
-    for source_layer in range(n_layers):
-        current_layer = layer_idx == source_layer
-        if not bool(current_layer.any()):
-            continue
-
-        source_indices = current_layer.nonzero(as_tuple=False).squeeze(-1)
-
-        for start in range(0, source_indices.numel(), chunk_size):
-            idx_chunk = source_indices[start : start + chunk_size]
-            pos_chunk = pos_idx[idx_chunk]
-            feat_chunk = feat_idx[idx_chunk]
-            act_chunk = activations[idx_chunk]
-
-            unique_feats, inv = feat_chunk.unique(sorted=True, return_inverse=True)
-            unique_decoders = transcoder._get_decoder_vectors(
-                source_layer, unique_feats.cpu()
-            )
-
-            for output_offset in range(unique_decoders.shape[1]):
-                dest_layer = source_layer + output_offset
-                output_vecs = (
-                    unique_decoders[:, output_offset, :][inv] * act_chunk[:, None]
-                )
-                reconstruction[dest_layer].index_add_(0, pos_chunk, output_vecs)
-
-    reconstruction = reconstruction + transcoder.b_dec[:, None]
-    if transcoder.W_skip is not None:
-        reconstruction = reconstruction + inputs @ transcoder.W_skip
-
-    return reconstruction
-
-
-def install_chunked_decoder_patch(
-    transcoders,
-    *,
-    reconstruction_chunk_size: int = 1024,
-    score_chunk_size: int = 128,
-) -> None:
-    """Install an exact chunked decoder patch for attribution setup."""
-    from circuit_tracer.attribution.context_nnsight import AttributionContext
-    from circuit_tracer.replacement_model.replacement_model_nnsight import (
-        NNSightReplacementModel,
-    )
-
-    def patched_compute_attribution_components(
-        self, inputs, zero_positions=slice(0, 1)
+def build_sparsification_config(args: argparse.Namespace):
+    if (
+        args.sparsify_per_layer_position_topk is None
+        and args.sparsify_global_cap is None
     ):
-        features, _ = self.encode_sparse(inputs, zero_positions=zero_positions)
-        features = features.coalesce()
-        encoder_vectors = _select_active_encoder_vectors(self, features)
-        reconstruction = _compute_reconstruction_chunked(
-            self,
-            features,
-            inputs,
-            chunk_size=reconstruction_chunk_size,
-        )
+        return None
 
-        layer_idx, pos_idx, feat_idx = features.indices()
-        activations = features.values().to(dtype=self.dtype)
+    import importlib
 
-        self._chunked_attr_state = {
-            "transcoder": self,
-            "source_layers": layer_idx.detach(),
-            "source_positions": pos_idx.detach(),
-            "source_feature_ids": feat_idx.detach(),
-            "source_activations": activations.detach(),
-            "score_chunk_size": score_chunk_size,
-        }
-
-        empty_decoder_vecs = torch.empty(
-            (0, self.d_model), device=inputs.device, dtype=self.dtype
-        )
-        empty_idx = torch.empty((0,), device=inputs.device, dtype=torch.long)
-        empty_locations = torch.empty((2, 0), device=inputs.device, dtype=torch.long)
-
-        return {
-            "activation_matrix": features,
-            "reconstruction": reconstruction,
-            "encoder_vecs": encoder_vectors,
-            "decoder_vecs": empty_decoder_vecs,
-            "encoder_to_decoder_map": empty_idx,
-            "decoder_locations": empty_locations,
-        }
-
-    if not getattr(NNSightReplacementModel, "_chunked_decoder_setup_patch", False):
-        original_setup_attribution = NNSightReplacementModel.setup_attribution
-
-        @torch.no_grad()
-        def patched_setup_attribution(self, inputs):
-            ctx = original_setup_attribution(self, inputs)
-            state = getattr(self.transcoders, "_chunked_attr_state", None)
-            if state is not None:
-                ctx._chunked_decoder_state = state
-                ctx._chunked_transcoders = state["transcoder"]
-                self.transcoders._chunked_attr_state = None
-            return ctx
-
-        setattr(NNSightReplacementModel, "setup_attribution", patched_setup_attribution)
-        setattr(NNSightReplacementModel, "_chunked_decoder_setup_patch", True)
-
-    if not getattr(AttributionContext, "_chunked_decoder_feature_patch", False):
-        original_compute_feature_attributions = (
-            AttributionContext.compute_feature_attributions
-        )
-
-        def patched_compute_feature_attributions(self, layer, grads):
-            state = getattr(self, "_chunked_decoder_state", None)
-            transcoder = getattr(self, "_chunked_transcoders", None)
-            if state is None or transcoder is None:
-                return original_compute_feature_attributions(self, layer, grads)
-
-            source_layers = state["source_layers"]
-            source_positions = state["source_positions"]
-            source_feature_ids = state["source_feature_ids"]
-            source_activations = state["source_activations"]
-            score_chunk_size_local = state["score_chunk_size"]
-
-            for source_layer in range(layer + 1):
-                if source_layer >= transcoder.n_layers:
-                    continue
-                current_layer = source_layers == source_layer
-                if not bool(current_layer.any()):
-                    continue
-
-                source_indices = current_layer.nonzero(as_tuple=False).squeeze(-1)
-                output_offset = layer - source_layer
-                if output_offset >= transcoder.n_layers - source_layer:
-                    continue
-
-                for start in range(0, source_indices.numel(), score_chunk_size_local):
-                    idx_chunk = source_indices[start : start + score_chunk_size_local]
-                    pos_chunk = source_positions[idx_chunk]
-                    feat_chunk = source_feature_ids[idx_chunk]
-                    act_chunk = source_activations[idx_chunk]
-
-                    unique_feats, inv = feat_chunk.unique(
-                        sorted=True, return_inverse=True
-                    )
-                    output_vecs = (
-                        _get_decoder_slice(
-                            transcoder,
-                            source_layer,
-                            unique_feats,
-                            output_offset,
-                        )[inv]
-                        * act_chunk[:, None]
-                    )
-
-                    scores = torch.einsum(
-                        "bkd,kd->kb",
-                        grads[:, pos_chunk].to(output_vecs.dtype),
-                        output_vecs,
-                    )
-                    self._batch_buffer[idx_chunk] += scores
-
-        setattr(
-            AttributionContext,
-            "compute_feature_attributions",
-            patched_compute_feature_attributions,
-        )
-        setattr(AttributionContext, "_chunked_decoder_feature_patch", True)
-
-    transcoders.compute_attribution_components = MethodType(
-        patched_compute_attribution_components, transcoders
+    sparsification_module = importlib.import_module(
+        "circuit_tracer.attribution.sparsification"
     )
-    print(
-        "  Installed exact chunked decoder patch "
-        f"(reconstruction_chunk_size={reconstruction_chunk_size}, "
-        f"score_chunk_size={score_chunk_size})"
+    SparsificationConfig = getattr(sparsification_module, "SparsificationConfig")
+
+    return SparsificationConfig(
+        per_layer_position_topk=args.sparsify_per_layer_position_topk,
+        global_cap=args.sparsify_global_cap,
     )
 
 
 def run_pipeline(args: argparse.Namespace) -> None:
-    model = base.load_model()
-    install_chunked_decoder_patch(
-        model.transcoders,  # type: ignore[union-attr]
-        reconstruction_chunk_size=args.reconstruction_chunk_size,
-        score_chunk_size=args.score_chunk_size,
+    sparsification = build_sparsification_config(args)
+    model = base.load_model(
+        lazy_encoder=not args.no_lazy_encoder,
+        lazy_decoder=not args.no_lazy_decoder,
+        decoder_chunk_size=args.decoder_chunk_size,
     )
-    examples = base.load_gsm8k_examples(args.prompts)
+    gsm8k_indices = base.parse_gsm8k_indices(
+        args.gsm8k_indices, args.gsm8k_indices_file
+    )
+    examples = base.load_gsm8k_examples(args.prompts, indices=gsm8k_indices)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     offload = None if args.no_offload else "cpu"
 
     run_config = {
         "prompts": args.prompts,
+        "gsm8k_indices": gsm8k_indices,
         "completions_per_prompt": args.completions,
         "temperature": args.temperature,
         "max_feature_nodes": args.max_feature_nodes,
         "max_edges": args.max_edges,
         "max_steps": args.max_steps,
+        "attribution_batch_size": args.attribution_batch_size,
+        "max_n_logits": args.max_n_logits,
+        "desired_logit_prob": args.desired_logit_prob,
         "offload": offload,
+        "verbose_attribution": args.verbose_attribution,
+        "attribution_update_interval": args.attribution_update_interval,
+        "profile_attribution": args.profile_attribution,
+        "profile_log_interval": args.profile_log_interval,
+        "diagnostic_feature_cap": args.diagnostic_feature_cap,
         "save_raw": args.save_raw,
         "output_dir": str(output_dir),
-        "patch_type": "chunked_decoder_exact",
-        "reconstruction_chunk_size": args.reconstruction_chunk_size,
-        "score_chunk_size": args.score_chunk_size,
+        "patch_type": "fork_native_exact_chunked_decoder",
+        "uses_monkeypatch": False,
+        "lazy_encoder": not args.no_lazy_encoder,
+        "lazy_decoder": not args.no_lazy_decoder,
+        "decoder_chunk_size": args.decoder_chunk_size,
+        "sparsification": (
+            {
+                "per_layer_position_topk": sparsification.per_layer_position_topk,
+                "global_cap": sparsification.global_cap,
+            }
+            if sparsification is not None
+            else None
+        ),
     }
     (output_dir / "run_config.json").write_text(base.json.dumps(run_config, indent=2))
 
@@ -287,7 +95,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         prompt_dir = output_dir / f"prompt_{prompt_idx:03d}"
         prompt_dir.mkdir(parents=True, exist_ok=True)
         prompt_meta = {
-            "gsm8k_index": prompt_idx,
+            "gsm8k_index": example["gsm8k_index"],
             "question": example["question"],
             "ground_truth_answer": example["answer"],
             "prompt_text": prompt,
@@ -314,7 +122,16 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 max_steps=args.max_steps,
                 max_feature_nodes=args.max_feature_nodes,
                 max_edges=args.max_edges,
+                attribution_batch_size=args.attribution_batch_size,
+                max_n_logits=args.max_n_logits,
+                desired_logit_prob=args.desired_logit_prob,
                 offload=offload,
+                verbose_attribution=args.verbose_attribution,
+                attribution_update_interval=args.attribution_update_interval,
+                profile_attribution=args.profile_attribution,
+                profile_log_interval=args.profile_log_interval,
+                diagnostic_feature_cap=args.diagnostic_feature_cap,
+                sparsification=sparsification,
                 save_raw=args.save_raw,
             )
 
@@ -323,10 +140,20 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Chunked-decoder multi-prompt tracing pipeline"
+        description="Fork-native exact chunked-decoder tracing pipeline"
     )
     parser.add_argument(
         "--prompts", type=int, default=10, help="Number of GSM8K prompts"
+    )
+    parser.add_argument(
+        "--gsm8k-indices",
+        default=None,
+        help="Comma-separated GSM8K test indices to trace explicitly",
+    )
+    parser.add_argument(
+        "--gsm8k-indices-file",
+        default=None,
+        help="Path to JSON/newline file containing explicit GSM8K test indices",
     )
     parser.add_argument(
         "--completions", type=int, default=3, help="Completions per prompt"
@@ -336,7 +163,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output-dir",
-        default="/fs/scratch/PAS3272/kopanev.1/traces_1",
+        default="/fs/scratch/PAS3272/kopanev.1/traces_chunked",
         help="Output directory",
     )
     parser.add_argument(
@@ -360,16 +187,78 @@ if __name__ == "__main__":
         "--max-steps", type=int, default=256, help="Max generation steps per completion"
     )
     parser.add_argument(
-        "--reconstruction-chunk-size",
+        "--attribution-batch-size",
         type=int,
-        default=1024,
-        help="Active-feature chunk size for exact reconstruction",
+        default=256,
+        help="Backward batch size for attribution graph extraction",
     )
     parser.add_argument(
-        "--score-chunk-size",
+        "--max-n-logits",
         type=int,
-        default=128,
-        help="Feature chunk size for decoder scoring during backward attribution",
+        default=5,
+        help="Maximum number of logit targets to attribute",
+    )
+    parser.add_argument(
+        "--desired-logit-prob",
+        type=float,
+        default=0.9,
+        help="Cumulative probability threshold for auto-selected logit targets",
+    )
+    parser.add_argument(
+        "--verbose-attribution",
+        action="store_true",
+        help="Enable fork attribution phase logging and tqdm progress",
+    )
+    parser.add_argument(
+        "--attribution-update-interval",
+        type=int,
+        default=4,
+        help="Feature ranking refresh interval used inside attribution",
+    )
+    parser.add_argument(
+        "--profile-attribution",
+        action="store_true",
+        help="Enable batch-level attribution profiling logs from the fork",
+    )
+    parser.add_argument(
+        "--profile-log-interval",
+        type=int,
+        default=1,
+        help="Emit attribution profiling logs every N batches",
+    )
+    parser.add_argument(
+        "--diagnostic-feature-cap",
+        type=int,
+        default=None,
+        help="Debug-only early active-feature cap for profiling/scaling experiments",
+    )
+    parser.add_argument(
+        "--sparsify-per-layer-position-topk",
+        type=int,
+        default=None,
+        help="Retain top-K features per (layer, position) bucket before exact attribution",
+    )
+    parser.add_argument(
+        "--sparsify-global-cap",
+        type=int,
+        default=None,
+        help="Optional global cap applied after per-bucket sparsification",
+    )
+    parser.add_argument(
+        "--decoder-chunk-size",
+        type=int,
+        default=256,
+        help="Fork-native decoder chunk size for exact CLT attribution",
+    )
+    parser.add_argument(
+        "--no-lazy-encoder",
+        action="store_true",
+        help="Eagerly load encoder weights instead of using lazy encoder reads",
+    )
+    parser.add_argument(
+        "--no-lazy-decoder",
+        action="store_true",
+        help="Eagerly load decoder weights instead of using lazy decoder reads",
     )
     args = parser.parse_args()
 

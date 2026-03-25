@@ -1,0 +1,21 @@
+{
+  "selection_note": "Prompt indices selected deterministically from GSM8K test-set question-length quantiles as a lightweight proxy for prompt complexity. Calibration spans short/medium/long prompts; main spans a broader length range; robustness is a small sampled-completion subset.",
+  "calibration": [828, 94, 361],
+  "main": [80, 24, 56, 70, 481, 375, 225, 164, 108, 522],
+  "robustness": [24, 225, 522],
+  "question_char_lengths": {
+    "24": 147,
+    "56": 168,
+    "70": 190,
+    "80": 119,
+    "94": 222,
+    "108": 336,
+    "164": 291,
+    "225": 257,
+    "361": 366,
+    "375": 233,
+    "481": 212,
+    "522": 431,
+    "828": 136
+  }
+}

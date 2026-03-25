@@ -114,83 +114,52 @@ def _layer_file_index(path: Path) -> int:
     return int(path.stem.rsplit("_", 1)[-1])
 
 
-def load_gemma_scope_2_clt_compat(
+def load_gemma_scope_2_clt_native(
     paths: dict[int, str],
     feature_input_hook: str = "hook_resid_mid",
     feature_output_hook: str = "hook_mlp_out",
     device: torch.device | None = None,
     dtype: torch.dtype = torch.bfloat16,
+    *,
+    lazy_encoder: bool = True,
+    lazy_decoder: bool = True,
+    decoder_chunk_size: int = 256,
 ):
-    """Load GemmaScope-2 CLTs while working around the installed loader bug."""
-    from safetensors.torch import load_file
-    from circuit_tracer.transcoder.cross_layer_transcoder import CrossLayerTranscoder
+    """Load GemmaScope-2 CLTs via the fork-native loader."""
+    from circuit_tracer.transcoder.cross_layer_transcoder import load_gemma_scope_2_clt
 
     if device is None:
         device = torch.device(DEVICE)
 
-    ordered_paths = [paths[idx] for idx in sorted(paths)]
-    # Load and stack on CPU to avoid OOM on smaller GPUs (40 GB A100).
-    # The per-layer files total ~30 GB; stacking doubles peak memory briefly.
-    params_list = [load_file(path, device="cpu") for path in ordered_paths]
-    state_dict_raw = {
-        key: torch.stack([params[key] for params in params_list])
-        for key in params_list[0].keys()
+    loader_kwargs: dict[str, Any] = {
+        "paths": paths,
+        "feature_input_hook": feature_input_hook,
+        "feature_output_hook": feature_output_hook,
+        "device": device,
+        "dtype": dtype,
+        "lazy_encoder": lazy_encoder,
+        "lazy_decoder": lazy_decoder,
+        # Fork-only kwarg; kept dynamic until local env is synced to the fork.
+        "decoder_chunk_size": decoder_chunk_size,
     }
-    del params_list  # free the individual layer dicts
-
-    W_enc = (
-        state_dict_raw["w_enc"]
-        .transpose(-1, -2)
-        .contiguous()
-        .to(device=device, dtype=dtype)
-    )
-    b_enc = state_dict_raw["b_enc"].to(device=device, dtype=dtype)
-    b_dec = state_dict_raw["b_dec"].to(device=device, dtype=dtype)
-    threshold = state_dict_raw["threshold"].unsqueeze(1).to(device=device, dtype=dtype)
-
-    n_layers, d_transcoder, d_model = W_enc.shape
-    w_dec_raw = state_dict_raw["w_dec"]
-    if w_dec_raw.shape[:3] != (n_layers, d_transcoder, n_layers):
-        raise ValueError(
-            "Unexpected decoder shape for GemmaScope-2 CLT: "
-            f"{tuple(w_dec_raw.shape)} with encoder-derived layer count {n_layers}"
-        )
-
-    state_dict = {
-        "W_enc": W_enc,
-        "b_enc": b_enc,
-        "b_dec": b_dec,
-        "activation_function.threshold": threshold,
-    }
-    for i in range(n_layers):
-        state_dict[f"W_dec.{i}"] = w_dec_raw[i, :, i:, :].to(device=device, dtype=dtype)
-
-    if "affine_skip_connection" in state_dict_raw:
-        state_dict["W_skip"] = state_dict_raw["affine_skip_connection"].to(
-            device=device, dtype=dtype
-        )
-
-    with torch.device("meta"):
-        instance = CrossLayerTranscoder(
-            n_layers,
-            d_transcoder,
-            d_model,
-            activation_function="jump_relu",
-            skip_connection=("W_skip" in state_dict),
-            lazy_decoder=False,
-            lazy_encoder=False,
-            feature_input_hook=feature_input_hook,
-            feature_output_hook=feature_output_hook,
-            dtype=dtype,
-        )
-
-    instance.load_state_dict(state_dict, assign=True)
-    return instance
+    return load_gemma_scope_2_clt(**loader_kwargs)
 
 
-def load_model() -> ReplacementModel:
+def load_model(
+    *,
+    lazy_encoder: bool = True,
+    lazy_decoder: bool = True,
+    decoder_chunk_size: int = 256,
+    exact_chunked_decoder: bool = True,
+) -> ReplacementModel:
     print("Loading Gemma-3-1B-IT with transcoders...")
     print(f"  Device: {DEVICE}, Dtype: {DTYPE}")
+    print(
+        "  Transcoder loader: fork-native GemmaScope-2 CLT "
+        f"(lazy_encoder={lazy_encoder}, lazy_decoder={lazy_decoder}, "
+        f"decoder_chunk_size={decoder_chunk_size}, "
+        f"exact_chunked_decoder={exact_chunked_decoder})"
+    )
     if torch.cuda.is_available():
         print(f"  GPU memory before load: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
 
@@ -207,17 +176,22 @@ def load_model() -> ReplacementModel:
     paths = {i: str(path) for i, path in enumerate(layer_files)}
     print(f"  Found {len(paths)} transcoder layer files")
 
-    transcoders = load_gemma_scope_2_clt_compat(
+    transcoders = load_gemma_scope_2_clt_native(
         paths=paths,
         feature_input_hook="hook_resid_mid",
         feature_output_hook="hook_mlp_out",
         device=torch.device(DEVICE),
         dtype=DTYPE,
+        lazy_encoder=lazy_encoder,
+        lazy_decoder=lazy_decoder,
+        decoder_chunk_size=decoder_chunk_size,
     )
+    transcoders.exact_chunked_decoder = exact_chunked_decoder
 
     model = ReplacementModel.from_pretrained_and_transcoders(
         model_name="google/gemma-3-1b-it",
         transcoders=transcoders,
+        device=torch.device(DEVICE),
         dtype=DTYPE,
         backend="nnsight",
     )
@@ -230,9 +204,52 @@ def load_model() -> ReplacementModel:
 # ── data loading ─────────────────────────────────────────────────────
 
 
-def load_gsm8k_examples(n: int = 10) -> list[dict]:
+def parse_gsm8k_indices(
+    inline_indices: str | None = None,
+    indices_file: str | None = None,
+) -> list[int] | None:
+    """Parse explicit GSM8K indices from CLI inputs."""
+    values: list[int] = []
+
+    if inline_indices:
+        for chunk in inline_indices.split(","):
+            chunk = chunk.strip()
+            if chunk:
+                values.append(int(chunk))
+
+    if indices_file:
+        raw = Path(indices_file).read_text().strip()
+        if raw:
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                parsed = [line.strip() for line in raw.splitlines() if line.strip()]
+
+            if isinstance(parsed, list):
+                values.extend(int(v) for v in parsed)
+            else:
+                raise ValueError(
+                    "GSM8K indices file must contain a JSON list or newline-separated integers"
+                )
+
+    if not values:
+        return None
+
+    deduped: list[int] = []
+    seen: set[int] = set()
+    for value in values:
+        if value not in seen:
+            deduped.append(value)
+            seen.add(value)
+    return deduped
+
+
+def load_gsm8k_examples(n: int = 10, indices: list[int] | None = None) -> list[dict]:
     ds = load_dataset("openai/gsm8k", "main", split="test")
-    examples = [ds[i] for i in range(min(n, len(ds)))]
+    if indices is not None:
+        examples = [{**ds[i], "gsm8k_index": i} for i in indices]
+    else:
+        examples = [{**ds[i], "gsm8k_index": i} for i in range(min(n, len(ds)))]
     print(f"Loaded {len(examples)} GSM8K examples")
     return examples
 
@@ -293,22 +310,37 @@ def extract_graph(
     *,
     max_feature_nodes: int = 32768,
     batch_size: int = 256,
+    max_n_logits: int = 5,
+    desired_logit_prob: float = 0.9,
     offload: Literal["cpu", "disk"] | None = "cpu",
+    verbose: bool = False,
+    update_interval: int = 4,
+    profile: bool = False,
+    profile_log_interval: int = 1,
+    diagnostic_feature_cap: int | None = None,
+    sparsification: Any | None = None,
 ):
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    return attribute(
-        prompt=prompt,
-        model=model,
-        max_n_logits=5,
-        desired_logit_prob=0.9,
-        batch_size=batch_size,
-        max_feature_nodes=max_feature_nodes,
-        offload=offload,
-        verbose=False,
-    )
+    attribute_kwargs: dict[str, Any] = {
+        "prompt": prompt,
+        "model": model,
+        "max_n_logits": max_n_logits,
+        "desired_logit_prob": desired_logit_prob,
+        "batch_size": batch_size,
+        "max_feature_nodes": max_feature_nodes,
+        "offload": offload,
+        "verbose": verbose,
+        "update_interval": update_interval,
+        # These exist in the local fork; keep dynamic to avoid stale type hints.
+        "profile": profile,
+        "profile_log_interval": profile_log_interval,
+        "diagnostic_feature_cap": diagnostic_feature_cap,
+        "sparsification": sparsification,
+    }
+    return attribute(**attribute_kwargs)
 
 
 # ── compact save from live graph ─────────────────────────────────────
@@ -355,7 +387,16 @@ def trace_completion(
     max_steps: int = 256,
     max_feature_nodes: int = 32768,
     max_edges: int = 10_000,
+    attribution_batch_size: int = 256,
+    max_n_logits: int = 5,
+    desired_logit_prob: float = 0.9,
     offload: Literal["cpu", "disk"] | None = "cpu",
+    verbose_attribution: bool = False,
+    attribution_update_interval: int = 4,
+    profile_attribution: bool = False,
+    profile_log_interval: int = 1,
+    diagnostic_feature_cap: int | None = None,
+    sparsification: Any | None = None,
     save_raw: bool = False,
 ) -> dict:
     """Trace a single completion: generate token-by-token with attribution."""
@@ -383,7 +424,16 @@ def trace_completion(
             model,
             input_ids[0],
             max_feature_nodes=max_feature_nodes,
+            batch_size=attribution_batch_size,
+            max_n_logits=max_n_logits,
+            desired_logit_prob=desired_logit_prob,
             offload=offload,
+            verbose=verbose_attribution,
+            update_interval=attribution_update_interval,
+            profile=profile_attribution,
+            profile_log_interval=profile_log_interval,
+            diagnostic_feature_cap=diagnostic_feature_cap,
+            sparsification=sparsification,
         )
 
         token_result = generate_next_token(model, input_ids, temperature=temperature)
@@ -441,7 +491,23 @@ def trace_completion(
         "temperature": temperature,
         "max_feature_nodes": max_feature_nodes,
         "max_edges": max_edges,
+        "attribution_batch_size": attribution_batch_size,
+        "max_n_logits": max_n_logits,
+        "desired_logit_prob": desired_logit_prob,
         "offload": offload,
+        "verbose_attribution": verbose_attribution,
+        "attribution_update_interval": attribution_update_interval,
+        "profile_attribution": profile_attribution,
+        "profile_log_interval": profile_log_interval,
+        "diagnostic_feature_cap": diagnostic_feature_cap,
+        "sparsification": (
+            {
+                "per_layer_position_topk": sparsification.per_layer_position_topk,
+                "global_cap": sparsification.global_cap,
+            }
+            if sparsification is not None
+            else None
+        ),
         "save_raw": save_raw,
         "steps": step_records,
     }
@@ -453,9 +519,10 @@ def trace_completion(
 
 
 def run_pipeline(args: argparse.Namespace) -> None:
-    model = load_model()
+    model = load_model(exact_chunked_decoder=False)
     install_feature_cap_patch(model.transcoders, args.max_feature_nodes)  # type: ignore[union-attr]
-    examples = load_gsm8k_examples(args.prompts)
+    gsm8k_indices = parse_gsm8k_indices(args.gsm8k_indices, args.gsm8k_indices_file)
+    examples = load_gsm8k_examples(args.prompts, indices=gsm8k_indices)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     offload = None if args.no_offload else "cpu"
@@ -463,12 +530,21 @@ def run_pipeline(args: argparse.Namespace) -> None:
     # Save run config
     run_config = {
         "prompts": args.prompts,
+        "gsm8k_indices": gsm8k_indices,
         "completions_per_prompt": args.completions,
         "temperature": args.temperature,
         "max_feature_nodes": args.max_feature_nodes,
         "max_edges": args.max_edges,
         "max_steps": args.max_steps,
+        "attribution_batch_size": args.attribution_batch_size,
+        "max_n_logits": args.max_n_logits,
+        "desired_logit_prob": args.desired_logit_prob,
         "offload": offload,
+        "verbose_attribution": args.verbose_attribution,
+        "attribution_update_interval": args.attribution_update_interval,
+        "profile_attribution": args.profile_attribution,
+        "profile_log_interval": args.profile_log_interval,
+        "diagnostic_feature_cap": args.diagnostic_feature_cap,
         "save_raw": args.save_raw,
         "output_dir": str(output_dir),
     }
@@ -484,7 +560,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         prompt_dir = output_dir / f"prompt_{prompt_idx:03d}"
         prompt_dir.mkdir(parents=True, exist_ok=True)
         prompt_meta = {
-            "gsm8k_index": prompt_idx,
+            "gsm8k_index": example["gsm8k_index"],
             "question": example["question"],
             "ground_truth_answer": example["answer"],
             "prompt_text": prompt,
@@ -509,7 +585,15 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 max_steps=args.max_steps,
                 max_feature_nodes=args.max_feature_nodes,
                 max_edges=args.max_edges,
+                attribution_batch_size=args.attribution_batch_size,
+                max_n_logits=args.max_n_logits,
+                desired_logit_prob=args.desired_logit_prob,
                 offload=offload,
+                verbose_attribution=args.verbose_attribution,
+                attribution_update_interval=args.attribution_update_interval,
+                profile_attribution=args.profile_attribution,
+                profile_log_interval=args.profile_log_interval,
+                diagnostic_feature_cap=args.diagnostic_feature_cap,
                 save_raw=args.save_raw,
             )
 
@@ -522,6 +606,16 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--prompts", type=int, default=10, help="Number of GSM8K prompts"
+    )
+    parser.add_argument(
+        "--gsm8k-indices",
+        default=None,
+        help="Comma-separated GSM8K test indices to trace explicitly",
+    )
+    parser.add_argument(
+        "--gsm8k-indices-file",
+        default=None,
+        help="Path to JSON/newline file containing explicit GSM8K test indices",
     )
     parser.add_argument(
         "--completions", type=int, default=3, help="Completions per prompt"
@@ -553,6 +647,52 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--max-steps", type=int, default=256, help="Max generation steps per completion"
+    )
+    parser.add_argument(
+        "--attribution-batch-size",
+        type=int,
+        default=256,
+        help="Backward batch size for attribution graph extraction",
+    )
+    parser.add_argument(
+        "--max-n-logits",
+        type=int,
+        default=5,
+        help="Maximum number of logit targets to attribute",
+    )
+    parser.add_argument(
+        "--desired-logit-prob",
+        type=float,
+        default=0.9,
+        help="Cumulative probability threshold for auto-selected logit targets",
+    )
+    parser.add_argument(
+        "--verbose-attribution",
+        action="store_true",
+        help="Enable fork attribution phase logging and tqdm progress",
+    )
+    parser.add_argument(
+        "--attribution-update-interval",
+        type=int,
+        default=4,
+        help="Feature ranking refresh interval used inside attribution",
+    )
+    parser.add_argument(
+        "--profile-attribution",
+        action="store_true",
+        help="Enable batch-level attribution profiling logs from the fork",
+    )
+    parser.add_argument(
+        "--profile-log-interval",
+        type=int,
+        default=1,
+        help="Emit attribution profiling logs every N batches",
+    )
+    parser.add_argument(
+        "--diagnostic-feature-cap",
+        type=int,
+        default=None,
+        help="Debug-only early active-feature cap for profiling/scaling experiments",
     )
     args = parser.parse_args()
 
