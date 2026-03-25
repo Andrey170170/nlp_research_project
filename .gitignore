@@ -9,6 +9,8 @@ wheels/
 # Virtual environments
 .venv
 data/
-experiments/
+experiments/traces/
+experiments/explore/
 logs/
 .env
+docs/
