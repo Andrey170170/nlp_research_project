@@ -124,6 +124,7 @@ def load_gemma_scope_2_clt_native(
     lazy_encoder: bool = True,
     lazy_decoder: bool = True,
     decoder_chunk_size: int = 256,
+    cross_batch_decoder_cache_bytes: int | None = None,
 ):
     """Load GemmaScope-2 CLTs via the fork-native loader."""
     from circuit_tracer.transcoder.cross_layer_transcoder import load_gemma_scope_2_clt
@@ -142,6 +143,10 @@ def load_gemma_scope_2_clt_native(
         # Fork-only kwarg; kept dynamic until local env is synced to the fork.
         "decoder_chunk_size": decoder_chunk_size,
     }
+    if cross_batch_decoder_cache_bytes is not None:
+        loader_kwargs["cross_batch_decoder_cache_bytes"] = (
+            cross_batch_decoder_cache_bytes
+        )
     return load_gemma_scope_2_clt(**loader_kwargs)
 
 
@@ -151,6 +156,7 @@ def load_model(
     lazy_decoder: bool = True,
     decoder_chunk_size: int = 256,
     exact_chunked_decoder: bool = True,
+    cross_batch_decoder_cache_bytes: int | None = None,
 ) -> ReplacementModel:
     print("Loading Gemma-3-1B-IT with transcoders...")
     print(f"  Device: {DEVICE}, Dtype: {DTYPE}")
@@ -158,7 +164,8 @@ def load_model(
         "  Transcoder loader: fork-native GemmaScope-2 CLT "
         f"(lazy_encoder={lazy_encoder}, lazy_decoder={lazy_decoder}, "
         f"decoder_chunk_size={decoder_chunk_size}, "
-        f"exact_chunked_decoder={exact_chunked_decoder})"
+        f"exact_chunked_decoder={exact_chunked_decoder}, "
+        f"cross_batch_decoder_cache_bytes={cross_batch_decoder_cache_bytes or 0})"
     )
     if torch.cuda.is_available():
         print(f"  GPU memory before load: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
@@ -185,6 +192,7 @@ def load_model(
         lazy_encoder=lazy_encoder,
         lazy_decoder=lazy_decoder,
         decoder_chunk_size=decoder_chunk_size,
+        cross_batch_decoder_cache_bytes=cross_batch_decoder_cache_bytes,
     )
     transcoders.exact_chunked_decoder = exact_chunked_decoder
 

@@ -8,7 +8,7 @@ correctness in math reasoning (GSM8K).
 
 - **Model**: Gemma-3-1B-IT with GemmaScope-2 cross-layer transcoders
 - **Interpretability**: [circuit-tracer](https://github.com/safety-research/circuit-tracer)
-  (installed from git)
+  via the local editable fork at `../circuit-tracer_chunked`
 - **Dataset**: GSM8K (math word problems)
 - **Environment manager**: `uv` — all Python invocations must go through `uv run`
   or the `.venv` created by uv.
@@ -25,17 +25,23 @@ on login nodes.
 - **Never** launch GPU-dependent code, model downloads, or heavy CPU work outside
   a SLURM job.
 - If you need to run Python at all, use `uv run <script>` (or activate `.venv`).
+- For exact chunked GemmaScope-2 tracing, prefer the fork's
+  `cross_batch_decoder_cache_bytes` Phase-4 cache budget instead of re-explaining
+  that local fork feature each session.
 
 ## Repo layout
 
 ```
 # ── Pipeline scripts (HPC) ──
 trace_pipeline.py            # multi-prompt tracing (runs in SLURM GPU job)
-trace_pipeline.sbatch        # SLURM script: 10 prompts × 3 completions
+trace_pipeline_chunked.py    # fork-native exact/chunked tracing entrypoint
+scripts/trace_pipeline.sbatch        # SLURM script: 10 prompts × 3 completions
+scripts/trace_exact_smoke.ascend.sbatch        # one-scenario exact smoke run
+scripts/trace_exact_reference_overnight.ascend.sbatch # array of exact reference runs
 evaluate.py                  # correctness evaluation (regex + GPT judge)
-evaluate.sbatch              # SLURM script: CPU-only, calls OpenAI API
+scripts/evaluate.sbatch      # SLURM script: CPU-only, calls OpenAI API
 analyze.py                   # batch analysis with correct/incorrect comparison
-analyze.sbatch               # SLURM script: CPU-only, 8 workers
+scripts/analyze.sbatch       # SLURM script: CPU-only, 8 workers
 circuit_utils.py             # shared utilities (sparsification, metrics, .npz I/O)
 
 # ── Exploratory (archived) ──
@@ -79,13 +85,17 @@ Node ordering in adjacency matrix: `[features, errors, tokens, logits]`.
 
 ```bash
 # 1. Trace: submit GPU job (10 prompts × 3 completions → scratch)
-sbatch trace_pipeline.sbatch
+sbatch scripts/trace_pipeline.sbatch
+
+# Exact chunked smoke / reference runs
+sbatch scripts/trace_exact_smoke.ascend.sbatch
+sbatch scripts/trace_exact_reference_overnight.ascend.sbatch
 
 # 2. Evaluate: submit CPU job (needs OPENAI_KEY in .env)
-sbatch evaluate.sbatch
+sbatch scripts/evaluate.sbatch
 
 # 3. Analyze: submit CPU job (reads .npz, produces plots + stats)
-sbatch analyze.sbatch
+sbatch scripts/analyze.sbatch
 
 # Local lint (safe on login node)
 uv run ruff check .

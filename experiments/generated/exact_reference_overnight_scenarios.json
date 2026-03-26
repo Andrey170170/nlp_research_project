@@ -1,0 +1,44 @@
+{
+  "defaults": {
+    "completions": 1,
+    "temperature": 0.0,
+    "max_feature_nodes": 8192,
+    "max_edges": 20000,
+    "max_n_logits": 3,
+    "desired_logit_prob": 0.8,
+    "verbose_attribution": true,
+    "profile_attribution": true,
+    "profile_log_interval": 1,
+    "attribution_update_interval": 4,
+    "save_raw": false,
+    "no_offload": false,
+    "no_lazy_encoder": false,
+    "no_lazy_decoder": false,
+    "max_steps": 2,
+    "attribution_batch_size": 64,
+    "decoder_chunk_size": 1024,
+    "cross_batch_decoder_cache_bytes": 2147483648
+  },
+  "metadata": {
+    "prompt_sets_file": "experiments/sparsification_prompt_sets.json",
+    "stage": "exact_reference_overnight",
+    "notes": [
+      "One exact trace per GPU, overnight, on the 10-prompt main slice.",
+      "Current default is 2 traced steps for a safer exact reference run.",
+      "Exact reference runs now enable the fork's Phase-4 cross-batch decoder cache with a 2 GiB budget by default."
+    ],
+    "prompt_indices": [80, 24, 56, 70, 481, 375, 225, 164, 108, 522]
+  },
+  "scenarios": [
+    {"name": "exact_main_p0080", "stage": "exact_reference_overnight", "method": "exact", "gsm8k_indices": [80]},
+    {"name": "exact_main_p0024", "stage": "exact_reference_overnight", "method": "exact", "gsm8k_indices": [24]},
+    {"name": "exact_main_p0056", "stage": "exact_reference_overnight", "method": "exact", "gsm8k_indices": [56]},
+    {"name": "exact_main_p0070", "stage": "exact_reference_overnight", "method": "exact", "gsm8k_indices": [70]},
+    {"name": "exact_main_p0481", "stage": "exact_reference_overnight", "method": "exact", "gsm8k_indices": [481]},
+    {"name": "exact_main_p0375", "stage": "exact_reference_overnight", "method": "exact", "gsm8k_indices": [375]},
+    {"name": "exact_main_p0225", "stage": "exact_reference_overnight", "method": "exact", "gsm8k_indices": [225]},
+    {"name": "exact_main_p0164", "stage": "exact_reference_overnight", "method": "exact", "gsm8k_indices": [164]},
+    {"name": "exact_main_p0108", "stage": "exact_reference_overnight", "method": "exact", "gsm8k_indices": [108]},
+    {"name": "exact_main_p0522", "stage": "exact_reference_overnight", "method": "exact", "gsm8k_indices": [522]}
+  ]
+}

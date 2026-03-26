@@ -18,7 +18,32 @@ DEFAULT_SCENARIOS = (
 DEFAULT_OUTPUT_ROOT = Path("/fs/scratch/PAS3272/kopanev.1/sparsification_experiment")
 
 
-def build_command(output_dir: Path, scenario: dict[str, Any]) -> list[str]:
+def apply_runtime_overrides(
+    scenario: dict[str, Any],
+    *,
+    cross_batch_decoder_cache_bytes_override: int | None = None,
+) -> dict[str, Any]:
+    effective_scenario = dict(scenario)
+    if (
+        effective_scenario["method"] != "old_patch"
+        and cross_batch_decoder_cache_bytes_override is not None
+    ):
+        effective_scenario["cross_batch_decoder_cache_bytes"] = (
+            cross_batch_decoder_cache_bytes_override
+        )
+    return effective_scenario
+
+
+def build_command(
+    output_dir: Path,
+    scenario: dict[str, Any],
+    *,
+    cross_batch_decoder_cache_bytes_override: int | None = None,
+) -> list[str]:
+    scenario = apply_runtime_overrides(
+        scenario,
+        cross_batch_decoder_cache_bytes_override=cross_batch_decoder_cache_bytes_override,
+    )
     method = scenario["method"]
     script_name = (
         "trace_pipeline.py" if method == "old_patch" else "trace_pipeline_chunked.py"
@@ -54,6 +79,18 @@ def build_command(output_dir: Path, scenario: dict[str, Any]) -> list[str]:
 
     if method != "old_patch":
         cmd.extend(["--decoder-chunk-size", str(scenario["decoder_chunk_size"])])
+        cross_batch_decoder_cache_bytes = (
+            cross_batch_decoder_cache_bytes_override
+            if cross_batch_decoder_cache_bytes_override is not None
+            else scenario.get("cross_batch_decoder_cache_bytes")
+        )
+        if cross_batch_decoder_cache_bytes is not None:
+            cmd.extend(
+                [
+                    "--cross-batch-decoder-cache-bytes",
+                    str(cross_batch_decoder_cache_bytes),
+                ]
+            )
         if scenario.get("sparsify_per_layer_position_topk") is not None:
             cmd.extend(
                 [
@@ -91,6 +128,7 @@ def run_scenario(
     scenario: dict[str, Any],
     *,
     env: dict[str, str],
+    cross_batch_decoder_cache_bytes_override: int | None = None,
 ) -> dict[str, Any]:
     scenario_name = scenario["name"]
     scenario_root = (
@@ -101,10 +139,20 @@ def run_scenario(
     run_output_dir = scenario_root / "artifacts"
     scenario_root.mkdir(parents=True, exist_ok=True)
     run_output_dir.mkdir(parents=True, exist_ok=True)
-    (scenario_root / "scenario.json").write_text(json.dumps(scenario, indent=2))
+    effective_scenario = apply_runtime_overrides(
+        scenario,
+        cross_batch_decoder_cache_bytes_override=cross_batch_decoder_cache_bytes_override,
+    )
+    (scenario_root / "scenario.json").write_text(
+        json.dumps(effective_scenario, indent=2)
+    )
 
     log_path = scenario_root / "run.log"
-    cmd = build_command(run_output_dir, scenario)
+    cmd = build_command(
+        run_output_dir,
+        scenario,
+        cross_batch_decoder_cache_bytes_override=cross_batch_decoder_cache_bytes_override,
+    )
     timeout_minutes = scenario.get("timeout_minutes")
     timeout_seconds = None if timeout_minutes is None else int(timeout_minutes * 60)
 
@@ -199,6 +247,12 @@ def main() -> None:
         action="store_true",
         help="Print commands that would be run without executing them",
     )
+    parser.add_argument(
+        "--cross-batch-decoder-cache-bytes",
+        type=int,
+        default=None,
+        help="Optional override for exact chunked Phase-4 cross-batch decoder cache budget",
+    )
     args = parser.parse_args()
 
     scenarios, metadata = load_scenarios(args.scenarios_file)
@@ -243,11 +297,22 @@ def main() -> None:
         name = scenario["name"]
         scenario_root = output_root if len(scenarios) == 1 else output_root / name
         if args.dry_run:
-            cmd = build_command(scenario_root / "artifacts", scenario)
+            cmd = build_command(
+                scenario_root / "artifacts",
+                scenario,
+                cross_batch_decoder_cache_bytes_override=args.cross_batch_decoder_cache_bytes,
+            )
             print(f"DRY RUN {name}: {shlex.join(cmd)}")
             continue
         print(f"\n{'=' * 80}\nRunning scenario: {name}\n{'=' * 80}")
-        results.append(run_scenario(output_root, scenario, env=env))
+        results.append(
+            run_scenario(
+                output_root,
+                scenario,
+                env=env,
+                cross_batch_decoder_cache_bytes_override=args.cross_batch_decoder_cache_bytes,
+            )
+        )
         print(
             f"Completed {name}: status={results[-1]['status']} duration={results[-1]['duration_seconds']:.2f}s"
         )

@@ -1,0 +1,77 @@
+{
+  "defaults": {
+    "completions": 1,
+    "temperature": 0.0,
+    "max_feature_nodes": 8192,
+    "max_edges": 20000,
+    "max_n_logits": 3,
+    "desired_logit_prob": 0.8,
+    "verbose_attribution": true,
+    "profile_attribution": true,
+    "profile_log_interval": 1,
+    "attribution_update_interval": 4,
+    "save_raw": false,
+    "no_offload": false,
+    "no_lazy_encoder": false,
+    "no_lazy_decoder": false,
+    "max_steps": 1,
+    "gsm8k_indices": [361],
+    "method": "sparse",
+    "stage": "sparse_runtime_stress",
+    "sparsify_global_cap": 128000
+  },
+  "metadata": {
+    "prompt_sets_file": "experiments/sparsification_prompt_sets.json",
+    "stage": "sparse_runtime_stress",
+    "notes": [
+      "Single-prompt stress sweep on the longest calibration prompt (361).",
+      "Push sparse candidate count and throughput knobs to identify the next resource bottleneck.",
+      "Global cap remains 128k so per-layer-position top-K remains the main fidelity knob."
+    ],
+    "prompt_index": 361,
+    "candidate_topk_values": [48, 64, 96, 128],
+    "attribution_batch_sizes": [64, 128, 256],
+    "decoder_chunk_sizes": [1024, 2048, 4096]
+  },
+  "scenarios": [
+    {"name": "stress_sparse_t48_b64_c1024", "sparsify_per_layer_position_topk": 48, "attribution_batch_size": 64, "decoder_chunk_size": 1024},
+    {"name": "stress_sparse_t48_b64_c2048", "sparsify_per_layer_position_topk": 48, "attribution_batch_size": 64, "decoder_chunk_size": 2048},
+    {"name": "stress_sparse_t48_b64_c4096", "sparsify_per_layer_position_topk": 48, "attribution_batch_size": 64, "decoder_chunk_size": 4096},
+    {"name": "stress_sparse_t48_b128_c1024", "sparsify_per_layer_position_topk": 48, "attribution_batch_size": 128, "decoder_chunk_size": 1024},
+    {"name": "stress_sparse_t48_b128_c2048", "sparsify_per_layer_position_topk": 48, "attribution_batch_size": 128, "decoder_chunk_size": 2048},
+    {"name": "stress_sparse_t48_b128_c4096", "sparsify_per_layer_position_topk": 48, "attribution_batch_size": 128, "decoder_chunk_size": 4096},
+    {"name": "stress_sparse_t48_b256_c1024", "sparsify_per_layer_position_topk": 48, "attribution_batch_size": 256, "decoder_chunk_size": 1024},
+    {"name": "stress_sparse_t48_b256_c2048", "sparsify_per_layer_position_topk": 48, "attribution_batch_size": 256, "decoder_chunk_size": 2048},
+    {"name": "stress_sparse_t48_b256_c4096", "sparsify_per_layer_position_topk": 48, "attribution_batch_size": 256, "decoder_chunk_size": 4096},
+
+    {"name": "stress_sparse_t64_b64_c1024", "sparsify_per_layer_position_topk": 64, "attribution_batch_size": 64, "decoder_chunk_size": 1024},
+    {"name": "stress_sparse_t64_b64_c2048", "sparsify_per_layer_position_topk": 64, "attribution_batch_size": 64, "decoder_chunk_size": 2048},
+    {"name": "stress_sparse_t64_b64_c4096", "sparsify_per_layer_position_topk": 64, "attribution_batch_size": 64, "decoder_chunk_size": 4096},
+    {"name": "stress_sparse_t64_b128_c1024", "sparsify_per_layer_position_topk": 64, "attribution_batch_size": 128, "decoder_chunk_size": 1024},
+    {"name": "stress_sparse_t64_b128_c2048", "sparsify_per_layer_position_topk": 64, "attribution_batch_size": 128, "decoder_chunk_size": 2048},
+    {"name": "stress_sparse_t64_b128_c4096", "sparsify_per_layer_position_topk": 64, "attribution_batch_size": 128, "decoder_chunk_size": 4096},
+    {"name": "stress_sparse_t64_b256_c1024", "sparsify_per_layer_position_topk": 64, "attribution_batch_size": 256, "decoder_chunk_size": 1024},
+    {"name": "stress_sparse_t64_b256_c2048", "sparsify_per_layer_position_topk": 64, "attribution_batch_size": 256, "decoder_chunk_size": 2048},
+    {"name": "stress_sparse_t64_b256_c4096", "sparsify_per_layer_position_topk": 64, "attribution_batch_size": 256, "decoder_chunk_size": 4096},
+
+    {"name": "stress_sparse_t96_b64_c1024", "sparsify_per_layer_position_topk": 96, "attribution_batch_size": 64, "decoder_chunk_size": 1024},
+    {"name": "stress_sparse_t96_b64_c2048", "sparsify_per_layer_position_topk": 96, "attribution_batch_size": 64, "decoder_chunk_size": 2048},
+    {"name": "stress_sparse_t96_b64_c4096", "sparsify_per_layer_position_topk": 96, "attribution_batch_size": 64, "decoder_chunk_size": 4096},
+    {"name": "stress_sparse_t96_b128_c1024", "sparsify_per_layer_position_topk": 96, "attribution_batch_size": 128, "decoder_chunk_size": 1024},
+    {"name": "stress_sparse_t96_b128_c2048", "sparsify_per_layer_position_topk": 96, "attribution_batch_size": 128, "decoder_chunk_size": 2048},
+    {"name": "stress_sparse_t96_b128_c4096", "sparsify_per_layer_position_topk": 96, "attribution_batch_size": 128, "decoder_chunk_size": 4096},
+    {"name": "stress_sparse_t96_b256_c1024", "sparsify_per_layer_position_topk": 96, "attribution_batch_size": 256, "decoder_chunk_size": 1024},
+    {"name": "stress_sparse_t96_b256_c2048", "sparsify_per_layer_position_topk": 96, "attribution_batch_size": 256, "decoder_chunk_size": 2048},
+    {"name": "stress_sparse_t96_b256_c4096", "sparsify_per_layer_position_topk": 96, "attribution_batch_size": 256, "decoder_chunk_size": 4096},
+
+    {"name": "stress_sparse_t128_b64_c1024", "sparsify_per_layer_position_topk": 128, "attribution_batch_size": 64, "decoder_chunk_size": 1024},
+    {"name": "stress_sparse_t128_b64_c2048", "sparsify_per_layer_position_topk": 128, "attribution_batch_size": 64, "decoder_chunk_size": 2048},
+    {"name": "stress_sparse_t128_b64_c4096", "sparsify_per_layer_position_topk": 128, "attribution_batch_size": 64, "decoder_chunk_size": 4096},
+    {"name": "stress_sparse_t128_b128_c1024", "sparsify_per_layer_position_topk": 128, "attribution_batch_size": 128, "decoder_chunk_size": 1024},
+    {"name": "stress_sparse_t128_b128_c2048", "sparsify_per_layer_position_topk": 128, "attribution_batch_size": 128, "decoder_chunk_size": 2048},
+    {"name": "stress_sparse_t128_b128_c4096", "sparsify_per_layer_position_topk": 128, "attribution_batch_size": 128, "decoder_chunk_size": 4096},
+    {"name": "stress_sparse_t128_b256_c1024", "sparsify_per_layer_position_topk": 128, "attribution_batch_size": 256, "decoder_chunk_size": 1024},
+    {"name": "stress_sparse_t128_b256_c2048", "sparsify_per_layer_position_topk": 128, "attribution_batch_size": 256, "decoder_chunk_size": 2048},
+    {"name": "stress_sparse_t128_b256_c4096", "sparsify_per_layer_position_topk": 128, "attribution_batch_size": 256, "decoder_chunk_size": 4096}
+  ]
+}

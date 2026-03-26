@@ -1,0 +1,39 @@
+{
+  "defaults": {
+    "completions": 1,
+    "temperature": 0.0,
+    "max_feature_nodes": 8192,
+    "max_edges": 20000,
+    "max_n_logits": 3,
+    "desired_logit_prob": 0.8,
+    "verbose_attribution": true,
+    "profile_attribution": true,
+    "profile_log_interval": 1,
+    "attribution_update_interval": 4,
+    "save_raw": false,
+    "no_offload": false,
+    "no_lazy_encoder": false,
+    "no_lazy_decoder": false,
+    "max_steps": 1,
+    "attribution_batch_size": 128,
+    "decoder_chunk_size": 2048,
+    "cross_batch_decoder_cache_bytes": 2147483648
+  },
+  "metadata": {
+    "prompt_sets_file": "experiments/sparsification_prompt_sets.json",
+    "stage": "exact_smoke",
+    "notes": [
+      "Stress-test an intentionally aggressive exact smoke setup (decoder_chunk_size=2048) on the longest calibration prompt.",
+      "Goal: reach phase 3 within ~15 minutes and confirm memory remains stable before overnight exact runs.",
+      "Exact smoke runs now enable the fork's Phase-4 cross-batch decoder cache with a 2 GiB budget by default."
+    ]
+  },
+  "scenarios": [
+    {
+      "name": "exact_smoke_p0361_b128_c2048",
+      "stage": "exact_smoke",
+      "method": "exact",
+      "gsm8k_indices": [361]
+    }
+  ]
+}

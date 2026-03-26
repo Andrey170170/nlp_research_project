@@ -42,6 +42,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         lazy_encoder=not args.no_lazy_encoder,
         lazy_decoder=not args.no_lazy_decoder,
         decoder_chunk_size=args.decoder_chunk_size,
+        cross_batch_decoder_cache_bytes=args.cross_batch_decoder_cache_bytes,
     )
     gsm8k_indices = base.parse_gsm8k_indices(
         args.gsm8k_indices, args.gsm8k_indices_file
@@ -75,6 +76,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "lazy_encoder": not args.no_lazy_encoder,
         "lazy_decoder": not args.no_lazy_decoder,
         "decoder_chunk_size": args.decoder_chunk_size,
+        "cross_batch_decoder_cache_bytes": args.cross_batch_decoder_cache_bytes,
         "sparsification": (
             {
                 "per_layer_position_topk": sparsification.per_layer_position_topk,
@@ -249,6 +251,12 @@ if __name__ == "__main__":
         type=int,
         default=256,
         help="Fork-native decoder chunk size for exact CLT attribution",
+    )
+    parser.add_argument(
+        "--cross-batch-decoder-cache-bytes",
+        type=int,
+        default=None,
+        help="Optional Phase-4 cross-batch decoder cache budget in bytes",
     )
     parser.add_argument(
         "--no-lazy-encoder",

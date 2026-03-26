@@ -1,0 +1,83 @@
+{
+  "defaults": {
+    "completions": 1,
+    "temperature": 0.0,
+    "max_feature_nodes": 8192,
+    "max_edges": 20000,
+    "max_n_logits": 3,
+    "desired_logit_prob": 0.8,
+    "verbose_attribution": true,
+    "profile_attribution": true,
+    "profile_log_interval": 1,
+    "attribution_update_interval": 4,
+    "save_raw": false,
+    "no_offload": false,
+    "no_lazy_encoder": false,
+    "no_lazy_decoder": false,
+    "max_steps": 1,
+    "sparsify_global_cap": 128000
+  },
+  "metadata": {
+    "prompt_sets_file": "experiments/sparsification_prompt_sets.json",
+    "stage": "sparse_runtime_benchmark",
+    "notes": [
+      "Benchmark sparse tracing only; exact is handled separately.",
+      "Use per-layer-position top-K as the main fidelity knob.",
+      "Use decoder chunk size and attribution batch size as throughput knobs.",
+      "Global cap is kept loose at 128k so per-layer-position top-K is the primary candidate limiter."
+    ],
+    "candidate_topk_values": [16, 24, 32],
+    "attribution_batch_sizes": [32, 64],
+    "decoder_chunk_sizes": [512, 1024],
+    "prompt_indices": [828, 94, 361]
+  },
+  "scenarios": [
+    {"name": "bench_sparse_t16_b32_c512_p0828", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [828], "sparsify_per_layer_position_topk": 16, "attribution_batch_size": 32, "decoder_chunk_size": 512},
+    {"name": "bench_sparse_t16_b32_c512_p0094", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [94], "sparsify_per_layer_position_topk": 16, "attribution_batch_size": 32, "decoder_chunk_size": 512},
+    {"name": "bench_sparse_t16_b32_c512_p0361", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [361], "sparsify_per_layer_position_topk": 16, "attribution_batch_size": 32, "decoder_chunk_size": 512},
+
+    {"name": "bench_sparse_t16_b32_c1024_p0828", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [828], "sparsify_per_layer_position_topk": 16, "attribution_batch_size": 32, "decoder_chunk_size": 1024},
+    {"name": "bench_sparse_t16_b32_c1024_p0094", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [94], "sparsify_per_layer_position_topk": 16, "attribution_batch_size": 32, "decoder_chunk_size": 1024},
+    {"name": "bench_sparse_t16_b32_c1024_p0361", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [361], "sparsify_per_layer_position_topk": 16, "attribution_batch_size": 32, "decoder_chunk_size": 1024},
+
+    {"name": "bench_sparse_t16_b64_c512_p0828", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [828], "sparsify_per_layer_position_topk": 16, "attribution_batch_size": 64, "decoder_chunk_size": 512},
+    {"name": "bench_sparse_t16_b64_c512_p0094", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [94], "sparsify_per_layer_position_topk": 16, "attribution_batch_size": 64, "decoder_chunk_size": 512},
+    {"name": "bench_sparse_t16_b64_c512_p0361", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [361], "sparsify_per_layer_position_topk": 16, "attribution_batch_size": 64, "decoder_chunk_size": 512},
+
+    {"name": "bench_sparse_t16_b64_c1024_p0828", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [828], "sparsify_per_layer_position_topk": 16, "attribution_batch_size": 64, "decoder_chunk_size": 1024},
+    {"name": "bench_sparse_t16_b64_c1024_p0094", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [94], "sparsify_per_layer_position_topk": 16, "attribution_batch_size": 64, "decoder_chunk_size": 1024},
+    {"name": "bench_sparse_t16_b64_c1024_p0361", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [361], "sparsify_per_layer_position_topk": 16, "attribution_batch_size": 64, "decoder_chunk_size": 1024},
+
+    {"name": "bench_sparse_t24_b32_c512_p0828", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [828], "sparsify_per_layer_position_topk": 24, "attribution_batch_size": 32, "decoder_chunk_size": 512},
+    {"name": "bench_sparse_t24_b32_c512_p0094", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [94], "sparsify_per_layer_position_topk": 24, "attribution_batch_size": 32, "decoder_chunk_size": 512},
+    {"name": "bench_sparse_t24_b32_c512_p0361", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [361], "sparsify_per_layer_position_topk": 24, "attribution_batch_size": 32, "decoder_chunk_size": 512},
+
+    {"name": "bench_sparse_t24_b32_c1024_p0828", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [828], "sparsify_per_layer_position_topk": 24, "attribution_batch_size": 32, "decoder_chunk_size": 1024},
+    {"name": "bench_sparse_t24_b32_c1024_p0094", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [94], "sparsify_per_layer_position_topk": 24, "attribution_batch_size": 32, "decoder_chunk_size": 1024},
+    {"name": "bench_sparse_t24_b32_c1024_p0361", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [361], "sparsify_per_layer_position_topk": 24, "attribution_batch_size": 32, "decoder_chunk_size": 1024},
+
+    {"name": "bench_sparse_t24_b64_c512_p0828", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [828], "sparsify_per_layer_position_topk": 24, "attribution_batch_size": 64, "decoder_chunk_size": 512},
+    {"name": "bench_sparse_t24_b64_c512_p0094", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [94], "sparsify_per_layer_position_topk": 24, "attribution_batch_size": 64, "decoder_chunk_size": 512},
+    {"name": "bench_sparse_t24_b64_c512_p0361", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [361], "sparsify_per_layer_position_topk": 24, "attribution_batch_size": 64, "decoder_chunk_size": 512},
+
+    {"name": "bench_sparse_t24_b64_c1024_p0828", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [828], "sparsify_per_layer_position_topk": 24, "attribution_batch_size": 64, "decoder_chunk_size": 1024},
+    {"name": "bench_sparse_t24_b64_c1024_p0094", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [94], "sparsify_per_layer_position_topk": 24, "attribution_batch_size": 64, "decoder_chunk_size": 1024},
+    {"name": "bench_sparse_t24_b64_c1024_p0361", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [361], "sparsify_per_layer_position_topk": 24, "attribution_batch_size": 64, "decoder_chunk_size": 1024},
+
+    {"name": "bench_sparse_t32_b32_c512_p0828", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [828], "sparsify_per_layer_position_topk": 32, "attribution_batch_size": 32, "decoder_chunk_size": 512},
+    {"name": "bench_sparse_t32_b32_c512_p0094", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [94], "sparsify_per_layer_position_topk": 32, "attribution_batch_size": 32, "decoder_chunk_size": 512},
+    {"name": "bench_sparse_t32_b32_c512_p0361", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [361], "sparsify_per_layer_position_topk": 32, "attribution_batch_size": 32, "decoder_chunk_size": 512},
+
+    {"name": "bench_sparse_t32_b32_c1024_p0828", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [828], "sparsify_per_layer_position_topk": 32, "attribution_batch_size": 32, "decoder_chunk_size": 1024},
+    {"name": "bench_sparse_t32_b32_c1024_p0094", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [94], "sparsify_per_layer_position_topk": 32, "attribution_batch_size": 32, "decoder_chunk_size": 1024},
+    {"name": "bench_sparse_t32_b32_c1024_p0361", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [361], "sparsify_per_layer_position_topk": 32, "attribution_batch_size": 32, "decoder_chunk_size": 1024},
+
+    {"name": "bench_sparse_t32_b64_c512_p0828", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [828], "sparsify_per_layer_position_topk": 32, "attribution_batch_size": 64, "decoder_chunk_size": 512},
+    {"name": "bench_sparse_t32_b64_c512_p0094", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [94], "sparsify_per_layer_position_topk": 32, "attribution_batch_size": 64, "decoder_chunk_size": 512},
+    {"name": "bench_sparse_t32_b64_c512_p0361", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [361], "sparsify_per_layer_position_topk": 32, "attribution_batch_size": 64, "decoder_chunk_size": 512},
+
+    {"name": "bench_sparse_t32_b64_c1024_p0828", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [828], "sparsify_per_layer_position_topk": 32, "attribution_batch_size": 64, "decoder_chunk_size": 1024},
+    {"name": "bench_sparse_t32_b64_c1024_p0094", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [94], "sparsify_per_layer_position_topk": 32, "attribution_batch_size": 64, "decoder_chunk_size": 1024},
+    {"name": "bench_sparse_t32_b64_c1024_p0361", "stage": "sparse_runtime_benchmark", "method": "sparse", "gsm8k_indices": [361], "sparsify_per_layer_position_topk": 32, "attribution_batch_size": 64, "decoder_chunk_size": 1024}
+  ]
+}

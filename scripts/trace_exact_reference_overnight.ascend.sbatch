@@ -1,14 +1,14 @@
 #!/bin/bash
-#SBATCH --job-name=trace-sparsify-exp
+#SBATCH --job-name=trace-exact-main
 #SBATCH --account=PAS3272
 #SBATCH --cluster=ascend
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=26
 #SBATCH --gpus-per-task=1
-#SBATCH --mem-per-cpu=4027
-#SBATCH --time=02:00:00
-#SBATCH --array=0-0
+#SBATCH --mem-per-cpu=10724
+#SBATCH --time=10:00:00
+#SBATCH --array=0-9
 #SBATCH --output=logs/slurm-%x-%A_%a.out
 #SBATCH --error=logs/slurm-%x-%A_%a.err
 
@@ -16,8 +16,8 @@ set -euo pipefail
 
 cd "$SLURM_SUBMIT_DIR"
 
-SCENARIOS_FILE="${SCENARIOS_FILE:-experiments/generated/sparsification_calibration_scenarios.json}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS3272/kopanev.1/sparsification_experiment}"
+SCENARIOS_FILE="${SCENARIOS_FILE:-experiments/generated/exact_reference_overnight_scenarios.json}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS3272/kopanev.1/exact_reference_overnight}"
 
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 export TOKENIZERS_PARALLELISM=false
