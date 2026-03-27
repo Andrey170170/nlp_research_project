@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -16,6 +17,18 @@ DEFAULT_SCENARIOS = (
     Path(__file__).with_name("generated") / "sparsification_calibration_scenarios.json"
 )
 DEFAULT_OUTPUT_ROOT = Path("/fs/scratch/PAS3272/kopanev.1/sparsification_experiment")
+
+PHASE_DURATION_RE = re.compile(r"completed in (?P<seconds>\d+(?:\.\d+)?)s")
+PHASE4_BATCH_RE = re.compile(
+    r"Phase 4 batch (?P<batch_idx>\d+)/(?P<total_batches>\d+) in (?P<seconds>\d+(?:\.\d+)?)s"
+)
+MEMORY_RE = re.compile(
+    r"rss=(?P<rss>n/a|\d+(?:\.\d+)?) GiB, "
+    r"cuda_alloc=(?P<cuda_alloc>n/a|\d+(?:\.\d+)?) GiB, "
+    r"cuda_reserved=(?P<cuda_reserved>n/a|\d+(?:\.\d+)?) GiB, "
+    r"cuda_peak_alloc=(?P<cuda_peak_alloc>n/a|\d+(?:\.\d+)?) GiB, "
+    r"cuda_peak_reserved=(?P<cuda_peak_reserved>n/a|\d+(?:\.\d+)?) GiB"
+)
 
 
 def apply_runtime_overrides(
@@ -32,6 +45,205 @@ def apply_runtime_overrides(
             cross_batch_decoder_cache_bytes_override
         )
     return effective_scenario
+
+
+def _build_prompt_source_args(scenario: dict[str, Any]) -> list[str]:
+    prepared_prompt_file = scenario.get("prepared_prompt_file")
+    if prepared_prompt_file is not None:
+        args = ["--prepared-prompt-file", str(prepared_prompt_file)]
+        prepared_prompt_meta_file = scenario.get("prepared_prompt_meta_file")
+        if prepared_prompt_meta_file is not None:
+            args.extend(["--prepared-prompt-meta-file", str(prepared_prompt_meta_file)])
+        return args
+
+    gsm8k_indices = scenario.get("gsm8k_indices")
+    if not gsm8k_indices:
+        raise ValueError(
+            "Scenario must define either gsm8k_indices or prepared_prompt_file"
+        )
+
+    return [
+        "--prompts",
+        str(len(gsm8k_indices)),
+        "--gsm8k-indices",
+        ",".join(str(i) for i in gsm8k_indices),
+    ]
+
+
+def _parse_optional_gib(value: str) -> float | None:
+    if value == "n/a":
+        return None
+    return float(value)
+
+
+def _extract_benchmark_metrics(log_path: Path) -> dict[str, Any]:
+    if not log_path.exists():
+        return {}
+
+    phase4_batch_durations: list[float] = []
+    phase4_total_batches = None
+    peak_rss_gib = None
+    peak_cuda_allocated_gib = None
+    peak_cuda_reserved_gib = None
+    peak_cuda_peak_allocated_gib = None
+    peak_cuda_peak_reserved_gib = None
+    phase3_duration_seconds = None
+    phase4_duration_seconds = None
+
+    for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if "logit attribution(s) completed in" in line:
+            match = PHASE_DURATION_RE.search(line)
+            if match:
+                phase3_duration_seconds = float(match.group("seconds"))
+        elif "Feature attributions completed in" in line:
+            match = PHASE_DURATION_RE.search(line)
+            if match:
+                phase4_duration_seconds = float(match.group("seconds"))
+
+        batch_match = PHASE4_BATCH_RE.search(line)
+        if batch_match:
+            phase4_batch_durations.append(float(batch_match.group("seconds")))
+            phase4_total_batches = int(batch_match.group("total_batches"))
+
+        memory_match = MEMORY_RE.search(line)
+        if memory_match:
+            rss_gib = _parse_optional_gib(memory_match.group("rss"))
+            cuda_alloc_gib = _parse_optional_gib(memory_match.group("cuda_alloc"))
+            cuda_reserved_gib = _parse_optional_gib(memory_match.group("cuda_reserved"))
+            cuda_peak_alloc_gib = _parse_optional_gib(
+                memory_match.group("cuda_peak_alloc")
+            )
+            cuda_peak_reserved_gib = _parse_optional_gib(
+                memory_match.group("cuda_peak_reserved")
+            )
+
+            if rss_gib is not None:
+                peak_rss_gib = max(peak_rss_gib or rss_gib, rss_gib)
+            if cuda_alloc_gib is not None:
+                peak_cuda_allocated_gib = max(
+                    peak_cuda_allocated_gib or cuda_alloc_gib,
+                    cuda_alloc_gib,
+                )
+            if cuda_reserved_gib is not None:
+                peak_cuda_reserved_gib = max(
+                    peak_cuda_reserved_gib or cuda_reserved_gib,
+                    cuda_reserved_gib,
+                )
+            if cuda_peak_alloc_gib is not None:
+                peak_cuda_peak_allocated_gib = max(
+                    peak_cuda_peak_allocated_gib or cuda_peak_alloc_gib,
+                    cuda_peak_alloc_gib,
+                )
+            if cuda_peak_reserved_gib is not None:
+                peak_cuda_peak_reserved_gib = max(
+                    peak_cuda_peak_reserved_gib or cuda_peak_reserved_gib,
+                    cuda_peak_reserved_gib,
+                )
+
+    phase4_avg_batch_seconds = None
+    phase4_projected_total_seconds = None
+    if phase4_batch_durations:
+        phase4_avg_batch_seconds = sum(phase4_batch_durations) / len(
+            phase4_batch_durations
+        )
+        if phase4_total_batches is not None:
+            phase4_projected_total_seconds = (
+                phase4_avg_batch_seconds * phase4_total_batches
+            )
+
+    return {
+        "phase3_duration_seconds": phase3_duration_seconds,
+        "phase4_duration_seconds": phase4_duration_seconds,
+        "phase4_avg_batch_seconds": phase4_avg_batch_seconds,
+        "phase4_projected_total_seconds": phase4_projected_total_seconds,
+        "phase4_batches_observed": len(phase4_batch_durations),
+        "phase4_total_batches": phase4_total_batches,
+        "peak_rss_gib": peak_rss_gib,
+        "peak_cuda_allocated_gib": peak_cuda_allocated_gib,
+        "peak_cuda_reserved_gib": peak_cuda_reserved_gib,
+        "peak_cuda_peak_allocated_gib": peak_cuda_peak_allocated_gib,
+        "peak_cuda_peak_reserved_gib": peak_cuda_peak_reserved_gib,
+    }
+
+
+def _summarize_artifacts(run_output_dir: Path) -> dict[str, Any]:
+    prompt_meta_files = sorted(run_output_dir.glob("prompt_*/prompt_meta.json"))
+    completion_files = sorted(
+        run_output_dir.glob("prompt_*/completion_*/completion.json")
+    )
+    if not prompt_meta_files and not completion_files:
+        return {}
+
+    prompt_metas = [json.loads(path.read_text()) for path in prompt_meta_files]
+    completion_manifests = [json.loads(path.read_text()) for path in completion_files]
+
+    active_feature_counts = [
+        step.get("n_active_features")
+        for manifest in completion_manifests
+        for step in manifest.get("steps", [])
+        if step.get("n_active_features") is not None
+    ]
+    cache_hits = [
+        step.get("transcoder_diagnostics", {}).get("decoder_cache_hit_count")
+        for manifest in completion_manifests
+        for step in manifest.get("steps", [])
+        if step.get("transcoder_diagnostics")
+    ]
+    cache_misses = [
+        step.get("transcoder_diagnostics", {}).get("decoder_cache_miss_count")
+        for manifest in completion_manifests
+        for step in manifest.get("steps", [])
+        if step.get("transcoder_diagnostics")
+    ]
+    cache_evictions = [
+        step.get("transcoder_diagnostics", {}).get("decoder_cache_eviction_count")
+        for manifest in completion_manifests
+        for step in manifest.get("steps", [])
+        if step.get("transcoder_diagnostics")
+    ]
+
+    first_prompt_meta = prompt_metas[0] if prompt_metas else {}
+    first_completion = completion_manifests[0] if completion_manifests else {}
+    return {
+        "prompt_count": len(prompt_metas),
+        "completion_count": len(completion_manifests),
+        "prompt_source": first_prompt_meta.get("prompt_source"),
+        "fixture_name": first_prompt_meta.get("fixture_name"),
+        "fixture_kind": first_prompt_meta.get("fixture_kind"),
+        "prompt_token_count": first_completion.get(
+            "prompt_token_count",
+            first_prompt_meta.get("prompt_token_count"),
+        ),
+        "initial_input_token_count": first_completion.get(
+            "initial_input_token_count",
+            first_prompt_meta.get("initial_input_token_count"),
+        ),
+        "generated_token_count": first_completion.get("generated_token_count"),
+        "n_steps_traced": first_completion.get("n_steps_traced"),
+        "max_active_features": max(active_feature_counts)
+        if active_feature_counts
+        else None,
+        "decoder_cache_hit_count": max(cache_hits) if cache_hits else None,
+        "decoder_cache_miss_count": max(cache_misses) if cache_misses else None,
+        "decoder_cache_eviction_count": max(cache_evictions)
+        if cache_evictions
+        else None,
+        "resource_snapshot": first_completion.get("resource_snapshot"),
+    }
+
+
+def _classify_status(log_path: Path, *, returncode: int | None) -> str:
+    if returncode == 0:
+        return "success"
+    if returncode is None:
+        return "timeout"
+    if not log_path.exists():
+        return "failed"
+
+    log_text = log_path.read_text(encoding="utf-8", errors="replace").lower()
+    if "out of memory" in log_text or "cuda oom" in log_text:
+        return "oom"
+    return "failed"
 
 
 def build_command(
@@ -51,10 +263,6 @@ def build_command(
     cmd = [
         sys.executable,
         str(REPO_ROOT / script_name),
-        "--prompts",
-        str(len(scenario["gsm8k_indices"])),
-        "--gsm8k-indices",
-        ",".join(str(i) for i in scenario["gsm8k_indices"]),
         "--completions",
         str(scenario["completions"]),
         "--temperature",
@@ -76,6 +284,7 @@ def build_command(
         "--attribution-update-interval",
         str(scenario["attribution_update_interval"]),
     ]
+    cmd[2:2] = _build_prompt_source_args(scenario)
     if scenario.get("feature_batch_size") is not None:
         cmd.extend(["--feature-batch-size", str(scenario["feature_batch_size"])])
     if scenario.get("logit_batch_size") is not None:
@@ -164,7 +373,9 @@ def run_scenario(
         "name": scenario_name,
         "stage": scenario.get("stage"),
         "method": scenario["method"],
-        "gsm8k_indices": scenario["gsm8k_indices"],
+        "gsm8k_indices": scenario.get("gsm8k_indices"),
+        "prepared_prompt_file": scenario.get("prepared_prompt_file"),
+        "prepared_prompt_meta_file": scenario.get("prepared_prompt_meta_file"),
         "command": cmd,
         "output_dir": str(run_output_dir),
         "status": "unknown",
@@ -199,10 +410,15 @@ def run_scenario(
             log_file.write(f"\nTimed out after {timeout_minutes} minutes.\n")
         else:
             result["returncode"] = completed.returncode
-            result["status"] = "ok" if completed.returncode == 0 else "failed"
 
     result["duration_seconds"] = round(time.time() - start, 2)
     result["log_path"] = str(log_path)
+    result["status"] = _classify_status(
+        log_path,
+        returncode=result.get("returncode"),
+    )
+    result["profiling_summary"] = _extract_benchmark_metrics(log_path)
+    result["artifact_summary"] = _summarize_artifacts(run_output_dir)
     (scenario_root / "result.json").write_text(json.dumps(result, indent=2))
     return result
 

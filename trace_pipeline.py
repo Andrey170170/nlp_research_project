@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import gc
 import json
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -36,6 +37,11 @@ import numpy as np
 import torch
 from circuit_tracer import ReplacementModel, attribute
 from datasets import load_dataset
+
+try:
+    import resource
+except ImportError:  # pragma: no cover - non-Unix fallback
+    resource = None  # type: ignore[assignment]
 
 from circuit_utils import (
     StepData,
@@ -262,6 +268,49 @@ def load_gsm8k_examples(n: int = 10, indices: list[int] | None = None) -> list[d
     return examples
 
 
+def load_prepared_prompt_examples(
+    prompt_text_file: str,
+    prompt_meta_file: str | None = None,
+) -> list[dict[str, Any]]:
+    prompt_path = Path(prompt_text_file)
+    prompt_text = prompt_path.read_text()
+    prompt_meta: dict[str, Any] = {}
+    if prompt_meta_file is not None:
+        prompt_meta = json.loads(Path(prompt_meta_file).read_text())
+
+    example = {
+        "question": prompt_meta.get("question", ""),
+        "answer": prompt_meta.get("ground_truth_answer", ""),
+        "gsm8k_index": prompt_meta.get("gsm8k_index"),
+        "prompt_text": prompt_text,
+        "prompt_source": prompt_meta.get("prompt_source", "prepared_prompt"),
+        "fixture_name": prompt_meta.get("fixture_name"),
+        "fixture_kind": prompt_meta.get("fixture_kind", "prepared_prompt"),
+        "prompt_token_count": prompt_meta.get("prompt_token_count"),
+        "initial_input_token_count": prompt_meta.get("initial_input_token_count"),
+        "prepared_prompt_meta": prompt_meta,
+        "prepared_prompt_file": str(prompt_path),
+        "prepared_prompt_meta_file": prompt_meta_file,
+    }
+    print(f"Loaded prepared prompt fixture from {prompt_path}")
+    return [example]
+
+
+def load_prompt_examples(args: argparse.Namespace) -> list[dict[str, Any]]:
+    if args.prepared_prompt_file is not None:
+        if args.gsm8k_indices is not None or args.gsm8k_indices_file is not None:
+            raise ValueError(
+                "prepared prompt inputs cannot be combined with GSM8K index selection"
+            )
+        return load_prepared_prompt_examples(
+            args.prepared_prompt_file,
+            args.prepared_prompt_meta_file,
+        )
+
+    gsm8k_indices = parse_gsm8k_indices(args.gsm8k_indices, args.gsm8k_indices_file)
+    return load_gsm8k_examples(args.prompts, indices=gsm8k_indices)
+
+
 def format_prompt(tokenizer, question: str) -> str:
     messages = [
         {
@@ -277,6 +326,104 @@ def format_prompt(tokenizer, question: str) -> str:
         tokenize=False,
         add_generation_prompt=True,
     )
+
+
+def resolve_prompt_text(tokenizer, example: dict[str, Any]) -> str:
+    prepared_prompt = example.get("prompt_text")
+    if isinstance(prepared_prompt, str) and prepared_prompt:
+        return prepared_prompt
+    return format_prompt(tokenizer, example["question"])
+
+
+def build_prompt_meta_record(
+    example: dict[str, Any],
+    *,
+    prompt_text: str,
+    initial_input_token_count: int,
+) -> dict[str, Any]:
+    prompt_token_count = example.get("prompt_token_count")
+    if prompt_token_count is None:
+        prompt_token_count = initial_input_token_count
+
+    prompt_meta = {
+        "gsm8k_index": example.get("gsm8k_index"),
+        "question": example.get("question", ""),
+        "ground_truth_answer": example.get("answer", ""),
+        "prompt_text": prompt_text,
+        "prompt_source": example.get("prompt_source", "gsm8k"),
+        "fixture_name": example.get("fixture_name"),
+        "fixture_kind": example.get("fixture_kind"),
+        "prompt_token_count": int(prompt_token_count),
+        "initial_input_token_count": int(initial_input_token_count),
+    }
+
+    if example.get("prepared_prompt_file") is not None:
+        prompt_meta["prepared_prompt_file"] = example["prepared_prompt_file"]
+    if example.get("prepared_prompt_meta_file") is not None:
+        prompt_meta["prepared_prompt_meta_file"] = example["prepared_prompt_meta_file"]
+
+    prepared_prompt_meta = example.get("prepared_prompt_meta")
+    if isinstance(prepared_prompt_meta, dict) and prepared_prompt_meta:
+        prompt_meta["prepared_prompt_metadata"] = prepared_prompt_meta
+
+    return prompt_meta
+
+
+def capture_resource_snapshot() -> dict[str, float | None]:
+    rss_gib = None
+    if resource is not None:
+        rss_gib = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024**2)
+
+    snapshot: dict[str, float | None] = {
+        "rss_gib": rss_gib,
+        "cuda_allocated_gib": None,
+        "cuda_reserved_gib": None,
+        "cuda_peak_allocated_gib": None,
+        "cuda_peak_reserved_gib": None,
+    }
+
+    if torch.cuda.is_available():
+        snapshot.update(
+            {
+                "cuda_allocated_gib": torch.cuda.memory_allocated() / (1024**3),
+                "cuda_reserved_gib": torch.cuda.memory_reserved() / (1024**3),
+                "cuda_peak_allocated_gib": torch.cuda.max_memory_allocated()
+                / (1024**3),
+                "cuda_peak_reserved_gib": torch.cuda.max_memory_reserved() / (1024**3),
+            }
+        )
+
+    return snapshot
+
+
+def capture_transcoder_diagnostics(model) -> dict[str, Any] | None:
+    getter = getattr(
+        getattr(model, "transcoders", None), "get_diagnostic_snapshot", None
+    )
+    if not callable(getter):
+        return None
+
+    snapshot = getter()
+    if not isinstance(snapshot, dict):
+        return None
+
+    keys_of_interest = [
+        "encoder_load_count",
+        "encoder_load_seconds",
+        "decoder_load_count",
+        "decoder_load_seconds",
+        "decoder_cache_hit_count",
+        "decoder_cache_miss_count",
+        "decoder_cache_eviction_count",
+        "decoder_cache_skip_count",
+        "decoder_cache_auto_disable_count",
+        "decoder_cache_bytes_resident",
+        "decoder_cache_max_bytes",
+        "encode_sparse_seconds",
+        "reconstruction_chunk_count",
+        "reconstruction_seconds",
+    ]
+    return {key: snapshot.get(key) for key in keys_of_interest if key in snapshot}
 
 
 # ── generation ───────────────────────────────────────────────────────
@@ -435,6 +582,10 @@ def trace_completion(
     diagnostic_feature_cap: int | None = None,
     sparsification: Any | None = None,
     save_raw: bool = False,
+    prompt_token_count: int | None = None,
+    prompt_source: str = "gsm8k",
+    fixture_name: str | None = None,
+    fixture_kind: str | None = None,
 ) -> dict:
     """Trace a single completion: generate token-by-token with attribution."""
     tokenizer = model.tokenizer
@@ -443,7 +594,17 @@ def trace_completion(
     completion_dir = output_dir / prompt_id / completion_id
     completion_dir.mkdir(parents=True, exist_ok=True)
 
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
+
+    trace_start = time.time()
     input_ids = model.ensure_tokenized(prompt).unsqueeze(0)
+    initial_input_token_count = int(input_ids.shape[1])
+    resolved_prompt_token_count = (
+        initial_input_token_count
+        if prompt_token_count is None
+        else int(prompt_token_count)
+    )
     generated_token_ids: list[int] = []
     step_records: list[dict[str, Any]] = []
 
@@ -496,12 +657,16 @@ def trace_completion(
 
         step_record = {
             "step_index": step_idx,
+            "prefix_token_count": int(input_ids.shape[1]),
+            "generated_token_count": len(generated_token_ids),
             "next_token_id": next_token_id,
             "next_token_text": next_token_text,
             "next_token_logprob": token_result["token_logprob"],
             "n_active_features": sd.n_features,
             "n_edges_retained": len(sd.weights),
             "stop_reason": "eos" if next_token_id in stop_token_ids else None,
+            "resource_snapshot": capture_resource_snapshot(),
+            "transcoder_diagnostics": capture_transcoder_diagnostics(model),
         }
         step_records.append(step_record)
 
@@ -525,8 +690,15 @@ def trace_completion(
         "prompt_id": prompt_id,
         "completion_id": completion_id,
         "prompt": prompt,
+        "prompt_source": prompt_source,
+        "fixture_name": fixture_name,
+        "fixture_kind": fixture_kind,
         "completion_text": completion_text,
         "n_steps_traced": len(step_records),
+        "duration_seconds": round(time.time() - trace_start, 2),
+        "prompt_token_count": resolved_prompt_token_count,
+        "initial_input_token_count": initial_input_token_count,
+        "generated_token_count": len(generated_token_ids),
         "temperature": temperature,
         "max_feature_nodes": max_feature_nodes,
         "max_edges": max_edges,
@@ -550,6 +722,7 @@ def trace_completion(
             else None
         ),
         "save_raw": save_raw,
+        "resource_snapshot": capture_resource_snapshot(),
         "steps": step_records,
     }
     manifest_path = completion_dir / "completion.json"
@@ -567,8 +740,14 @@ def run_pipeline(args: argparse.Namespace) -> None:
     )
     model = load_model(exact_chunked_decoder=False)
     install_feature_cap_patch(model.transcoders, args.max_feature_nodes)  # type: ignore[union-attr]
-    gsm8k_indices = parse_gsm8k_indices(args.gsm8k_indices, args.gsm8k_indices_file)
-    examples = load_gsm8k_examples(args.prompts, indices=gsm8k_indices)
+    examples = load_prompt_examples(args)
+    gsm8k_indices = [
+        example["gsm8k_index"]
+        for example in examples
+        if example.get("gsm8k_index") is not None
+    ]
+    if not gsm8k_indices:
+        gsm8k_indices = None
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     offload = None if args.no_offload else "cpu"
@@ -595,6 +774,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "diagnostic_feature_cap": args.diagnostic_feature_cap,
         "save_raw": args.save_raw,
         "output_dir": str(output_dir),
+        "prepared_prompt_file": args.prepared_prompt_file,
+        "prepared_prompt_meta_file": args.prepared_prompt_meta_file,
     }
     (output_dir / "run_config.json").write_text(json.dumps(run_config, indent=2))
 
@@ -602,17 +783,19 @@ def run_pipeline(args: argparse.Namespace) -> None:
     done = 0
 
     for prompt_idx, example in enumerate(examples):
-        prompt = format_prompt(model.tokenizer, example["question"])  # type: ignore[unresolved-attribute]
+        prompt = resolve_prompt_text(model.tokenizer, example)  # type: ignore[unresolved-attribute]
+        initial_input_token_count = int(
+            model.ensure_tokenized(prompt).shape[0]  # type: ignore[unresolved-attribute]
+        )
 
         # Save ground truth alongside prompt traces
         prompt_dir = output_dir / f"prompt_{prompt_idx:03d}"
         prompt_dir.mkdir(parents=True, exist_ok=True)
-        prompt_meta = {
-            "gsm8k_index": example["gsm8k_index"],
-            "question": example["question"],
-            "ground_truth_answer": example["answer"],
-            "prompt_text": prompt,
-        }
+        prompt_meta = build_prompt_meta_record(
+            example,
+            prompt_text=prompt,
+            initial_input_token_count=initial_input_token_count,
+        )
         (prompt_dir / "prompt_meta.json").write_text(json.dumps(prompt_meta, indent=2))
 
         for comp_idx in range(args.completions):
@@ -645,6 +828,10 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 profile_log_interval=args.profile_log_interval,
                 diagnostic_feature_cap=args.diagnostic_feature_cap,
                 save_raw=args.save_raw,
+                prompt_token_count=prompt_meta["prompt_token_count"],
+                prompt_source=prompt_meta["prompt_source"],
+                fixture_name=prompt_meta.get("fixture_name"),
+                fixture_kind=prompt_meta.get("fixture_kind"),
             )
 
     print(f"\nPipeline complete! {done} completions traced to {output_dir}")
@@ -666,6 +853,16 @@ if __name__ == "__main__":
         "--gsm8k-indices-file",
         default=None,
         help="Path to JSON/newline file containing explicit GSM8K test indices",
+    )
+    parser.add_argument(
+        "--prepared-prompt-file",
+        default=None,
+        help="Path to a prepared prompt/prefix text file to trace instead of formatting GSM8K input",
+    )
+    parser.add_argument(
+        "--prepared-prompt-meta-file",
+        default=None,
+        help="Optional JSON metadata file describing the prepared prompt fixture",
     )
     parser.add_argument(
         "--completions", type=int, default=3, help="Completions per prompt"

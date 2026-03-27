@@ -49,10 +49,14 @@ def run_pipeline(args: argparse.Namespace) -> None:
         decoder_chunk_size=args.decoder_chunk_size,
         cross_batch_decoder_cache_bytes=args.cross_batch_decoder_cache_bytes,
     )
-    gsm8k_indices = base.parse_gsm8k_indices(
-        args.gsm8k_indices, args.gsm8k_indices_file
-    )
-    examples = base.load_gsm8k_examples(args.prompts, indices=gsm8k_indices)
+    examples = base.load_prompt_examples(args)
+    gsm8k_indices = [
+        example["gsm8k_index"]
+        for example in examples
+        if example.get("gsm8k_index") is not None
+    ]
+    if not gsm8k_indices:
+        gsm8k_indices = None
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     offload = None if args.no_offload else "cpu"
@@ -84,6 +88,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "lazy_decoder": not args.no_lazy_decoder,
         "decoder_chunk_size": args.decoder_chunk_size,
         "cross_batch_decoder_cache_bytes": args.cross_batch_decoder_cache_bytes,
+        "prepared_prompt_file": args.prepared_prompt_file,
+        "prepared_prompt_meta_file": args.prepared_prompt_meta_file,
         "sparsification": (
             {
                 "per_layer_position_topk": sparsification.per_layer_position_topk,
@@ -99,16 +105,18 @@ def run_pipeline(args: argparse.Namespace) -> None:
     done = 0
 
     for prompt_idx, example in enumerate(examples):
-        prompt = base.format_prompt(model.tokenizer, example["question"])  # type: ignore[unresolved-attribute]
+        prompt = base.resolve_prompt_text(model.tokenizer, example)  # type: ignore[unresolved-attribute]
+        initial_input_token_count = int(
+            model.ensure_tokenized(prompt).shape[0]  # type: ignore[unresolved-attribute]
+        )
 
         prompt_dir = output_dir / f"prompt_{prompt_idx:03d}"
         prompt_dir.mkdir(parents=True, exist_ok=True)
-        prompt_meta = {
-            "gsm8k_index": example["gsm8k_index"],
-            "question": example["question"],
-            "ground_truth_answer": example["answer"],
-            "prompt_text": prompt,
-        }
+        prompt_meta = base.build_prompt_meta_record(
+            example,
+            prompt_text=prompt,
+            initial_input_token_count=initial_input_token_count,
+        )
         (prompt_dir / "prompt_meta.json").write_text(
             base.json.dumps(prompt_meta, indent=2)
         )
@@ -144,6 +152,10 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 diagnostic_feature_cap=args.diagnostic_feature_cap,
                 sparsification=sparsification,
                 save_raw=args.save_raw,
+                prompt_token_count=prompt_meta["prompt_token_count"],
+                prompt_source=prompt_meta["prompt_source"],
+                fixture_name=prompt_meta.get("fixture_name"),
+                fixture_kind=prompt_meta.get("fixture_kind"),
             )
 
     print(f"\nPipeline complete! {done} completions traced to {output_dir}")
@@ -165,6 +177,16 @@ if __name__ == "__main__":
         "--gsm8k-indices-file",
         default=None,
         help="Path to JSON/newline file containing explicit GSM8K test indices",
+    )
+    parser.add_argument(
+        "--prepared-prompt-file",
+        default=None,
+        help="Path to a prepared prompt/prefix text file to trace instead of formatting GSM8K input",
+    )
+    parser.add_argument(
+        "--prepared-prompt-meta-file",
+        default=None,
+        help="Optional JSON metadata file describing the prepared prompt fixture",
     )
     parser.add_argument(
         "--completions", type=int, default=3, help="Completions per prompt"

@@ -1,0 +1,11 @@
+{
+  "gsm8k_indices": [828, 94, 361],
+  "late_prefix_fraction_min": 0.75,
+  "late_prefix_fraction_max": 0.85,
+  "prompt_token_multiplier_cap": 2.0,
+  "max_new_tokens": 256,
+  "notes": [
+    "Generate deterministic greedy completions for the weekend exact chunked benchmark fixtures.",
+    "For each prompt, save both the base prompt text and a late-prefix prepared prompt truncated near 80% of the greedy answer, capped at roughly 2x the original prompt token count."
+  ]
+}

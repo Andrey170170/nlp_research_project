@@ -1,0 +1,421 @@
+{
+  "defaults": {
+    "completions": 1,
+    "temperature": 0.0,
+    "max_feature_nodes": 8192,
+    "max_edges": 20000,
+    "max_n_logits": 3,
+    "desired_logit_prob": 0.8,
+    "verbose_attribution": true,
+    "profile_attribution": true,
+    "profile_log_interval": 1,
+    "attribution_update_interval": 4,
+    "save_raw": false,
+    "no_offload": false,
+    "no_lazy_encoder": false,
+    "no_lazy_decoder": false,
+    "max_steps": 1,
+    "method": "exact"
+  },
+  "metadata": {
+    "cluster": "cardinal",
+    "stage": "weekend_exact_chunked_wave1_cardinal",
+    "recommended_walltime": "02:00:00",
+    "base_prompt_indices": [
+      828,
+      94,
+      361
+    ],
+    "notes": [
+      "Wave 1 no-cache screen on base prompts only.",
+      "Primary factorial rule: feature_batch_size = logit_batch_size = attribution_batch_size.",
+      "Each scenario traces exactly one prompt/completion for one step."
+    ]
+  },
+  "scenarios": [
+    {
+      "name": "cardinal_wave1_p0828_b128_c4096_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "828_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        828
+      ],
+      "attribution_batch_size": 128,
+      "feature_batch_size": 128,
+      "logit_batch_size": 128,
+      "decoder_chunk_size": 4096,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0828_b256_c4096_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "828_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        828
+      ],
+      "attribution_batch_size": 256,
+      "feature_batch_size": 256,
+      "logit_batch_size": 256,
+      "decoder_chunk_size": 4096,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0828_b384_c4096_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "828_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        828
+      ],
+      "attribution_batch_size": 384,
+      "feature_batch_size": 384,
+      "logit_batch_size": 384,
+      "decoder_chunk_size": 4096,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0828_b128_c8192_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "828_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        828
+      ],
+      "attribution_batch_size": 128,
+      "feature_batch_size": 128,
+      "logit_batch_size": 128,
+      "decoder_chunk_size": 8192,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0828_b256_c8192_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "828_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        828
+      ],
+      "attribution_batch_size": 256,
+      "feature_batch_size": 256,
+      "logit_batch_size": 256,
+      "decoder_chunk_size": 8192,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0828_b384_c8192_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "828_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        828
+      ],
+      "attribution_batch_size": 384,
+      "feature_batch_size": 384,
+      "logit_batch_size": 384,
+      "decoder_chunk_size": 8192,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0828_b256_c16384_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "828_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        828
+      ],
+      "attribution_batch_size": 256,
+      "feature_batch_size": 256,
+      "logit_batch_size": 256,
+      "decoder_chunk_size": 16384,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0828_b384_c16384_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "828_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        828
+      ],
+      "attribution_batch_size": 384,
+      "feature_batch_size": 384,
+      "logit_batch_size": 384,
+      "decoder_chunk_size": 16384,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": true
+    },
+    {
+      "name": "cardinal_wave1_p0094_b128_c4096_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "94_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        94
+      ],
+      "attribution_batch_size": 128,
+      "feature_batch_size": 128,
+      "logit_batch_size": 128,
+      "decoder_chunk_size": 4096,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0094_b256_c4096_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "94_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        94
+      ],
+      "attribution_batch_size": 256,
+      "feature_batch_size": 256,
+      "logit_batch_size": 256,
+      "decoder_chunk_size": 4096,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0094_b384_c4096_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "94_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        94
+      ],
+      "attribution_batch_size": 384,
+      "feature_batch_size": 384,
+      "logit_batch_size": 384,
+      "decoder_chunk_size": 4096,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0094_b128_c8192_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "94_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        94
+      ],
+      "attribution_batch_size": 128,
+      "feature_batch_size": 128,
+      "logit_batch_size": 128,
+      "decoder_chunk_size": 8192,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0094_b256_c8192_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "94_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        94
+      ],
+      "attribution_batch_size": 256,
+      "feature_batch_size": 256,
+      "logit_batch_size": 256,
+      "decoder_chunk_size": 8192,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0094_b384_c8192_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "94_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        94
+      ],
+      "attribution_batch_size": 384,
+      "feature_batch_size": 384,
+      "logit_batch_size": 384,
+      "decoder_chunk_size": 8192,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0094_b256_c16384_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "94_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        94
+      ],
+      "attribution_batch_size": 256,
+      "feature_batch_size": 256,
+      "logit_batch_size": 256,
+      "decoder_chunk_size": 16384,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0094_b384_c16384_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "94_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        94
+      ],
+      "attribution_batch_size": 384,
+      "feature_batch_size": 384,
+      "logit_batch_size": 384,
+      "decoder_chunk_size": 16384,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": true
+    },
+    {
+      "name": "cardinal_wave1_p0361_b128_c4096_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "361_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        361
+      ],
+      "attribution_batch_size": 128,
+      "feature_batch_size": 128,
+      "logit_batch_size": 128,
+      "decoder_chunk_size": 4096,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0361_b256_c4096_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "361_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        361
+      ],
+      "attribution_batch_size": 256,
+      "feature_batch_size": 256,
+      "logit_batch_size": 256,
+      "decoder_chunk_size": 4096,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0361_b384_c4096_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "361_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        361
+      ],
+      "attribution_batch_size": 384,
+      "feature_batch_size": 384,
+      "logit_batch_size": 384,
+      "decoder_chunk_size": 4096,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0361_b128_c8192_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "361_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        361
+      ],
+      "attribution_batch_size": 128,
+      "feature_batch_size": 128,
+      "logit_batch_size": 128,
+      "decoder_chunk_size": 8192,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0361_b256_c8192_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "361_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        361
+      ],
+      "attribution_batch_size": 256,
+      "feature_batch_size": 256,
+      "logit_batch_size": 256,
+      "decoder_chunk_size": 8192,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0361_b384_c8192_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "361_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        361
+      ],
+      "attribution_batch_size": 384,
+      "feature_batch_size": 384,
+      "logit_batch_size": 384,
+      "decoder_chunk_size": 8192,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0361_b256_c16384_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "361_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        361
+      ],
+      "attribution_batch_size": 256,
+      "feature_batch_size": 256,
+      "logit_batch_size": 256,
+      "decoder_chunk_size": 16384,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": false
+    },
+    {
+      "name": "cardinal_wave1_p0361_b384_c16384_cache0",
+      "stage": "weekend_exact_chunked_wave1_cardinal",
+      "cluster": "cardinal",
+      "fixture_name": "361_base",
+      "fixture_kind": "base",
+      "gsm8k_indices": [
+        361
+      ],
+      "attribution_batch_size": 384,
+      "feature_batch_size": 384,
+      "logit_batch_size": 384,
+      "decoder_chunk_size": 16384,
+      "cross_batch_decoder_cache_bytes": 0,
+      "optional_probe": true
+    }
+  ]
+}
