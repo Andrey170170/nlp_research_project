@@ -1,0 +1,4 @@
+<bos><start_of_turn>user
+Question: In a neighborhood, the number of rabbits pets is twelve less than the combined number of pet dogs and cats. If there are two cats for every dog, and the number of dogs is 60, how many pets in total are in the neighborhood?
+Please solve this step by step and end with 'Final answer: <number>'.<end_of_turn>
+<start_of_turn>model

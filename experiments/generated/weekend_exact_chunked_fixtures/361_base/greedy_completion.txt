@@ -1,0 +1,9 @@
+Let $d_1$ be the distance from the first city to the second city, $d_2$ be the distance from the second city to the third city, and $d_3$ be the distance from the third city to the first city.
+We are given that $d_1 = 75$ miles, $d_2 = 100$ miles, and $d_3 = d_1 - 50 = 75 - 50 = 25$ miles.
+The total distance of one trip is $d_1 + d_2 + d_3 = 75 + 100 + 25 = 200$ miles.
+The train does this trip 3 times a day, so the total distance traveled per day is $3 \times 200 = 600$ miles.
+The train needs service every 18,000 miles.
+The number of days it goes between services is the total distance divided by the service interval:
+$\frac{18000}{600} = 30$ days.
+
+Final answer: 30

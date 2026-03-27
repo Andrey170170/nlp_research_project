@@ -1,0 +1,11 @@
+{
+  "fixture_name": "94_base",
+  "fixture_kind": "base",
+  "prompt_source": "gsm8k",
+  "gsm8k_index": 94,
+  "question": "In a neighborhood, the number of rabbits pets is twelve less than the combined number of pet dogs and cats. If there are two cats for every dog, and the number of dogs is 60, how many pets in total are in the neighborhood?",
+  "ground_truth_answer": "If there are two cats for every dog, and the number of dogs is 60, the number of cats is 2*60 = <<2*60=120>>120\nThe combined number of cats and dogs is 120+60 = <<120+60=180>>180\nThe number of rabbits pets is twelve less than the combined number of pet dogs and cats, a total of 180-12 = 168\nThe total number of pets in the compound is 168+180 = <<168+180=348>>348\n#### 348",
+  "prompt_token_count": 80,
+  "initial_input_token_count": 80,
+  "greedy_completion_token_count": 256
+}

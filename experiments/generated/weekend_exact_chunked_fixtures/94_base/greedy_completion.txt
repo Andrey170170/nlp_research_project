@@ -1,0 +1,16 @@
+Let $R$ be the number of rabbits pets.
+Let $D$ be the number of dog pets.
+Let $C$ be the number of cat pets.
+We are given that the number of rabbits pets is twelve less than the combined number of dog and cat pets. This can be written as:
+$R = (D + C) - 12$
+We are given that there are two cats for every dog, so $C = 2D$.
+We are given that the number of dogs is 60, so $D = 60$.
+Now we can find the number of cats:
+$C = 2D = 2(60) = 120$
+Next, we can find the number of dog pets:
+$D = 60$
+Now we can find the number of cat pets:
+$C = 120$
+The total number of dog and cat pets is $D + C = 60 + 120 = 180$.
+Finally, we can find the number of rabbit pets:
+$R = (D + C) - 12 = 180 - 12 = 

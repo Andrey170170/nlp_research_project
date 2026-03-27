@@ -1,0 +1,6 @@
+Let $R$ be the number of rabbits pets.
+Let $D$ be the number of dog pets.
+Let $C$ be the number of cat pets.
+We are given that the number of rabbits pets is twelve less than the combined number of dog and cat pets. This can be written as:
+$R = (D + C) - 12$
+We
