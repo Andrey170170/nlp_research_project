@@ -16,21 +16,20 @@
     "no_lazy_decoder": false,
     "max_steps": 1,
     "attribution_batch_size": 128,
-    "decoder_chunk_size": 2048,
-    "cross_batch_decoder_cache_bytes": 2147483648
+    "decoder_chunk_size": 2048
   },
   "metadata": {
     "prompt_sets_file": "experiments/sparsification_prompt_sets.json",
     "stage": "exact_smoke",
     "notes": [
-      "Stress-test an intentionally aggressive exact smoke setup (decoder_chunk_size=2048) on the longest calibration prompt.",
-      "Goal: reach phase 3 within ~15 minutes and confirm memory remains stable before overnight exact runs.",
-      "Exact smoke runs now enable the fork's Phase-4 cross-batch decoder cache with a 2 GiB budget by default."
+      "Baseline exact smoke run with no cross-batch decoder cache so memory headroom can be measured cleanly.",
+      "Keep attribution_batch_size=128 and decoder_chunk_size=2048 fixed to compare against cache-enabled runs.",
+      "Use the profiling output from this run to size later cache budgets conservatively."
     ]
   },
   "scenarios": [
     {
-      "name": "exact_smoke_p0361_b128_c2048",
+      "name": "exact_smoke_p0361_b128_c2048_nocache",
       "stage": "exact_smoke",
       "method": "exact",
       "gsm8k_indices": [361]

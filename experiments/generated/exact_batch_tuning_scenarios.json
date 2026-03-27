@@ -1,0 +1,85 @@
+{
+  "defaults": {
+    "completions": 1,
+    "temperature": 0.0,
+    "max_feature_nodes": 8192,
+    "max_edges": 20000,
+    "max_n_logits": 3,
+    "desired_logit_prob": 0.8,
+    "verbose_attribution": true,
+    "profile_attribution": true,
+    "profile_log_interval": 1,
+    "attribution_update_interval": 4,
+    "save_raw": false,
+    "no_offload": false,
+    "no_lazy_encoder": false,
+    "no_lazy_decoder": false,
+    "max_steps": 1,
+    "decoder_chunk_size": 2048
+  },
+  "metadata": {
+    "prompt_sets_file": "experiments/sparsification_prompt_sets.json",
+    "stage": "exact_batch_tuning",
+    "notes": [
+      "Batch-tuning sweep for the exact chunked path with no cross-batch decoder cache.",
+      "Keep decoder_chunk_size fixed at 2048 while exploring trace width versus Phase-3/Phase-4 microbatching.",
+      "feature_batch_size and logit_batch_size must stay <= attribution_batch_size to avoid accidentally increasing trace VRAM."
+    ]
+  },
+  "scenarios": [
+    {
+      "name": "exact_tune_p0361_b064_f064_l064_c2048",
+      "stage": "exact_batch_tuning",
+      "method": "exact",
+      "gsm8k_indices": [361],
+      "attribution_batch_size": 64,
+      "feature_batch_size": 64,
+      "logit_batch_size": 64
+    },
+    {
+      "name": "exact_tune_p0361_b064_f032_l016_c2048",
+      "stage": "exact_batch_tuning",
+      "method": "exact",
+      "gsm8k_indices": [361],
+      "attribution_batch_size": 64,
+      "feature_batch_size": 32,
+      "logit_batch_size": 16
+    },
+    {
+      "name": "exact_tune_p0361_b096_f096_l096_c2048",
+      "stage": "exact_batch_tuning",
+      "method": "exact",
+      "gsm8k_indices": [361],
+      "attribution_batch_size": 96,
+      "feature_batch_size": 96,
+      "logit_batch_size": 96
+    },
+    {
+      "name": "exact_tune_p0361_b096_f048_l024_c2048",
+      "stage": "exact_batch_tuning",
+      "method": "exact",
+      "gsm8k_indices": [361],
+      "attribution_batch_size": 96,
+      "feature_batch_size": 48,
+      "logit_batch_size": 24
+    },
+    {
+      "name": "exact_tune_p0361_b128_f128_l128_c2048",
+      "stage": "exact_batch_tuning",
+      "method": "exact",
+      "gsm8k_indices": [361],
+      "attribution_batch_size": 128,
+      "feature_batch_size": 128,
+      "logit_batch_size": 128
+    },
+    {
+      "name": "exact_tune_p0361_b128_f064_l032_c2048",
+      "stage": "exact_batch_tuning",
+      "method": "exact",
+      "gsm8k_indices": [361],
+      "attribution_batch_size": 128,
+      "feature_batch_size": 64,
+      "logit_batch_size": 32
+    }
+  ]
+}

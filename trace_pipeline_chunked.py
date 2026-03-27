@@ -37,6 +37,11 @@ def build_sparsification_config(args: argparse.Namespace):
 
 
 def run_pipeline(args: argparse.Namespace) -> None:
+    base.validate_attribution_batch_sizes(
+        args.attribution_batch_size,
+        args.feature_batch_size,
+        args.logit_batch_size,
+    )
     sparsification = build_sparsification_config(args)
     model = base.load_model(
         lazy_encoder=not args.no_lazy_encoder,
@@ -61,6 +66,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "max_edges": args.max_edges,
         "max_steps": args.max_steps,
         "attribution_batch_size": args.attribution_batch_size,
+        "feature_batch_size": args.feature_batch_size,
+        "logit_batch_size": args.logit_batch_size,
         "max_n_logits": args.max_n_logits,
         "desired_logit_prob": args.desired_logit_prob,
         "offload": offload,
@@ -125,6 +132,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 max_feature_nodes=args.max_feature_nodes,
                 max_edges=args.max_edges,
                 attribution_batch_size=args.attribution_batch_size,
+                feature_batch_size=args.feature_batch_size,
+                logit_batch_size=args.logit_batch_size,
                 max_n_logits=args.max_n_logits,
                 desired_logit_prob=args.desired_logit_prob,
                 offload=offload,
@@ -193,6 +202,18 @@ if __name__ == "__main__":
         type=int,
         default=256,
         help="Backward batch size for attribution graph extraction",
+    )
+    parser.add_argument(
+        "--feature-batch-size",
+        type=int,
+        default=None,
+        help="Optional Phase-4 feature microbatch override (<= attribution batch size)",
+    )
+    parser.add_argument(
+        "--logit-batch-size",
+        type=int,
+        default=None,
+        help="Optional Phase-3 logit microbatch override (<= attribution batch size)",
     )
     parser.add_argument(
         "--max-n-logits",

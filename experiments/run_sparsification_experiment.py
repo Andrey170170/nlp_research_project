@@ -76,6 +76,10 @@ def build_command(
         "--attribution-update-interval",
         str(scenario["attribution_update_interval"]),
     ]
+    if scenario.get("feature_batch_size") is not None:
+        cmd.extend(["--feature-batch-size", str(scenario["feature_batch_size"])])
+    if scenario.get("logit_batch_size") is not None:
+        cmd.extend(["--logit-batch-size", str(scenario["logit_batch_size"])])
 
     if method != "old_patch":
         cmd.extend(["--decoder-chunk-size", str(scenario["decoder_chunk_size"])])

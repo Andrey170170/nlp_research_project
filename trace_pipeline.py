@@ -318,6 +318,8 @@ def extract_graph(
     *,
     max_feature_nodes: int = 32768,
     batch_size: int = 256,
+    feature_batch_size: int | None = None,
+    logit_batch_size: int | None = None,
     max_n_logits: int = 5,
     desired_logit_prob: float = 0.9,
     offload: Literal["cpu", "disk"] | None = "cpu",
@@ -338,6 +340,8 @@ def extract_graph(
         "max_n_logits": max_n_logits,
         "desired_logit_prob": desired_logit_prob,
         "batch_size": batch_size,
+        "feature_batch_size": feature_batch_size,
+        "logit_batch_size": logit_batch_size,
         "max_feature_nodes": max_feature_nodes,
         "offload": offload,
         "verbose": verbose,
@@ -349,6 +353,29 @@ def extract_graph(
         "sparsification": sparsification,
     }
     return attribute(**attribute_kwargs)
+
+
+def validate_attribution_batch_sizes(
+    batch_size: int,
+    feature_batch_size: int | None = None,
+    logit_batch_size: int | None = None,
+) -> None:
+    if batch_size <= 0:
+        raise ValueError("attribution_batch_size must be > 0")
+    if feature_batch_size is not None:
+        if feature_batch_size <= 0:
+            raise ValueError("feature_batch_size must be > 0 when provided")
+        if feature_batch_size > batch_size:
+            raise ValueError(
+                "feature_batch_size must be <= attribution_batch_size to avoid widening trace VRAM"
+            )
+    if logit_batch_size is not None:
+        if logit_batch_size <= 0:
+            raise ValueError("logit_batch_size must be > 0 when provided")
+        if logit_batch_size > batch_size:
+            raise ValueError(
+                "logit_batch_size must be <= attribution_batch_size to avoid widening trace VRAM"
+            )
 
 
 # ── compact save from live graph ─────────────────────────────────────
@@ -396,6 +423,8 @@ def trace_completion(
     max_feature_nodes: int = 32768,
     max_edges: int = 10_000,
     attribution_batch_size: int = 256,
+    feature_batch_size: int | None = None,
+    logit_batch_size: int | None = None,
     max_n_logits: int = 5,
     desired_logit_prob: float = 0.9,
     offload: Literal["cpu", "disk"] | None = "cpu",
@@ -433,6 +462,8 @@ def trace_completion(
             input_ids[0],
             max_feature_nodes=max_feature_nodes,
             batch_size=attribution_batch_size,
+            feature_batch_size=feature_batch_size,
+            logit_batch_size=logit_batch_size,
             max_n_logits=max_n_logits,
             desired_logit_prob=desired_logit_prob,
             offload=offload,
@@ -500,6 +531,8 @@ def trace_completion(
         "max_feature_nodes": max_feature_nodes,
         "max_edges": max_edges,
         "attribution_batch_size": attribution_batch_size,
+        "feature_batch_size": feature_batch_size,
+        "logit_batch_size": logit_batch_size,
         "max_n_logits": max_n_logits,
         "desired_logit_prob": desired_logit_prob,
         "offload": offload,
@@ -527,6 +560,11 @@ def trace_completion(
 
 
 def run_pipeline(args: argparse.Namespace) -> None:
+    validate_attribution_batch_sizes(
+        args.attribution_batch_size,
+        args.feature_batch_size,
+        args.logit_batch_size,
+    )
     model = load_model(exact_chunked_decoder=False)
     install_feature_cap_patch(model.transcoders, args.max_feature_nodes)  # type: ignore[union-attr]
     gsm8k_indices = parse_gsm8k_indices(args.gsm8k_indices, args.gsm8k_indices_file)
@@ -545,6 +583,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "max_edges": args.max_edges,
         "max_steps": args.max_steps,
         "attribution_batch_size": args.attribution_batch_size,
+        "feature_batch_size": args.feature_batch_size,
+        "logit_batch_size": args.logit_batch_size,
         "max_n_logits": args.max_n_logits,
         "desired_logit_prob": args.desired_logit_prob,
         "offload": offload,
@@ -594,6 +634,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 max_feature_nodes=args.max_feature_nodes,
                 max_edges=args.max_edges,
                 attribution_batch_size=args.attribution_batch_size,
+                feature_batch_size=args.feature_batch_size,
+                logit_batch_size=args.logit_batch_size,
                 max_n_logits=args.max_n_logits,
                 desired_logit_prob=args.desired_logit_prob,
                 offload=offload,
@@ -661,6 +703,18 @@ if __name__ == "__main__":
         type=int,
         default=256,
         help="Backward batch size for attribution graph extraction",
+    )
+    parser.add_argument(
+        "--feature-batch-size",
+        type=int,
+        default=None,
+        help="Optional Phase-4 feature microbatch override (<= attribution batch size)",
+    )
+    parser.add_argument(
+        "--logit-batch-size",
+        type=int,
+        default=None,
+        help="Optional Phase-3 logit microbatch override (<= attribution batch size)",
     )
     parser.add_argument(
         "--max-n-logits",

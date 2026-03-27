@@ -1,0 +1,61 @@
+{
+  "defaults": {
+    "completions": 1,
+    "temperature": 0.0,
+    "max_feature_nodes": 8192,
+    "max_edges": 20000,
+    "max_n_logits": 3,
+    "desired_logit_prob": 0.8,
+    "verbose_attribution": true,
+    "profile_attribution": true,
+    "profile_log_interval": 1,
+    "attribution_update_interval": 4,
+    "save_raw": false,
+    "no_offload": false,
+    "no_lazy_encoder": false,
+    "no_lazy_decoder": false,
+    "max_steps": 1,
+    "attribution_batch_size": 128,
+    "decoder_chunk_size": 2048
+  },
+  "metadata": {
+    "prompt_sets_file": "experiments/sparsification_prompt_sets.json",
+    "stage": "exact_cache_sweep",
+    "notes": [
+      "Cache sweep for the same prompt and core parameters as the no-cache baseline.",
+      "Start with the baseline no-cache run, then compare these budgets using the same attribution_batch_size and decoder_chunk_size.",
+      "If the cache auto-disables in profiling logs, treat that budget as ineffective even if configured."
+    ],
+    "cache_budgets_bytes": [2147483648, 4294967296, 8589934592, 12884901888]
+  },
+  "scenarios": [
+    {
+      "name": "exact_cache_p0361_b128_c2048_cache2g",
+      "stage": "exact_cache_sweep",
+      "method": "exact",
+      "gsm8k_indices": [361],
+      "cross_batch_decoder_cache_bytes": 2147483648
+    },
+    {
+      "name": "exact_cache_p0361_b128_c2048_cache4g",
+      "stage": "exact_cache_sweep",
+      "method": "exact",
+      "gsm8k_indices": [361],
+      "cross_batch_decoder_cache_bytes": 4294967296
+    },
+    {
+      "name": "exact_cache_p0361_b128_c2048_cache8g",
+      "stage": "exact_cache_sweep",
+      "method": "exact",
+      "gsm8k_indices": [361],
+      "cross_batch_decoder_cache_bytes": 8589934592
+    },
+    {
+      "name": "exact_cache_p0361_b128_c2048_cache12g",
+      "stage": "exact_cache_sweep",
+      "method": "exact",
+      "gsm8k_indices": [361],
+      "cross_batch_decoder_cache_bytes": 12884901888
+    }
+  ]
+}
