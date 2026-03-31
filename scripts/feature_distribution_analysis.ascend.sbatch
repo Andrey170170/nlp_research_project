@@ -1,14 +1,14 @@
 #!/bin/bash
-#SBATCH --job-name=weekend-exact-bench
+#SBATCH --job-name=feature-dist
 #SBATCH --account=PAS3272
-#SBATCH --partition=gpu
+#SBATCH --cluster=ascend
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=12
 #SBATCH --gpus-per-task=1
-#SBATCH --mem=350G
-#SBATCH --time=02:30:00
-#SBATCH --array=0-0
+#SBATCH --mem-per-cpu=10724
+#SBATCH --time=01:30:00
+#SBATCH --array=0-17
 #SBATCH --output=logs/slurm-%x-%A_%a.out
 #SBATCH --error=logs/slurm-%x-%A_%a.err
 
@@ -16,8 +16,9 @@ set -euo pipefail
 
 cd "$SLURM_SUBMIT_DIR"
 
-SCENARIOS_FILE="${SCENARIOS_FILE:-experiments/generated/weekend_exact_chunked_wave1_cardinal_scenarios.json}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS3272/kopanev.1/weekend_exact_chunked/cardinal}"
+BATCHES_FILE="${BATCHES_FILE:-experiments/generated/feature_distribution_analysis_batches.json}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS3272/kopanev.1/feature_distribution_analysis}"
+DECODER_CHUNK_SIZE="${DECODER_CHUNK_SIZE:-256}"
 
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 export TOKENIZERS_PARALLELISM=false
@@ -27,17 +28,20 @@ export PYTHONUNBUFFERED=1
 echo "Job ID: ${SLURM_JOB_ID}"
 echo "Array task: ${SLURM_ARRAY_TASK_ID}"
 echo "Node: $(hostname)"
-echo "Cluster: cardinal"
+echo "Cluster: ascend"
 echo "Start: $(date)"
 echo "Working directory: ${SLURM_SUBMIT_DIR}"
-echo "Scenarios file: ${SCENARIOS_FILE}"
+echo "Batches file: ${BATCHES_FILE}"
 echo "Output root: ${OUTPUT_ROOT}"
+echo "Decoder chunk size: ${DECODER_CHUNK_SIZE}"
+echo "CPU cores: ${SLURM_CPUS_PER_TASK}"
 echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-unset}"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
 
-uv run python -u experiments/run_sparsification_experiment.py \
-    --scenarios-file "${SCENARIOS_FILE}" \
+uv run python -u experiments/run_feature_distribution_analysis.py \
+    --batches-file "${BATCHES_FILE}" \
+    --batch-index "${SLURM_ARRAY_TASK_ID}" \
     --output-root "${OUTPUT_ROOT}" \
-    --scenario-index "${SLURM_ARRAY_TASK_ID}"
+    --decoder-chunk-size "${DECODER_CHUNK_SIZE}"
 
 echo "End: $(date)"

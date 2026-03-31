@@ -299,6 +299,33 @@ def write_config(output_dir: Path, file_name: str, payload: dict[str, Any]) -> N
     print(f"Wrote {path}")
 
 
+def write_wave1_long_prompt_subset(
+    output_dir: Path,
+    *,
+    cluster: str,
+    payload: dict[str, Any],
+) -> None:
+    subset_payload = {
+        "defaults": payload["defaults"],
+        "metadata": {
+            **payload["metadata"],
+            "subset": "gsm8k_361_only",
+            "notes": list(payload["metadata"].get("notes", []))
+            + ["Long-prompt rerun subset for GSM8K 361 only."],
+        },
+        "scenarios": [
+            scenario
+            for scenario in payload["scenarios"]
+            if scenario.get("gsm8k_indices") == [361]
+        ],
+    }
+    write_config(
+        output_dir,
+        f"weekend_exact_chunked_wave1_{cluster}_361_scenarios.json",
+        subset_payload,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Build scenario files for the weekend exact chunked benchmark"
@@ -326,10 +353,16 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     for cluster in CLUSTER_CONFIGS:
+        wave1_payload = build_wave1_config(cluster)
         write_config(
             args.output_dir,
             f"weekend_exact_chunked_wave1_{cluster}_scenarios.json",
-            build_wave1_config(cluster),
+            wave1_payload,
+        )
+        write_wave1_long_prompt_subset(
+            args.output_dir,
+            cluster=cluster,
+            payload=wave1_payload,
         )
 
     if args.selection_file is None:

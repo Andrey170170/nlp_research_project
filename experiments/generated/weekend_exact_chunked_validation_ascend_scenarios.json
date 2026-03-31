@@ -1,0 +1,132 @@
+{
+  "defaults": {
+    "completions": 1,
+    "temperature": 0.0,
+    "max_feature_nodes": 8192,
+    "max_edges": 20000,
+    "max_n_logits": 3,
+    "desired_logit_prob": 0.8,
+    "verbose_attribution": true,
+    "profile_attribution": true,
+    "profile_log_interval": 1,
+    "attribution_update_interval": 4,
+    "save_raw": false,
+    "no_offload": false,
+    "no_lazy_encoder": false,
+    "no_lazy_decoder": false,
+    "max_steps": 1,
+    "method": "exact"
+  },
+  "metadata": {
+    "cluster": "ascend",
+    "stage": "weekend_exact_chunked_validation_ascend",
+    "recommended_walltime": "02:00:00",
+    "late_fixture_names": [
+      "828_late",
+      "94_late",
+      "361_late"
+    ],
+    "notes": [
+      "Broader late-prefix validation on shortlisted no-cache configs.",
+      "Cache validation runs only 361_late so prompt-length effects stay separable from cache effects."
+    ]
+  },
+  "scenarios": [
+    {
+      "name": "ascend_validation_conservative_b128_c2048_828_late_b128_c2048_cache0",
+      "stage": "weekend_exact_chunked_validation_ascend",
+      "cluster": "ascend",
+      "fixture_name": "828_late",
+      "fixture_kind": "late_prefix",
+      "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/828_late/prompt.txt",
+      "prepared_prompt_meta_file": "experiments/generated/weekend_exact_chunked_fixtures/828_late/fixture_meta.json",
+      "shortlist_label": "conservative_b128_c2048",
+      "validation_group": "no_cache",
+      "attribution_batch_size": 128,
+      "feature_batch_size": 128,
+      "logit_batch_size": 128,
+      "decoder_chunk_size": 2048,
+      "cross_batch_decoder_cache_bytes": 0
+    },
+    {
+      "name": "ascend_validation_conservative_b128_c2048_94_late_b128_c2048_cache0",
+      "stage": "weekend_exact_chunked_validation_ascend",
+      "cluster": "ascend",
+      "fixture_name": "94_late",
+      "fixture_kind": "late_prefix",
+      "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/94_late/prompt.txt",
+      "prepared_prompt_meta_file": "experiments/generated/weekend_exact_chunked_fixtures/94_late/fixture_meta.json",
+      "shortlist_label": "conservative_b128_c2048",
+      "validation_group": "no_cache",
+      "attribution_batch_size": 128,
+      "feature_batch_size": 128,
+      "logit_batch_size": 128,
+      "decoder_chunk_size": 2048,
+      "cross_batch_decoder_cache_bytes": 0
+    },
+    {
+      "name": "ascend_validation_conservative_b128_c2048_361_late_b128_c2048_cache0",
+      "stage": "weekend_exact_chunked_validation_ascend",
+      "cluster": "ascend",
+      "fixture_name": "361_late",
+      "fixture_kind": "late_prefix",
+      "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/361_late/prompt.txt",
+      "prepared_prompt_meta_file": "experiments/generated/weekend_exact_chunked_fixtures/361_late/fixture_meta.json",
+      "shortlist_label": "conservative_b128_c2048",
+      "validation_group": "no_cache",
+      "attribution_batch_size": 128,
+      "feature_batch_size": 128,
+      "logit_batch_size": 128,
+      "decoder_chunk_size": 2048,
+      "cross_batch_decoder_cache_bytes": 0
+    },
+    {
+      "name": "ascend_validation_throughput_headroom_b256_c2048_828_late_b256_c2048_cache0",
+      "stage": "weekend_exact_chunked_validation_ascend",
+      "cluster": "ascend",
+      "fixture_name": "828_late",
+      "fixture_kind": "late_prefix",
+      "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/828_late/prompt.txt",
+      "prepared_prompt_meta_file": "experiments/generated/weekend_exact_chunked_fixtures/828_late/fixture_meta.json",
+      "shortlist_label": "throughput_headroom_b256_c2048",
+      "validation_group": "no_cache",
+      "attribution_batch_size": 256,
+      "feature_batch_size": 256,
+      "logit_batch_size": 256,
+      "decoder_chunk_size": 2048,
+      "cross_batch_decoder_cache_bytes": 0
+    },
+    {
+      "name": "ascend_validation_throughput_headroom_b256_c2048_94_late_b256_c2048_cache0",
+      "stage": "weekend_exact_chunked_validation_ascend",
+      "cluster": "ascend",
+      "fixture_name": "94_late",
+      "fixture_kind": "late_prefix",
+      "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/94_late/prompt.txt",
+      "prepared_prompt_meta_file": "experiments/generated/weekend_exact_chunked_fixtures/94_late/fixture_meta.json",
+      "shortlist_label": "throughput_headroom_b256_c2048",
+      "validation_group": "no_cache",
+      "attribution_batch_size": 256,
+      "feature_batch_size": 256,
+      "logit_batch_size": 256,
+      "decoder_chunk_size": 2048,
+      "cross_batch_decoder_cache_bytes": 0
+    },
+    {
+      "name": "ascend_validation_throughput_headroom_b256_c2048_361_late_b256_c2048_cache0",
+      "stage": "weekend_exact_chunked_validation_ascend",
+      "cluster": "ascend",
+      "fixture_name": "361_late",
+      "fixture_kind": "late_prefix",
+      "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/361_late/prompt.txt",
+      "prepared_prompt_meta_file": "experiments/generated/weekend_exact_chunked_fixtures/361_late/fixture_meta.json",
+      "shortlist_label": "throughput_headroom_b256_c2048",
+      "validation_group": "no_cache",
+      "attribution_batch_size": 256,
+      "feature_batch_size": 256,
+      "logit_batch_size": 256,
+      "decoder_chunk_size": 2048,
+      "cross_batch_decoder_cache_bytes": 0
+    }
+  ]
+}

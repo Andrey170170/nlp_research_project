@@ -1,0 +1,34 @@
+{
+  "ascend": {
+    "wave2_shortlist": [
+      {
+        "name": "conservative_b128_c2048",
+        "attribution_batch_size": 128,
+        "decoder_chunk_size": 2048
+      },
+      {
+        "name": "throughput_headroom_b256_c2048",
+        "attribution_batch_size": 256,
+        "decoder_chunk_size": 2048
+      }
+    ],
+    "validation_no_cache": [
+      {
+        "name": "conservative_b128_c2048",
+        "attribution_batch_size": 128,
+        "decoder_chunk_size": 2048
+      },
+      {
+        "name": "throughput_headroom_b256_c2048",
+        "attribution_batch_size": 256,
+        "decoder_chunk_size": 2048
+      }
+    ],
+    "validation_cache": []
+  },
+  "cardinal": {
+    "wave2_shortlist": [],
+    "validation_no_cache": [],
+    "validation_cache": []
+  }
+}
