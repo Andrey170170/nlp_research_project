@@ -11,6 +11,8 @@ wheels/
 data/
 experiments/traces/
 experiments/explore/
+experiments/extracted/
+experiments/figures/
 logs/
 .env
 docs/
