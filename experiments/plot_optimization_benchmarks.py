@@ -286,58 +286,170 @@ def plot_wave1_config_figures(bench: pd.DataFrame, out_dir: Path) -> None:
         & (bench["stage"].astype(str).str.contains("wave1"))
     ].copy()
     data["runtime_minutes"] = data["duration_seconds"] / 60.0
-    _plot_wave1_grid(
-        data,
-        value_col="runtime_minutes",
-        ylabel="Runtime (min)",
-        title="Wave-1 successful runs: runtime by batch size and chunk size",
-        out_dir=out_dir,
-        stem="wave1_runtime_by_config",
+    cluster_style = {
+        "ascend": {"linestyle": "-", "marker": "o"},
+        "cardinal": {"linestyle": "--", "marker": "s"},
+    }
+
+    def _plot_overlay(value_col: str, ylabel: str, title: str, stem: str) -> None:
+        fig, axes = plt.subplots(1, 3, figsize=(15, 4.8), sharex=True, sharey=False)
+        value_max = data[value_col].dropna().max()
+        for col_idx, prompt_id in enumerate(PROMPT_ORDER):
+            ax = axes[col_idx]
+            sub = data[data["gsm8k_index"] == prompt_id].copy()
+            for cluster in CLUSTER_ORDER:
+                for batch in sorted(
+                    sub.loc[sub["cluster"] == cluster, "attribution_batch_size"]
+                    .dropna()
+                    .unique()
+                ):
+                    batch_sub = sub[
+                        (sub["cluster"] == cluster)
+                        & (sub["attribution_batch_size"] == batch)
+                    ].sort_values("decoder_chunk_size")
+                    if batch_sub.empty:
+                        continue
+                    style = cluster_style[cluster]
+                    ax.plot(
+                        batch_sub["decoder_chunk_size"],
+                        batch_sub[value_col],
+                        color=BATCH_COLORS.get(int(batch), "#444444"),
+                        linestyle=style["linestyle"],
+                        marker=style["marker"],
+                        linewidth=1.8,
+                        alpha=0.95,
+                    )
+            ax.set_title(f"prompt {prompt_id}")
+            ax.set_xlabel("Decoder chunk size")
+            ax.set_ylabel(ylabel)
+            ax.set_xticks(
+                [
+                    c
+                    for c in CHUNK_ORDER
+                    if c in sub["decoder_chunk_size"].dropna().unique()
+                ]
+            )
+            ax.set_ylim(bottom=0, top=float(value_max) * 1.08)
+            ax.grid(alpha=0.25)
+
+        batch_handles = [
+            Line2D(
+                [0],
+                [0],
+                color=BATCH_COLORS.get(batch, "#444444"),
+                marker="o",
+                linewidth=1.8,
+                label=f"batch {batch}",
+            )
+            for batch in sorted(
+                {
+                    int(v)
+                    for v in data["attribution_batch_size"].dropna().unique().tolist()
+                }
+            )
+        ]
+        cluster_handles = [
+            Line2D(
+                [0],
+                [0],
+                color="black",
+                linestyle=cluster_style[c]["linestyle"],
+                marker=cluster_style[c]["marker"],
+                linewidth=1.8,
+                label=c,
+            )
+            for c in CLUSTER_ORDER
+        ]
+        handles = batch_handles + cluster_handles
+        fig.legend(
+            handles,
+            [str(h.get_label()) for h in handles],
+            loc="upper center",
+            ncol=len(handles),
+            frameon=False,
+            bbox_to_anchor=(0.5, 1.04),
+        )
+        fig.suptitle(title, fontsize=14)
+        fig.tight_layout()
+        _save(fig, out_dir, stem)
+
+    _plot_overlay(
+        "runtime_minutes",
+        "Runtime (min)",
+        "Wave-1 successful runs: runtime by config (Ascend and Cardinal overlaid by prompt)",
+        "wave1_runtime_by_config",
     )
-    _plot_wave1_grid(
-        data,
-        value_col="resource_snapshot_cuda_peak_reserved_gib",
-        ylabel="Peak VRAM reserved (GiB)",
-        title="Wave-1 successful runs: peak VRAM by batch size and chunk size",
-        out_dir=out_dir,
-        stem="wave1_peak_vram_by_config",
+    _plot_overlay(
+        "resource_snapshot_cuda_peak_reserved_gib",
+        "Peak VRAM reserved (GiB)",
+        "Wave-1 successful runs: peak VRAM by config (Ascend and Cardinal overlaid by prompt)",
+        "wave1_peak_vram_by_config",
     )
 
-    fig, axes = plt.subplots(2, 3, figsize=(16, 8), sharex=False, sharey=False)
-    for row_idx, cluster in enumerate(CLUSTER_ORDER):
-        for col_idx, prompt_id in enumerate(PROMPT_ORDER):
-            ax = axes[row_idx, col_idx]
-            sub = data[
-                (data["cluster"] == cluster) & (data["gsm8k_index"] == prompt_id)
-            ].copy()
-            if sub.empty:
-                continue
-            for _, row in sub.iterrows():
-                batch = int(row["attribution_batch_size"])
-                chunk = int(row["decoder_chunk_size"])
-                ax.scatter(
-                    row["resource_snapshot_cuda_peak_reserved_gib"],
-                    row["runtime_minutes"],
-                    s=60,
-                    color=BATCH_COLORS.get(batch, "#444444"),
-                    marker=MARKERS.get(chunk, "o"),
-                    alpha=0.85,
-                )
-                ax.annotate(
-                    f"b{batch}/c{chunk}",
-                    (
-                        row["resource_snapshot_cuda_peak_reserved_gib"],
-                        row["runtime_minutes"],
-                    ),
-                    textcoords="offset points",
-                    xytext=(3, 3),
-                    fontsize=7,
-                )
-            ax.set_title(f"{cluster} · prompt {prompt_id}")
-            ax.set_xlabel("Peak VRAM reserved (GiB)")
-            ax.set_ylabel("Runtime (min)")
-            ax.grid(alpha=0.25)
-    fig.suptitle("Wave-1 successful runs: runtime/VRAM tradeoff by config", fontsize=14)
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.8), sharex=False, sharey=False)
+    x_max = data["resource_snapshot_cuda_peak_reserved_gib"].dropna().max()
+    y_max = data["runtime_minutes"].dropna().max()
+    for col_idx, prompt_id in enumerate(PROMPT_ORDER):
+        ax = axes[col_idx]
+        sub = data[data["gsm8k_index"] == prompt_id].copy()
+        for cluster in CLUSTER_ORDER:
+            cluster_sub = sub[sub["cluster"] == cluster]
+            ax.scatter(
+                cluster_sub["resource_snapshot_cuda_peak_reserved_gib"],
+                cluster_sub["runtime_minutes"],
+                c=[
+                    BATCH_COLORS.get(int(v), "#444444")
+                    for v in cluster_sub["attribution_batch_size"]
+                ],
+                marker=cluster_style[cluster]["marker"],
+                s=70,
+                alpha=0.85,
+                edgecolors="black",
+                linewidths=0.4,
+            )
+        ax.set_title(f"prompt {prompt_id}")
+        ax.set_xlabel("Peak VRAM reserved (GiB)")
+        ax.set_ylabel("Runtime (min)")
+        ax.set_xlim(left=0, right=float(x_max) * 1.08)
+        ax.set_ylim(bottom=0, top=float(y_max) * 1.08)
+        ax.grid(alpha=0.25)
+
+    batch_handles = [
+        Line2D(
+            [0],
+            [0],
+            color=BATCH_COLORS.get(batch, "#444444"),
+            marker="o",
+            linewidth=0,
+            markersize=8,
+            label=f"batch {batch}",
+        )
+        for batch in sorted(
+            {int(v) for v in data["attribution_batch_size"].dropna().unique().tolist()}
+        )
+    ]
+    cluster_handles = [
+        Line2D(
+            [0],
+            [0],
+            color="black",
+            marker=cluster_style[c]["marker"],
+            linewidth=0,
+            markersize=8,
+            label=c,
+        )
+        for c in CLUSTER_ORDER
+    ]
+    handles = batch_handles + cluster_handles
+    fig.legend(
+        handles,
+        [str(h.get_label()) for h in handles],
+        loc="upper center",
+        ncol=len(handles),
+        frameon=False,
+        bbox_to_anchor=(0.5, 1.04),
+    )
+    fig.suptitle("Wave-1 successful runs: runtime/VRAM tradeoff by prompt", fontsize=14)
     fig.tight_layout()
     _save(fig, out_dir, "wave1_runtime_vram_tradeoff")
 
@@ -372,13 +484,22 @@ def plot_wave2_cache_sweeps(bench: pd.DataFrame, out_dir: Path) -> None:
         for label in sorted(data["config_label"].unique())
     }
 
-    fig, axes = plt.subplots(2, 2, figsize=(13, 8), sharex="col")
+    fig, axes = plt.subplots(2, 2, figsize=(13, 8), sharex="col", sharey="row")
     fixture_order = ["361_base", "361_late"]
     success_runtime_max = (
         data.loc[data["status"] == "success", "runtime_minutes"].dropna().max()
     )
     if pd.isna(success_runtime_max):
         success_runtime_max = 1.0
+    vram_max = (
+        data.loc[
+            data["status"] == "success", "resource_snapshot_cuda_peak_reserved_gib"
+        ]
+        .dropna()
+        .max()
+    )
+    if pd.isna(vram_max):
+        vram_max = 1.0
 
     for col_idx, fixture in enumerate(fixture_order):
         fixture_data = data[data["fixture_name"] == fixture].copy()
@@ -417,12 +538,17 @@ def plot_wave2_cache_sweeps(bench: pd.DataFrame, out_dir: Path) -> None:
 
         axes[0, col_idx].set_title(fixture)
         axes[0, col_idx].set_ylabel("Runtime (min)")
-        axes[0, col_idx].set_ylim(top=success_runtime_max * 1.12)
+        axes[0, col_idx].set_ylim(bottom=0, top=success_runtime_max * 1.12)
+        axes[0, col_idx].set_xlabel("Decoder cache budget (GiB)")
+        axes[0, col_idx].tick_params(axis="x", labelbottom=True)
+        axes[0, col_idx].tick_params(axis="y", labelleft=True)
         axes[0, col_idx].grid(alpha=0.25)
 
         axes[1, col_idx].set_title(fixture)
         axes[1, col_idx].set_ylabel("Peak VRAM reserved (GiB)")
         axes[1, col_idx].set_xlabel("Decoder cache budget (GiB)")
+        axes[1, col_idx].set_ylim(bottom=0, top=vram_max * 1.12)
+        axes[1, col_idx].tick_params(axis="y", labelleft=True)
         axes[1, col_idx].grid(alpha=0.25)
 
     handles = [
@@ -483,59 +609,74 @@ def plot_cluster_shared_config_comparison(bench: pd.DataFrame, out_dir: Path) ->
         )
     pair_df = pd.DataFrame(pairs)
 
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5.2))
-    for prompt_id in PROMPT_ORDER:
-        sub = pair_df[pair_df["gsm8k_index"] == prompt_id]
+    pair_df["config_label"] = pair_df.apply(
+        lambda r: f"b{int(r['batch'])}\nc{int(r['chunk'])}", axis=1
+    )
+
+    fig, axes = plt.subplots(2, 3, figsize=(15, 8), sharey="row")
+    runtime_max = max(
+        pair_df["ascend_runtime_min"].max(), pair_df["cardinal_runtime_min"].max()
+    )
+    vram_max = max(pair_df["ascend_vram_gib"].max(), pair_df["cardinal_vram_gib"].max())
+    for col_idx, prompt_id in enumerate(PROMPT_ORDER):
+        sub = pair_df[pair_df["gsm8k_index"] == prompt_id].sort_values(
+            ["batch", "chunk"]
+        )
         if sub.empty:
             continue
-        label = f"prompt {prompt_id}"
-        axes[0].scatter(
+        x = np.arange(len(sub))
+        width = 0.34
+        axes[0, col_idx].bar(
+            x - width / 2,
             sub["ascend_runtime_min"],
+            width=width,
+            color=CLUSTER_COLORS["ascend"],
+            label="ascend",
+        )
+        axes[0, col_idx].bar(
+            x + width / 2,
             sub["cardinal_runtime_min"],
-            s=70,
-            color=PROMPT_COLORS[prompt_id],
-            label=label,
+            width=width,
+            color=CLUSTER_COLORS["cardinal"],
+            label="cardinal",
         )
-        axes[1].scatter(
+        axes[1, col_idx].bar(
+            x - width / 2,
             sub["ascend_vram_gib"],
+            width=width,
+            color=CLUSTER_COLORS["ascend"],
+            label="ascend",
+        )
+        axes[1, col_idx].bar(
+            x + width / 2,
             sub["cardinal_vram_gib"],
-            s=70,
-            color=PROMPT_COLORS[prompt_id],
-            label=label,
-        )
-        labels = [
-            f"p{prompt_id} b{int(b)}/c{int(c)}"
-            for b, c in zip(sub["batch"], sub["chunk"])
-        ]
-        _annotate_points(
-            axes[0], sub["ascend_runtime_min"], sub["cardinal_runtime_min"], labels
-        )
-        _annotate_points(
-            axes[1], sub["ascend_vram_gib"], sub["cardinal_vram_gib"], labels
+            width=width,
+            color=CLUSTER_COLORS["cardinal"],
+            label="cardinal",
         )
 
-    for ax, xlab, ylab, title in [
-        (
-            axes[0],
-            "Ascend runtime (min)",
-            "Cardinal runtime (min)",
-            "Shared configs: total runtime",
-        ),
-        (
-            axes[1],
-            "Ascend peak VRAM (GiB)",
-            "Cardinal peak VRAM (GiB)",
-            "Shared configs: peak VRAM",
-        ),
-    ]:
-        ax.grid(alpha=0.25)
-        ax.set_xlabel(xlab)
-        ax.set_ylabel(ylab)
-        ax.set_title(title)
-        lo = min(ax.get_xlim()[0], ax.get_ylim()[0])
-        hi = max(ax.get_xlim()[1], ax.get_ylim()[1])
-        ax.plot([lo, hi], [lo, hi], linestyle="--", color="black", linewidth=1)
-    axes[0].legend(frameon=False)
+        for row_idx in range(2):
+            axes[row_idx, col_idx].set_xticks(x)
+            axes[row_idx, col_idx].set_xticklabels(sub["config_label"], rotation=0)
+            axes[row_idx, col_idx].grid(axis="y", alpha=0.25)
+            axes[row_idx, col_idx].set_title(f"prompt {prompt_id}")
+
+        axes[0, col_idx].set_ylabel("Runtime (min)")
+        axes[1, col_idx].set_ylabel("Peak VRAM reserved (GiB)")
+        axes[0, col_idx].set_ylim(bottom=0, top=float(runtime_max) * 1.12)
+        axes[1, col_idx].set_ylim(bottom=0, top=float(vram_max) * 1.12)
+    handles = [
+        Line2D([0], [0], color=CLUSTER_COLORS[c], linewidth=8, label=c)
+        for c in CLUSTER_ORDER
+    ]
+    fig.legend(
+        handles,
+        [str(h.get_label()) for h in handles],
+        loc="upper center",
+        ncol=2,
+        frameon=False,
+        bbox_to_anchor=(0.5, 1.02),
+    )
     fig.suptitle("Wave-1 cluster comparison on matched successful configs", fontsize=14)
     _save(fig, out_dir, "cluster_shared_config_comparison")
 
