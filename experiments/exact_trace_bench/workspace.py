@@ -213,13 +213,11 @@ def create_workspace_snapshot(
         raise FileExistsError(f"Snapshot path already exists: {snapshot_path}")
 
     project_snapshot_path = snapshot_path / source_root.name
-    print(f"trying to create snapshot at: {project_snapshot_path}")
     _copy_tree(
         source_root,
         project_snapshot_path,
         excluded_relative_dirs=PROJECT_EXCLUDED_RELATIVE_DIRS,
     )
-    print("Created the snapshot")
 
     uv_source_snapshots: list[dict[str, Any]] = []
     uv_source = _load_uv_source_path(source_root)

@@ -17,6 +17,9 @@ from .io_utils import ensure_dir, write_json
 
 SCENARIO_TIERS = ("fast", "anomaly", "long_eval")
 
+RESOURCE_PROFILE_STANDARD = "standard"
+RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM = "long_eval_high_mem"
+
 CLUSTER_SETTINGS: dict[str, dict[str, Any]] = {
     "ascend": {
         "fast": {
@@ -109,6 +112,7 @@ def _base_payload(
     tier: str,
     notes: list[str],
     scratch_root: Path,
+    resource_profile: str,
 ) -> dict[str, Any]:
     return {
         "defaults": base_trace_defaults(),
@@ -116,6 +120,7 @@ def _base_payload(
             "cluster": cluster,
             "stage": f"exact_trace_bench_{tier}",
             "tier": tier,
+            "resource_profile": resource_profile,
             "recommended_output_root": str(
                 recommended_output_root(
                     cluster=cluster,
@@ -146,6 +151,7 @@ def build_fast_tier(
             "Single no-cache exact run per fixture for quick smoke checks.",
         ],
         scratch_root=scratch_root,
+        resource_profile=RESOURCE_PROFILE_STANDARD,
     )
 
     for fixture in fixtures:
@@ -161,6 +167,7 @@ def build_fast_tier(
                 ),
                 "stage": "exact_trace_bench_fast",
                 "cluster": cluster,
+                "resource_profile": RESOURCE_PROFILE_STANDARD,
                 "recommended_output_root": str(scratch_root / cluster / "fast"),
                 **fixture.to_source_payload(),
                 "attribution_batch_size": cfg["batch"],
@@ -191,6 +198,7 @@ def build_anomaly_tier(
             "This tier is anomaly-watch only and should not be used as a general tuning benchmark.",
         ],
         scratch_root=scratch_root,
+        resource_profile=RESOURCE_PROFILE_STANDARD,
     )
 
     for fixture in fixtures:
@@ -206,6 +214,7 @@ def build_anomaly_tier(
                 ),
                 "stage": "exact_trace_bench_anomaly",
                 "cluster": cluster,
+                "resource_profile": RESOURCE_PROFILE_STANDARD,
                 "recommended_output_root": str(scratch_root / cluster / "anomaly"),
                 **fixture.to_source_payload(),
                 "attribution_batch_size": cfg["batch"],
@@ -242,6 +251,7 @@ def build_long_eval_tier(
             "These runs are too expensive for the fast inner loop and are intended for periodic stress validation.",
         ],
         scratch_root=scratch_root,
+        resource_profile=RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM,
     )
 
     for spec in run_specs:
@@ -261,6 +271,7 @@ def build_long_eval_tier(
                     "stage": "exact_trace_bench_long_eval",
                     "cluster": cluster,
                     "long_eval_group": spec["label"],
+                    "resource_profile": RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM,
                     "recommended_output_root": str(
                         scratch_root / cluster / "long_eval"
                     ),

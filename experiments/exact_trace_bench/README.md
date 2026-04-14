@@ -55,6 +55,17 @@ This prints an `sbatch` command that uses:
 - a scratch output root under `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/...`
 - and, optionally, an immutable workspace snapshot for `nnsight` safety.
 
+`launch-plan` also selects the sbatch script automatically from the scenario
+JSON `resource_profile` metadata:
+
+- `standard` → normal fast/anomaly job profile
+- `long_eval_high_mem` → high-memory long-eval profile
+
+This matters in particular for:
+
+- Ascend long evals, which should use the quad / high-memory script
+- Cardinal long evals, which should use a higher-memory script than the fast baseline
+
 ### 2) Extract benchmark tables
 
 ```bash

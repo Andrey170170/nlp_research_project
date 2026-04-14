@@ -6,6 +6,10 @@ from typing import Any
 
 from .config import DEFAULT_SCRATCH_ROOT, REPO_ROOT, recommended_output_root
 from .io_utils import read_json
+from .scenarios import (
+    RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM,
+    RESOURCE_PROFILE_STANDARD,
+)
 from .workspace import (
     DEFAULT_SNAPSHOT_ROOT,
     resolve_launch_workspace,
@@ -13,10 +17,41 @@ from .workspace import (
 )
 
 
-SBATCH_SCRIPTS: dict[str, Path] = {
-    "ascend": REPO_ROOT / "scripts" / "trace_weekend_exact_chunked.ascend.sbatch",
-    "cardinal": REPO_ROOT / "scripts" / "trace_weekend_exact_chunked.cardinal.sbatch",
+SBATCH_SCRIPTS: dict[tuple[str, str], Path] = {
+    ("ascend", RESOURCE_PROFILE_STANDARD): REPO_ROOT
+    / "scripts"
+    / "trace_weekend_exact_chunked.ascend.sbatch",
+    ("ascend", RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM): REPO_ROOT
+    / "scripts"
+    / "trace_weekend_exact_chunked_361_late.ascend.sbatch",
+    ("cardinal", RESOURCE_PROFILE_STANDARD): REPO_ROOT
+    / "scripts"
+    / "trace_weekend_exact_chunked.cardinal.sbatch",
+    ("cardinal", RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM): REPO_ROOT
+    / "scripts"
+    / "trace_weekend_exact_chunked_long_eval.cardinal.sbatch",
 }
+
+
+def _resolve_resource_profile(scenarios_file: Path) -> str:
+    payload = read_json(scenarios_file)
+    metadata = payload.get("metadata") or {}
+    metadata_profile = metadata.get("resource_profile")
+    if metadata_profile:
+        return str(metadata_profile)
+
+    scenario_profiles = {
+        str(scenario.get("resource_profile"))
+        for scenario in payload.get("scenarios", [])
+        if scenario.get("resource_profile")
+    }
+    if not scenario_profiles:
+        return RESOURCE_PROFILE_STANDARD
+    if len(scenario_profiles) > 1:
+        raise ValueError(
+            "Scenarios file mixes multiple resource profiles; split it or set metadata.resource_profile"
+        )
+    return next(iter(scenario_profiles))
 
 
 def _default_output_root(
@@ -53,10 +88,14 @@ def render_launch_plan(
     workspace_label: str | None = None,
     walltime: str | None = None,
 ) -> dict[str, Any]:
-    if cluster not in SBATCH_SCRIPTS:
-        raise ValueError(f"Unsupported cluster '{cluster}'")
-
     scenarios_file = scenarios_file.resolve()
+    resource_profile = _resolve_resource_profile(scenarios_file)
+    script_key = (cluster, resource_profile)
+    if script_key not in SBATCH_SCRIPTS:
+        raise ValueError(
+            f"Unsupported launch profile for cluster={cluster!r}, resource_profile={resource_profile!r}"
+        )
+
     resolved_output_root = (
         output_root
         or _default_output_root(
@@ -72,7 +111,7 @@ def render_launch_plan(
     ).resolve()
     library_workspace = sibling_library_root(workspace)
 
-    script_path = SBATCH_SCRIPTS[cluster].resolve()
+    script_path = SBATCH_SCRIPTS[script_key].resolve()
     launch_scenarios_file = scenarios_file
     launch_script_path = script_path
     if immutable_workspace:
@@ -113,6 +152,7 @@ def render_launch_plan(
         "cluster": cluster,
         "scenarios_file": str(launch_scenarios_file),
         "output_root": str(resolved_output_root),
+        "resource_profile": resource_profile,
         "workspace_root": str(workspace),
         "library_workspace_root": None
         if library_workspace is None
