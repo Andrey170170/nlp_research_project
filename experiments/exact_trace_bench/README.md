@@ -16,6 +16,13 @@ and immutable workspace snapshots.
 - Compact graph comparison helpers for prompt94-style analysis (`step_*.npz`)
 - Immutable workspace snapshot helper for launch safety
 
+Immutable workspace snapshots copy:
+
+- this project repo, and
+- the sibling editable `../circuit-tracer_chunked` library declared in `pyproject.toml`
+
+so the benchmark can run against frozen project + library code together.
+
 ## CLI usage
 
 Run via module entrypoint (recommended):
@@ -81,5 +88,29 @@ uv run python -m experiments.exact_trace_bench compare-compact \
 uv run python -m experiments.exact_trace_bench snapshot-workspace --print-path-only
 ```
 
-This copies the workspace to scratch and marks it read-only by default so
-long-running jobs do not observe mid-run source edits.
+This copies the project workspace plus the sibling `circuit-tracer_chunked`
+library to scratch and marks them read-only by default so long-running jobs do
+not observe mid-run source edits.
+
+To keep snapshotting fast, the project copy excludes large local artifact dirs
+such as:
+
+- `experiments/explore/`
+- `experiments/traces/`
+- `experiments/extracted/`
+- `experiments/figures/`
+
+### 5) Verify import resolution
+
+```bash
+uv run python -m experiments.exact_trace_bench verify-imports \
+  --workspace-root /fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/<id>/nlp_research_project
+```
+
+This prints the resolved import paths for:
+
+- `trace_pipeline_chunked`
+- `circuit_tracer`
+
+and is useful for checking that immutable runs will import the snapped library
+copy rather than the live editable checkout.

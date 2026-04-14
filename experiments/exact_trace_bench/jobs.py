@@ -6,7 +6,11 @@ from typing import Any
 
 from .config import DEFAULT_SCRATCH_ROOT, REPO_ROOT, recommended_output_root
 from .io_utils import read_json
-from .workspace import DEFAULT_SNAPSHOT_ROOT, resolve_launch_workspace
+from .workspace import (
+    DEFAULT_SNAPSHOT_ROOT,
+    resolve_launch_workspace,
+    sibling_library_root,
+)
 
 
 SBATCH_SCRIPTS: dict[str, Path] = {
@@ -66,6 +70,7 @@ def render_launch_plan(
         source_root=source_root,
         label=workspace_label,
     ).resolve()
+    library_workspace = sibling_library_root(workspace)
 
     script_path = SBATCH_SCRIPTS[cluster].resolve()
     launch_scenarios_file = scenarios_file
@@ -93,7 +98,8 @@ def render_launch_plan(
         "ALL,"
         f"SCENARIOS_FILE={launch_scenarios_file},"
         f"OUTPUT_ROOT={resolved_output_root},"
-        f"WORKSPACE_ROOT={workspace}"
+        f"WORKSPACE_ROOT={workspace},"
+        f"LIB_WORKSPACE_ROOT={library_workspace or ''}"
     )
     command_parts = [
         "sbatch",
@@ -108,6 +114,9 @@ def render_launch_plan(
         "scenarios_file": str(launch_scenarios_file),
         "output_root": str(resolved_output_root),
         "workspace_root": str(workspace),
+        "library_workspace_root": None
+        if library_workspace is None
+        else str(library_workspace),
         "immutable_workspace": immutable_workspace,
         "sbatch_script": str(launch_script_path),
         "sbatch_command": " ".join(command_parts),

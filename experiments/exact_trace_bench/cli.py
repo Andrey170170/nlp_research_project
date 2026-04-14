@@ -17,7 +17,12 @@ from .graph_compare import compare_artifact_dirs
 from .io_utils import ensure_dir
 from .jobs import render_launch_plan
 from .scenarios import SCENARIO_TIERS, build_tier_config, write_tier_config
-from .workspace import DEFAULT_SNAPSHOT_ROOT, create_workspace_snapshot
+from .workspace import (
+    DEFAULT_SNAPSHOT_ROOT,
+    create_workspace_snapshot,
+    sibling_library_root,
+    verify_import_paths,
+)
 
 
 def _cmd_build_scenarios(args: argparse.Namespace) -> None:
@@ -83,7 +88,19 @@ def _cmd_snapshot_workspace(args: argparse.Namespace) -> None:
     if args.print_path_only:
         print(snapshot)
     else:
-        print(json.dumps({"snapshot_path": str(snapshot)}, indent=2))
+        print(
+            json.dumps(
+                {
+                    "snapshot_path": str(snapshot),
+                    "library_snapshot_path": (
+                        None
+                        if sibling_library_root(snapshot) is None
+                        else str(sibling_library_root(snapshot))
+                    ),
+                },
+                indent=2,
+            )
+        )
 
 
 def _cmd_launch_plan(args: argparse.Namespace) -> None:
@@ -98,6 +115,14 @@ def _cmd_launch_plan(args: argparse.Namespace) -> None:
         walltime=args.walltime,
     )
     print(json.dumps(plan, indent=2))
+
+
+def _cmd_verify_imports(args: argparse.Namespace) -> None:
+    result = verify_import_paths(
+        workspace_root=args.workspace_root,
+        library_root=args.library_root,
+    )
+    print(json.dumps(result, indent=2))
 
 
 def _cmd_describe_fixtures(_: argparse.Namespace) -> None:
@@ -266,6 +291,24 @@ def build_parser() -> argparse.ArgumentParser:
     launch_plan.add_argument("--workspace-label", default=None)
     launch_plan.add_argument("--walltime", default=None)
     launch_plan.set_defaults(func=_cmd_launch_plan)
+
+    verify_imports = subparsers.add_parser(
+        "verify-imports",
+        help="Print resolved import paths for the project and circuit_tracer",
+    )
+    verify_imports.add_argument(
+        "--workspace-root",
+        type=Path,
+        default=REPO_ROOT,
+        help="Project workspace root to inspect",
+    )
+    verify_imports.add_argument(
+        "--library-root",
+        type=Path,
+        default=None,
+        help="Optional explicit sibling library root to prepend",
+    )
+    verify_imports.set_defaults(func=_cmd_verify_imports)
 
     return parser
 
