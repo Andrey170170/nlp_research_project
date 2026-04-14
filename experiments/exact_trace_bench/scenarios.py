@@ -1,0 +1,351 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from .config import (
+    DEFAULT_FIXTURE_CATALOG,
+    DEFAULT_GENERATED_DIR,
+    DEFAULT_SCRATCH_ROOT,
+    base_trace_defaults,
+    gib_to_bytes,
+    recommended_output_root,
+)
+from .fixtures import load_fixture_catalog, resolve_tier_fixtures
+from .io_utils import ensure_dir, write_json
+
+
+SCENARIO_TIERS = ("fast", "anomaly", "long_eval")
+
+CLUSTER_SETTINGS: dict[str, dict[str, Any]] = {
+    "ascend": {
+        "fast": {
+            "batch": 128,
+            "chunk": 2048,
+            "cache_gib": 0,
+        },
+        "anomaly": {
+            "batch": 256,
+            "chunk": 4096,
+            "cache_gib": 0,
+        },
+        "long_eval": {
+            "runs": [
+                {
+                    "label": "no_cache",
+                    "batch": 128,
+                    "chunk": 2048,
+                    "cache_gib": 0,
+                    "fixtures": ("361_late", "828_late", "94_late"),
+                },
+                {
+                    "label": "cache_probe",
+                    "batch": 128,
+                    "chunk": 2048,
+                    "cache_gib": 8,
+                    "fixtures": ("361_late",),
+                },
+            ],
+        },
+    },
+    "cardinal": {
+        "fast": {
+            "batch": 128,
+            "chunk": 4096,
+            "cache_gib": 0,
+        },
+        "anomaly": {
+            "batch": 256,
+            "chunk": 4096,
+            "cache_gib": 0,
+        },
+        "long_eval": {
+            "runs": [
+                {
+                    "label": "no_cache",
+                    "batch": 256,
+                    "chunk": 4096,
+                    "cache_gib": 0,
+                    "fixtures": ("361_late", "828_late", "94_late"),
+                },
+                {
+                    "label": "cache_probe",
+                    "batch": 256,
+                    "chunk": 4096,
+                    "cache_gib": 8,
+                    "fixtures": ("361_late",),
+                },
+            ],
+        },
+    },
+}
+
+
+def _require_cluster(cluster: str) -> None:
+    if cluster not in CLUSTER_SETTINGS:
+        raise ValueError(f"Unsupported cluster '{cluster}'")
+
+
+def _scenario_name(
+    *,
+    cluster: str,
+    tier: str,
+    fixture_name: str,
+    batch: int,
+    chunk: int,
+    cache_gib: int,
+    label: str | None = None,
+) -> str:
+    label_slug = "" if not label else f"_{label}"
+    return (
+        f"{cluster}_{tier}{label_slug}_{fixture_name}"
+        f"_b{batch:03d}_c{chunk}_cache{cache_gib}g"
+    )
+
+
+def _base_payload(
+    *,
+    cluster: str,
+    tier: str,
+    notes: list[str],
+    scratch_root: Path,
+) -> dict[str, Any]:
+    return {
+        "defaults": base_trace_defaults(),
+        "metadata": {
+            "cluster": cluster,
+            "stage": f"exact_trace_bench_{tier}",
+            "tier": tier,
+            "recommended_output_root": str(
+                recommended_output_root(
+                    cluster=cluster,
+                    tier=tier,
+                    scratch_root=scratch_root,
+                )
+            ),
+            "notes": notes,
+        },
+        "scenarios": [],
+    }
+
+
+def build_fast_tier(
+    *,
+    cluster: str,
+    catalog_by_name: dict[str, dict[str, Any]] | None = None,
+    scratch_root: Path = DEFAULT_SCRATCH_ROOT,
+) -> dict[str, Any]:
+    _require_cluster(cluster)
+    cfg = CLUSTER_SETTINGS[cluster]["fast"]
+    fixtures = resolve_tier_fixtures("base", catalog_by_name=catalog_by_name)
+    payload = _base_payload(
+        cluster=cluster,
+        tier="fast",
+        notes=[
+            "Quick sanity tier across canonical base fixtures.",
+            "Single no-cache exact run per fixture for quick smoke checks.",
+        ],
+        scratch_root=scratch_root,
+    )
+
+    for fixture in fixtures:
+        payload["scenarios"].append(
+            {
+                "name": _scenario_name(
+                    cluster=cluster,
+                    tier="fast",
+                    fixture_name=fixture.fixture_name,
+                    batch=cfg["batch"],
+                    chunk=cfg["chunk"],
+                    cache_gib=cfg["cache_gib"],
+                ),
+                "stage": "exact_trace_bench_fast",
+                "cluster": cluster,
+                "recommended_output_root": str(scratch_root / cluster / "fast"),
+                **fixture.to_source_payload(),
+                "attribution_batch_size": cfg["batch"],
+                "feature_batch_size": cfg["batch"],
+                "logit_batch_size": cfg["batch"],
+                "decoder_chunk_size": cfg["chunk"],
+                "cross_batch_decoder_cache_bytes": gib_to_bytes(cfg["cache_gib"]),
+            }
+        )
+
+    return payload
+
+
+def build_anomaly_tier(
+    *,
+    cluster: str,
+    catalog_by_name: dict[str, dict[str, Any]] | None = None,
+    scratch_root: Path = DEFAULT_SCRATCH_ROOT,
+) -> dict[str, Any]:
+    _require_cluster(cluster)
+    cfg = CLUSTER_SETTINGS[cluster]["anomaly"]
+    fixtures = resolve_tier_fixtures("anomaly", catalog_by_name=catalog_by_name)
+    payload = _base_payload(
+        cluster=cluster,
+        tier="anomaly",
+        notes=[
+            "Prompt-94-focused tier for anomaly reproduction and diagnosis.",
+            "This tier is anomaly-watch only and should not be used as a general tuning benchmark.",
+        ],
+        scratch_root=scratch_root,
+    )
+
+    for fixture in fixtures:
+        payload["scenarios"].append(
+            {
+                "name": _scenario_name(
+                    cluster=cluster,
+                    tier="anomaly",
+                    fixture_name=fixture.fixture_name,
+                    batch=cfg["batch"],
+                    chunk=cfg["chunk"],
+                    cache_gib=cfg["cache_gib"],
+                ),
+                "stage": "exact_trace_bench_anomaly",
+                "cluster": cluster,
+                "recommended_output_root": str(scratch_root / cluster / "anomaly"),
+                **fixture.to_source_payload(),
+                "attribution_batch_size": cfg["batch"],
+                "feature_batch_size": cfg["batch"],
+                "logit_batch_size": cfg["batch"],
+                "decoder_chunk_size": cfg["chunk"],
+                "cross_batch_decoder_cache_bytes": gib_to_bytes(cfg["cache_gib"]),
+            }
+        )
+
+    return payload
+
+
+def build_long_eval_tier(
+    *,
+    cluster: str,
+    catalog_by_name: dict[str, dict[str, Any]] | None = None,
+    scratch_root: Path = DEFAULT_SCRATCH_ROOT,
+) -> dict[str, Any]:
+    _require_cluster(cluster)
+    run_specs = CLUSTER_SETTINGS[cluster]["long_eval"]["runs"]
+    fixture_by_name = {
+        fixture.fixture_name: fixture
+        for fixture in resolve_tier_fixtures(
+            "long_eval",
+            catalog_by_name=catalog_by_name,
+        )
+    }
+    payload = _base_payload(
+        cluster=cluster,
+        tier="long_eval",
+        notes=[
+            "Late-prefix long-eval tier only.",
+            "These runs are too expensive for the fast inner loop and are intended for periodic stress validation.",
+        ],
+        scratch_root=scratch_root,
+    )
+
+    for spec in run_specs:
+        for fixture_name in spec["fixtures"]:
+            selected = fixture_by_name[fixture_name]
+            payload["scenarios"].append(
+                {
+                    "name": _scenario_name(
+                        cluster=cluster,
+                        tier="long_eval",
+                        fixture_name=selected.fixture_name,
+                        batch=spec["batch"],
+                        chunk=spec["chunk"],
+                        cache_gib=spec["cache_gib"],
+                        label=spec["label"],
+                    ),
+                    "stage": "exact_trace_bench_long_eval",
+                    "cluster": cluster,
+                    "long_eval_group": spec["label"],
+                    "recommended_output_root": str(
+                        scratch_root / cluster / "long_eval"
+                    ),
+                    **selected.to_source_payload(),
+                    "attribution_batch_size": spec["batch"],
+                    "feature_batch_size": spec["batch"],
+                    "logit_batch_size": spec["batch"],
+                    "decoder_chunk_size": spec["chunk"],
+                    "cross_batch_decoder_cache_bytes": gib_to_bytes(spec["cache_gib"]),
+                }
+            )
+
+    return payload
+
+
+def build_tier_config(
+    *,
+    tier: str,
+    cluster: str,
+    catalog_by_name: dict[str, dict[str, Any]] | None = None,
+    scratch_root: Path = DEFAULT_SCRATCH_ROOT,
+) -> dict[str, Any]:
+    if tier == "fast":
+        return build_fast_tier(
+            cluster=cluster,
+            catalog_by_name=catalog_by_name,
+            scratch_root=scratch_root,
+        )
+    if tier == "anomaly":
+        return build_anomaly_tier(
+            cluster=cluster,
+            catalog_by_name=catalog_by_name,
+            scratch_root=scratch_root,
+        )
+    if tier == "long_eval":
+        return build_long_eval_tier(
+            cluster=cluster,
+            catalog_by_name=catalog_by_name,
+            scratch_root=scratch_root,
+        )
+
+    raise ValueError(f"Unknown tier '{tier}'")
+
+
+def scenario_file_name(*, tier: str, cluster: str) -> str:
+    return f"exact_trace_bench_{tier}_{cluster}_scenarios.json"
+
+
+def write_tier_config(
+    payload: dict[str, Any],
+    *,
+    output_dir: Path = DEFAULT_GENERATED_DIR,
+    tier: str,
+    cluster: str,
+) -> Path:
+    ensure_dir(output_dir)
+    output_path = output_dir / scenario_file_name(tier=tier, cluster=cluster)
+    write_json(output_path, payload)
+    return output_path
+
+
+def write_all_tiers(
+    *,
+    cluster: str,
+    output_dir: Path = DEFAULT_GENERATED_DIR,
+    fixture_catalog: Path = DEFAULT_FIXTURE_CATALOG,
+    scratch_root: Path = DEFAULT_SCRATCH_ROOT,
+) -> list[Path]:
+    catalog_by_name = (
+        load_fixture_catalog(fixture_catalog) if fixture_catalog.exists() else {}
+    )
+    paths: list[Path] = []
+    for tier in SCENARIO_TIERS:
+        payload = build_tier_config(
+            tier=tier,
+            cluster=cluster,
+            catalog_by_name=catalog_by_name,
+            scratch_root=scratch_root,
+        )
+        paths.append(
+            write_tier_config(
+                payload,
+                output_dir=output_dir,
+                tier=tier,
+                cluster=cluster,
+            )
+        )
+    return paths
