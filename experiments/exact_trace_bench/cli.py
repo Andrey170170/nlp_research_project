@@ -16,6 +16,7 @@ from .fixtures import describe_fixture_tiers
 from .graph_compare import compare_artifact_dirs
 from .io_utils import ensure_dir
 from .jobs import render_launch_plan
+from .presets import preset_names, run_preset
 from .scenarios import SCENARIO_TIERS, build_tier_config, write_tier_config
 from .workspace import (
     DEFAULT_SNAPSHOT_ROOT,
@@ -127,6 +128,22 @@ def _cmd_verify_imports(args: argparse.Namespace) -> None:
 
 def _cmd_describe_fixtures(_: argparse.Namespace) -> None:
     print(json.dumps(describe_fixture_tiers(), indent=2))
+
+
+def _cmd_submit_preset(args: argparse.Namespace) -> None:
+    plans = run_preset(
+        preset=args.preset,
+        generated_dir=args.generated_dir,
+        fixture_catalog=args.fixture_catalog,
+        scratch_root=args.scratch_root,
+        immutable_workspace=not args.no_immutable_workspace,
+        snapshot_root=args.snapshot_root,
+        source_root=args.source_root,
+        workspace_label_prefix=args.workspace_label_prefix,
+        walltime=args.walltime,
+        print_only=args.print_only,
+    )
+    print(json.dumps({"preset": args.preset, "plans": plans}, indent=2))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -291,6 +308,55 @@ def build_parser() -> argparse.ArgumentParser:
     launch_plan.add_argument("--workspace-label", default=None)
     launch_plan.add_argument("--walltime", default=None)
     launch_plan.set_defaults(func=_cmd_launch_plan)
+
+    submit_preset = subparsers.add_parser(
+        "submit-preset",
+        help="Generate scenarios and submit common benchmark presets",
+    )
+    submit_preset.add_argument("--preset", choices=preset_names(), required=True)
+    submit_preset.add_argument(
+        "--generated-dir",
+        type=Path,
+        default=DEFAULT_GENERATED_DIR,
+        help="Directory where generated scenario JSON files are written",
+    )
+    submit_preset.add_argument(
+        "--fixture-catalog",
+        type=Path,
+        default=DEFAULT_FIXTURE_CATALOG,
+        help="Fixture catalog JSON (fallback paths are used if missing)",
+    )
+    submit_preset.add_argument(
+        "--scratch-root",
+        type=Path,
+        default=DEFAULT_SCRATCH_ROOT,
+        help="Scratch root used for recommended output_root metadata",
+    )
+    submit_preset.add_argument(
+        "--no-immutable-workspace",
+        action="store_true",
+        help="Submit against the live workspace instead of snapshotting by default",
+    )
+    submit_preset.add_argument(
+        "--snapshot-root",
+        type=Path,
+        default=DEFAULT_SNAPSHOT_ROOT,
+        help="Where immutable workspace snapshots are created",
+    )
+    submit_preset.add_argument(
+        "--source-root",
+        type=Path,
+        default=REPO_ROOT,
+        help="Workspace source root for immutable launch snapshots",
+    )
+    submit_preset.add_argument("--workspace-label-prefix", default="preset")
+    submit_preset.add_argument("--walltime", default=None)
+    submit_preset.add_argument(
+        "--print-only",
+        action="store_true",
+        help="Print the plans without calling sbatch",
+    )
+    submit_preset.set_defaults(func=_cmd_submit_preset)
 
     verify_imports = subparsers.add_parser(
         "verify-imports",

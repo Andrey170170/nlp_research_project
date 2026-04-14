@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shlex
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +51,15 @@ def _resolve_resource_profile(scenarios_file: Path) -> str:
             "Scenarios file mixes multiple resource profiles; split it or set metadata.resource_profile"
         )
     return next(iter(scenario_profiles))
+
+
+def _scenario_count(scenarios_file: Path) -> int:
+    payload = read_json(scenarios_file)
+    scenarios = payload.get("scenarios") or []
+    count = len(scenarios)
+    if count <= 0:
+        raise ValueError(f"No scenarios found in {scenarios_file}")
+    return count
 
 
 def _default_output_root(
@@ -129,10 +137,8 @@ def render_launch_plan(
         except ValueError:
             launch_script_path = script_path
 
-    count_expr = (
-        "$(($(uv run python experiments/print_scenario_count.py --scenarios-file "
-        f"{shlex.quote(str(launch_scenarios_file))})-1))"
-    )
+    scenario_count = _scenario_count(launch_scenarios_file)
+    array_range = f"0-{scenario_count - 1}"
     export_blob = (
         "ALL,"
         f"SCENARIOS_FILE={launch_scenarios_file},"
@@ -143,7 +149,7 @@ def render_launch_plan(
     command_parts = [
         "sbatch",
         *([f"--time={walltime}"] if walltime else []),
-        f"--array=0-{count_expr}",
+        f"--array={array_range}",
         f"--export={export_blob}",
         str(launch_script_path),
     ]
@@ -153,6 +159,8 @@ def render_launch_plan(
         "scenarios_file": str(launch_scenarios_file),
         "output_root": str(resolved_output_root),
         "resource_profile": resource_profile,
+        "scenario_count": scenario_count,
+        "sbatch_argv": command_parts,
         "workspace_root": str(workspace),
         "library_workspace_root": None
         if library_workspace is None

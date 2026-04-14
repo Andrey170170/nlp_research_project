@@ -66,6 +66,38 @@ This matters in particular for:
 - Ascend long evals, which should use the quad / high-memory script
 - Cardinal long evals, which should use a higher-memory script than the fast baseline
 
+### 1.6) Use preset submit helpers
+
+For the common workflows, you can skip the long commands and use either the CLI
+presets or the wrapper scripts in `scripts/`.
+
+Preset meanings:
+
+- `fast-*` = submit `fast` + `anomaly`
+- `full-*` = submit `fast` + `anomaly` + `long_eval`
+
+CLI form:
+
+```bash
+uv run python -m experiments.exact_trace_bench submit-preset --preset fast-ascend
+uv run python -m experiments.exact_trace_bench submit-preset --preset full-all
+```
+
+Wrapper scripts:
+
+```bash
+scripts/exact_trace_bench_fast_ascend.sh
+scripts/exact_trace_bench_fast_cardinal.sh
+scripts/exact_trace_bench_full_ascend.sh
+scripts/exact_trace_bench_full_cardinal.sh
+scripts/exact_trace_bench_fast_all.sh
+scripts/exact_trace_bench_full_all.sh
+```
+
+All preset submitters default to immutable workspace snapshots. Add
+`--no-immutable-workspace` if you intentionally want to run against the live tree,
+or `--print-only` to inspect the generated plans without calling `sbatch`.
+
 ### 2) Extract benchmark tables
 
 ```bash

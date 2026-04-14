@@ -141,6 +141,10 @@ def _manifest_path_for_workspace(workspace_root: Path) -> Path:
     return workspace_root.parent / ".exact_trace_bench_snapshot.json"
 
 
+def make_snapshot_read_only(workspace_root: Path) -> None:
+    _make_read_only(workspace_root.parent)
+
+
 def load_snapshot_manifest(workspace_root: Path) -> dict[str, Any]:
     return json.loads(
         _manifest_path_for_workspace(workspace_root).read_text(encoding="utf-8")
