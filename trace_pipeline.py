@@ -476,6 +476,11 @@ def extract_graph(
     profile_log_interval: int = 1,
     diagnostic_feature_cap: int | None = None,
     sparsification: Any | None = None,
+    chunked_feature_replay_window: int = 4,
+    error_vector_prefetch_lookahead: int = 2,
+    stage_encoder_vecs_on_cpu: bool | None = None,
+    stage_error_vectors_on_cpu: bool | None = None,
+    row_subchunk_size: int | None = None,
 ):
     gc.collect()
     if torch.cuda.is_available():
@@ -498,6 +503,11 @@ def extract_graph(
         "profile_log_interval": profile_log_interval,
         "diagnostic_feature_cap": diagnostic_feature_cap,
         "sparsification": sparsification,
+        "chunked_feature_replay_window": chunked_feature_replay_window,
+        "error_vector_prefetch_lookahead": error_vector_prefetch_lookahead,
+        "stage_encoder_vecs_on_cpu": stage_encoder_vecs_on_cpu,
+        "stage_error_vectors_on_cpu": stage_error_vectors_on_cpu,
+        "row_subchunk_size": row_subchunk_size,
     }
     return attribute(**attribute_kwargs)
 
@@ -581,6 +591,11 @@ def trace_completion(
     profile_log_interval: int = 1,
     diagnostic_feature_cap: int | None = None,
     sparsification: Any | None = None,
+    chunked_feature_replay_window: int = 4,
+    error_vector_prefetch_lookahead: int = 2,
+    stage_encoder_vecs_on_cpu: bool | None = None,
+    stage_error_vectors_on_cpu: bool | None = None,
+    row_subchunk_size: int | None = None,
     save_raw: bool = False,
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
@@ -634,6 +649,11 @@ def trace_completion(
             profile_log_interval=profile_log_interval,
             diagnostic_feature_cap=diagnostic_feature_cap,
             sparsification=sparsification,
+            chunked_feature_replay_window=chunked_feature_replay_window,
+            error_vector_prefetch_lookahead=error_vector_prefetch_lookahead,
+            stage_encoder_vecs_on_cpu=stage_encoder_vecs_on_cpu,
+            stage_error_vectors_on_cpu=stage_error_vectors_on_cpu,
+            row_subchunk_size=row_subchunk_size,
         )
 
         token_result = generate_next_token(model, input_ids, temperature=temperature)
@@ -713,6 +733,11 @@ def trace_completion(
         "profile_attribution": profile_attribution,
         "profile_log_interval": profile_log_interval,
         "diagnostic_feature_cap": diagnostic_feature_cap,
+        "chunked_feature_replay_window": chunked_feature_replay_window,
+        "error_vector_prefetch_lookahead": error_vector_prefetch_lookahead,
+        "stage_encoder_vecs_on_cpu": stage_encoder_vecs_on_cpu,
+        "stage_error_vectors_on_cpu": stage_error_vectors_on_cpu,
+        "row_subchunk_size": row_subchunk_size,
         "sparsification": (
             {
                 "per_layer_position_topk": sparsification.per_layer_position_topk,

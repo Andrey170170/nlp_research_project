@@ -20,6 +20,15 @@ import trace_pipeline as base
 from circuit_utils import StepData, save_compact
 
 
+def parse_optional_bool(value: str) -> bool:
+    lowered = value.strip().lower()
+    if lowered in {"1", "true", "t", "yes", "y", "on"}:
+        return True
+    if lowered in {"0", "false", "f", "no", "n", "off"}:
+        return False
+    raise argparse.ArgumentTypeError(f"Expected a boolean value, got: {value!r}")
+
+
 def extract_compact_chunked_attribution(
     model,
     prompt: str | torch.Tensor | list[int],
@@ -37,6 +46,11 @@ def extract_compact_chunked_attribution(
     profile_log_interval: int = 1,
     diagnostic_feature_cap: int | None = None,
     sparsification: Any | None = None,
+    chunked_feature_replay_window: int = 4,
+    error_vector_prefetch_lookahead: int = 2,
+    stage_encoder_vecs_on_cpu: bool | None = None,
+    stage_error_vectors_on_cpu: bool | None = None,
+    row_subchunk_size: int | None = None,
 ) -> dict[str, Any]:
     gc.collect()
     if torch.cuda.is_available():
@@ -64,6 +78,11 @@ def extract_compact_chunked_attribution(
         profile_log_interval=profile_log_interval,
         diagnostic_feature_cap=diagnostic_feature_cap,
         sparsification=sparsification,
+        chunked_feature_replay_window=chunked_feature_replay_window,
+        error_vector_prefetch_lookahead=error_vector_prefetch_lookahead,
+        stage_encoder_vecs_on_cpu=stage_encoder_vecs_on_cpu,
+        stage_error_vectors_on_cpu=stage_error_vectors_on_cpu,
+        row_subchunk_size=row_subchunk_size,
         compact_output=True,
     )
 
@@ -174,6 +193,11 @@ def trace_completion_compact_chunked(
     profile_log_interval: int = 1,
     diagnostic_feature_cap: int | None = None,
     sparsification: Any | None = None,
+    chunked_feature_replay_window: int = 4,
+    error_vector_prefetch_lookahead: int = 2,
+    stage_encoder_vecs_on_cpu: bool | None = None,
+    stage_error_vectors_on_cpu: bool | None = None,
+    row_subchunk_size: int | None = None,
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
     fixture_name: str | None = None,
@@ -226,6 +250,11 @@ def trace_completion_compact_chunked(
             profile_log_interval=profile_log_interval,
             diagnostic_feature_cap=diagnostic_feature_cap,
             sparsification=sparsification,
+            chunked_feature_replay_window=chunked_feature_replay_window,
+            error_vector_prefetch_lookahead=error_vector_prefetch_lookahead,
+            stage_encoder_vecs_on_cpu=stage_encoder_vecs_on_cpu,
+            stage_error_vectors_on_cpu=stage_error_vectors_on_cpu,
+            row_subchunk_size=row_subchunk_size,
         )
 
         token_result = base.generate_next_token(
@@ -301,6 +330,11 @@ def trace_completion_compact_chunked(
         "profile_attribution": profile_attribution,
         "profile_log_interval": profile_log_interval,
         "diagnostic_feature_cap": diagnostic_feature_cap,
+        "chunked_feature_replay_window": chunked_feature_replay_window,
+        "error_vector_prefetch_lookahead": error_vector_prefetch_lookahead,
+        "stage_encoder_vecs_on_cpu": stage_encoder_vecs_on_cpu,
+        "stage_error_vectors_on_cpu": stage_error_vectors_on_cpu,
+        "row_subchunk_size": row_subchunk_size,
         "sparsification": (
             {
                 "per_layer_position_topk": sparsification.per_layer_position_topk,
@@ -393,6 +427,11 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "lazy_decoder": not args.no_lazy_decoder,
         "decoder_chunk_size": args.decoder_chunk_size,
         "cross_batch_decoder_cache_bytes": args.cross_batch_decoder_cache_bytes,
+        "chunked_feature_replay_window": args.chunked_feature_replay_window,
+        "error_vector_prefetch_lookahead": args.error_vector_prefetch_lookahead,
+        "stage_encoder_vecs_on_cpu": args.stage_encoder_vecs_on_cpu,
+        "stage_error_vectors_on_cpu": args.stage_error_vectors_on_cpu,
+        "row_subchunk_size": args.row_subchunk_size,
         "prepared_prompt_file": args.prepared_prompt_file,
         "prepared_prompt_meta_file": args.prepared_prompt_meta_file,
         "graph_packaging_mode": (
@@ -464,6 +503,11 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 profile_log_interval=args.profile_log_interval,
                 diagnostic_feature_cap=args.diagnostic_feature_cap,
                 sparsification=sparsification,
+                chunked_feature_replay_window=args.chunked_feature_replay_window,
+                error_vector_prefetch_lookahead=args.error_vector_prefetch_lookahead,
+                stage_encoder_vecs_on_cpu=args.stage_encoder_vecs_on_cpu,
+                stage_error_vectors_on_cpu=args.stage_error_vectors_on_cpu,
+                row_subchunk_size=args.row_subchunk_size,
                 prompt_token_count=prompt_meta["prompt_token_count"],
                 prompt_source=prompt_meta["prompt_source"],
                 fixture_name=prompt_meta.get("fixture_name"),
@@ -613,6 +657,38 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Optional Phase-4 cross-batch decoder cache budget in bytes",
+    )
+    parser.add_argument(
+        "--chunked-feature-replay-window",
+        type=int,
+        default=4,
+        help="Exact-mode layer-grad replay window size before chunked feature replay flush",
+    )
+    parser.add_argument(
+        "--error-vector-prefetch-lookahead",
+        type=int,
+        default=2,
+        help="Exact-mode number of error-vector layers to prefetch into GPU memory",
+    )
+    parser.add_argument(
+        "--stage-encoder-vecs-on-cpu",
+        type=parse_optional_bool,
+        default=None,
+        metavar="{true,false}",
+        help="Override exact-mode encoder-vector CPU staging (omit to use fork default)",
+    )
+    parser.add_argument(
+        "--stage-error-vectors-on-cpu",
+        type=parse_optional_bool,
+        default=None,
+        metavar="{true,false}",
+        help="Override exact-mode error-vector CPU staging (omit to use fork default)",
+    )
+    parser.add_argument(
+        "--row-subchunk-size",
+        type=int,
+        default=None,
+        help="Optional exact-mode inner row subchunk size (default matches decoder chunk size)",
     )
     parser.add_argument(
         "--no-lazy-encoder",

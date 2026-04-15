@@ -35,6 +35,11 @@ def base_trace_defaults() -> dict[str, Any]:
         "no_offload": False,
         "no_lazy_encoder": False,
         "no_lazy_decoder": False,
+        "chunked_feature_replay_window": None,
+        "error_vector_prefetch_lookahead": None,
+        "stage_encoder_vecs_on_cpu": None,
+        "stage_error_vectors_on_cpu": None,
+        "row_subchunk_size": None,
         "max_steps": 1,
         "method": "exact",
     }

@@ -107,6 +107,13 @@ def _load_completion_manifests(artifact_dir: Path) -> list[dict[str, Any]]:
     return manifests
 
 
+def _load_run_config(artifact_dir: Path) -> dict[str, Any]:
+    run_config_path = artifact_dir / "run_config.json"
+    if not run_config_path.exists():
+        return {}
+    return read_json(run_config_path)
+
+
 def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     prompt_meta = _load_prompt_meta(artifact_dir)
     manifests = _load_completion_manifests(artifact_dir)
@@ -200,8 +207,12 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
     scenario_path = scenario_root / "scenario.json"
     scenario = read_json(scenario_path) if scenario_path.exists() else {}
     artifact_dir = Path(result.get("output_dir") or scenario_root / "artifacts")
+    run_config = _load_run_config(artifact_dir)
     profiling = result.get("profiling_summary", {})
-    cache_bytes = scenario.get("cross_batch_decoder_cache_bytes")
+    cache_bytes = run_config.get(
+        "cross_batch_decoder_cache_bytes",
+        scenario.get("cross_batch_decoder_cache_bytes"),
+    )
 
     return {
         "scenario_root": str(scenario_root),
@@ -219,10 +230,36 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
         "result_file": str(result_path),
         "run_log_path": result.get("log_path") or str(scenario_root / "run.log"),
         "artifacts_dir": str(artifact_dir),
-        "attribution_batch_size": scenario.get("attribution_batch_size"),
-        "feature_batch_size": scenario.get("feature_batch_size"),
-        "logit_batch_size": scenario.get("logit_batch_size"),
-        "decoder_chunk_size": scenario.get("decoder_chunk_size"),
+        "attribution_batch_size": run_config.get(
+            "attribution_batch_size", scenario.get("attribution_batch_size")
+        ),
+        "feature_batch_size": run_config.get(
+            "feature_batch_size", scenario.get("feature_batch_size")
+        ),
+        "logit_batch_size": run_config.get(
+            "logit_batch_size", scenario.get("logit_batch_size")
+        ),
+        "decoder_chunk_size": run_config.get(
+            "decoder_chunk_size", scenario.get("decoder_chunk_size")
+        ),
+        "chunked_feature_replay_window": run_config.get(
+            "chunked_feature_replay_window",
+            scenario.get("chunked_feature_replay_window"),
+        ),
+        "error_vector_prefetch_lookahead": run_config.get(
+            "error_vector_prefetch_lookahead",
+            scenario.get("error_vector_prefetch_lookahead"),
+        ),
+        "stage_encoder_vecs_on_cpu": run_config.get(
+            "stage_encoder_vecs_on_cpu", scenario.get("stage_encoder_vecs_on_cpu")
+        ),
+        "stage_error_vectors_on_cpu": run_config.get(
+            "stage_error_vectors_on_cpu",
+            scenario.get("stage_error_vectors_on_cpu"),
+        ),
+        "row_subchunk_size": run_config.get(
+            "row_subchunk_size", scenario.get("row_subchunk_size")
+        ),
         "decoder_cache_bytes": cache_bytes,
         "decoder_cache_gib": None if cache_bytes is None else cache_bytes / (1024**3),
         "max_feature_nodes": scenario.get("max_feature_nodes"),

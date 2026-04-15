@@ -15,6 +15,9 @@ and immutable workspace snapshots.
 - Extraction/aggregation helpers for `result.json`, `run.log`, and SLURM logs
 - Compact graph comparison helpers for prompt94-style analysis (`step_*.npz`)
 - Immutable workspace snapshot helper for launch safety
+- Optional exact-mode scenario knobs forwarded to `trace_pipeline_chunked.py`:
+  `chunked_feature_replay_window`, `error_vector_prefetch_lookahead`,
+  `stage_encoder_vecs_on_cpu`, `stage_error_vectors_on_cpu`, `row_subchunk_size`
 
 Immutable workspace snapshots copy:
 

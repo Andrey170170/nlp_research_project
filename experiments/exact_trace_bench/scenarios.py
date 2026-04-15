@@ -20,6 +20,14 @@ SCENARIO_TIERS = ("fast", "anomaly", "long_eval")
 RESOURCE_PROFILE_STANDARD = "standard"
 RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM = "long_eval_high_mem"
 
+EXACT_MODE_KNOB_KEYS = (
+    "chunked_feature_replay_window",
+    "error_vector_prefetch_lookahead",
+    "stage_encoder_vecs_on_cpu",
+    "stage_error_vectors_on_cpu",
+    "row_subchunk_size",
+)
+
 CLUSTER_SETTINGS: dict[str, dict[str, Any]] = {
     "ascend": {
         "fast": {
@@ -106,6 +114,14 @@ def _scenario_name(
     )
 
 
+def _select_exact_mode_knobs(source: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: source[key]
+        for key in EXACT_MODE_KNOB_KEYS
+        if key in source and source[key] is not None
+    }
+
+
 def _base_payload(
     *,
     cluster: str,
@@ -175,6 +191,7 @@ def build_fast_tier(
                 "logit_batch_size": cfg["batch"],
                 "decoder_chunk_size": cfg["chunk"],
                 "cross_batch_decoder_cache_bytes": gib_to_bytes(cfg["cache_gib"]),
+                **_select_exact_mode_knobs(cfg),
             }
         )
 
@@ -222,6 +239,7 @@ def build_anomaly_tier(
                 "logit_batch_size": cfg["batch"],
                 "decoder_chunk_size": cfg["chunk"],
                 "cross_batch_decoder_cache_bytes": gib_to_bytes(cfg["cache_gib"]),
+                **_select_exact_mode_knobs(cfg),
             }
         )
 
@@ -281,6 +299,7 @@ def build_long_eval_tier(
                     "logit_batch_size": spec["batch"],
                     "decoder_chunk_size": spec["chunk"],
                     "cross_batch_decoder_cache_bytes": gib_to_bytes(spec["cache_gib"]),
+                    **_select_exact_mode_knobs(spec),
                 }
             )
 

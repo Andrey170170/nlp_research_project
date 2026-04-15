@@ -76,6 +76,22 @@ def _parse_optional_gib(value: str) -> float | None:
     return float(value)
 
 
+def _format_optional_bool_arg(value: Any) -> str:
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "t", "yes", "y", "on"}:
+            return "true"
+        if lowered in {"0", "false", "f", "no", "n", "off"}:
+            return "false"
+        raise ValueError(f"Unsupported boolean string override: {value!r}")
+    if isinstance(value, int):
+        if value in {0, 1}:
+            return str(bool(value)).lower()
+    raise ValueError(f"Unsupported boolean override type/value: {value!r}")
+
+
 def _extract_benchmark_metrics(log_path: Path) -> dict[str, Any]:
     if not log_path.exists():
         return {}
@@ -313,6 +329,36 @@ def build_command(
             )
         if scenario.get("sparsify_global_cap") is not None:
             cmd.extend(["--sparsify-global-cap", str(scenario["sparsify_global_cap"])])
+        if scenario.get("chunked_feature_replay_window") is not None:
+            cmd.extend(
+                [
+                    "--chunked-feature-replay-window",
+                    str(scenario["chunked_feature_replay_window"]),
+                ]
+            )
+        if scenario.get("error_vector_prefetch_lookahead") is not None:
+            cmd.extend(
+                [
+                    "--error-vector-prefetch-lookahead",
+                    str(scenario["error_vector_prefetch_lookahead"]),
+                ]
+            )
+        if scenario.get("stage_encoder_vecs_on_cpu") is not None:
+            cmd.extend(
+                [
+                    "--stage-encoder-vecs-on-cpu",
+                    _format_optional_bool_arg(scenario["stage_encoder_vecs_on_cpu"]),
+                ]
+            )
+        if scenario.get("stage_error_vectors_on_cpu") is not None:
+            cmd.extend(
+                [
+                    "--stage-error-vectors-on-cpu",
+                    _format_optional_bool_arg(scenario["stage_error_vectors_on_cpu"]),
+                ]
+            )
+        if scenario.get("row_subchunk_size") is not None:
+            cmd.extend(["--row-subchunk-size", str(scenario["row_subchunk_size"])])
 
     if scenario.get("verbose_attribution", False):
         cmd.append("--verbose-attribution")
