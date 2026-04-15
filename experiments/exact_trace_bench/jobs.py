@@ -22,7 +22,7 @@ SBATCH_SCRIPTS: dict[tuple[str, str], Path] = {
     / "trace_weekend_exact_chunked.ascend.sbatch",
     ("ascend", RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM): REPO_ROOT
     / "scripts"
-    / "trace_weekend_exact_chunked_361_late.ascend.sbatch",
+    / "trace_weekend_exact_chunked_long_eval.ascend.sbatch",
     ("cardinal", RESOURCE_PROFILE_STANDARD): REPO_ROOT
     / "scripts"
     / "trace_weekend_exact_chunked.cardinal.sbatch",

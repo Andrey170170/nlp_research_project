@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=wave2-361late
+#SBATCH --job-name=weekend-exact-long
 #SBATCH --account=PAS3272
 #SBATCH --cluster=ascend
 #SBATCH --partition=quad
