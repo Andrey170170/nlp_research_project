@@ -56,7 +56,27 @@ uv run python -m experiments.exact_trace_bench launch-plan \
 This prints an `sbatch` command that uses:
 
 - a scratch output root under `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/...`
+  with an auto-generated run folder (`<base>/<timestamp>_<run_slug>`), so
+  launches no longer collide when reusing the same tier/cluster base
 - and, optionally, an immutable workspace snapshot for `nnsight` safety.
+
+You can attach run metadata for later extraction/disambiguation:
+
+```bash
+uv run python -m experiments.exact_trace_bench launch-plan \
+  --cluster ascend \
+  --scenarios-file experiments/generated/exact_trace_bench/exact_trace_bench_fast_ascend_scenarios.json \
+  --run-name "ascend fast sanity" \
+  --run-description "post-change smoke run" \
+  --run-goal "confirm no launch collisions"
+```
+
+Supported metadata flags on both `launch-plan` and `submit-preset`:
+
+- `--run-id` (optional explicit run folder id)
+- `--run-name`
+- `--run-description`
+- `--run-goal`
 
 `launch-plan` also selects the sbatch script automatically from the scenario
 JSON `resource_profile` metadata:
@@ -85,6 +105,9 @@ CLI form:
 uv run python -m experiments.exact_trace_bench submit-preset --preset fast-ascend
 uv run python -m experiments.exact_trace_bench submit-preset --preset full-all
 ```
+
+Preset submissions also populate sensible default run metadata (name,
+description, goal) even if you do not pass explicit metadata flags.
 
 Wrapper scripts:
 

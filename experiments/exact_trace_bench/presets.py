@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,12 @@ PRESET_DEFS: dict[str, dict[str, tuple[str, ...]]] = {
     },
 }
 
+GOAL_BY_TIER: dict[str, str] = {
+    "fast": "Quick sanity sweep across base fixtures.",
+    "anomaly": "Reproduce and monitor anomaly-focused fixtures.",
+    "long_eval": "Stress-test long-eval fixtures with high-memory resources.",
+}
+
 
 def preset_names() -> list[str]:
     return sorted(PRESET_DEFS)
@@ -57,6 +64,10 @@ def run_preset(
     source_root: Path = REPO_ROOT,
     workspace_label_prefix: str | None = None,
     walltime: str | None = None,
+    run_id: str | None = None,
+    run_name: str | None = None,
+    run_description: str | None = None,
+    run_goal: str | None = None,
     print_only: bool = False,
 ) -> list[dict[str, Any]]:
     if preset not in PRESET_DEFS:
@@ -92,6 +103,15 @@ def run_preset(
 
     for cluster in definition["clusters"]:
         for tier in definition["tiers"]:
+            resolved_run_name = run_name or f"{preset}:{cluster}/{tier}"
+            resolved_run_description = (
+                run_description
+                or f"exact_trace_bench preset {preset} launch for {cluster}/{tier}"
+            )
+            resolved_run_goal = run_goal or GOAL_BY_TIER.get(
+                tier,
+                "Execute exact trace benchmark scenarios.",
+            )
             payload = build_tier_config(
                 tier=tier,
                 cluster=cluster,
@@ -107,6 +127,10 @@ def run_preset(
             plan = render_launch_plan(
                 cluster=cluster,
                 scenarios_file=scenarios_file,
+                run_id=run_id,
+                run_name=resolved_run_name,
+                run_description=resolved_run_description,
+                run_goal=resolved_run_goal,
                 immutable_workspace=launch_immutable,
                 snapshot_root=snapshot_root,
                 source_root=launch_source_root,
@@ -120,8 +144,13 @@ def run_preset(
                         source_root.resolve()
                     )
                     plan["sbatch_script"] = str(snapshot_script_path)
-                    plan["sbatch_argv"][-1] = str(snapshot_script_path)
-                    plan["sbatch_command"] = " ".join(plan["sbatch_argv"])
+                    plan["sbatch_argv"] = [
+                        str(snapshot_script_path)
+                        if entry == str(script_path)
+                        else entry
+                        for entry in plan["sbatch_argv"]
+                    ]
+                    plan["sbatch_command"] = shlex.join(plan["sbatch_argv"])
                 except ValueError:
                     pass
                 plan["immutable_workspace"] = True

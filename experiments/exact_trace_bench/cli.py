@@ -109,6 +109,10 @@ def _cmd_launch_plan(args: argparse.Namespace) -> None:
         cluster=args.cluster,
         scenarios_file=args.scenarios_file,
         output_root=args.output_root,
+        run_id=args.run_id,
+        run_name=args.run_name,
+        run_description=args.run_description,
+        run_goal=args.run_goal,
         immutable_workspace=args.immutable_workspace,
         snapshot_root=args.snapshot_root,
         source_root=args.source_root,
@@ -141,6 +145,10 @@ def _cmd_submit_preset(args: argparse.Namespace) -> None:
         source_root=args.source_root,
         workspace_label_prefix=args.workspace_label_prefix,
         walltime=args.walltime,
+        run_id=args.run_id,
+        run_name=args.run_name,
+        run_description=args.run_description,
+        run_goal=args.run_goal,
         print_only=args.print_only,
     )
     print(json.dumps({"preset": args.preset, "plans": plans}, indent=2))
@@ -286,7 +294,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--output-root",
         type=Path,
         default=None,
-        help="Override scratch output root; defaults to the scenario metadata recommendation",
+        help="Override base scratch output root; launch-plan still appends a unique run folder",
+    )
+    launch_plan.add_argument(
+        "--run-id",
+        default=None,
+        help="Optional run identifier used as the run folder name under --output-root",
+    )
+    launch_plan.add_argument(
+        "--run-name",
+        default=None,
+        help="Human-readable run name used in metadata and output root slug defaults",
+    )
+    launch_plan.add_argument(
+        "--run-description",
+        default=None,
+        help="Short free-text run description stored with the run artifacts",
+    )
+    launch_plan.add_argument(
+        "--run-goal",
+        default=None,
+        help="Free-text run goal stored with the run artifacts",
     )
     launch_plan.add_argument(
         "--immutable-workspace",
@@ -351,6 +379,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     submit_preset.add_argument("--workspace-label-prefix", default="preset")
     submit_preset.add_argument("--walltime", default=None)
+    submit_preset.add_argument(
+        "--run-id",
+        default=None,
+        help="Optional run identifier to reuse across preset launch plans",
+    )
+    submit_preset.add_argument(
+        "--run-name",
+        default=None,
+        help="Optional run name prefix for preset launch metadata",
+    )
+    submit_preset.add_argument(
+        "--run-description",
+        default=None,
+        help="Optional run description for preset launch metadata",
+    )
+    submit_preset.add_argument(
+        "--run-goal",
+        default=None,
+        help="Optional run goal for preset launch metadata",
+    )
     submit_preset.add_argument(
         "--print-only",
         action="store_true",

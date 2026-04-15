@@ -67,6 +67,10 @@ NODE_RE = re.compile(r"Node: (?P<node>.+)")
 CLUSTER_RE = re.compile(r"Cluster: (?P<cluster>.+)")
 SCENARIOS_FILE_RE = re.compile(r"Scenarios file: (?P<scenarios_file>.+)")
 OUTPUT_ROOT_RE = re.compile(r"Output root: (?P<output_root>.+)")
+RUN_ID_RE = re.compile(r"Run ID: (?P<run_id>.+)")
+RUN_NAME_RE = re.compile(r"Run name: (?P<run_name>.+)")
+RUN_DESCRIPTION_RE = re.compile(r"Run description: (?P<run_description>.+)")
+RUN_GOAL_RE = re.compile(r"Run goal: (?P<run_goal>.+)")
 WRITING_DIR_RE = re.compile(r"Writing experiment results to (?P<scenario_root>.+)")
 RUNNING_SCENARIO_RE = re.compile(r"Running scenario: (?P<scenario_name>.+)")
 OOM_KILL_RE = re.compile(r"Detected (?P<count>\d+) oom_kill events")
@@ -112,6 +116,50 @@ def _load_run_config(artifact_dir: Path) -> dict[str, Any]:
     if not run_config_path.exists():
         return {}
     return read_json(run_config_path)
+
+
+def _first_non_null(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _normalize_optional_metadata_value(value: Any) -> Any:
+    if isinstance(value, str):
+        normalized = value.strip()
+        if not normalized or normalized.lower() == "unset":
+            return None
+        return normalized
+    return value
+
+
+def _load_summary_run_metadata(scenario_root: Path) -> dict[str, Any]:
+    candidates = [scenario_root / "summary.json", scenario_root.parent / "summary.json"]
+    for summary_path in candidates:
+        if not summary_path.exists():
+            continue
+        summary = read_json(summary_path)
+        run_metadata = summary.get("run_metadata")
+        if isinstance(run_metadata, dict):
+            return run_metadata
+        if any(
+            key in summary
+            for key in (
+                "run_id",
+                "launch_id",
+                "run_name",
+                "run_description",
+                "run_goal",
+            )
+        ):
+            return {
+                "run_id": summary.get("run_id") or summary.get("launch_id"),
+                "run_name": summary.get("run_name"),
+                "run_description": summary.get("run_description"),
+                "run_goal": summary.get("run_goal"),
+            }
+    return {}
 
 
 def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
@@ -208,6 +256,44 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
     scenario = read_json(scenario_path) if scenario_path.exists() else {}
     artifact_dir = Path(result.get("output_dir") or scenario_root / "artifacts")
     run_config = _load_run_config(artifact_dir)
+    summary_run_metadata = _load_summary_run_metadata(scenario_root)
+    scenario_run_metadata_raw = scenario.get("run_metadata")
+    scenario_run_metadata = (
+        scenario_run_metadata_raw if isinstance(scenario_run_metadata_raw, dict) else {}
+    )
+    result_run_metadata_raw = result.get("run_metadata")
+    result_run_metadata = (
+        result_run_metadata_raw if isinstance(result_run_metadata_raw, dict) else {}
+    )
+    run_id = _first_non_null(
+        result.get("run_id"),
+        result.get("launch_id"),
+        result_run_metadata.get("run_id"),
+        result_run_metadata.get("launch_id"),
+        scenario_run_metadata.get("run_id"),
+        scenario_run_metadata.get("launch_id"),
+        summary_run_metadata.get("run_id"),
+        summary_run_metadata.get("launch_id"),
+    )
+    run_name = _first_non_null(
+        result.get("run_name"),
+        result_run_metadata.get("run_name"),
+        scenario_run_metadata.get("run_name"),
+        summary_run_metadata.get("run_name"),
+    )
+    run_description = _first_non_null(
+        result.get("run_description"),
+        result_run_metadata.get("run_description"),
+        scenario_run_metadata.get("run_description"),
+        summary_run_metadata.get("run_description"),
+    )
+    run_goal = _first_non_null(
+        result.get("run_goal"),
+        result_run_metadata.get("run_goal"),
+        scenario_run_metadata.get("run_goal"),
+        summary_run_metadata.get("run_goal"),
+    )
+
     profiling = result.get("profiling_summary", {})
     cache_bytes = run_config.get(
         "cross_batch_decoder_cache_bytes",
@@ -230,6 +316,11 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
         "result_file": str(result_path),
         "run_log_path": result.get("log_path") or str(scenario_root / "run.log"),
         "artifacts_dir": str(artifact_dir),
+        "run_id": run_id,
+        "launch_id": run_id,
+        "run_name": run_name,
+        "run_description": run_description,
+        "run_goal": run_goal,
         "attribution_batch_size": run_config.get(
             "attribution_batch_size", scenario.get("attribution_batch_size")
         ),
@@ -522,6 +613,10 @@ def _parse_out_metadata(out_path: Path) -> dict[str, Any]:
         (CLUSTER_RE, "cluster"),
         (SCENARIOS_FILE_RE, "scenarios_file"),
         (OUTPUT_ROOT_RE, "output_root"),
+        (RUN_ID_RE, "run_id"),
+        (RUN_NAME_RE, "run_name"),
+        (RUN_DESCRIPTION_RE, "run_description"),
+        (RUN_GOAL_RE, "run_goal"),
         (WRITING_DIR_RE, "scenario_root"),
         (RUNNING_SCENARIO_RE, "scenario_name"),
     ]
@@ -532,7 +627,7 @@ def _parse_out_metadata(out_path: Path) -> dict[str, Any]:
         for regex, key in line_map:
             match = regex.search(line)
             if match:
-                metadata[key] = match.group(key)
+                metadata[key] = _normalize_optional_metadata_value(match.group(key))
     return metadata
 
 
@@ -557,6 +652,11 @@ def build_slurm_row(err_path: Path, benchmark_root: Path) -> dict[str, Any]:
         "cluster": out_metadata.get("cluster"),
         "scenarios_file": out_metadata.get("scenarios_file"),
         "output_root": out_metadata.get("output_root"),
+        "run_id": out_metadata.get("run_id"),
+        "launch_id": out_metadata.get("run_id"),
+        "run_name": out_metadata.get("run_name"),
+        "run_description": out_metadata.get("run_description"),
+        "run_goal": out_metadata.get("run_goal"),
         "scenario_root": scenario_root,
         "scenario_name": out_metadata.get("scenario_name"),
         "failure_family": failure_family,

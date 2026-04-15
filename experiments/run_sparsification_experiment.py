@@ -47,6 +47,33 @@ def apply_runtime_overrides(
     return effective_scenario
 
 
+def _normalize_run_metadata_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    normalized = " ".join(str(value).split())
+    return normalized or None
+
+
+def _has_run_metadata(run_metadata: dict[str, str | None]) -> bool:
+    return any(value is not None for value in run_metadata.values())
+
+
+def _assert_fresh_scenario_root(scenario_root: Path) -> None:
+    collision_paths = [
+        scenario_root / "scenario.json",
+        scenario_root / "result.json",
+        scenario_root / "run.log",
+        scenario_root / "artifacts",
+    ]
+    existing = [path for path in collision_paths if path.exists()]
+    if existing:
+        joined = ", ".join(str(path) for path in existing)
+        raise FileExistsError(
+            "Scenario output directory already contains artifacts; refusing to reuse it: "
+            f"{scenario_root} ({joined})"
+        )
+
+
 def _build_prompt_source_args(scenario: dict[str, Any]) -> list[str]:
     prepared_prompt_file = scenario.get("prepared_prompt_file")
     if prepared_prompt_file is not None:
@@ -387,6 +414,7 @@ def run_scenario(
     scenario: dict[str, Any],
     *,
     env: dict[str, str],
+    run_metadata: dict[str, str | None],
     cross_batch_decoder_cache_bytes_override: int | None = None,
 ) -> dict[str, Any]:
     scenario_name = scenario["name"]
@@ -396,15 +424,17 @@ def run_scenario(
         else output_root / scenario_name
     )
     run_output_dir = scenario_root / "artifacts"
+    _assert_fresh_scenario_root(scenario_root)
     scenario_root.mkdir(parents=True, exist_ok=True)
     run_output_dir.mkdir(parents=True, exist_ok=True)
     effective_scenario = apply_runtime_overrides(
         scenario,
         cross_batch_decoder_cache_bytes_override=cross_batch_decoder_cache_bytes_override,
     )
-    (scenario_root / "scenario.json").write_text(
-        json.dumps(effective_scenario, indent=2)
-    )
+    scenario_payload = dict(effective_scenario)
+    if _has_run_metadata(run_metadata):
+        scenario_payload["run_metadata"] = run_metadata
+    (scenario_root / "scenario.json").write_text(json.dumps(scenario_payload, indent=2))
 
     log_path = scenario_root / "run.log"
     cmd = build_command(
@@ -419,6 +449,12 @@ def run_scenario(
         "name": scenario_name,
         "stage": scenario.get("stage"),
         "method": scenario["method"],
+        "run_id": run_metadata.get("run_id"),
+        "launch_id": run_metadata.get("run_id"),
+        "run_name": run_metadata.get("run_name"),
+        "run_description": run_metadata.get("run_description"),
+        "run_goal": run_metadata.get("run_goal"),
+        "run_metadata": run_metadata,
         "gsm8k_indices": scenario.get("gsm8k_indices"),
         "prepared_prompt_file": scenario.get("prepared_prompt_file"),
         "prepared_prompt_meta_file": scenario.get("prepared_prompt_meta_file"),
@@ -434,6 +470,13 @@ def run_scenario(
         log_file.write(f"Scenario: {scenario_name}\n")
         log_file.write(f"Stage: {scenario.get('stage')}\n")
         log_file.write(f"Method: {scenario['method']}\n")
+        if _has_run_metadata(run_metadata):
+            log_file.write(f"Run ID: {run_metadata.get('run_id')}\n")
+            log_file.write(f"Run name: {run_metadata.get('run_name')}\n")
+            if run_metadata.get("run_description"):
+                log_file.write(f"Run description: {run_metadata['run_description']}\n")
+            if run_metadata.get("run_goal"):
+                log_file.write(f"Run goal: {run_metadata['run_goal']}\n")
         log_file.write(f"Start: {time.ctime(start)}\n")
         log_file.write(f"Working directory: {REPO_ROOT}\n")
         log_file.write(f"Command: {shlex.join(cmd)}\n\n")
@@ -519,9 +562,39 @@ def main() -> None:
         default=None,
         help="Optional override for exact chunked Phase-4 cross-batch decoder cache budget",
     )
+    parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Optional run identifier for grouping scenario outputs and metadata",
+    )
+    parser.add_argument(
+        "--run-name",
+        default=None,
+        help="Optional human-readable run name",
+    )
+    parser.add_argument(
+        "--run-description",
+        default=None,
+        help="Optional short free-text run description",
+    )
+    parser.add_argument(
+        "--run-goal",
+        default=None,
+        help="Optional free-text run goal",
+    )
     args = parser.parse_args()
 
     scenarios, metadata = load_scenarios(args.scenarios_file)
+    run_metadata = {
+        "run_id": _normalize_run_metadata_value(args.run_id)
+        or _normalize_run_metadata_value(metadata.get("run_id")),
+        "run_name": _normalize_run_metadata_value(args.run_name)
+        or _normalize_run_metadata_value(metadata.get("run_name")),
+        "run_description": _normalize_run_metadata_value(args.run_description)
+        or _normalize_run_metadata_value(metadata.get("run_description")),
+        "run_goal": _normalize_run_metadata_value(args.run_goal)
+        or _normalize_run_metadata_value(metadata.get("run_goal")),
+    }
 
     if args.list:
         for idx, scenario in enumerate(scenarios):
@@ -557,6 +630,8 @@ def main() -> None:
     print(f"Loaded {len(scenarios)} scenario(s) from {args.scenarios_file}")
     if metadata:
         print(f"Scenario metadata: {json.dumps(metadata, indent=2)}")
+    if _has_run_metadata(run_metadata):
+        print(f"Run metadata: {json.dumps(run_metadata, indent=2)}")
 
     results = []
     for scenario in scenarios:
@@ -576,6 +651,7 @@ def main() -> None:
                 output_root,
                 scenario,
                 env=env,
+                run_metadata=run_metadata,
                 cross_batch_decoder_cache_bytes_override=args.cross_batch_decoder_cache_bytes,
             )
         )
@@ -590,6 +666,12 @@ def main() -> None:
         "timestamp": timestamp,
         "scenarios_file": str(args.scenarios_file),
         "metadata": metadata,
+        "run_id": run_metadata.get("run_id"),
+        "launch_id": run_metadata.get("run_id"),
+        "run_name": run_metadata.get("run_name"),
+        "run_description": run_metadata.get("run_description"),
+        "run_goal": run_metadata.get("run_goal"),
+        "run_metadata": run_metadata,
         "output_root": str(output_root),
         "results": results,
     }
