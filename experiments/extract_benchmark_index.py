@@ -140,6 +140,31 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
         ),
         default=None,
     )
+    step_phase4_feature_batch_sizes = [
+        int(step["phase4_feature_batch_size"])
+        for step in steps
+        if step.get("phase4_feature_batch_size") is not None
+    ]
+    manifest_phase4_feature_batch_sizes: list[int] = []
+    manifest_phase4_effective_sizes: list[int] = []
+    for manifest in manifests:
+        manifest_observed = manifest.get("phase4_feature_batch_sizes_observed")
+        if isinstance(manifest_observed, list):
+            manifest_phase4_feature_batch_sizes.extend(
+                int(value)
+                for value in manifest_observed
+                if isinstance(value, (int, float))
+            )
+        manifest_effective = manifest.get("phase4_feature_batch_size_effective")
+        if isinstance(manifest_effective, (int, float)):
+            manifest_phase4_effective_sizes.append(int(manifest_effective))
+    all_phase4_feature_batch_sizes = sorted(
+        set(
+            step_phase4_feature_batch_sizes
+            + manifest_phase4_feature_batch_sizes
+            + manifest_phase4_effective_sizes
+        )
+    )
 
     return {
         "prompt_count": len(list(artifact_dir.glob("prompt_*"))),
@@ -175,6 +200,24 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
         "reconstruction_chunk_count": reconstruction_chunk_count,
         "reconstruction_seconds": reconstruction_seconds,
         "encode_sparse_seconds": encode_sparse_seconds,
+        "phase4_feature_batch_size_effective": (
+            max(manifest_phase4_effective_sizes)
+            if manifest_phase4_effective_sizes
+            else max(all_phase4_feature_batch_sizes)
+            if all_phase4_feature_batch_sizes
+            else None
+        ),
+        "phase4_feature_batch_size_observed_min": (
+            min(all_phase4_feature_batch_sizes)
+            if all_phase4_feature_batch_sizes
+            else None
+        ),
+        "phase4_feature_batch_size_observed_max": (
+            max(all_phase4_feature_batch_sizes)
+            if all_phase4_feature_batch_sizes
+            else None
+        ),
+        "phase4_feature_batch_sizes_observed": all_phase4_feature_batch_sizes,
         **flatten_dict(resource_snapshot, prefix="resource_snapshot_"),
     }
 

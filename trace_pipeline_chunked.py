@@ -51,8 +51,12 @@ def extract_compact_chunked_attribution(
     stage_encoder_vecs_on_cpu: bool | None = None,
     stage_error_vectors_on_cpu: bool | None = None,
     row_subchunk_size: int | None = None,
+    plan_feature_batch_size: bool = False,
     auto_scale_feature_batch_size: bool = False,
     feature_batch_size_max: int | None = None,
+    feature_batch_target_reserved_fraction: float = 0.9,
+    feature_batch_min_free_fraction: float = 0.05,
+    feature_batch_probe_batches: int = 1,
 ) -> dict[str, Any]:
     gc.collect()
     if torch.cuda.is_available():
@@ -85,8 +89,12 @@ def extract_compact_chunked_attribution(
         stage_encoder_vecs_on_cpu=stage_encoder_vecs_on_cpu,
         stage_error_vectors_on_cpu=stage_error_vectors_on_cpu,
         row_subchunk_size=row_subchunk_size,
+        plan_feature_batch_size=plan_feature_batch_size,
         auto_scale_feature_batch_size=auto_scale_feature_batch_size,
         feature_batch_size_max=feature_batch_size_max,
+        feature_batch_target_reserved_fraction=feature_batch_target_reserved_fraction,
+        feature_batch_min_free_fraction=feature_batch_min_free_fraction,
+        feature_batch_probe_batches=feature_batch_probe_batches,
         compact_output=True,
     )
 
@@ -202,8 +210,12 @@ def trace_completion_compact_chunked(
     stage_encoder_vecs_on_cpu: bool | None = None,
     stage_error_vectors_on_cpu: bool | None = None,
     row_subchunk_size: int | None = None,
+    plan_feature_batch_size: bool = False,
     auto_scale_feature_batch_size: bool = False,
     feature_batch_size_max: int | None = None,
+    feature_batch_target_reserved_fraction: float = 0.9,
+    feature_batch_min_free_fraction: float = 0.05,
+    feature_batch_probe_batches: int = 1,
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
     fixture_name: str | None = None,
@@ -228,6 +240,10 @@ def trace_completion_compact_chunked(
     )
     generated_token_ids: list[int] = []
     step_records: list[dict[str, Any]] = []
+    initial_phase4_feature_batch_size = (
+        attribution_batch_size if feature_batch_size is None else feature_batch_size
+    )
+    observed_phase4_feature_batch_sizes: list[int] = []
 
     candidate_stop_ids = [tokenizer.eos_token_id, tokenizer.pad_token_id]
     end_of_turn = tokenizer.convert_tokens_to_ids("<end_of_turn>")
@@ -261,8 +277,12 @@ def trace_completion_compact_chunked(
             stage_encoder_vecs_on_cpu=stage_encoder_vecs_on_cpu,
             stage_error_vectors_on_cpu=stage_error_vectors_on_cpu,
             row_subchunk_size=row_subchunk_size,
+            plan_feature_batch_size=plan_feature_batch_size,
             auto_scale_feature_batch_size=auto_scale_feature_batch_size,
             feature_batch_size_max=feature_batch_size_max,
+            feature_batch_target_reserved_fraction=feature_batch_target_reserved_fraction,
+            feature_batch_min_free_fraction=feature_batch_min_free_fraction,
+            feature_batch_probe_batches=feature_batch_probe_batches,
         )
 
         token_result = base.generate_next_token(
@@ -281,6 +301,13 @@ def trace_completion_compact_chunked(
         )
         save_compact(step_data, completion_dir / f"step_{step_idx:03d}.npz")
 
+        resolved_phase4_feature_batch_size = int(
+            compact_result.get(
+                "phase4_feature_batch_size", initial_phase4_feature_batch_size
+            )
+        )
+        observed_phase4_feature_batch_sizes.append(resolved_phase4_feature_batch_size)
+
         step_record = {
             "step_index": step_idx,
             "prefix_token_count": int(input_ids.shape[1]),
@@ -293,6 +320,25 @@ def trace_completion_compact_chunked(
             "stop_reason": "eos" if next_token_id in stop_token_ids else None,
             "resource_snapshot": base.capture_resource_snapshot(),
             "transcoder_diagnostics": base.capture_transcoder_diagnostics(model),
+            "phase4_feature_batch_size": resolved_phase4_feature_batch_size,
+            "phase4_feature_batch_size_initial": int(
+                compact_result.get(
+                    "phase4_feature_batch_size_initial",
+                    initial_phase4_feature_batch_size,
+                )
+            ),
+            "phase4_feature_batch_size_max": int(
+                compact_result.get(
+                    "phase4_feature_batch_size_max",
+                    resolved_phase4_feature_batch_size,
+                )
+            ),
+            "phase4_feature_batch_planner_enabled": bool(
+                compact_result.get(
+                    "phase4_feature_batch_planner_enabled",
+                    plan_feature_batch_size or auto_scale_feature_batch_size,
+                )
+            ),
         }
         step_records.append(step_record)
 
@@ -311,6 +357,7 @@ def trace_completion_compact_chunked(
             break
 
     completion_text = tokenizer.decode(generated_token_ids, skip_special_tokens=True)
+    unique_phase4_feature_batch_sizes = sorted(set(observed_phase4_feature_batch_sizes))
     manifest = {
         "prompt_id": prompt_id,
         "completion_id": completion_id,
@@ -343,8 +390,29 @@ def trace_completion_compact_chunked(
         "stage_encoder_vecs_on_cpu": stage_encoder_vecs_on_cpu,
         "stage_error_vectors_on_cpu": stage_error_vectors_on_cpu,
         "row_subchunk_size": row_subchunk_size,
+        "plan_feature_batch_size": plan_feature_batch_size,
         "auto_scale_feature_batch_size": auto_scale_feature_batch_size,
         "feature_batch_size_max": feature_batch_size_max,
+        "feature_batch_target_reserved_fraction": feature_batch_target_reserved_fraction,
+        "feature_batch_min_free_fraction": feature_batch_min_free_fraction,
+        "feature_batch_probe_batches": feature_batch_probe_batches,
+        "phase4_feature_batch_size_initial": initial_phase4_feature_batch_size,
+        "phase4_feature_batch_sizes_observed": unique_phase4_feature_batch_sizes,
+        "phase4_feature_batch_size_effective": (
+            observed_phase4_feature_batch_sizes[-1]
+            if observed_phase4_feature_batch_sizes
+            else initial_phase4_feature_batch_size
+        ),
+        "phase4_feature_batch_size_observed_min": (
+            min(observed_phase4_feature_batch_sizes)
+            if observed_phase4_feature_batch_sizes
+            else initial_phase4_feature_batch_size
+        ),
+        "phase4_feature_batch_size_observed_max": (
+            max(observed_phase4_feature_batch_sizes)
+            if observed_phase4_feature_batch_sizes
+            else initial_phase4_feature_batch_size
+        ),
         "sparsification": (
             {
                 "per_layer_position_topk": sparsification.per_layer_position_topk,
@@ -396,13 +464,26 @@ def run_pipeline(args: argparse.Namespace) -> None:
         if args.feature_batch_size is None
         else args.feature_batch_size
     )
+    planner_enabled = args.plan_feature_batch_size or args.auto_scale_feature_batch_size
+    if planner_enabled and args.save_raw:
+        raise ValueError(
+            "Phase-4 feature batch planner currently supports only compact exact-chunked output. "
+            "--save-raw routes through full-graph tracing and is unsupported with planner flags."
+        )
     if (
         args.feature_batch_size_max is not None
         and args.feature_batch_size_max < initial_feature_batch_size
+        and not planner_enabled
     ):
         raise ValueError(
             "feature_batch_size_max must be >= the initial/effective feature batch size"
         )
+    if not 0.0 < args.feature_batch_target_reserved_fraction < 1.0:
+        raise ValueError("feature_batch_target_reserved_fraction must be in (0, 1)")
+    if not 0.0 <= args.feature_batch_min_free_fraction < 1.0:
+        raise ValueError("feature_batch_min_free_fraction must be in [0, 1)")
+    if args.feature_batch_probe_batches <= 0:
+        raise ValueError("feature_batch_probe_batches must be > 0")
     sparsification = build_sparsification_config(args)
     model = base.load_model(
         lazy_encoder=not args.no_lazy_encoder,
@@ -454,8 +535,13 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "stage_encoder_vecs_on_cpu": args.stage_encoder_vecs_on_cpu,
         "stage_error_vectors_on_cpu": args.stage_error_vectors_on_cpu,
         "row_subchunk_size": args.row_subchunk_size,
+        "plan_feature_batch_size": args.plan_feature_batch_size,
         "auto_scale_feature_batch_size": args.auto_scale_feature_batch_size,
+        "phase4_feature_batch_planner_enabled": planner_enabled,
         "feature_batch_size_max": args.feature_batch_size_max,
+        "feature_batch_target_reserved_fraction": args.feature_batch_target_reserved_fraction,
+        "feature_batch_min_free_fraction": args.feature_batch_min_free_fraction,
+        "feature_batch_probe_batches": args.feature_batch_probe_batches,
         "prepared_prompt_file": args.prepared_prompt_file,
         "prepared_prompt_meta_file": args.prepared_prompt_meta_file,
         "graph_packaging_mode": (
@@ -532,8 +618,12 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 stage_encoder_vecs_on_cpu=args.stage_encoder_vecs_on_cpu,
                 stage_error_vectors_on_cpu=args.stage_error_vectors_on_cpu,
                 row_subchunk_size=args.row_subchunk_size,
+                plan_feature_batch_size=args.plan_feature_batch_size,
                 auto_scale_feature_batch_size=args.auto_scale_feature_batch_size,
                 feature_batch_size_max=args.feature_batch_size_max,
+                feature_batch_target_reserved_fraction=args.feature_batch_target_reserved_fraction,
+                feature_batch_min_free_fraction=args.feature_batch_min_free_fraction,
+                feature_batch_probe_batches=args.feature_batch_probe_batches,
                 prompt_token_count=prompt_meta["prompt_token_count"],
                 prompt_source=prompt_meta["prompt_source"],
                 fixture_name=prompt_meta.get("fixture_name"),
@@ -717,15 +807,38 @@ if __name__ == "__main__":
         help="Optional exact-mode inner row subchunk size (default matches decoder chunk size)",
     )
     parser.add_argument(
+        "--plan-feature-batch-size",
+        action="store_true",
+        help="Enable probe-based preflight planner for a fixed Phase-4 feature microbatch size",
+    )
+    parser.add_argument(
         "--auto-scale-feature-batch-size",
         action="store_true",
-        help="Conservatively grow the Phase-4 feature microbatch size when CUDA headroom remains ample",
+        help="Legacy alias for --plan-feature-batch-size (kept for compatibility)",
     )
     parser.add_argument(
         "--feature-batch-size-max",
         type=int,
         default=None,
-        help="Optional upper bound for autoscaled Phase-4 feature microbatch size",
+        help="Optional upper bound for planned fixed Phase-4 feature microbatch size",
+    )
+    parser.add_argument(
+        "--feature-batch-target-reserved-fraction",
+        type=float,
+        default=0.9,
+        help="Planner target for CUDA reserved-memory utilization (fraction of total VRAM)",
+    )
+    parser.add_argument(
+        "--feature-batch-min-free-fraction",
+        type=float,
+        default=0.05,
+        help="Planner minimum free-memory fraction to keep as safety headroom",
+    )
+    parser.add_argument(
+        "--feature-batch-probe-batches",
+        type=int,
+        default=1,
+        help="Number of preflight Phase-4 probe batches used by the planner",
     )
     parser.add_argument(
         "--no-lazy-encoder",

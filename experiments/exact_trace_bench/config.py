@@ -40,8 +40,12 @@ def base_trace_defaults() -> dict[str, Any]:
         "stage_encoder_vecs_on_cpu": None,
         "stage_error_vectors_on_cpu": None,
         "row_subchunk_size": None,
+        "plan_feature_batch_size": False,
         "auto_scale_feature_batch_size": False,
         "feature_batch_size_max": None,
+        "feature_batch_target_reserved_fraction": 0.9,
+        "feature_batch_min_free_fraction": 0.05,
+        "feature_batch_probe_batches": 1,
         "max_steps": 1,
         "method": "exact",
     }

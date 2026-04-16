@@ -26,8 +26,12 @@ EXACT_MODE_KNOB_KEYS = (
     "stage_encoder_vecs_on_cpu",
     "stage_error_vectors_on_cpu",
     "row_subchunk_size",
+    "plan_feature_batch_size",
     "auto_scale_feature_batch_size",
     "feature_batch_size_max",
+    "feature_batch_target_reserved_fraction",
+    "feature_batch_min_free_fraction",
+    "feature_batch_probe_batches",
 )
 
 CLUSTER_SETTINGS: dict[str, dict[str, Any]] = {

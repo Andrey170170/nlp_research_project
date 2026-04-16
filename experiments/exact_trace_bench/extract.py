@@ -179,6 +179,31 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
 
     first_manifest = manifests[0] if manifests else {}
     resource_snapshot = first_manifest.get("resource_snapshot")
+    step_phase4_feature_batch_sizes = [
+        int(step["phase4_feature_batch_size"])
+        for step in steps
+        if step.get("phase4_feature_batch_size") is not None
+    ]
+    manifest_phase4_feature_batch_sizes: list[int] = []
+    manifest_phase4_effective_sizes: list[int] = []
+    for manifest in manifests:
+        manifest_observed = manifest.get("phase4_feature_batch_sizes_observed")
+        if isinstance(manifest_observed, list):
+            manifest_phase4_feature_batch_sizes.extend(
+                int(value)
+                for value in manifest_observed
+                if isinstance(value, (int, float))
+            )
+        manifest_effective = manifest.get("phase4_feature_batch_size_effective")
+        if isinstance(manifest_effective, (int, float)):
+            manifest_phase4_effective_sizes.append(int(manifest_effective))
+    all_phase4_feature_batch_sizes = sorted(
+        set(
+            step_phase4_feature_batch_sizes
+            + manifest_phase4_feature_batch_sizes
+            + manifest_phase4_effective_sizes
+        )
+    )
 
     return {
         "prompt_count": len(list(artifact_dir.glob("prompt_*"))),
@@ -245,6 +270,24 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
             ),
             default=None,
         ),
+        "phase4_feature_batch_size_effective": (
+            max(manifest_phase4_effective_sizes)
+            if manifest_phase4_effective_sizes
+            else max(all_phase4_feature_batch_sizes)
+            if all_phase4_feature_batch_sizes
+            else None
+        ),
+        "phase4_feature_batch_size_observed_min": (
+            min(all_phase4_feature_batch_sizes)
+            if all_phase4_feature_batch_sizes
+            else None
+        ),
+        "phase4_feature_batch_size_observed_max": (
+            max(all_phase4_feature_batch_sizes)
+            if all_phase4_feature_batch_sizes
+            else None
+        ),
+        "phase4_feature_batch_sizes_observed": all_phase4_feature_batch_sizes,
         **flatten_dict(resource_snapshot, prefix="resource_snapshot_"),
     }
 
@@ -351,12 +394,27 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
         "row_subchunk_size": run_config.get(
             "row_subchunk_size", scenario.get("row_subchunk_size")
         ),
+        "plan_feature_batch_size": run_config.get(
+            "plan_feature_batch_size", scenario.get("plan_feature_batch_size")
+        ),
         "auto_scale_feature_batch_size": run_config.get(
             "auto_scale_feature_batch_size",
             scenario.get("auto_scale_feature_batch_size"),
         ),
         "feature_batch_size_max": run_config.get(
             "feature_batch_size_max", scenario.get("feature_batch_size_max")
+        ),
+        "feature_batch_target_reserved_fraction": run_config.get(
+            "feature_batch_target_reserved_fraction",
+            scenario.get("feature_batch_target_reserved_fraction"),
+        ),
+        "feature_batch_min_free_fraction": run_config.get(
+            "feature_batch_min_free_fraction",
+            scenario.get("feature_batch_min_free_fraction"),
+        ),
+        "feature_batch_probe_batches": run_config.get(
+            "feature_batch_probe_batches",
+            scenario.get("feature_batch_probe_batches"),
         ),
         "decoder_cache_bytes": cache_bytes,
         "decoder_cache_gib": None if cache_bytes is None else cache_bytes / (1024**3),

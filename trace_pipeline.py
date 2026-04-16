@@ -481,7 +481,21 @@ def extract_graph(
     stage_encoder_vecs_on_cpu: bool | None = None,
     stage_error_vectors_on_cpu: bool | None = None,
     row_subchunk_size: int | None = None,
+    plan_feature_batch_size: bool = False,
+    auto_scale_feature_batch_size: bool = False,
+    feature_batch_size_max: int | None = None,
+    feature_batch_target_reserved_fraction: float = 0.9,
+    feature_batch_min_free_fraction: float = 0.05,
+    feature_batch_probe_batches: int = 1,
 ):
+    planner_enabled = bool(plan_feature_batch_size or auto_scale_feature_batch_size)
+    if planner_enabled:
+        raise ValueError(
+            "Phase-4 feature batch planner is unsupported in trace_pipeline.extract_graph() "
+            "because this path uses full-graph attribution via the top-level attribute() wrapper. "
+            "Use trace_pipeline_chunked.py compact mode (without --save-raw)."
+        )
+
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -508,6 +522,12 @@ def extract_graph(
         "stage_encoder_vecs_on_cpu": stage_encoder_vecs_on_cpu,
         "stage_error_vectors_on_cpu": stage_error_vectors_on_cpu,
         "row_subchunk_size": row_subchunk_size,
+        "plan_feature_batch_size": plan_feature_batch_size,
+        "auto_scale_feature_batch_size": auto_scale_feature_batch_size,
+        "feature_batch_size_max": feature_batch_size_max,
+        "feature_batch_target_reserved_fraction": feature_batch_target_reserved_fraction,
+        "feature_batch_min_free_fraction": feature_batch_min_free_fraction,
+        "feature_batch_probe_batches": feature_batch_probe_batches,
     }
     return attribute(**attribute_kwargs)
 
@@ -596,8 +616,12 @@ def trace_completion(
     stage_encoder_vecs_on_cpu: bool | None = None,
     stage_error_vectors_on_cpu: bool | None = None,
     row_subchunk_size: int | None = None,
+    plan_feature_batch_size: bool = False,
     auto_scale_feature_batch_size: bool = False,
     feature_batch_size_max: int | None = None,
+    feature_batch_target_reserved_fraction: float = 0.9,
+    feature_batch_min_free_fraction: float = 0.05,
+    feature_batch_probe_batches: int = 1,
     save_raw: bool = False,
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
@@ -605,6 +629,14 @@ def trace_completion(
     fixture_kind: str | None = None,
 ) -> dict:
     """Trace a single completion: generate token-by-token with attribution."""
+    planner_enabled = bool(plan_feature_batch_size or auto_scale_feature_batch_size)
+    if planner_enabled:
+        raise ValueError(
+            "Phase-4 feature batch planner is unsupported in trace_pipeline.trace_completion(); "
+            "this route produces full Graph outputs (and optional raw .pt). "
+            "Use trace_pipeline_chunked.py compact mode (without --save-raw)."
+        )
+
     tokenizer = model.tokenizer
     prompt_id = f"prompt_{prompt_idx:03d}"
     completion_id = f"completion_{completion_idx:03d}"
@@ -656,6 +688,12 @@ def trace_completion(
             stage_encoder_vecs_on_cpu=stage_encoder_vecs_on_cpu,
             stage_error_vectors_on_cpu=stage_error_vectors_on_cpu,
             row_subchunk_size=row_subchunk_size,
+            plan_feature_batch_size=plan_feature_batch_size,
+            auto_scale_feature_batch_size=auto_scale_feature_batch_size,
+            feature_batch_size_max=feature_batch_size_max,
+            feature_batch_target_reserved_fraction=feature_batch_target_reserved_fraction,
+            feature_batch_min_free_fraction=feature_batch_min_free_fraction,
+            feature_batch_probe_batches=feature_batch_probe_batches,
         )
 
         token_result = generate_next_token(model, input_ids, temperature=temperature)
@@ -740,8 +778,12 @@ def trace_completion(
         "stage_encoder_vecs_on_cpu": stage_encoder_vecs_on_cpu,
         "stage_error_vectors_on_cpu": stage_error_vectors_on_cpu,
         "row_subchunk_size": row_subchunk_size,
+        "plan_feature_batch_size": plan_feature_batch_size,
         "auto_scale_feature_batch_size": auto_scale_feature_batch_size,
         "feature_batch_size_max": feature_batch_size_max,
+        "feature_batch_target_reserved_fraction": feature_batch_target_reserved_fraction,
+        "feature_batch_min_free_fraction": feature_batch_min_free_fraction,
+        "feature_batch_probe_batches": feature_batch_probe_batches,
         "sparsification": (
             {
                 "per_layer_position_topk": sparsification.per_layer_position_topk,

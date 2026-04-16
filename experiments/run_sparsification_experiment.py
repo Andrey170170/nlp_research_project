@@ -386,11 +386,34 @@ def build_command(
             )
         if scenario.get("row_subchunk_size") is not None:
             cmd.extend(["--row-subchunk-size", str(scenario["row_subchunk_size"])])
+        if scenario.get("plan_feature_batch_size", False):
+            cmd.append("--plan-feature-batch-size")
         if scenario.get("auto_scale_feature_batch_size", False):
             cmd.append("--auto-scale-feature-batch-size")
         if scenario.get("feature_batch_size_max") is not None:
             cmd.extend(
                 ["--feature-batch-size-max", str(scenario["feature_batch_size_max"])]
+            )
+        if scenario.get("feature_batch_target_reserved_fraction") is not None:
+            cmd.extend(
+                [
+                    "--feature-batch-target-reserved-fraction",
+                    str(scenario["feature_batch_target_reserved_fraction"]),
+                ]
+            )
+        if scenario.get("feature_batch_min_free_fraction") is not None:
+            cmd.extend(
+                [
+                    "--feature-batch-min-free-fraction",
+                    str(scenario["feature_batch_min_free_fraction"]),
+                ]
+            )
+        if scenario.get("feature_batch_probe_batches") is not None:
+            cmd.extend(
+                [
+                    "--feature-batch-probe-batches",
+                    str(scenario["feature_batch_probe_batches"]),
+                ]
             )
 
     if scenario.get("verbose_attribution", False):
