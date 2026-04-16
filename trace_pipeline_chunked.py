@@ -51,6 +51,8 @@ def extract_compact_chunked_attribution(
     stage_encoder_vecs_on_cpu: bool | None = None,
     stage_error_vectors_on_cpu: bool | None = None,
     row_subchunk_size: int | None = None,
+    auto_scale_feature_batch_size: bool = False,
+    feature_batch_size_max: int | None = None,
 ) -> dict[str, Any]:
     gc.collect()
     if torch.cuda.is_available():
@@ -83,6 +85,8 @@ def extract_compact_chunked_attribution(
         stage_encoder_vecs_on_cpu=stage_encoder_vecs_on_cpu,
         stage_error_vectors_on_cpu=stage_error_vectors_on_cpu,
         row_subchunk_size=row_subchunk_size,
+        auto_scale_feature_batch_size=auto_scale_feature_batch_size,
+        feature_batch_size_max=feature_batch_size_max,
         compact_output=True,
     )
 
@@ -198,6 +202,8 @@ def trace_completion_compact_chunked(
     stage_encoder_vecs_on_cpu: bool | None = None,
     stage_error_vectors_on_cpu: bool | None = None,
     row_subchunk_size: int | None = None,
+    auto_scale_feature_batch_size: bool = False,
+    feature_batch_size_max: int | None = None,
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
     fixture_name: str | None = None,
@@ -255,6 +261,8 @@ def trace_completion_compact_chunked(
             stage_encoder_vecs_on_cpu=stage_encoder_vecs_on_cpu,
             stage_error_vectors_on_cpu=stage_error_vectors_on_cpu,
             row_subchunk_size=row_subchunk_size,
+            auto_scale_feature_batch_size=auto_scale_feature_batch_size,
+            feature_batch_size_max=feature_batch_size_max,
         )
 
         token_result = base.generate_next_token(
@@ -335,6 +343,8 @@ def trace_completion_compact_chunked(
         "stage_encoder_vecs_on_cpu": stage_encoder_vecs_on_cpu,
         "stage_error_vectors_on_cpu": stage_error_vectors_on_cpu,
         "row_subchunk_size": row_subchunk_size,
+        "auto_scale_feature_batch_size": auto_scale_feature_batch_size,
+        "feature_batch_size_max": feature_batch_size_max,
         "sparsification": (
             {
                 "per_layer_position_topk": sparsification.per_layer_position_topk,
@@ -381,6 +391,18 @@ def run_pipeline(args: argparse.Namespace) -> None:
         args.feature_batch_size,
         args.logit_batch_size,
     )
+    initial_feature_batch_size = (
+        args.attribution_batch_size
+        if args.feature_batch_size is None
+        else args.feature_batch_size
+    )
+    if (
+        args.feature_batch_size_max is not None
+        and args.feature_batch_size_max < initial_feature_batch_size
+    ):
+        raise ValueError(
+            "feature_batch_size_max must be >= the initial/effective feature batch size"
+        )
     sparsification = build_sparsification_config(args)
     model = base.load_model(
         lazy_encoder=not args.no_lazy_encoder,
@@ -432,6 +454,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "stage_encoder_vecs_on_cpu": args.stage_encoder_vecs_on_cpu,
         "stage_error_vectors_on_cpu": args.stage_error_vectors_on_cpu,
         "row_subchunk_size": args.row_subchunk_size,
+        "auto_scale_feature_batch_size": args.auto_scale_feature_batch_size,
+        "feature_batch_size_max": args.feature_batch_size_max,
         "prepared_prompt_file": args.prepared_prompt_file,
         "prepared_prompt_meta_file": args.prepared_prompt_meta_file,
         "graph_packaging_mode": (
@@ -508,6 +532,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 stage_encoder_vecs_on_cpu=args.stage_encoder_vecs_on_cpu,
                 stage_error_vectors_on_cpu=args.stage_error_vectors_on_cpu,
                 row_subchunk_size=args.row_subchunk_size,
+                auto_scale_feature_batch_size=args.auto_scale_feature_batch_size,
+                feature_batch_size_max=args.feature_batch_size_max,
                 prompt_token_count=prompt_meta["prompt_token_count"],
                 prompt_source=prompt_meta["prompt_source"],
                 fixture_name=prompt_meta.get("fixture_name"),
@@ -689,6 +715,17 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Optional exact-mode inner row subchunk size (default matches decoder chunk size)",
+    )
+    parser.add_argument(
+        "--auto-scale-feature-batch-size",
+        action="store_true",
+        help="Conservatively grow the Phase-4 feature microbatch size when CUDA headroom remains ample",
+    )
+    parser.add_argument(
+        "--feature-batch-size-max",
+        type=int,
+        default=None,
+        help="Optional upper bound for autoscaled Phase-4 feature microbatch size",
     )
     parser.add_argument(
         "--no-lazy-encoder",

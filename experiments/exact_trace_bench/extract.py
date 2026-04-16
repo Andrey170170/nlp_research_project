@@ -351,6 +351,13 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
         "row_subchunk_size": run_config.get(
             "row_subchunk_size", scenario.get("row_subchunk_size")
         ),
+        "auto_scale_feature_batch_size": run_config.get(
+            "auto_scale_feature_batch_size",
+            scenario.get("auto_scale_feature_batch_size"),
+        ),
+        "feature_batch_size_max": run_config.get(
+            "feature_batch_size_max", scenario.get("feature_batch_size_max")
+        ),
         "decoder_cache_bytes": cache_bytes,
         "decoder_cache_gib": None if cache_bytes is None else cache_bytes / (1024**3),
         "max_feature_nodes": scenario.get("max_feature_nodes"),

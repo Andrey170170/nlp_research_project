@@ -596,6 +596,8 @@ def trace_completion(
     stage_encoder_vecs_on_cpu: bool | None = None,
     stage_error_vectors_on_cpu: bool | None = None,
     row_subchunk_size: int | None = None,
+    auto_scale_feature_batch_size: bool = False,
+    feature_batch_size_max: int | None = None,
     save_raw: bool = False,
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
@@ -738,6 +740,8 @@ def trace_completion(
         "stage_encoder_vecs_on_cpu": stage_encoder_vecs_on_cpu,
         "stage_error_vectors_on_cpu": stage_error_vectors_on_cpu,
         "row_subchunk_size": row_subchunk_size,
+        "auto_scale_feature_batch_size": auto_scale_feature_batch_size,
+        "feature_batch_size_max": feature_batch_size_max,
         "sparsification": (
             {
                 "per_layer_position_topk": sparsification.per_layer_position_topk,

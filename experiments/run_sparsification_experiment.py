@@ -386,6 +386,12 @@ def build_command(
             )
         if scenario.get("row_subchunk_size") is not None:
             cmd.extend(["--row-subchunk-size", str(scenario["row_subchunk_size"])])
+        if scenario.get("auto_scale_feature_batch_size", False):
+            cmd.append("--auto-scale-feature-batch-size")
+        if scenario.get("feature_batch_size_max") is not None:
+            cmd.extend(
+                ["--feature-batch-size-max", str(scenario["feature_batch_size_max"])]
+            )
 
     if scenario.get("verbose_attribution", False):
         cmd.append("--verbose-attribution")
