@@ -182,6 +182,41 @@ def compact_result_to_step_data(
     )
 
 
+def normalize_telemetry_events(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, list):
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    for event in payload:
+        if isinstance(event, dict):
+            normalized.append(event)
+    return normalized
+
+
+def build_step_telemetry_records(
+    *,
+    prompt_id: str,
+    completion_id: str,
+    step_index: int,
+    phase4_feature_batch_size: int,
+    phase4_feature_batch_planner_status: str,
+    events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for event_index, event in enumerate(events):
+        record: dict[str, Any] = {
+            "prompt_id": prompt_id,
+            "completion_id": completion_id,
+            "trace_step_index": step_index,
+            "event_index": event_index,
+            "phase4_feature_batch_size": phase4_feature_batch_size,
+            "phase4_feature_batch_planner_status": phase4_feature_batch_planner_status,
+        }
+        record.update(event)
+        records.append(record)
+    return records
+
+
 def trace_completion_compact_chunked(
     model,
     prompt: str,
@@ -231,6 +266,7 @@ def trace_completion_compact_chunked(
         torch.cuda.reset_peak_memory_stats()
 
     trace_start = time.time()
+    trace_start_perf = time.perf_counter()
     input_ids = model.ensure_tokenized(prompt).unsqueeze(0)
     initial_input_token_count = int(input_ids.shape[1])
     resolved_prompt_token_count = (
@@ -246,6 +282,9 @@ def trace_completion_compact_chunked(
     observed_phase4_feature_batch_sizes: list[int] = []
     observed_phase4_planner_statuses: list[str] = []
     observed_phase4_planner_skip_reasons: list[str] = []
+    telemetry_jsonl_path = completion_dir / "telemetry.jsonl"
+    telemetry_jsonl_path.write_text("")
+    telemetry_events_written = 0
 
     candidate_stop_ids = [tokenizer.eos_token_id, tokenizer.pad_token_id]
     end_of_turn = tokenizer.convert_tokens_to_ids("<end_of_turn>")
@@ -258,6 +297,8 @@ def trace_completion_compact_chunked(
     print(f"\n  [{prompt_id}/{completion_id}] Starting trace (temp={temperature})")
 
     for step_idx in range(max_steps):
+        step_start = time.perf_counter()
+        attribution_start = time.perf_counter()
         compact_result = extract_compact_chunked_attribution(
             model,
             input_ids[0],
@@ -286,22 +327,7 @@ def trace_completion_compact_chunked(
             feature_batch_min_free_fraction=feature_batch_min_free_fraction,
             feature_batch_probe_batches=feature_batch_probe_batches,
         )
-
-        token_result = base.generate_next_token(
-            model, input_ids, temperature=temperature
-        )
-        next_token_id = token_result["token_id"]
-        next_token_text = token_result["token_text"]
-        generated_token_ids.append(next_token_id)
-
-        step_data = compact_result_to_step_data(
-            compact_result,
-            step_idx,
-            token_text=next_token_text,
-            logprob=token_result["token_logprob"],
-            max_edges=max_edges,
-        )
-        save_compact(step_data, completion_dir / f"step_{step_idx:03d}.npz")
+        attribution_seconds = time.perf_counter() - attribution_start
 
         resolved_phase4_feature_batch_size = int(
             compact_result.get(
@@ -326,6 +352,55 @@ def trace_completion_compact_chunked(
                 resolved_phase4_planner_skip_reason
             )
 
+        attribution_telemetry_summary = base.summarize_attribution_telemetry(
+            compact_result.get("telemetry_summary")
+        )
+        attribution_phase_elapsed_seconds = None
+        if isinstance(attribution_telemetry_summary, dict):
+            phase_elapsed = attribution_telemetry_summary.get(
+                "elapsed_seconds_by_phase"
+            )
+            if isinstance(phase_elapsed, dict):
+                attribution_phase_elapsed_seconds = phase_elapsed
+
+        telemetry_events = normalize_telemetry_events(
+            compact_result.get("telemetry_events")
+        )
+        telemetry_records = build_step_telemetry_records(
+            prompt_id=prompt_id,
+            completion_id=completion_id,
+            step_index=step_idx,
+            phase4_feature_batch_size=resolved_phase4_feature_batch_size,
+            phase4_feature_batch_planner_status=resolved_phase4_planner_status,
+            events=telemetry_events,
+        )
+        telemetry_events_written += base.append_jsonl_records(
+            telemetry_jsonl_path,
+            telemetry_records,
+        )
+
+        token_generation_start = time.perf_counter()
+        token_result = base.generate_next_token(
+            model, input_ids, temperature=temperature
+        )
+        token_generation_seconds = time.perf_counter() - token_generation_start
+        next_token_id = token_result["token_id"]
+        next_token_text = token_result["token_text"]
+        generated_token_ids.append(next_token_id)
+
+        step_data = compact_result_to_step_data(
+            compact_result,
+            step_idx,
+            token_text=next_token_text,
+            logprob=token_result["token_logprob"],
+            max_edges=max_edges,
+        )
+
+        artifact_save_start = time.perf_counter()
+        save_compact(step_data, completion_dir / f"step_{step_idx:03d}.npz")
+        artifact_save_seconds = time.perf_counter() - artifact_save_start
+        step_end_to_end_seconds = time.perf_counter() - step_start
+
         step_record = {
             "step_index": step_idx,
             "prefix_token_count": int(input_ids.shape[1]),
@@ -336,6 +411,13 @@ def trace_completion_compact_chunked(
             "n_active_features": step_data.n_features,
             "n_edges_retained": len(step_data.weights),
             "stop_reason": "eos" if next_token_id in stop_token_ids else None,
+            "step_end_to_end_seconds": round(step_end_to_end_seconds, 6),
+            "attribution_seconds": round(attribution_seconds, 6),
+            "token_generation_seconds": round(token_generation_seconds, 6),
+            "artifact_save_seconds": round(artifact_save_seconds, 6),
+            "attribution_phase_elapsed_seconds": attribution_phase_elapsed_seconds,
+            "attribution_telemetry_summary": attribution_telemetry_summary,
+            "telemetry_event_count": len(telemetry_events),
             "resource_snapshot": base.capture_resource_snapshot(),
             "transcoder_diagnostics": base.capture_transcoder_diagnostics(model),
             "phase4_feature_batch_size": resolved_phase4_feature_batch_size,
@@ -379,6 +461,7 @@ def trace_completion_compact_chunked(
     completion_text = tokenizer.decode(generated_token_ids, skip_special_tokens=True)
     unique_phase4_feature_batch_sizes = sorted(set(observed_phase4_feature_batch_sizes))
     unique_phase4_planner_statuses = sorted(set(observed_phase4_planner_statuses))
+    completion_end_to_end_seconds = time.perf_counter() - trace_start_perf
     manifest = {
         "prompt_id": prompt_id,
         "completion_id": completion_id,
@@ -462,7 +545,13 @@ def trace_completion_compact_chunked(
         ),
         "save_raw": False,
         "graph_packaging_mode": "compact_chunked_no_full_graph",
+        "telemetry_events_path": telemetry_jsonl_path.name,
+        "telemetry_event_count": telemetry_events_written,
         "resource_snapshot": base.capture_resource_snapshot(),
+        "timing_summary": base.build_completion_timing_summary(
+            completion_end_to_end_seconds=completion_end_to_end_seconds,
+            step_records=step_records,
+        ),
         "steps": step_records,
     }
     manifest_path = completion_dir / "completion.json"

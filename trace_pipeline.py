@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import gc
 import json
+import math
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -426,6 +427,116 @@ def capture_transcoder_diagnostics(model) -> dict[str, Any] | None:
     return {key: snapshot.get(key) for key in keys_of_interest if key in snapshot}
 
 
+def _safe_numeric_seconds(value: object, *, divide_ms: bool = False) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    numeric = float(value)
+    if not math.isfinite(numeric):
+        return None
+    seconds = numeric / 1000.0 if divide_ms else numeric
+    return round(seconds, 6)
+
+
+def summarize_attribution_telemetry(
+    telemetry_summary: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(telemetry_summary, dict):
+        return None
+
+    summary: dict[str, Any] = {}
+    for count_key in ("event_count", "stored_event_count", "dropped_event_count"):
+        value = telemetry_summary.get(count_key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        summary[count_key] = int(value)
+
+    total_elapsed_seconds = _safe_numeric_seconds(
+        telemetry_summary.get("total_elapsed_ms"),
+        divide_ms=True,
+    )
+    if total_elapsed_seconds is not None:
+        summary["total_elapsed_seconds"] = total_elapsed_seconds
+
+    elapsed_ms_by_phase = telemetry_summary.get("elapsed_ms_by_phase")
+    elapsed_seconds_by_phase: dict[str, float] = {}
+    if isinstance(elapsed_ms_by_phase, dict):
+        for phase_name, elapsed_ms in elapsed_ms_by_phase.items():
+            if not isinstance(phase_name, str):
+                continue
+            elapsed_seconds = _safe_numeric_seconds(elapsed_ms, divide_ms=True)
+            if elapsed_seconds is not None:
+                elapsed_seconds_by_phase[phase_name] = elapsed_seconds
+    if elapsed_seconds_by_phase:
+        summary["elapsed_seconds_by_phase"] = elapsed_seconds_by_phase
+
+    return summary
+
+
+def append_jsonl_records(path: Path, records: list[dict[str, Any]]) -> int:
+    if not records:
+        return 0
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record, ensure_ascii=False))
+            handle.write("\n")
+    return len(records)
+
+
+def build_completion_timing_summary(
+    *,
+    completion_end_to_end_seconds: float,
+    step_records: list[dict[str, Any]],
+) -> dict[str, Any]:
+    tracked_step_fields = (
+        "step_end_to_end_seconds",
+        "attribution_seconds",
+        "token_generation_seconds",
+        "artifact_save_seconds",
+    )
+
+    totals = {key: 0.0 for key in tracked_step_fields}
+    attribution_phase_elapsed_seconds_total: dict[str, float] = {}
+
+    for step_record in step_records:
+        for field_name in tracked_step_fields:
+            value_seconds = _safe_numeric_seconds(step_record.get(field_name))
+            if value_seconds is not None:
+                totals[field_name] += value_seconds
+
+        phase_elapsed = step_record.get("attribution_phase_elapsed_seconds")
+        if isinstance(phase_elapsed, dict):
+            for phase_name, value in phase_elapsed.items():
+                if not isinstance(phase_name, str):
+                    continue
+                value_seconds = _safe_numeric_seconds(value)
+                if value_seconds is None:
+                    continue
+                attribution_phase_elapsed_seconds_total[phase_name] = (
+                    attribution_phase_elapsed_seconds_total.get(phase_name, 0.0)
+                    + value_seconds
+                )
+
+    step_count = len(step_records)
+    averages = {
+        key: round((value / step_count) if step_count else 0.0, 6)
+        for key, value in totals.items()
+    }
+    summary: dict[str, Any] = {
+        "completion_end_to_end_seconds": round(completion_end_to_end_seconds, 6),
+        "totals": {key: round(value, 6) for key, value in totals.items()},
+        "averages_per_step": averages,
+        "step_count": step_count,
+    }
+    if attribution_phase_elapsed_seconds_total:
+        summary["attribution_phase_elapsed_seconds_total"] = {
+            key: round(value, 6)
+            for key, value in sorted(attribution_phase_elapsed_seconds_total.items())
+        }
+    return summary
+
+
 # ── generation ───────────────────────────────────────────────────────
 
 
@@ -647,6 +758,7 @@ def trace_completion(
         torch.cuda.reset_peak_memory_stats()
 
     trace_start = time.time()
+    trace_start_perf = time.perf_counter()
     input_ids = model.ensure_tokenized(prompt).unsqueeze(0)
     initial_input_token_count = int(input_ids.shape[1])
     resolved_prompt_token_count = (
@@ -667,6 +779,8 @@ def trace_completion(
     print(f"\n  [{prompt_id}/{completion_id}] Starting trace (temp={temperature})")
 
     for step_idx in range(max_steps):
+        step_start = time.perf_counter()
+        attribution_start = time.perf_counter()
         graph = extract_graph(
             model,
             input_ids[0],
@@ -695,8 +809,11 @@ def trace_completion(
             feature_batch_min_free_fraction=feature_batch_min_free_fraction,
             feature_batch_probe_batches=feature_batch_probe_batches,
         )
+        attribution_seconds = time.perf_counter() - attribution_start
 
+        token_generation_start = time.perf_counter()
         token_result = generate_next_token(model, input_ids, temperature=temperature)
+        token_generation_seconds = time.perf_counter() - token_generation_start
         next_token_id = token_result["token_id"]
         next_token_text = token_result["token_text"]
         generated_token_ids.append(next_token_id)
@@ -709,11 +826,15 @@ def trace_completion(
             logprob=token_result["token_logprob"],
             max_edges=max_edges,
         )
+
+        artifact_save_start = time.perf_counter()
         save_compact(sd, completion_dir / f"step_{step_idx:03d}.npz")
 
         # Optionally save raw .pt
         if save_raw:
             graph.to_pt(str(completion_dir / f"step_{step_idx:03d}.pt"))
+        artifact_save_seconds = time.perf_counter() - artifact_save_start
+        step_end_to_end_seconds = time.perf_counter() - step_start
 
         step_record = {
             "step_index": step_idx,
@@ -725,6 +846,11 @@ def trace_completion(
             "n_active_features": sd.n_features,
             "n_edges_retained": len(sd.weights),
             "stop_reason": "eos" if next_token_id in stop_token_ids else None,
+            "step_end_to_end_seconds": round(step_end_to_end_seconds, 6),
+            "attribution_seconds": round(attribution_seconds, 6),
+            "token_generation_seconds": round(token_generation_seconds, 6),
+            "artifact_save_seconds": round(artifact_save_seconds, 6),
+            "attribution_phase_elapsed_seconds": None,
             "resource_snapshot": capture_resource_snapshot(),
             "transcoder_diagnostics": capture_transcoder_diagnostics(model),
         }
@@ -746,6 +872,7 @@ def trace_completion(
 
     completion_text = tokenizer.decode(generated_token_ids, skip_special_tokens=True)
 
+    completion_end_to_end_seconds = time.perf_counter() - trace_start_perf
     manifest = {
         "prompt_id": prompt_id,
         "completion_id": completion_id,
@@ -794,6 +921,10 @@ def trace_completion(
         ),
         "save_raw": save_raw,
         "resource_snapshot": capture_resource_snapshot(),
+        "timing_summary": build_completion_timing_summary(
+            completion_end_to_end_seconds=completion_end_to_end_seconds,
+            step_records=step_records,
+        ),
         "steps": step_records,
     }
     manifest_path = completion_dir / "completion.json"
