@@ -145,8 +145,15 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
         for step in steps
         if step.get("phase4_feature_batch_size") is not None
     ]
+    step_phase4_planner_statuses = [
+        str(step["phase4_feature_batch_planner_status"])
+        for step in steps
+        if step.get("phase4_feature_batch_planner_status") is not None
+    ]
     manifest_phase4_feature_batch_sizes: list[int] = []
     manifest_phase4_effective_sizes: list[int] = []
+    manifest_phase4_planner_statuses: list[str] = []
+    manifest_phase4_planner_skip_reasons: list[str] = []
     for manifest in manifests:
         manifest_observed = manifest.get("phase4_feature_batch_sizes_observed")
         if isinstance(manifest_observed, list):
@@ -158,12 +165,21 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
         manifest_effective = manifest.get("phase4_feature_batch_size_effective")
         if isinstance(manifest_effective, (int, float)):
             manifest_phase4_effective_sizes.append(int(manifest_effective))
+        manifest_status = manifest.get("phase4_feature_batch_planner_status")
+        if isinstance(manifest_status, str):
+            manifest_phase4_planner_statuses.append(manifest_status)
+        manifest_skip_reason = manifest.get("phase4_feature_batch_planner_skip_reason")
+        if isinstance(manifest_skip_reason, str):
+            manifest_phase4_planner_skip_reasons.append(manifest_skip_reason)
     all_phase4_feature_batch_sizes = sorted(
         set(
             step_phase4_feature_batch_sizes
             + manifest_phase4_feature_batch_sizes
             + manifest_phase4_effective_sizes
         )
+    )
+    all_phase4_planner_statuses = sorted(
+        set(step_phase4_planner_statuses + manifest_phase4_planner_statuses)
     )
 
     return {
@@ -218,6 +234,19 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
             else None
         ),
         "phase4_feature_batch_sizes_observed": all_phase4_feature_batch_sizes,
+        "phase4_feature_batch_planner_status": (
+            manifest_phase4_planner_statuses[-1]
+            if manifest_phase4_planner_statuses
+            else step_phase4_planner_statuses[-1]
+            if step_phase4_planner_statuses
+            else None
+        ),
+        "phase4_feature_batch_planner_statuses_observed": all_phase4_planner_statuses,
+        "phase4_feature_batch_planner_skip_reason": (
+            manifest_phase4_planner_skip_reasons[-1]
+            if manifest_phase4_planner_skip_reasons
+            else None
+        ),
         **flatten_dict(resource_snapshot, prefix="resource_snapshot_"),
     }
 

@@ -244,6 +244,8 @@ def trace_completion_compact_chunked(
         attribution_batch_size if feature_batch_size is None else feature_batch_size
     )
     observed_phase4_feature_batch_sizes: list[int] = []
+    observed_phase4_planner_statuses: list[str] = []
+    observed_phase4_planner_skip_reasons: list[str] = []
 
     candidate_stop_ids = [tokenizer.eos_token_id, tokenizer.pad_token_id]
     end_of_turn = tokenizer.convert_tokens_to_ids("<end_of_turn>")
@@ -307,6 +309,22 @@ def trace_completion_compact_chunked(
             )
         )
         observed_phase4_feature_batch_sizes.append(resolved_phase4_feature_batch_size)
+        resolved_phase4_planner_status = str(
+            compact_result.get(
+                "phase4_feature_batch_planner_status",
+                "disabled"
+                if not (plan_feature_batch_size or auto_scale_feature_batch_size)
+                else "executed",
+            )
+        )
+        observed_phase4_planner_statuses.append(resolved_phase4_planner_status)
+        resolved_phase4_planner_skip_reason = compact_result.get(
+            "phase4_feature_batch_planner_skip_reason"
+        )
+        if isinstance(resolved_phase4_planner_skip_reason, str):
+            observed_phase4_planner_skip_reasons.append(
+                resolved_phase4_planner_skip_reason
+            )
 
         step_record = {
             "step_index": step_idx,
@@ -339,6 +357,8 @@ def trace_completion_compact_chunked(
                     plan_feature_batch_size or auto_scale_feature_batch_size,
                 )
             ),
+            "phase4_feature_batch_planner_status": resolved_phase4_planner_status,
+            "phase4_feature_batch_planner_skip_reason": resolved_phase4_planner_skip_reason,
         }
         step_records.append(step_record)
 
@@ -358,6 +378,7 @@ def trace_completion_compact_chunked(
 
     completion_text = tokenizer.decode(generated_token_ids, skip_special_tokens=True)
     unique_phase4_feature_batch_sizes = sorted(set(observed_phase4_feature_batch_sizes))
+    unique_phase4_planner_statuses = sorted(set(observed_phase4_planner_statuses))
     manifest = {
         "prompt_id": prompt_id,
         "completion_id": completion_id,
@@ -412,6 +433,24 @@ def trace_completion_compact_chunked(
             max(observed_phase4_feature_batch_sizes)
             if observed_phase4_feature_batch_sizes
             else initial_phase4_feature_batch_size
+        ),
+        "phase4_feature_batch_planner_enabled": bool(
+            plan_feature_batch_size or auto_scale_feature_batch_size
+        ),
+        "phase4_feature_batch_planner_status": (
+            observed_phase4_planner_statuses[-1]
+            if observed_phase4_planner_statuses
+            else (
+                "disabled"
+                if not (plan_feature_batch_size or auto_scale_feature_batch_size)
+                else "executed"
+            )
+        ),
+        "phase4_feature_batch_planner_statuses_observed": unique_phase4_planner_statuses,
+        "phase4_feature_batch_planner_skip_reason": (
+            observed_phase4_planner_skip_reasons[-1]
+            if observed_phase4_planner_skip_reasons
+            else None
         ),
         "sparsification": (
             {
