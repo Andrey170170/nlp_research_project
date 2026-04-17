@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+import math
 from pathlib import Path
 from statistics import mean
 from typing import Any
@@ -134,6 +135,34 @@ def _normalize_optional_metadata_value(value: Any) -> Any:
     return value
 
 
+def _to_float(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    numeric = float(value)
+    if not math.isfinite(numeric):
+        return None
+    return numeric
+
+
+def _to_int(value: Any) -> int | None:
+    numeric = _to_float(value)
+    if numeric is None:
+        return None
+    return int(numeric)
+
+
+def _sanitize_column_fragment(value: str) -> str:
+    fragment = re.sub(r"[^0-9a-zA-Z]+", "_", value.strip().lower()).strip("_")
+    return fragment or "unknown"
+
+
+def _relative_to_or_str(path: Path, root: Path) -> str:
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
+
+
 def _load_summary_run_metadata(scenario_root: Path) -> dict[str, Any]:
     candidates = [scenario_root / "summary.json", scenario_root.parent / "summary.json"]
     for summary_path in candidates:
@@ -164,7 +193,8 @@ def _load_summary_run_metadata(scenario_root: Path) -> dict[str, Any]:
 
 def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     prompt_meta = _load_prompt_meta(artifact_dir)
-    manifests = _load_completion_manifests(artifact_dir)
+    manifest_paths = sorted(artifact_dir.glob("prompt_*/completion_*/completion.json"))
+    manifests = [read_json(path) for path in manifest_paths]
     steps = [
         step
         for manifest in manifests
@@ -179,6 +209,235 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
 
     first_manifest = manifests[0] if manifests else {}
     resource_snapshot = first_manifest.get("resource_snapshot")
+    tracked_step_fields = (
+        "step_end_to_end_seconds",
+        "attribution_seconds",
+        "token_generation_seconds",
+        "artifact_save_seconds",
+    )
+
+    telemetry_declared_paths: set[str] = set()
+    telemetry_existing_paths: set[str] = set()
+    telemetry_missing_paths: set[str] = set()
+    telemetry_manifest_event_counts: list[int] = []
+    completion_timing_summary_count = 0
+    completion_timing_completion_end_to_end_values: list[float] = []
+    completion_timing_step_counts: list[int] = []
+    completion_timing_totals: dict[str, float] = {
+        field_name: 0.0 for field_name in tracked_step_fields
+    }
+    completion_timing_totals_counts: dict[str, int] = {
+        field_name: 0 for field_name in tracked_step_fields
+    }
+    completion_timing_averages_per_step: dict[str, list[float]] = {
+        field_name: [] for field_name in tracked_step_fields
+    }
+    completion_phase_elapsed_totals: dict[str, float] = {}
+
+    for manifest_path, manifest in zip(manifest_paths, manifests, strict=False):
+        completion_dir = manifest_path.parent
+
+        telemetry_ref = manifest.get("telemetry_events_path")
+        resolved_telemetry_path: Path | None = None
+        declared_telemetry_path: Path | None = None
+        if isinstance(telemetry_ref, str) and telemetry_ref.strip():
+            declared_telemetry_path = completion_dir / telemetry_ref.strip()
+            telemetry_declared_paths.add(
+                _relative_to_or_str(declared_telemetry_path, artifact_dir)
+            )
+            if declared_telemetry_path.exists():
+                resolved_telemetry_path = declared_telemetry_path
+            else:
+                telemetry_missing_paths.add(
+                    _relative_to_or_str(declared_telemetry_path, artifact_dir)
+                )
+        default_telemetry_path = completion_dir / "telemetry.jsonl"
+        if resolved_telemetry_path is None and default_telemetry_path.exists():
+            resolved_telemetry_path = default_telemetry_path
+
+        if resolved_telemetry_path is not None:
+            relative_path = _relative_to_or_str(resolved_telemetry_path, artifact_dir)
+            telemetry_existing_paths.add(relative_path)
+
+        telemetry_event_count = _to_int(manifest.get("telemetry_event_count"))
+        if telemetry_event_count is not None:
+            telemetry_manifest_event_counts.append(telemetry_event_count)
+
+        timing_summary = manifest.get("timing_summary")
+        if not isinstance(timing_summary, dict):
+            continue
+
+        completion_timing_summary_count += 1
+
+        completion_end_to_end_seconds = _to_float(
+            timing_summary.get("completion_end_to_end_seconds")
+        )
+        if completion_end_to_end_seconds is not None:
+            completion_timing_completion_end_to_end_values.append(
+                completion_end_to_end_seconds
+            )
+
+        timing_step_count = _to_int(timing_summary.get("step_count"))
+        if timing_step_count is not None:
+            completion_timing_step_counts.append(timing_step_count)
+
+        totals = timing_summary.get("totals")
+        if isinstance(totals, dict):
+            for field_name in tracked_step_fields:
+                total_seconds = _to_float(totals.get(field_name))
+                if total_seconds is None:
+                    continue
+                completion_timing_totals[field_name] += total_seconds
+                completion_timing_totals_counts[field_name] += 1
+
+        averages_per_step = timing_summary.get("averages_per_step")
+        if isinstance(averages_per_step, dict):
+            for field_name in tracked_step_fields:
+                avg_seconds = _to_float(averages_per_step.get(field_name))
+                if avg_seconds is None:
+                    continue
+                completion_timing_averages_per_step[field_name].append(avg_seconds)
+
+        completion_phase_elapsed = timing_summary.get(
+            "attribution_phase_elapsed_seconds_total"
+        )
+        if isinstance(completion_phase_elapsed, dict):
+            for phase_name, phase_elapsed_seconds in completion_phase_elapsed.items():
+                if not isinstance(phase_name, str):
+                    continue
+                phase_elapsed_seconds_float = _to_float(phase_elapsed_seconds)
+                if phase_elapsed_seconds_float is None:
+                    continue
+                completion_phase_elapsed_totals[phase_name] = (
+                    completion_phase_elapsed_totals.get(phase_name, 0.0)
+                    + phase_elapsed_seconds_float
+                )
+
+    step_phase_elapsed_totals: dict[str, float] = {}
+    if not completion_phase_elapsed_totals:
+        for step in steps:
+            step_phase_elapsed = step.get("attribution_phase_elapsed_seconds")
+            if not isinstance(step_phase_elapsed, dict):
+                continue
+            for phase_name, phase_elapsed_seconds in step_phase_elapsed.items():
+                if not isinstance(phase_name, str):
+                    continue
+                phase_elapsed_seconds_float = _to_float(phase_elapsed_seconds)
+                if phase_elapsed_seconds_float is None:
+                    continue
+                step_phase_elapsed_totals[phase_name] = (
+                    step_phase_elapsed_totals.get(phase_name, 0.0)
+                    + phase_elapsed_seconds_float
+                )
+
+    phase_elapsed_totals = (
+        completion_phase_elapsed_totals
+        if completion_phase_elapsed_totals
+        else step_phase_elapsed_totals
+    )
+    phase_elapsed_source = (
+        "completion_timing_summary"
+        if completion_phase_elapsed_totals
+        else "step_records"
+        if step_phase_elapsed_totals
+        else None
+    )
+
+    phase_elapsed_columns = {
+        (
+            "attribution_phase_elapsed_seconds_total_"
+            f"{_sanitize_column_fragment(phase_name)}"
+        ): round(total_seconds, 6)
+        for phase_name, total_seconds in sorted(phase_elapsed_totals.items())
+    }
+
+    step_timing_values: dict[str, list[float]] = {
+        field_name: [] for field_name in tracked_step_fields
+    }
+    for step in steps:
+        for field_name in tracked_step_fields:
+            field_seconds = _to_float(step.get(field_name))
+            if field_seconds is not None:
+                step_timing_values[field_name].append(field_seconds)
+
+    step_timing_columns: dict[str, Any] = {
+        "step_timing_sample_count": len(steps),
+    }
+    for field_name, values in step_timing_values.items():
+        step_timing_columns[f"step_timing_{field_name}_total"] = (
+            round(sum(values), 6) if values else None
+        )
+        step_timing_columns[f"step_timing_{field_name}_mean"] = (
+            round(mean(values), 6) if values else None
+        )
+        step_timing_columns[f"step_timing_{field_name}_max"] = (
+            round(max(values), 6) if values else None
+        )
+
+    telemetry_event_count_steps = [
+        telemetry_event_count
+        for telemetry_event_count in (
+            _to_int(step.get("telemetry_event_count")) for step in steps
+        )
+        if telemetry_event_count is not None
+    ]
+
+    completion_timing_step_count_total = sum(completion_timing_step_counts)
+    completion_timing_columns: dict[str, Any] = {
+        "completion_timing_summary_count": completion_timing_summary_count,
+        "completion_timing_step_count_total": completion_timing_step_count_total,
+        "completion_timing_step_count_mean": (
+            round(mean([float(value) for value in completion_timing_step_counts]), 6)
+            if completion_timing_step_counts
+            else None
+        ),
+        "completion_timing_completion_end_to_end_seconds_total": (
+            round(sum(completion_timing_completion_end_to_end_values), 6)
+            if completion_timing_completion_end_to_end_values
+            else None
+        ),
+        "completion_timing_completion_end_to_end_seconds_mean": (
+            round(mean(completion_timing_completion_end_to_end_values), 6)
+            if completion_timing_completion_end_to_end_values
+            else None
+        ),
+        "completion_timing_completion_end_to_end_seconds_max": (
+            round(max(completion_timing_completion_end_to_end_values), 6)
+            if completion_timing_completion_end_to_end_values
+            else None
+        ),
+    }
+    for field_name in tracked_step_fields:
+        total_seconds = completion_timing_totals[field_name]
+        value_count = completion_timing_totals_counts[field_name]
+        completion_timing_columns[f"completion_timing_totals_{field_name}_total"] = (
+            round(total_seconds, 6) if value_count else None
+        )
+        completion_timing_columns[
+            f"completion_timing_totals_{field_name}_avg_per_completion"
+        ] = (
+            round(total_seconds / completion_timing_summary_count, 6)
+            if completion_timing_summary_count and value_count
+            else None
+        )
+        completion_timing_columns[
+            f"completion_timing_totals_{field_name}_avg_per_step"
+        ] = (
+            round(total_seconds / completion_timing_step_count_total, 6)
+            if completion_timing_step_count_total and value_count
+            else None
+        )
+        completion_timing_columns[
+            f"completion_timing_averages_per_step_{field_name}_mean"
+        ] = (
+            round(mean(completion_timing_averages_per_step[field_name]), 6)
+            if completion_timing_averages_per_step[field_name]
+            else None
+        )
+
+    telemetry_existing_paths_sorted = sorted(telemetry_existing_paths)
+    telemetry_declared_paths_sorted = sorted(telemetry_declared_paths)
+    telemetry_missing_paths_sorted = sorted(telemetry_missing_paths)
     step_phase4_feature_batch_sizes = [
         int(step["phase4_feature_batch_size"])
         for step in steps
@@ -317,6 +576,51 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
             if manifest_phase4_planner_skip_reasons
             else None
         ),
+        "telemetry_present": bool(telemetry_existing_paths_sorted),
+        "telemetry_manifest_declared_count": len(telemetry_declared_paths_sorted),
+        "telemetry_file_count": len(telemetry_existing_paths_sorted),
+        "telemetry_missing_file_count": len(telemetry_missing_paths_sorted),
+        "telemetry_available_for_all_completions": bool(manifests)
+        and len(telemetry_existing_paths_sorted) >= len(manifests),
+        "telemetry_events_path_example": (
+            telemetry_existing_paths_sorted[0]
+            if telemetry_existing_paths_sorted
+            else telemetry_declared_paths_sorted[0]
+            if telemetry_declared_paths_sorted
+            else None
+        ),
+        "telemetry_events_paths_found_sample": "|".join(
+            telemetry_existing_paths_sorted[:3]
+        )
+        if telemetry_existing_paths_sorted
+        else None,
+        "telemetry_events_paths_missing_sample": "|".join(
+            telemetry_missing_paths_sorted[:3]
+        )
+        if telemetry_missing_paths_sorted
+        else None,
+        "telemetry_event_count_manifest_total": (
+            sum(telemetry_manifest_event_counts)
+            if telemetry_manifest_event_counts
+            else None
+        ),
+        "telemetry_event_count_manifest_mean": (
+            round(mean([float(value) for value in telemetry_manifest_event_counts]), 6)
+            if telemetry_manifest_event_counts
+            else None
+        ),
+        "telemetry_event_count_steps_total": (
+            sum(telemetry_event_count_steps) if telemetry_event_count_steps else None
+        ),
+        "attribution_phase_elapsed_seconds_total_source": phase_elapsed_source,
+        "attribution_phase_elapsed_seconds_total_all_phases": (
+            round(sum(phase_elapsed_totals.values()), 6)
+            if phase_elapsed_totals
+            else None
+        ),
+        **completion_timing_columns,
+        **step_timing_columns,
+        **phase_elapsed_columns,
         **flatten_dict(resource_snapshot, prefix="resource_snapshot_"),
     }
 
