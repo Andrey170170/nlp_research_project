@@ -58,6 +58,7 @@ def extract_compact_chunked_attribution(
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
     phase4_anomaly_debug: bool = False,
+    telemetry_max_events: int | None = None,
 ) -> dict[str, Any]:
     gc.collect()
     if torch.cuda.is_available():
@@ -97,6 +98,7 @@ def extract_compact_chunked_attribution(
         feature_batch_min_free_fraction=feature_batch_min_free_fraction,
         feature_batch_probe_batches=feature_batch_probe_batches,
         phase4_anomaly_debug=phase4_anomaly_debug,
+        telemetry_max_events=telemetry_max_events,
         compact_output=True,
     )
 
@@ -254,6 +256,7 @@ def trace_completion_compact_chunked(
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
     phase4_anomaly_debug: bool = False,
+    telemetry_max_events: int | None = None,
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
     fixture_name: str | None = None,
@@ -332,6 +335,7 @@ def trace_completion_compact_chunked(
             feature_batch_min_free_fraction=feature_batch_min_free_fraction,
             feature_batch_probe_batches=feature_batch_probe_batches,
             phase4_anomaly_debug=phase4_anomaly_debug,
+            telemetry_max_events=telemetry_max_events,
         )
         attribution_seconds = time.perf_counter() - attribution_start
 
@@ -361,13 +365,20 @@ def trace_completion_compact_chunked(
         attribution_telemetry_summary = base.summarize_attribution_telemetry(
             compact_result.get("telemetry_summary")
         )
-        attribution_phase_elapsed_seconds = None
+        attribution_phase_elapsed_seconds_aggregate = None
+        attribution_phase_wall_clock_elapsed_seconds = None
         if isinstance(attribution_telemetry_summary, dict):
-            phase_elapsed = attribution_telemetry_summary.get(
-                "elapsed_seconds_by_phase"
+            phase_elapsed_aggregate = attribution_telemetry_summary.get(
+                "elapsed_seconds_by_phase_aggregate",
+                attribution_telemetry_summary.get("elapsed_seconds_by_phase"),
             )
-            if isinstance(phase_elapsed, dict):
-                attribution_phase_elapsed_seconds = phase_elapsed
+            if isinstance(phase_elapsed_aggregate, dict):
+                attribution_phase_elapsed_seconds_aggregate = phase_elapsed_aggregate
+            phase_elapsed_wall_clock = attribution_telemetry_summary.get(
+                "wall_clock_elapsed_seconds_by_phase"
+            )
+            if isinstance(phase_elapsed_wall_clock, dict):
+                attribution_phase_wall_clock_elapsed_seconds = phase_elapsed_wall_clock
 
         telemetry_events = normalize_telemetry_events(
             compact_result.get("telemetry_events")
@@ -428,7 +439,9 @@ def trace_completion_compact_chunked(
             "attribution_seconds": round(attribution_seconds, 6),
             "token_generation_seconds": round(token_generation_seconds, 6),
             "artifact_save_seconds": round(artifact_save_seconds, 6),
-            "attribution_phase_elapsed_seconds": attribution_phase_elapsed_seconds,
+            "attribution_phase_elapsed_seconds": attribution_phase_elapsed_seconds_aggregate,
+            "attribution_phase_elapsed_seconds_aggregate": attribution_phase_elapsed_seconds_aggregate,
+            "attribution_phase_wall_clock_elapsed_seconds": attribution_phase_wall_clock_elapsed_seconds,
             "attribution_telemetry_summary": attribution_telemetry_summary,
             "telemetry_event_count": len(telemetry_events),
             "resource_snapshot": base.capture_resource_snapshot(),
@@ -457,6 +470,12 @@ def trace_completion_compact_chunked(
             "phase4_anomaly_debug_enabled": bool(
                 compact_result.get("phase4_anomaly_debug_enabled", phase4_anomaly_debug)
             ),
+            "phase4_refresh_count": int(compact_result.get("phase4_refresh_count", 0)),
+            "phase4_batch_count": int(compact_result.get("phase4_batch_count", 0)),
+            "phase4_refresh_elapsed_seconds_total": compact_result.get(
+                "phase4_refresh_elapsed_seconds_total"
+            ),
+            "telemetry_max_events": compact_result.get("telemetry_max_events"),
         }
         step_records.append(step_record)
 
@@ -517,6 +536,7 @@ def trace_completion_compact_chunked(
         "feature_batch_min_free_fraction": feature_batch_min_free_fraction,
         "feature_batch_probe_batches": feature_batch_probe_batches,
         "phase4_anomaly_debug": phase4_anomaly_debug,
+        "telemetry_max_events": telemetry_max_events,
         "phase4_feature_batch_size_initial": initial_phase4_feature_batch_size,
         "phase4_feature_batch_sizes_observed": unique_phase4_feature_batch_sizes,
         "phase4_feature_batch_size_effective": (
@@ -699,6 +719,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "feature_batch_min_free_fraction": args.feature_batch_min_free_fraction,
         "feature_batch_probe_batches": args.feature_batch_probe_batches,
         "phase4_anomaly_debug": args.phase4_anomaly_debug,
+        "telemetry_max_events": args.telemetry_max_events,
         "prepared_prompt_file": args.prepared_prompt_file,
         "prepared_prompt_meta_file": args.prepared_prompt_meta_file,
         "graph_packaging_mode": (
@@ -786,6 +807,11 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 prompt_source=prompt_meta["prompt_source"],
                 fixture_name=prompt_meta.get("fixture_name"),
                 fixture_kind=prompt_meta.get("fixture_kind"),
+                **(
+                    {"telemetry_max_events": args.telemetry_max_events}
+                    if not args.save_raw
+                    else {}
+                ),
                 **({"save_raw": True} if args.save_raw else {}),
             )
 
@@ -1002,6 +1028,12 @@ if __name__ == "__main__":
         "--phase4-anomaly-debug",
         action="store_true",
         help="Enable opt-in Phase-4 anomaly shadow diagnostics (compact exact-chunked path only)",
+    )
+    parser.add_argument(
+        "--telemetry-max-events",
+        type=int,
+        default=None,
+        help="Optional in-memory telemetry event cap override for fork attribution",
     )
     parser.add_argument(
         "--no-lazy-encoder",

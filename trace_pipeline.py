@@ -457,17 +457,42 @@ def summarize_attribution_telemetry(
     if total_elapsed_seconds is not None:
         summary["total_elapsed_seconds"] = total_elapsed_seconds
 
-    elapsed_ms_by_phase = telemetry_summary.get("elapsed_ms_by_phase")
-    elapsed_seconds_by_phase: dict[str, float] = {}
-    if isinstance(elapsed_ms_by_phase, dict):
-        for phase_name, elapsed_ms in elapsed_ms_by_phase.items():
+    wall_clock_total_elapsed_seconds = _safe_numeric_seconds(
+        telemetry_summary.get("wall_clock_elapsed_ms_total"),
+        divide_ms=True,
+    )
+    if wall_clock_total_elapsed_seconds is not None:
+        summary["wall_clock_total_elapsed_seconds"] = wall_clock_total_elapsed_seconds
+
+    def _extract_phase_seconds(values: object) -> dict[str, float]:
+        phase_seconds: dict[str, float] = {}
+        if not isinstance(values, dict):
+            return phase_seconds
+        for phase_name, elapsed_ms in values.items():
             if not isinstance(phase_name, str):
                 continue
             elapsed_seconds = _safe_numeric_seconds(elapsed_ms, divide_ms=True)
             if elapsed_seconds is not None:
-                elapsed_seconds_by_phase[phase_name] = elapsed_seconds
-    if elapsed_seconds_by_phase:
-        summary["elapsed_seconds_by_phase"] = elapsed_seconds_by_phase
+                phase_seconds[phase_name] = elapsed_seconds
+        return phase_seconds
+
+    elapsed_seconds_by_phase_aggregate = _extract_phase_seconds(
+        telemetry_summary.get("elapsed_ms_by_phase_aggregate")
+        or telemetry_summary.get("elapsed_ms_by_phase")
+    )
+    if elapsed_seconds_by_phase_aggregate:
+        summary["elapsed_seconds_by_phase"] = elapsed_seconds_by_phase_aggregate
+        summary["elapsed_seconds_by_phase_aggregate"] = (
+            elapsed_seconds_by_phase_aggregate
+        )
+
+    wall_clock_elapsed_seconds_by_phase = _extract_phase_seconds(
+        telemetry_summary.get("wall_clock_elapsed_ms_by_phase")
+    )
+    if wall_clock_elapsed_seconds_by_phase:
+        summary["wall_clock_elapsed_seconds_by_phase"] = (
+            wall_clock_elapsed_seconds_by_phase
+        )
 
     return summary
 
@@ -497,7 +522,8 @@ def build_completion_timing_summary(
     )
 
     totals = {key: 0.0 for key in tracked_step_fields}
-    attribution_phase_elapsed_seconds_total: dict[str, float] = {}
+    attribution_phase_elapsed_seconds_total_aggregate: dict[str, float] = {}
+    attribution_phase_wall_clock_elapsed_seconds_total: dict[str, float] = {}
 
     for step_record in step_records:
         for field_name in tracked_step_fields:
@@ -505,16 +531,38 @@ def build_completion_timing_summary(
             if value_seconds is not None:
                 totals[field_name] += value_seconds
 
-        phase_elapsed = step_record.get("attribution_phase_elapsed_seconds")
-        if isinstance(phase_elapsed, dict):
-            for phase_name, value in phase_elapsed.items():
+        phase_elapsed_aggregate = step_record.get(
+            "attribution_phase_elapsed_seconds_aggregate",
+            step_record.get("attribution_phase_elapsed_seconds"),
+        )
+        if isinstance(phase_elapsed_aggregate, dict):
+            for phase_name, value in phase_elapsed_aggregate.items():
                 if not isinstance(phase_name, str):
                     continue
                 value_seconds = _safe_numeric_seconds(value)
                 if value_seconds is None:
                     continue
-                attribution_phase_elapsed_seconds_total[phase_name] = (
-                    attribution_phase_elapsed_seconds_total.get(phase_name, 0.0)
+                attribution_phase_elapsed_seconds_total_aggregate[phase_name] = (
+                    attribution_phase_elapsed_seconds_total_aggregate.get(
+                        phase_name, 0.0
+                    )
+                    + value_seconds
+                )
+
+        phase_elapsed_wall_clock = step_record.get(
+            "attribution_phase_wall_clock_elapsed_seconds"
+        )
+        if isinstance(phase_elapsed_wall_clock, dict):
+            for phase_name, value in phase_elapsed_wall_clock.items():
+                if not isinstance(phase_name, str):
+                    continue
+                value_seconds = _safe_numeric_seconds(value)
+                if value_seconds is None:
+                    continue
+                attribution_phase_wall_clock_elapsed_seconds_total[phase_name] = (
+                    attribution_phase_wall_clock_elapsed_seconds_total.get(
+                        phase_name, 0.0
+                    )
                     + value_seconds
                 )
 
@@ -529,11 +577,27 @@ def build_completion_timing_summary(
         "averages_per_step": averages,
         "step_count": step_count,
     }
-    if attribution_phase_elapsed_seconds_total:
+    if attribution_phase_elapsed_seconds_total_aggregate:
         summary["attribution_phase_elapsed_seconds_total"] = {
             key: round(value, 6)
-            for key, value in sorted(attribution_phase_elapsed_seconds_total.items())
+            for key, value in sorted(
+                attribution_phase_elapsed_seconds_total_aggregate.items()
+            )
         }
+        summary["attribution_phase_elapsed_seconds_total_aggregate"] = {
+            key: round(value, 6)
+            for key, value in sorted(
+                attribution_phase_elapsed_seconds_total_aggregate.items()
+            )
+        }
+    if attribution_phase_wall_clock_elapsed_seconds_total:
+        summary["attribution_phase_wall_clock_elapsed_seconds_total"] = {
+            key: round(value, 6)
+            for key, value in sorted(
+                attribution_phase_wall_clock_elapsed_seconds_total.items()
+            )
+        }
+
     return summary
 
 

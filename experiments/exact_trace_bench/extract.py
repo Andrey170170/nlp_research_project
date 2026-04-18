@@ -232,6 +232,14 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     anomaly_debug_first_overlap_means: list[float] = []
     anomaly_debug_deterministic_overlap_means: list[float] = []
     anomaly_debug_float64_overlap_means: list[float] = []
+    anomaly_debug_rank_all_zero_refresh_counts: list[int] = []
+    anomaly_debug_rank_effectively_all_zero_refresh_counts: list[int] = []
+    anomaly_debug_rank_nonzero_count_mins: list[float] = []
+    anomaly_debug_rank_nonzero_count_means: list[float] = []
+    anomaly_debug_rank_abs_sum_means: list[float] = []
+    anomaly_debug_refresh_elapsed_ms_means: list[float] = []
+    anomaly_debug_first_refresh_float32_effectively_all_zero: list[int] = []
+    anomaly_debug_first_refresh_float64_effectively_all_zero: list[int] = []
     completion_timing_summary_count = 0
     completion_timing_completion_end_to_end_values: list[float] = []
     completion_timing_step_counts: list[int] = []
@@ -244,7 +252,8 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     completion_timing_averages_per_step: dict[str, list[float]] = {
         field_name: [] for field_name in tracked_step_fields
     }
-    completion_phase_elapsed_totals: dict[str, float] = {}
+    completion_phase_elapsed_totals_aggregate: dict[str, float] = {}
+    completion_phase_wall_clock_elapsed_totals: dict[str, float] = {}
 
     for manifest_path, manifest in zip(manifest_paths, manifests, strict=False):
         completion_dir = manifest_path.parent
@@ -323,6 +332,36 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
                 value = _to_float(summary.get("float64_shadow_overlap_mean"))
                 if value is not None:
                     anomaly_debug_float64_overlap_means.append(value)
+                value = _to_int(summary.get("rank_signal_all_zero_refresh_count"))
+                if value is not None:
+                    anomaly_debug_rank_all_zero_refresh_counts.append(value)
+                value = _to_int(
+                    summary.get("rank_signal_effectively_all_zero_refresh_count")
+                )
+                if value is not None:
+                    anomaly_debug_rank_effectively_all_zero_refresh_counts.append(value)
+                value = _to_float(summary.get("rank_signal_nonzero_count_min"))
+                if value is not None:
+                    anomaly_debug_rank_nonzero_count_mins.append(value)
+                value = _to_float(summary.get("rank_signal_nonzero_count_mean"))
+                if value is not None:
+                    anomaly_debug_rank_nonzero_count_means.append(value)
+                value = _to_float(summary.get("rank_signal_abs_sum_mean"))
+                if value is not None:
+                    anomaly_debug_rank_abs_sum_means.append(value)
+                value = _to_float(summary.get("refresh_elapsed_ms_mean"))
+                if value is not None:
+                    anomaly_debug_refresh_elapsed_ms_means.append(value)
+                value = summary.get("first_refresh_float32_effectively_all_zero")
+                if isinstance(value, bool):
+                    anomaly_debug_first_refresh_float32_effectively_all_zero.append(
+                        int(value)
+                    )
+                value = summary.get("first_refresh_float64_effectively_all_zero")
+                if isinstance(value, bool):
+                    anomaly_debug_first_refresh_float64_effectively_all_zero.append(
+                        int(value)
+                    )
 
         telemetry_event_count = _to_int(manifest.get("telemetry_event_count"))
         if telemetry_event_count is not None:
@@ -363,57 +402,127 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
                     continue
                 completion_timing_averages_per_step[field_name].append(avg_seconds)
 
-        completion_phase_elapsed = timing_summary.get(
-            "attribution_phase_elapsed_seconds_total"
+        completion_phase_elapsed_aggregate = timing_summary.get(
+            "attribution_phase_elapsed_seconds_total_aggregate",
+            timing_summary.get("attribution_phase_elapsed_seconds_total"),
         )
-        if isinstance(completion_phase_elapsed, dict):
-            for phase_name, phase_elapsed_seconds in completion_phase_elapsed.items():
+        if isinstance(completion_phase_elapsed_aggregate, dict):
+            for (
+                phase_name,
+                phase_elapsed_seconds,
+            ) in completion_phase_elapsed_aggregate.items():
                 if not isinstance(phase_name, str):
                     continue
                 phase_elapsed_seconds_float = _to_float(phase_elapsed_seconds)
                 if phase_elapsed_seconds_float is None:
                     continue
-                completion_phase_elapsed_totals[phase_name] = (
-                    completion_phase_elapsed_totals.get(phase_name, 0.0)
+                completion_phase_elapsed_totals_aggregate[phase_name] = (
+                    completion_phase_elapsed_totals_aggregate.get(phase_name, 0.0)
                     + phase_elapsed_seconds_float
                 )
 
-    step_phase_elapsed_totals: dict[str, float] = {}
-    if not completion_phase_elapsed_totals:
+        completion_phase_elapsed_wall_clock = timing_summary.get(
+            "attribution_phase_wall_clock_elapsed_seconds_total"
+        )
+        if isinstance(completion_phase_elapsed_wall_clock, dict):
+            for (
+                phase_name,
+                phase_elapsed_seconds,
+            ) in completion_phase_elapsed_wall_clock.items():
+                if not isinstance(phase_name, str):
+                    continue
+                phase_elapsed_seconds_float = _to_float(phase_elapsed_seconds)
+                if phase_elapsed_seconds_float is None:
+                    continue
+                completion_phase_wall_clock_elapsed_totals[phase_name] = (
+                    completion_phase_wall_clock_elapsed_totals.get(phase_name, 0.0)
+                    + phase_elapsed_seconds_float
+                )
+
+    step_phase_elapsed_totals_aggregate: dict[str, float] = {}
+    step_phase_wall_clock_elapsed_totals: dict[str, float] = {}
+    if (
+        not completion_phase_elapsed_totals_aggregate
+        or not completion_phase_wall_clock_elapsed_totals
+    ):
         for step in steps:
-            step_phase_elapsed = step.get("attribution_phase_elapsed_seconds")
-            if not isinstance(step_phase_elapsed, dict):
-                continue
-            for phase_name, phase_elapsed_seconds in step_phase_elapsed.items():
-                if not isinstance(phase_name, str):
-                    continue
-                phase_elapsed_seconds_float = _to_float(phase_elapsed_seconds)
-                if phase_elapsed_seconds_float is None:
-                    continue
-                step_phase_elapsed_totals[phase_name] = (
-                    step_phase_elapsed_totals.get(phase_name, 0.0)
-                    + phase_elapsed_seconds_float
+            if not completion_phase_elapsed_totals_aggregate:
+                step_phase_elapsed_aggregate = step.get(
+                    "attribution_phase_elapsed_seconds_aggregate",
+                    step.get("attribution_phase_elapsed_seconds"),
                 )
+                if isinstance(step_phase_elapsed_aggregate, dict):
+                    for (
+                        phase_name,
+                        phase_elapsed_seconds,
+                    ) in step_phase_elapsed_aggregate.items():
+                        if not isinstance(phase_name, str):
+                            continue
+                        phase_elapsed_seconds_float = _to_float(phase_elapsed_seconds)
+                        if phase_elapsed_seconds_float is None:
+                            continue
+                        step_phase_elapsed_totals_aggregate[phase_name] = (
+                            step_phase_elapsed_totals_aggregate.get(phase_name, 0.0)
+                            + phase_elapsed_seconds_float
+                        )
 
-    phase_elapsed_totals = (
-        completion_phase_elapsed_totals
-        if completion_phase_elapsed_totals
-        else step_phase_elapsed_totals
+            if not completion_phase_wall_clock_elapsed_totals:
+                step_phase_elapsed_wall_clock = step.get(
+                    "attribution_phase_wall_clock_elapsed_seconds"
+                )
+                if isinstance(step_phase_elapsed_wall_clock, dict):
+                    for (
+                        phase_name,
+                        phase_elapsed_seconds,
+                    ) in step_phase_elapsed_wall_clock.items():
+                        if not isinstance(phase_name, str):
+                            continue
+                        phase_elapsed_seconds_float = _to_float(phase_elapsed_seconds)
+                        if phase_elapsed_seconds_float is None:
+                            continue
+                        step_phase_wall_clock_elapsed_totals[phase_name] = (
+                            step_phase_wall_clock_elapsed_totals.get(phase_name, 0.0)
+                            + phase_elapsed_seconds_float
+                        )
+
+    phase_elapsed_totals_aggregate = (
+        completion_phase_elapsed_totals_aggregate
+        if completion_phase_elapsed_totals_aggregate
+        else step_phase_elapsed_totals_aggregate
     )
-    phase_elapsed_source = (
+    phase_elapsed_source_aggregate = (
         "completion_timing_summary"
-        if completion_phase_elapsed_totals
+        if completion_phase_elapsed_totals_aggregate
         else "step_records"
-        if step_phase_elapsed_totals
+        if step_phase_elapsed_totals_aggregate
+        else None
+    )
+    phase_elapsed_totals_wall_clock = (
+        completion_phase_wall_clock_elapsed_totals
+        if completion_phase_wall_clock_elapsed_totals
+        else step_phase_wall_clock_elapsed_totals
+    )
+    phase_elapsed_source_wall_clock = (
+        "completion_timing_summary"
+        if completion_phase_wall_clock_elapsed_totals
+        else "step_records"
+        if step_phase_wall_clock_elapsed_totals
         else None
     )
 
-    phase_elapsed_columns = {
+    phase_elapsed_columns_aggregate = {
         (
             "attribution_phase_elapsed_seconds_total_"
             f"{_sanitize_column_fragment(phase_name)}"
         ): round(total_seconds, 6)
-        for phase_name, total_seconds in sorted(phase_elapsed_totals.items())
+        for phase_name, total_seconds in sorted(phase_elapsed_totals_aggregate.items())
+    }
+    phase_elapsed_columns_wall_clock = {
+        (
+            "attribution_phase_wall_clock_elapsed_seconds_total_"
+            f"{_sanitize_column_fragment(phase_name)}"
+        ): round(total_seconds, 6)
+        for phase_name, total_seconds in sorted(phase_elapsed_totals_wall_clock.items())
     }
 
     step_timing_values: dict[str, list[float]] = {
@@ -739,15 +848,104 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
             if anomaly_debug_float64_overlap_means
             else None
         ),
-        "attribution_phase_elapsed_seconds_total_source": phase_elapsed_source,
+        "phase4_anomaly_debug_rank_signal_all_zero_refresh_count_mean": (
+            round(
+                mean(
+                    [
+                        float(value)
+                        for value in anomaly_debug_rank_all_zero_refresh_counts
+                    ]
+                ),
+                6,
+            )
+            if anomaly_debug_rank_all_zero_refresh_counts
+            else None
+        ),
+        "phase4_anomaly_debug_rank_signal_effectively_all_zero_refresh_count_mean": (
+            round(
+                mean(
+                    [
+                        float(value)
+                        for value in anomaly_debug_rank_effectively_all_zero_refresh_counts
+                    ]
+                ),
+                6,
+            )
+            if anomaly_debug_rank_effectively_all_zero_refresh_counts
+            else None
+        ),
+        "phase4_anomaly_debug_rank_signal_nonzero_count_min_mean": (
+            round(mean(anomaly_debug_rank_nonzero_count_mins), 6)
+            if anomaly_debug_rank_nonzero_count_mins
+            else None
+        ),
+        "phase4_anomaly_debug_rank_signal_nonzero_count_mean_mean": (
+            round(mean(anomaly_debug_rank_nonzero_count_means), 6)
+            if anomaly_debug_rank_nonzero_count_means
+            else None
+        ),
+        "phase4_anomaly_debug_rank_signal_abs_sum_mean_mean": (
+            round(mean(anomaly_debug_rank_abs_sum_means), 6)
+            if anomaly_debug_rank_abs_sum_means
+            else None
+        ),
+        "phase4_anomaly_debug_refresh_elapsed_ms_mean": (
+            round(mean(anomaly_debug_refresh_elapsed_ms_means), 6)
+            if anomaly_debug_refresh_elapsed_ms_means
+            else None
+        ),
+        "phase4_anomaly_debug_first_refresh_float32_effectively_all_zero_fraction": (
+            round(
+                mean(
+                    [
+                        float(value)
+                        for value in anomaly_debug_first_refresh_float32_effectively_all_zero
+                    ]
+                ),
+                6,
+            )
+            if anomaly_debug_first_refresh_float32_effectively_all_zero
+            else None
+        ),
+        "phase4_anomaly_debug_first_refresh_float64_effectively_all_zero_fraction": (
+            round(
+                mean(
+                    [
+                        float(value)
+                        for value in anomaly_debug_first_refresh_float64_effectively_all_zero
+                    ]
+                ),
+                6,
+            )
+            if anomaly_debug_first_refresh_float64_effectively_all_zero
+            else None
+        ),
+        "attribution_phase_elapsed_seconds_total_source": phase_elapsed_source_aggregate,
         "attribution_phase_elapsed_seconds_total_all_phases": (
-            round(sum(phase_elapsed_totals.values()), 6)
-            if phase_elapsed_totals
+            round(sum(phase_elapsed_totals_aggregate.values()), 6)
+            if phase_elapsed_totals_aggregate
+            else None
+        ),
+        "attribution_phase_elapsed_seconds_total_aggregate_source": (
+            phase_elapsed_source_aggregate
+        ),
+        "attribution_phase_elapsed_seconds_total_aggregate_all_phases": (
+            round(sum(phase_elapsed_totals_aggregate.values()), 6)
+            if phase_elapsed_totals_aggregate
+            else None
+        ),
+        "attribution_phase_wall_clock_elapsed_seconds_total_source": (
+            phase_elapsed_source_wall_clock
+        ),
+        "attribution_phase_wall_clock_elapsed_seconds_total_all_phases": (
+            round(sum(phase_elapsed_totals_wall_clock.values()), 6)
+            if phase_elapsed_totals_wall_clock
             else None
         ),
         **completion_timing_columns,
         **step_timing_columns,
-        **phase_elapsed_columns,
+        **phase_elapsed_columns_aggregate,
+        **phase_elapsed_columns_wall_clock,
         **flatten_dict(resource_snapshot, prefix="resource_snapshot_"),
     }
 

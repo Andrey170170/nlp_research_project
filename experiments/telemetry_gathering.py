@@ -220,10 +220,13 @@ def _timing_summary_scalar_fields(timing_summary: dict[str, Any]) -> dict[str, A
                 averages_per_step.get(key)
             )
 
-    phase_elapsed = timing_summary.get("attribution_phase_elapsed_seconds_total")
-    if isinstance(phase_elapsed, dict):
-        phase_elapsed_total = 0.0
-        for phase_name, elapsed_seconds in phase_elapsed.items():
+    phase_elapsed_aggregate = timing_summary.get(
+        "attribution_phase_elapsed_seconds_total_aggregate",
+        timing_summary.get("attribution_phase_elapsed_seconds_total"),
+    )
+    if isinstance(phase_elapsed_aggregate, dict):
+        phase_elapsed_total_aggregate = 0.0
+        for phase_name, elapsed_seconds in phase_elapsed_aggregate.items():
             if not isinstance(phase_name, str):
                 continue
             elapsed_seconds_float = _to_float(elapsed_seconds)
@@ -234,10 +237,31 @@ def _timing_summary_scalar_fields(timing_summary: dict[str, Any]) -> dict[str, A
                 f"{_sanitize_column_fragment(phase_name)}"
             )
             row[column_name] = elapsed_seconds_float
-            phase_elapsed_total += elapsed_seconds_float
+            phase_elapsed_total_aggregate += elapsed_seconds_float
         row["completion_timing_attribution_phase_elapsed_seconds_total_all_phases"] = (
-            round(phase_elapsed_total, 6)
+            round(phase_elapsed_total_aggregate, 6)
         )
+
+    phase_elapsed_wall_clock = timing_summary.get(
+        "attribution_phase_wall_clock_elapsed_seconds_total"
+    )
+    if isinstance(phase_elapsed_wall_clock, dict):
+        phase_elapsed_total_wall_clock = 0.0
+        for phase_name, elapsed_seconds in phase_elapsed_wall_clock.items():
+            if not isinstance(phase_name, str):
+                continue
+            elapsed_seconds_float = _to_float(elapsed_seconds)
+            if elapsed_seconds_float is None:
+                continue
+            column_name = (
+                "completion_timing_attribution_phase_wall_clock_elapsed_seconds_total_"
+                f"{_sanitize_column_fragment(phase_name)}"
+            )
+            row[column_name] = elapsed_seconds_float
+            phase_elapsed_total_wall_clock += elapsed_seconds_float
+        row[
+            "completion_timing_attribution_phase_wall_clock_elapsed_seconds_total_all_phases"
+        ] = round(phase_elapsed_total_wall_clock, 6)
 
     return row
 
@@ -550,10 +574,13 @@ def gather_telemetry(
                 ),
             }
 
-            step_phase_elapsed = step_record.get("attribution_phase_elapsed_seconds")
-            phase_elapsed_total = 0.0
-            if isinstance(step_phase_elapsed, dict):
-                for phase_name, elapsed_seconds in step_phase_elapsed.items():
+            step_phase_elapsed_aggregate = step_record.get(
+                "attribution_phase_elapsed_seconds_aggregate",
+                step_record.get("attribution_phase_elapsed_seconds"),
+            )
+            phase_elapsed_total_aggregate = 0.0
+            if isinstance(step_phase_elapsed_aggregate, dict):
+                for phase_name, elapsed_seconds in step_phase_elapsed_aggregate.items():
                     if not isinstance(phase_name, str):
                         continue
                     elapsed_seconds_float = _to_float(elapsed_seconds)
@@ -564,9 +591,35 @@ def gather_telemetry(
                         f"{_sanitize_column_fragment(phase_name)}"
                     )
                     step_row[column_name] = elapsed_seconds_float
-                    phase_elapsed_total += elapsed_seconds_float
+                    phase_elapsed_total_aggregate += elapsed_seconds_float
             step_row["attribution_phase_elapsed_seconds_all_phases"] = round(
-                phase_elapsed_total, 6
+                phase_elapsed_total_aggregate,
+                6,
+            )
+
+            step_phase_elapsed_wall_clock = step_record.get(
+                "attribution_phase_wall_clock_elapsed_seconds"
+            )
+            phase_elapsed_total_wall_clock = 0.0
+            if isinstance(step_phase_elapsed_wall_clock, dict):
+                for (
+                    phase_name,
+                    elapsed_seconds,
+                ) in step_phase_elapsed_wall_clock.items():
+                    if not isinstance(phase_name, str):
+                        continue
+                    elapsed_seconds_float = _to_float(elapsed_seconds)
+                    if elapsed_seconds_float is None:
+                        continue
+                    column_name = (
+                        "attribution_phase_wall_clock_elapsed_seconds_"
+                        f"{_sanitize_column_fragment(phase_name)}"
+                    )
+                    step_row[column_name] = elapsed_seconds_float
+                    phase_elapsed_total_wall_clock += elapsed_seconds_float
+            step_row["attribution_phase_wall_clock_elapsed_seconds_all_phases"] = round(
+                phase_elapsed_total_wall_clock,
+                6,
             )
 
             step_event_agg = step_event_aggs.get(step_index)
@@ -697,6 +750,8 @@ def main() -> None:
             "completion_timing_summary_present",
             "completion_timing_completion_end_to_end_seconds",
             "completion_timing_totals_attribution_seconds",
+            "completion_timing_attribution_phase_elapsed_seconds_total_all_phases",
+            "completion_timing_attribution_phase_wall_clock_elapsed_seconds_total_all_phases",
         ],
     )
     write_csv(
@@ -724,6 +779,8 @@ def main() -> None:
             "telemetry_event_count_manifest_step",
             "telemetry_event_count_file_step",
             "telemetry_elapsed_seconds_total_step",
+            "attribution_phase_elapsed_seconds_all_phases",
+            "attribution_phase_wall_clock_elapsed_seconds_all_phases",
         ],
     )
     write_csv(
