@@ -57,6 +57,7 @@ def extract_compact_chunked_attribution(
     feature_batch_target_reserved_fraction: float = 0.9,
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
+    phase4_anomaly_debug: bool = False,
 ) -> dict[str, Any]:
     gc.collect()
     if torch.cuda.is_available():
@@ -95,6 +96,7 @@ def extract_compact_chunked_attribution(
         feature_batch_target_reserved_fraction=feature_batch_target_reserved_fraction,
         feature_batch_min_free_fraction=feature_batch_min_free_fraction,
         feature_batch_probe_batches=feature_batch_probe_batches,
+        phase4_anomaly_debug=phase4_anomaly_debug,
         compact_output=True,
     )
 
@@ -251,6 +253,7 @@ def trace_completion_compact_chunked(
     feature_batch_target_reserved_fraction: float = 0.9,
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
+    phase4_anomaly_debug: bool = False,
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
     fixture_name: str | None = None,
@@ -285,6 +288,8 @@ def trace_completion_compact_chunked(
     telemetry_jsonl_path = completion_dir / "telemetry.jsonl"
     telemetry_jsonl_path.write_text("")
     telemetry_events_written = 0
+    phase4_anomaly_debug_path = completion_dir / "phase4_anomaly_debug.json"
+    phase4_anomaly_debug_artifact = None
 
     candidate_stop_ids = [tokenizer.eos_token_id, tokenizer.pad_token_id]
     end_of_turn = tokenizer.convert_tokens_to_ids("<end_of_turn>")
@@ -326,6 +331,7 @@ def trace_completion_compact_chunked(
             feature_batch_target_reserved_fraction=feature_batch_target_reserved_fraction,
             feature_batch_min_free_fraction=feature_batch_min_free_fraction,
             feature_batch_probe_batches=feature_batch_probe_batches,
+            phase4_anomaly_debug=phase4_anomaly_debug,
         )
         attribution_seconds = time.perf_counter() - attribution_start
 
@@ -378,6 +384,13 @@ def trace_completion_compact_chunked(
             telemetry_jsonl_path,
             telemetry_records,
         )
+        if phase4_anomaly_debug_artifact is None and isinstance(
+            compact_result.get("phase4_anomaly_debug"), dict
+        ):
+            phase4_anomaly_debug_artifact = compact_result["phase4_anomaly_debug"]
+            phase4_anomaly_debug_path.write_text(
+                base.json.dumps(phase4_anomaly_debug_artifact, indent=2)
+            )
 
         token_generation_start = time.perf_counter()
         token_result = base.generate_next_token(
@@ -441,6 +454,9 @@ def trace_completion_compact_chunked(
             ),
             "phase4_feature_batch_planner_status": resolved_phase4_planner_status,
             "phase4_feature_batch_planner_skip_reason": resolved_phase4_planner_skip_reason,
+            "phase4_anomaly_debug_enabled": bool(
+                compact_result.get("phase4_anomaly_debug_enabled", phase4_anomaly_debug)
+            ),
         }
         step_records.append(step_record)
 
@@ -500,6 +516,7 @@ def trace_completion_compact_chunked(
         "feature_batch_target_reserved_fraction": feature_batch_target_reserved_fraction,
         "feature_batch_min_free_fraction": feature_batch_min_free_fraction,
         "feature_batch_probe_batches": feature_batch_probe_batches,
+        "phase4_anomaly_debug": phase4_anomaly_debug,
         "phase4_feature_batch_size_initial": initial_phase4_feature_batch_size,
         "phase4_feature_batch_sizes_observed": unique_phase4_feature_batch_sizes,
         "phase4_feature_batch_size_effective": (
@@ -547,6 +564,12 @@ def trace_completion_compact_chunked(
         "graph_packaging_mode": "compact_chunked_no_full_graph",
         "telemetry_events_path": telemetry_jsonl_path.name,
         "telemetry_event_count": telemetry_events_written,
+        "phase4_anomaly_debug_enabled": bool(phase4_anomaly_debug),
+        "phase4_anomaly_debug_path": (
+            phase4_anomaly_debug_path.name
+            if phase4_anomaly_debug_artifact is not None
+            else None
+        ),
         "resource_snapshot": base.capture_resource_snapshot(),
         "timing_summary": base.build_completion_timing_summary(
             completion_end_to_end_seconds=completion_end_to_end_seconds,
@@ -593,6 +616,11 @@ def run_pipeline(args: argparse.Namespace) -> None:
         else args.feature_batch_size
     )
     planner_enabled = args.plan_feature_batch_size or args.auto_scale_feature_batch_size
+    if args.phase4_anomaly_debug and args.save_raw:
+        raise ValueError(
+            "Phase-4 anomaly debug currently supports only compact exact-chunked output. "
+            "--save-raw is unsupported with --phase4-anomaly-debug."
+        )
     if planner_enabled and args.save_raw:
         raise ValueError(
             "Phase-4 feature batch planner currently supports only compact exact-chunked output. "
@@ -670,6 +698,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "feature_batch_target_reserved_fraction": args.feature_batch_target_reserved_fraction,
         "feature_batch_min_free_fraction": args.feature_batch_min_free_fraction,
         "feature_batch_probe_batches": args.feature_batch_probe_batches,
+        "phase4_anomaly_debug": args.phase4_anomaly_debug,
         "prepared_prompt_file": args.prepared_prompt_file,
         "prepared_prompt_meta_file": args.prepared_prompt_meta_file,
         "graph_packaging_mode": (
@@ -752,6 +781,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 feature_batch_target_reserved_fraction=args.feature_batch_target_reserved_fraction,
                 feature_batch_min_free_fraction=args.feature_batch_min_free_fraction,
                 feature_batch_probe_batches=args.feature_batch_probe_batches,
+                phase4_anomaly_debug=args.phase4_anomaly_debug,
                 prompt_token_count=prompt_meta["prompt_token_count"],
                 prompt_source=prompt_meta["prompt_source"],
                 fixture_name=prompt_meta.get("fixture_name"),
@@ -967,6 +997,11 @@ if __name__ == "__main__":
         type=int,
         default=1,
         help="Number of preflight Phase-4 probe batches used by the planner",
+    )
+    parser.add_argument(
+        "--phase4-anomaly-debug",
+        action="store_true",
+        help="Enable opt-in Phase-4 anomaly shadow diagnostics (compact exact-chunked path only)",
     )
     parser.add_argument(
         "--no-lazy-encoder",

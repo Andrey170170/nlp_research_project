@@ -32,6 +32,7 @@ EXACT_MODE_KNOB_KEYS = (
     "feature_batch_target_reserved_fraction",
     "feature_batch_min_free_fraction",
     "feature_batch_probe_batches",
+    "phase4_anomaly_debug",
 )
 
 CLUSTER_SETTINGS: dict[str, dict[str, Any]] = {

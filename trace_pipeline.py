@@ -598,11 +598,12 @@ def extract_graph(
     feature_batch_target_reserved_fraction: float = 0.9,
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
+    phase4_anomaly_debug: bool = False,
 ):
     planner_enabled = bool(plan_feature_batch_size or auto_scale_feature_batch_size)
-    if planner_enabled:
+    if planner_enabled or phase4_anomaly_debug:
         raise ValueError(
-            "Phase-4 feature batch planner is unsupported in trace_pipeline.extract_graph() "
+            "Phase-4 feature batch planner/anomaly debug is unsupported in trace_pipeline.extract_graph() "
             "because this path uses full-graph attribution via the top-level attribute() wrapper. "
             "Use trace_pipeline_chunked.py compact mode (without --save-raw)."
         )
@@ -733,6 +734,7 @@ def trace_completion(
     feature_batch_target_reserved_fraction: float = 0.9,
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
+    phase4_anomaly_debug: bool = False,
     save_raw: bool = False,
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
@@ -741,9 +743,9 @@ def trace_completion(
 ) -> dict:
     """Trace a single completion: generate token-by-token with attribution."""
     planner_enabled = bool(plan_feature_batch_size or auto_scale_feature_batch_size)
-    if planner_enabled:
+    if planner_enabled or phase4_anomaly_debug:
         raise ValueError(
-            "Phase-4 feature batch planner is unsupported in trace_pipeline.trace_completion(); "
+            "Phase-4 feature batch planner/anomaly debug is unsupported in trace_pipeline.trace_completion(); "
             "this route produces full Graph outputs (and optional raw .pt). "
             "Use trace_pipeline_chunked.py compact mode (without --save-raw)."
         )

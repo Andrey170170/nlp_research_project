@@ -415,6 +415,8 @@ def build_command(
                     str(scenario["feature_batch_probe_batches"]),
                 ]
             )
+        if scenario.get("phase4_anomaly_debug", False):
+            cmd.append("--phase4-anomaly-debug")
 
     if scenario.get("verbose_attribution", False):
         cmd.append("--verbose-attribution")

@@ -46,6 +46,7 @@ def base_trace_defaults() -> dict[str, Any]:
         "feature_batch_target_reserved_fraction": 0.9,
         "feature_batch_min_free_fraction": 0.05,
         "feature_batch_probe_batches": 1,
+        "phase4_anomaly_debug": False,
         "max_steps": 1,
         "method": "exact",
     }
