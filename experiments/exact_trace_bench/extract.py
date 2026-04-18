@@ -220,6 +220,18 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     telemetry_existing_paths: set[str] = set()
     telemetry_missing_paths: set[str] = set()
     telemetry_manifest_event_counts: list[int] = []
+    anomaly_debug_declared_paths: set[str] = set()
+    anomaly_debug_existing_paths: set[str] = set()
+    anomaly_debug_missing_paths: set[str] = set()
+    anomaly_debug_refresh_counts: list[int] = []
+    anomaly_debug_record_counts: list[int] = []
+    anomaly_debug_statuses: list[str] = []
+    anomaly_debug_cutoff_margin_mins: list[float] = []
+    anomaly_debug_cutoff_margin_means: list[float] = []
+    anomaly_debug_previous_overlap_means: list[float] = []
+    anomaly_debug_first_overlap_means: list[float] = []
+    anomaly_debug_deterministic_overlap_means: list[float] = []
+    anomaly_debug_float64_overlap_means: list[float] = []
     completion_timing_summary_count = 0
     completion_timing_completion_end_to_end_values: list[float] = []
     completion_timing_step_counts: list[int] = []
@@ -258,6 +270,59 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
         if resolved_telemetry_path is not None:
             relative_path = _relative_to_or_str(resolved_telemetry_path, artifact_dir)
             telemetry_existing_paths.add(relative_path)
+
+        anomaly_debug_ref = manifest.get("phase4_anomaly_debug_path")
+        resolved_anomaly_debug_path: Path | None = None
+        declared_anomaly_debug_path: Path | None = None
+        if isinstance(anomaly_debug_ref, str) and anomaly_debug_ref.strip():
+            declared_anomaly_debug_path = completion_dir / anomaly_debug_ref.strip()
+            anomaly_debug_declared_paths.add(
+                _relative_to_or_str(declared_anomaly_debug_path, artifact_dir)
+            )
+            if declared_anomaly_debug_path.exists():
+                resolved_anomaly_debug_path = declared_anomaly_debug_path
+            else:
+                anomaly_debug_missing_paths.add(
+                    _relative_to_or_str(declared_anomaly_debug_path, artifact_dir)
+                )
+        default_anomaly_debug_path = completion_dir / "phase4_anomaly_debug.json"
+        if resolved_anomaly_debug_path is None and default_anomaly_debug_path.exists():
+            resolved_anomaly_debug_path = default_anomaly_debug_path
+        if resolved_anomaly_debug_path is not None:
+            relative_path = _relative_to_or_str(
+                resolved_anomaly_debug_path, artifact_dir
+            )
+            anomaly_debug_existing_paths.add(relative_path)
+            anomaly_debug_payload = read_json(resolved_anomaly_debug_path)
+            refresh_count = _to_int(anomaly_debug_payload.get("refresh_count"))
+            if refresh_count is not None:
+                anomaly_debug_refresh_counts.append(refresh_count)
+            records = anomaly_debug_payload.get("records")
+            if isinstance(records, list):
+                anomaly_debug_record_counts.append(len(records))
+            status = anomaly_debug_payload.get("status")
+            if isinstance(status, str):
+                anomaly_debug_statuses.append(status)
+            summary = anomaly_debug_payload.get("summary")
+            if isinstance(summary, dict):
+                value = _to_float(summary.get("cutoff_margin_min"))
+                if value is not None:
+                    anomaly_debug_cutoff_margin_mins.append(value)
+                value = _to_float(summary.get("cutoff_margin_mean"))
+                if value is not None:
+                    anomaly_debug_cutoff_margin_means.append(value)
+                value = _to_float(summary.get("overlap_with_previous_mean"))
+                if value is not None:
+                    anomaly_debug_previous_overlap_means.append(value)
+                value = _to_float(summary.get("overlap_with_first_mean"))
+                if value is not None:
+                    anomaly_debug_first_overlap_means.append(value)
+                value = _to_float(summary.get("deterministic_shadow_overlap_mean"))
+                if value is not None:
+                    anomaly_debug_deterministic_overlap_means.append(value)
+                value = _to_float(summary.get("float64_shadow_overlap_mean"))
+                if value is not None:
+                    anomaly_debug_float64_overlap_means.append(value)
 
         telemetry_event_count = _to_int(manifest.get("telemetry_event_count"))
         if telemetry_event_count is not None:
@@ -438,6 +503,9 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     telemetry_existing_paths_sorted = sorted(telemetry_existing_paths)
     telemetry_declared_paths_sorted = sorted(telemetry_declared_paths)
     telemetry_missing_paths_sorted = sorted(telemetry_missing_paths)
+    anomaly_debug_existing_paths_sorted = sorted(anomaly_debug_existing_paths)
+    anomaly_debug_declared_paths_sorted = sorted(anomaly_debug_declared_paths)
+    anomaly_debug_missing_paths_sorted = sorted(anomaly_debug_missing_paths)
     step_phase4_feature_batch_sizes = [
         int(step["phase4_feature_batch_size"])
         for step in steps
@@ -612,6 +680,65 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
         "telemetry_event_count_steps_total": (
             sum(telemetry_event_count_steps) if telemetry_event_count_steps else None
         ),
+        "phase4_anomaly_debug_present": bool(anomaly_debug_existing_paths_sorted),
+        "phase4_anomaly_debug_manifest_declared_count": len(
+            anomaly_debug_declared_paths_sorted
+        ),
+        "phase4_anomaly_debug_file_count": len(anomaly_debug_existing_paths_sorted),
+        "phase4_anomaly_debug_missing_file_count": len(
+            anomaly_debug_missing_paths_sorted
+        ),
+        "phase4_anomaly_debug_path_example": (
+            anomaly_debug_existing_paths_sorted[0]
+            if anomaly_debug_existing_paths_sorted
+            else anomaly_debug_declared_paths_sorted[0]
+            if anomaly_debug_declared_paths_sorted
+            else None
+        ),
+        "phase4_anomaly_debug_status": (
+            anomaly_debug_statuses[-1] if anomaly_debug_statuses else None
+        ),
+        "phase4_anomaly_debug_refresh_count_mean": (
+            round(mean([float(value) for value in anomaly_debug_refresh_counts]), 6)
+            if anomaly_debug_refresh_counts
+            else None
+        ),
+        "phase4_anomaly_debug_refresh_count_max": (
+            max(anomaly_debug_refresh_counts) if anomaly_debug_refresh_counts else None
+        ),
+        "phase4_anomaly_debug_record_count_total": (
+            sum(anomaly_debug_record_counts) if anomaly_debug_record_counts else None
+        ),
+        "phase4_anomaly_debug_cutoff_margin_min_min": (
+            min(anomaly_debug_cutoff_margin_mins)
+            if anomaly_debug_cutoff_margin_mins
+            else None
+        ),
+        "phase4_anomaly_debug_cutoff_margin_mean_mean": (
+            round(mean(anomaly_debug_cutoff_margin_means), 6)
+            if anomaly_debug_cutoff_margin_means
+            else None
+        ),
+        "phase4_anomaly_debug_overlap_with_previous_mean": (
+            round(mean(anomaly_debug_previous_overlap_means), 6)
+            if anomaly_debug_previous_overlap_means
+            else None
+        ),
+        "phase4_anomaly_debug_overlap_with_first_mean": (
+            round(mean(anomaly_debug_first_overlap_means), 6)
+            if anomaly_debug_first_overlap_means
+            else None
+        ),
+        "phase4_anomaly_debug_deterministic_overlap_mean": (
+            round(mean(anomaly_debug_deterministic_overlap_means), 6)
+            if anomaly_debug_deterministic_overlap_means
+            else None
+        ),
+        "phase4_anomaly_debug_float64_overlap_mean": (
+            round(mean(anomaly_debug_float64_overlap_means), 6)
+            if anomaly_debug_float64_overlap_means
+            else None
+        ),
         "attribution_phase_elapsed_seconds_total_source": phase_elapsed_source,
         "attribution_phase_elapsed_seconds_total_all_phases": (
             round(sum(phase_elapsed_totals.values()), 6)
@@ -748,6 +875,9 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
         "feature_batch_probe_batches": run_config.get(
             "feature_batch_probe_batches",
             scenario.get("feature_batch_probe_batches"),
+        ),
+        "phase4_anomaly_debug": run_config.get(
+            "phase4_anomaly_debug", scenario.get("phase4_anomaly_debug")
         ),
         "decoder_cache_bytes": cache_bytes,
         "decoder_cache_gib": None if cache_bytes is None else cache_bytes / (1024**3),
