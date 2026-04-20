@@ -117,10 +117,19 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     anomaly_debug_rank_effectively_all_zero_refresh_counts: list[int] = []
     anomaly_debug_rank_nonzero_count_mins: list[float] = []
     anomaly_debug_rank_nonzero_count_means: list[float] = []
+    anomaly_debug_rank_effective_nonzero_count_means: list[float] = []
     anomaly_debug_rank_abs_sum_means: list[float] = []
+    anomaly_debug_rank_max_maxes: list[float] = []
     anomaly_debug_refresh_elapsed_ms_means: list[float] = []
     anomaly_debug_first_refresh_float32_effectively_all_zero: list[int] = []
     anomaly_debug_first_refresh_float64_effectively_all_zero: list[int] = []
+    anomaly_debug_phase3_logit_row_batch0_abs_sums: list[float] = []
+    anomaly_debug_phase3_logit_row_batch0_max_abs: list[float] = []
+    anomaly_debug_phase3_logit_row_batch0_nonfinite_counts: list[int] = []
+    anomaly_debug_phase3_logit_row_batch0_row_l1_max: list[float] = []
+    anomaly_debug_phase3_logit_row_batch0_row_l1_nonfinite_counts: list[int] = []
+    anomaly_debug_feature_row_store_read_calls_per_refresh_means: list[float] = []
+    anomaly_debug_feature_row_store_read_rows_per_refresh_means: list[float] = []
     completion_timing_summary_count = 0
     completion_timing_completion_end_to_end_values: list[float] = []
     completion_timing_step_counts: list[int] = []
@@ -227,9 +236,17 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
                 value = _to_float(summary.get("rank_signal_nonzero_count_mean"))
                 if value is not None:
                     anomaly_debug_rank_nonzero_count_means.append(value)
+                value = _to_float(
+                    summary.get("rank_signal_effective_nonzero_count_mean")
+                )
+                if value is not None:
+                    anomaly_debug_rank_effective_nonzero_count_means.append(value)
                 value = _to_float(summary.get("rank_signal_abs_sum_mean"))
                 if value is not None:
                     anomaly_debug_rank_abs_sum_means.append(value)
+                value = _to_float(summary.get("rank_signal_max_max"))
+                if value is not None:
+                    anomaly_debug_rank_max_maxes.append(value)
                 value = _to_float(summary.get("refresh_elapsed_ms_mean"))
                 if value is not None:
                     anomaly_debug_refresh_elapsed_ms_means.append(value)
@@ -242,6 +259,39 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
                 if isinstance(value, bool):
                     anomaly_debug_first_refresh_float64_effectively_all_zero.append(
                         int(value)
+                    )
+                value = _to_float(summary.get("phase3_logit_row_batch_0_abs_sum"))
+                if value is not None:
+                    anomaly_debug_phase3_logit_row_batch0_abs_sums.append(value)
+                value = _to_float(summary.get("phase3_logit_row_batch_0_max_abs"))
+                if value is not None:
+                    anomaly_debug_phase3_logit_row_batch0_max_abs.append(value)
+                value = _to_int(summary.get("phase3_logit_row_batch_0_nonfinite_count"))
+                if value is not None:
+                    anomaly_debug_phase3_logit_row_batch0_nonfinite_counts.append(value)
+                value = _to_float(summary.get("phase3_logit_row_batch_0_row_l1_max"))
+                if value is not None:
+                    anomaly_debug_phase3_logit_row_batch0_row_l1_max.append(value)
+                value = _to_int(
+                    summary.get("phase3_logit_row_batch_0_row_l1_nonfinite_count")
+                )
+                if value is not None:
+                    anomaly_debug_phase3_logit_row_batch0_row_l1_nonfinite_counts.append(
+                        value
+                    )
+                value = _to_float(
+                    summary.get("feature_row_store_read_calls_per_refresh_mean")
+                )
+                if value is not None:
+                    anomaly_debug_feature_row_store_read_calls_per_refresh_means.append(
+                        value
+                    )
+                value = _to_float(
+                    summary.get("feature_row_store_read_rows_per_refresh_mean")
+                )
+                if value is not None:
+                    anomaly_debug_feature_row_store_read_rows_per_refresh_means.append(
+                        value
                     )
 
         telemetry_event_count = _to_int(manifest.get("telemetry_event_count"))
@@ -816,10 +866,18 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
             if anomaly_debug_rank_nonzero_count_means
             else None
         ),
+        "phase4_anomaly_debug_rank_signal_effective_nonzero_count_mean": (
+            round(mean(anomaly_debug_rank_effective_nonzero_count_means), 6)
+            if anomaly_debug_rank_effective_nonzero_count_means
+            else None
+        ),
         "phase4_anomaly_debug_rank_signal_abs_sum_mean_mean": (
             round(mean(anomaly_debug_rank_abs_sum_means), 6)
             if anomaly_debug_rank_abs_sum_means
             else None
+        ),
+        "phase4_anomaly_debug_rank_signal_max_max": (
+            max(anomaly_debug_rank_max_maxes) if anomaly_debug_rank_max_maxes else None
         ),
         "phase4_anomaly_debug_refresh_elapsed_ms_mean": (
             round(mean(anomaly_debug_refresh_elapsed_ms_means), 6)
@@ -850,6 +908,57 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
                 6,
             )
             if anomaly_debug_first_refresh_float64_effectively_all_zero
+            else None
+        ),
+        "phase4_anomaly_debug_phase3_logit_row_batch0_abs_sum_mean": (
+            round(mean(anomaly_debug_phase3_logit_row_batch0_abs_sums), 6)
+            if anomaly_debug_phase3_logit_row_batch0_abs_sums
+            else None
+        ),
+        "phase4_anomaly_debug_phase3_logit_row_batch0_max_abs_mean": (
+            round(mean(anomaly_debug_phase3_logit_row_batch0_max_abs), 6)
+            if anomaly_debug_phase3_logit_row_batch0_max_abs
+            else None
+        ),
+        "phase4_anomaly_debug_phase3_logit_row_batch0_nonfinite_count_mean": (
+            round(
+                mean(
+                    [
+                        float(v)
+                        for v in anomaly_debug_phase3_logit_row_batch0_nonfinite_counts
+                    ]
+                ),
+                6,
+            )
+            if anomaly_debug_phase3_logit_row_batch0_nonfinite_counts
+            else None
+        ),
+        "phase4_anomaly_debug_phase3_logit_row_batch0_row_l1_max_mean": (
+            round(mean(anomaly_debug_phase3_logit_row_batch0_row_l1_max), 6)
+            if anomaly_debug_phase3_logit_row_batch0_row_l1_max
+            else None
+        ),
+        "phase4_anomaly_debug_phase3_logit_row_batch0_row_l1_nonfinite_count_mean": (
+            round(
+                mean(
+                    [
+                        float(v)
+                        for v in anomaly_debug_phase3_logit_row_batch0_row_l1_nonfinite_counts
+                    ]
+                ),
+                6,
+            )
+            if anomaly_debug_phase3_logit_row_batch0_row_l1_nonfinite_counts
+            else None
+        ),
+        "phase4_anomaly_debug_feature_row_store_read_calls_per_refresh_mean": (
+            round(mean(anomaly_debug_feature_row_store_read_calls_per_refresh_means), 6)
+            if anomaly_debug_feature_row_store_read_calls_per_refresh_means
+            else None
+        ),
+        "phase4_anomaly_debug_feature_row_store_read_rows_per_refresh_mean": (
+            round(mean(anomaly_debug_feature_row_store_read_rows_per_refresh_means), 6)
+            if anomaly_debug_feature_row_store_read_rows_per_refresh_means
             else None
         ),
         "attribution_phase_elapsed_seconds_total_source": phase_elapsed_source_aggregate,
