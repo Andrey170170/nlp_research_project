@@ -249,6 +249,25 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     anomaly_debug_phase3_logit_row_batch0_row_l1_nonfinite_counts: list[int] = []
     anomaly_debug_feature_row_store_read_calls_per_refresh_means: list[float] = []
     anomaly_debug_feature_row_store_read_rows_per_refresh_means: list[float] = []
+    cross_cluster_debug_declared_paths: set[str] = set()
+    cross_cluster_debug_existing_paths: set[str] = set()
+    cross_cluster_debug_missing_paths: set[str] = set()
+    cross_cluster_debug_statuses: list[str] = []
+    cross_cluster_debug_summary_scopes: list[str] = []
+    cross_cluster_debug_phase0_checkpoint_present: list[int] = []
+    cross_cluster_debug_phase3_checkpoint_present: list[int] = []
+    cross_cluster_debug_checkpoints_declared_paths: set[str] = set()
+    cross_cluster_debug_checkpoints_existing_paths: set[str] = set()
+    cross_cluster_debug_checkpoints_missing_paths: set[str] = set()
+    cross_cluster_debug_checkpoints_statuses: list[str] = []
+    cross_cluster_debug_checkpoints_manifest_counts: list[int] = []
+    cross_cluster_debug_batches_declared_paths: set[str] = set()
+    cross_cluster_debug_batches_existing_paths: set[str] = set()
+    cross_cluster_debug_batches_missing_paths: set[str] = set()
+    cross_cluster_debug_batches_statuses: list[str] = []
+    cross_cluster_debug_batches_manifest_counts: list[int] = []
+    exact_trace_internal_dtype_requested_values: list[str] = []
+    resolved_dtype_maps: list[dict[str, Any]] = []
     completion_timing_summary_count = 0
     completion_timing_completion_end_to_end_values: list[float] = []
     completion_timing_step_counts: list[int] = []
@@ -412,6 +431,160 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
                     anomaly_debug_feature_row_store_read_rows_per_refresh_means.append(
                         value
                     )
+
+        exact_trace_internal_dtype_requested = manifest.get(
+            "exact_trace_internal_dtype_requested"
+        )
+        if isinstance(exact_trace_internal_dtype_requested, str):
+            exact_trace_internal_dtype_requested_values.append(
+                exact_trace_internal_dtype_requested
+            )
+
+        resolved_dtype_map = manifest.get("resolved_dtype_map")
+        if isinstance(resolved_dtype_map, dict):
+            resolved_dtype_maps.append(resolved_dtype_map)
+
+        cross_cluster_debug_ref = manifest.get("cross_cluster_debug_path")
+        resolved_cross_cluster_debug_path: Path | None = None
+        declared_cross_cluster_debug_path: Path | None = None
+        if isinstance(cross_cluster_debug_ref, str) and cross_cluster_debug_ref.strip():
+            declared_cross_cluster_debug_path = (
+                completion_dir / cross_cluster_debug_ref.strip()
+            )
+            cross_cluster_debug_declared_paths.add(
+                _relative_to_or_str(declared_cross_cluster_debug_path, artifact_dir)
+            )
+            if declared_cross_cluster_debug_path.exists():
+                resolved_cross_cluster_debug_path = declared_cross_cluster_debug_path
+            else:
+                cross_cluster_debug_missing_paths.add(
+                    _relative_to_or_str(declared_cross_cluster_debug_path, artifact_dir)
+                )
+        default_cross_cluster_debug_path = (
+            completion_dir / "cross_cluster_debug_summary.json"
+        )
+        if (
+            resolved_cross_cluster_debug_path is None
+            and default_cross_cluster_debug_path.exists()
+        ):
+            resolved_cross_cluster_debug_path = default_cross_cluster_debug_path
+        if resolved_cross_cluster_debug_path is not None:
+            relative_path = _relative_to_or_str(
+                resolved_cross_cluster_debug_path,
+                artifact_dir,
+            )
+            cross_cluster_debug_existing_paths.add(relative_path)
+            cross_cluster_payload = read_json(resolved_cross_cluster_debug_path)
+            status = cross_cluster_payload.get("status")
+            if isinstance(status, str):
+                cross_cluster_debug_statuses.append(status)
+            summary_scope = manifest.get("cross_cluster_debug_summary_scope")
+            if isinstance(summary_scope, str):
+                cross_cluster_debug_summary_scopes.append(summary_scope)
+            checkpoints = cross_cluster_payload.get("checkpoints")
+            if isinstance(checkpoints, dict):
+                cross_cluster_debug_phase0_checkpoint_present.append(
+                    int("phase0_sparse_setup" in checkpoints)
+                )
+                cross_cluster_debug_phase3_checkpoint_present.append(
+                    int("phase3_seed_ranking_pre_phase4" in checkpoints)
+                )
+
+        cross_cluster_checkpoints_ref = manifest.get(
+            "cross_cluster_debug_checkpoints_path"
+        )
+        resolved_cross_cluster_checkpoints_path: Path | None = None
+        declared_cross_cluster_checkpoints_path: Path | None = None
+        if (
+            isinstance(cross_cluster_checkpoints_ref, str)
+            and cross_cluster_checkpoints_ref.strip()
+        ):
+            declared_cross_cluster_checkpoints_path = (
+                completion_dir / cross_cluster_checkpoints_ref.strip()
+            )
+            cross_cluster_debug_checkpoints_declared_paths.add(
+                _relative_to_or_str(
+                    declared_cross_cluster_checkpoints_path, artifact_dir
+                )
+            )
+            if declared_cross_cluster_checkpoints_path.exists():
+                resolved_cross_cluster_checkpoints_path = (
+                    declared_cross_cluster_checkpoints_path
+                )
+            else:
+                cross_cluster_debug_checkpoints_missing_paths.add(
+                    _relative_to_or_str(
+                        declared_cross_cluster_checkpoints_path, artifact_dir
+                    )
+                )
+        default_cross_cluster_checkpoints_path = (
+            completion_dir / "cross_cluster_debug_checkpoints.jsonl"
+        )
+        if (
+            resolved_cross_cluster_checkpoints_path is None
+            and default_cross_cluster_checkpoints_path.exists()
+        ):
+            resolved_cross_cluster_checkpoints_path = (
+                default_cross_cluster_checkpoints_path
+            )
+        if resolved_cross_cluster_checkpoints_path is not None:
+            cross_cluster_debug_checkpoints_existing_paths.add(
+                _relative_to_or_str(
+                    resolved_cross_cluster_checkpoints_path, artifact_dir
+                )
+            )
+
+        cross_cluster_batches_ref = manifest.get("cross_cluster_debug_batches_path")
+        resolved_cross_cluster_batches_path: Path | None = None
+        declared_cross_cluster_batches_path: Path | None = None
+        if (
+            isinstance(cross_cluster_batches_ref, str)
+            and cross_cluster_batches_ref.strip()
+        ):
+            declared_cross_cluster_batches_path = (
+                completion_dir / cross_cluster_batches_ref.strip()
+            )
+            cross_cluster_debug_batches_declared_paths.add(
+                _relative_to_or_str(declared_cross_cluster_batches_path, artifact_dir)
+            )
+            if declared_cross_cluster_batches_path.exists():
+                resolved_cross_cluster_batches_path = (
+                    declared_cross_cluster_batches_path
+                )
+            else:
+                cross_cluster_debug_batches_missing_paths.add(
+                    _relative_to_or_str(
+                        declared_cross_cluster_batches_path, artifact_dir
+                    )
+                )
+        default_cross_cluster_batches_path = (
+            completion_dir / "cross_cluster_debug_batches.jsonl"
+        )
+        if (
+            resolved_cross_cluster_batches_path is None
+            and default_cross_cluster_batches_path.exists()
+        ):
+            resolved_cross_cluster_batches_path = default_cross_cluster_batches_path
+        if resolved_cross_cluster_batches_path is not None:
+            cross_cluster_debug_batches_existing_paths.add(
+                _relative_to_or_str(resolved_cross_cluster_batches_path, artifact_dir)
+            )
+
+        checkpoints_status = manifest.get("cross_cluster_debug_checkpoints_status")
+        if isinstance(checkpoints_status, str):
+            cross_cluster_debug_checkpoints_statuses.append(checkpoints_status)
+        checkpoints_count = _to_int(
+            manifest.get("cross_cluster_debug_checkpoints_count")
+        )
+        if checkpoints_count is not None:
+            cross_cluster_debug_checkpoints_manifest_counts.append(checkpoints_count)
+
+        batches_status = manifest.get("cross_cluster_debug_batches_status")
+        if isinstance(batches_status, str):
+            cross_cluster_debug_batches_statuses.append(batches_status)
+        batches_count = _to_int(manifest.get("cross_cluster_debug_batches_count"))
+        if batches_count is not None:
+            cross_cluster_debug_batches_manifest_counts.append(batches_count)
 
         telemetry_event_count = _to_int(manifest.get("telemetry_event_count"))
         if telemetry_event_count is not None:
@@ -665,6 +838,32 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     anomaly_debug_existing_paths_sorted = sorted(anomaly_debug_existing_paths)
     anomaly_debug_declared_paths_sorted = sorted(anomaly_debug_declared_paths)
     anomaly_debug_missing_paths_sorted = sorted(anomaly_debug_missing_paths)
+    cross_cluster_debug_existing_paths_sorted = sorted(
+        cross_cluster_debug_existing_paths
+    )
+    cross_cluster_debug_declared_paths_sorted = sorted(
+        cross_cluster_debug_declared_paths
+    )
+    cross_cluster_debug_missing_paths_sorted = sorted(cross_cluster_debug_missing_paths)
+    cross_cluster_debug_checkpoints_existing_paths_sorted = sorted(
+        cross_cluster_debug_checkpoints_existing_paths
+    )
+    cross_cluster_debug_checkpoints_declared_paths_sorted = sorted(
+        cross_cluster_debug_checkpoints_declared_paths
+    )
+    cross_cluster_debug_checkpoints_missing_paths_sorted = sorted(
+        cross_cluster_debug_checkpoints_missing_paths
+    )
+    cross_cluster_debug_batches_existing_paths_sorted = sorted(
+        cross_cluster_debug_batches_existing_paths
+    )
+    cross_cluster_debug_batches_declared_paths_sorted = sorted(
+        cross_cluster_debug_batches_declared_paths
+    )
+    cross_cluster_debug_batches_missing_paths_sorted = sorted(
+        cross_cluster_debug_batches_missing_paths
+    )
+    resolved_dtype_map_latest = resolved_dtype_maps[-1] if resolved_dtype_maps else None
     step_phase4_feature_batch_sizes = [
         int(step["phase4_feature_batch_size"])
         for step in steps
@@ -801,6 +1000,158 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
         "phase4_feature_batch_planner_skip_reason": (
             manifest_phase4_planner_skip_reasons[-1]
             if manifest_phase4_planner_skip_reasons
+            else None
+        ),
+        "exact_trace_internal_dtype_requested": (
+            exact_trace_internal_dtype_requested_values[-1]
+            if exact_trace_internal_dtype_requested_values
+            else None
+        ),
+        "exact_trace_internal_dtype_requested_values_observed": sorted(
+            set(exact_trace_internal_dtype_requested_values)
+        ),
+        "resolved_dtype_map_present": bool(resolved_dtype_map_latest),
+        "resolved_dtype_map_feature_row_storage_dtype": (
+            resolved_dtype_map_latest.get("feature_row_storage_dtype")
+            if isinstance(resolved_dtype_map_latest, dict)
+            else None
+        ),
+        "resolved_dtype_map_row_abs_sum_dtype": (
+            resolved_dtype_map_latest.get("row_abs_sum_dtype")
+            if isinstance(resolved_dtype_map_latest, dict)
+            else None
+        ),
+        "resolved_dtype_map_influence_compute_dtype": (
+            resolved_dtype_map_latest.get("influence_compute_dtype")
+            if isinstance(resolved_dtype_map_latest, dict)
+            else None
+        ),
+        "resolved_dtype_map_planner_compute_dtype": (
+            resolved_dtype_map_latest.get("planner_compute_dtype")
+            if isinstance(resolved_dtype_map_latest, dict)
+            else None
+        ),
+        "resolved_dtype_map_shadow_debug_compute_dtype": (
+            resolved_dtype_map_latest.get("shadow_debug_compute_dtype")
+            if isinstance(resolved_dtype_map_latest, dict)
+            else None
+        ),
+        "cross_cluster_debug_present": bool(cross_cluster_debug_existing_paths_sorted),
+        "cross_cluster_debug_manifest_declared_count": len(
+            cross_cluster_debug_declared_paths_sorted
+        ),
+        "cross_cluster_debug_file_count": len(
+            cross_cluster_debug_existing_paths_sorted
+        ),
+        "cross_cluster_debug_missing_file_count": len(
+            cross_cluster_debug_missing_paths_sorted
+        ),
+        "cross_cluster_debug_path_example": (
+            cross_cluster_debug_existing_paths_sorted[0]
+            if cross_cluster_debug_existing_paths_sorted
+            else cross_cluster_debug_declared_paths_sorted[0]
+            if cross_cluster_debug_declared_paths_sorted
+            else None
+        ),
+        "cross_cluster_debug_status": (
+            cross_cluster_debug_statuses[-1] if cross_cluster_debug_statuses else None
+        ),
+        "cross_cluster_debug_summary_scope": (
+            cross_cluster_debug_summary_scopes[-1]
+            if cross_cluster_debug_summary_scopes
+            else None
+        ),
+        "cross_cluster_debug_summary_scopes_observed": sorted(
+            set(cross_cluster_debug_summary_scopes)
+        ),
+        "cross_cluster_debug_phase0_checkpoint_present_fraction": (
+            round(
+                mean(
+                    [
+                        float(value)
+                        for value in cross_cluster_debug_phase0_checkpoint_present
+                    ]
+                ),
+                6,
+            )
+            if cross_cluster_debug_phase0_checkpoint_present
+            else None
+        ),
+        "cross_cluster_debug_phase3_seed_ranking_checkpoint_present_fraction": (
+            round(
+                mean(
+                    [
+                        float(value)
+                        for value in cross_cluster_debug_phase3_checkpoint_present
+                    ]
+                ),
+                6,
+            )
+            if cross_cluster_debug_phase3_checkpoint_present
+            else None
+        ),
+        "cross_cluster_debug_checkpoints_present": bool(
+            cross_cluster_debug_checkpoints_existing_paths_sorted
+        ),
+        "cross_cluster_debug_checkpoints_manifest_declared_count": len(
+            cross_cluster_debug_checkpoints_declared_paths_sorted
+        ),
+        "cross_cluster_debug_checkpoints_file_count": len(
+            cross_cluster_debug_checkpoints_existing_paths_sorted
+        ),
+        "cross_cluster_debug_checkpoints_missing_file_count": len(
+            cross_cluster_debug_checkpoints_missing_paths_sorted
+        ),
+        "cross_cluster_debug_checkpoints_path_example": (
+            cross_cluster_debug_checkpoints_existing_paths_sorted[0]
+            if cross_cluster_debug_checkpoints_existing_paths_sorted
+            else cross_cluster_debug_checkpoints_declared_paths_sorted[0]
+            if cross_cluster_debug_checkpoints_declared_paths_sorted
+            else None
+        ),
+        "cross_cluster_debug_checkpoints_status": (
+            cross_cluster_debug_checkpoints_statuses[-1]
+            if cross_cluster_debug_checkpoints_statuses
+            else None
+        ),
+        "cross_cluster_debug_checkpoints_statuses_observed": sorted(
+            set(cross_cluster_debug_checkpoints_statuses)
+        ),
+        "cross_cluster_debug_checkpoints_count": (
+            cross_cluster_debug_checkpoints_manifest_counts[-1]
+            if cross_cluster_debug_checkpoints_manifest_counts
+            else None
+        ),
+        "cross_cluster_debug_batches_present": bool(
+            cross_cluster_debug_batches_existing_paths_sorted
+        ),
+        "cross_cluster_debug_batches_manifest_declared_count": len(
+            cross_cluster_debug_batches_declared_paths_sorted
+        ),
+        "cross_cluster_debug_batches_file_count": len(
+            cross_cluster_debug_batches_existing_paths_sorted
+        ),
+        "cross_cluster_debug_batches_missing_file_count": len(
+            cross_cluster_debug_batches_missing_paths_sorted
+        ),
+        "cross_cluster_debug_batches_path_example": (
+            cross_cluster_debug_batches_existing_paths_sorted[0]
+            if cross_cluster_debug_batches_existing_paths_sorted
+            else cross_cluster_debug_batches_declared_paths_sorted[0]
+            if cross_cluster_debug_batches_declared_paths_sorted
+            else None
+        ),
+        "cross_cluster_debug_batches_status": (
+            cross_cluster_debug_batches_statuses[-1]
+            if cross_cluster_debug_batches_statuses
+            else None
+        ),
+        "cross_cluster_debug_batches_statuses_observed": sorted(
+            set(cross_cluster_debug_batches_statuses)
+        ),
+        "cross_cluster_debug_batches_count": (
+            cross_cluster_debug_batches_manifest_counts[-1]
+            if cross_cluster_debug_batches_manifest_counts
             else None
         ),
         "telemetry_present": bool(telemetry_existing_paths_sorted),
@@ -1185,6 +1536,23 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
         ),
         "phase4_anomaly_debug": run_config.get(
             "phase4_anomaly_debug", scenario.get("phase4_anomaly_debug")
+        ),
+        "cross_cluster_debug": run_config.get(
+            "cross_cluster_debug", scenario.get("cross_cluster_debug")
+        ),
+        "telemetry_max_events": run_config.get(
+            "telemetry_max_events", scenario.get("telemetry_max_events")
+        ),
+        "exact_trace_internal_dtype": run_config.get(
+            "exact_trace_internal_dtype",
+            run_config.get(
+                "exact_trace_internal_dtype_requested",
+                scenario.get("exact_trace_internal_dtype"),
+            ),
+        ),
+        "exact_trace_internal_dtype_contract_supported": run_config.get(
+            "exact_trace_internal_dtype_contract_supported",
+            not bool(run_config.get("save_raw")),
         ),
         "decoder_cache_bytes": cache_bytes,
         "decoder_cache_gib": None if cache_bytes is None else cache_bytes / (1024**3),

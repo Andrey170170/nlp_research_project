@@ -29,6 +29,28 @@ def parse_optional_bool(value: str) -> bool:
     raise argparse.ArgumentTypeError(f"Expected a boolean value, got: {value!r}")
 
 
+def parse_exact_trace_internal_dtype(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized in {"fp32", "float32", "torch.float32"}:
+        return "fp32"
+    if normalized in {"fp64", "float64", "torch.float64"}:
+        return "fp64"
+    raise argparse.ArgumentTypeError(
+        f"Expected one of {{fp32, fp64, float32, float64}}, got: {value!r}"
+    )
+
+
+def resolve_internal_precision(exact_trace_internal_dtype: str) -> str:
+    normalized = parse_exact_trace_internal_dtype(exact_trace_internal_dtype)
+    return "float32" if normalized == "fp32" else "float64"
+
+
+def normalize_requested_exact_trace_internal_dtype(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    return parse_exact_trace_internal_dtype(value)
+
+
 def extract_compact_chunked_attribution(
     model,
     prompt: str | torch.Tensor | list[int],
@@ -57,7 +79,9 @@ def extract_compact_chunked_attribution(
     feature_batch_target_reserved_fraction: float = 0.9,
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
+    exact_trace_internal_dtype: str = "fp64",
     phase4_anomaly_debug: bool = False,
+    cross_cluster_debug: bool = False,
     telemetry_max_events: int | None = None,
 ) -> dict[str, Any]:
     gc.collect()
@@ -70,6 +94,7 @@ def extract_compact_chunked_attribution(
         "circuit_tracer.attribution.attribute_nnsight"
     )
     attribute_nnsight = getattr(attribute_module, "attribute")
+    internal_precision = resolve_internal_precision(exact_trace_internal_dtype)
     return attribute_nnsight(
         prompt=prompt,
         model=model,
@@ -97,7 +122,9 @@ def extract_compact_chunked_attribution(
         feature_batch_target_reserved_fraction=feature_batch_target_reserved_fraction,
         feature_batch_min_free_fraction=feature_batch_min_free_fraction,
         feature_batch_probe_batches=feature_batch_probe_batches,
+        internal_precision=internal_precision,
         phase4_anomaly_debug=phase4_anomaly_debug,
+        cross_cluster_debug=cross_cluster_debug,
         telemetry_max_events=telemetry_max_events,
         compact_output=True,
     )
@@ -221,6 +248,39 @@ def build_step_telemetry_records(
     return records
 
 
+def normalize_cross_cluster_debug_records(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, list):
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    for record in payload:
+        if isinstance(record, dict):
+            normalized.append(record)
+    return normalized
+
+
+def build_cross_cluster_debug_records(
+    *,
+    prompt_id: str,
+    completion_id: str,
+    step_index: int,
+    stream_name: str,
+    records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    normalized_records: list[dict[str, Any]] = []
+    for record_index, record in enumerate(records):
+        normalized: dict[str, Any] = {
+            "prompt_id": prompt_id,
+            "completion_id": completion_id,
+            "trace_step_index": step_index,
+            "stream_name": stream_name,
+            "record_index": record_index,
+        }
+        normalized.update(record)
+        normalized_records.append(normalized)
+    return normalized_records
+
+
 def trace_completion_compact_chunked(
     model,
     prompt: str,
@@ -255,7 +315,9 @@ def trace_completion_compact_chunked(
     feature_batch_target_reserved_fraction: float = 0.9,
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
+    exact_trace_internal_dtype: str = "fp64",
     phase4_anomaly_debug: bool = False,
+    cross_cluster_debug: bool = False,
     telemetry_max_events: int | None = None,
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
@@ -293,6 +355,21 @@ def trace_completion_compact_chunked(
     telemetry_events_written = 0
     phase4_anomaly_debug_path = completion_dir / "phase4_anomaly_debug.json"
     phase4_anomaly_debug_artifact = None
+    cross_cluster_debug_path = completion_dir / "cross_cluster_debug_summary.json"
+    cross_cluster_debug_artifact = None
+    cross_cluster_debug_checkpoints_path = (
+        completion_dir / "cross_cluster_debug_checkpoints.jsonl"
+    )
+    cross_cluster_debug_batches_path = (
+        completion_dir / "cross_cluster_debug_batches.jsonl"
+    )
+    cross_cluster_debug_checkpoints_status: str | None = None
+    cross_cluster_debug_batches_status: str | None = None
+    cross_cluster_debug_checkpoints_written = 0
+    cross_cluster_debug_batches_written = 0
+    cross_cluster_debug_artifacts_captured = False
+    resolved_dtype_map_artifact: dict[str, Any] | None = None
+    resolved_exact_trace_internal_dtype_requested: str | None = None
 
     candidate_stop_ids = [tokenizer.eos_token_id, tokenizer.pad_token_id]
     end_of_turn = tokenizer.convert_tokens_to_ids("<end_of_turn>")
@@ -334,7 +411,9 @@ def trace_completion_compact_chunked(
             feature_batch_target_reserved_fraction=feature_batch_target_reserved_fraction,
             feature_batch_min_free_fraction=feature_batch_min_free_fraction,
             feature_batch_probe_batches=feature_batch_probe_batches,
+            exact_trace_internal_dtype=exact_trace_internal_dtype,
             phase4_anomaly_debug=phase4_anomaly_debug,
+            cross_cluster_debug=cross_cluster_debug,
             telemetry_max_events=telemetry_max_events,
         )
         attribution_seconds = time.perf_counter() - attribution_start
@@ -401,6 +480,87 @@ def trace_completion_compact_chunked(
             phase4_anomaly_debug_artifact = compact_result["phase4_anomaly_debug"]
             phase4_anomaly_debug_path.write_text(
                 base.json.dumps(phase4_anomaly_debug_artifact, indent=2)
+            )
+        if not cross_cluster_debug_artifacts_captured:
+            cross_cluster_summary_payload = compact_result.get(
+                "cross_cluster_debug_summary"
+            )
+            cross_cluster_checkpoints_payload = compact_result.get(
+                "cross_cluster_debug_checkpoints"
+            )
+            cross_cluster_batches_payload = compact_result.get(
+                "cross_cluster_debug_batches"
+            )
+            if (
+                isinstance(cross_cluster_summary_payload, dict)
+                or isinstance(cross_cluster_checkpoints_payload, list)
+                or isinstance(cross_cluster_batches_payload, list)
+            ):
+                cross_cluster_debug_artifacts_captured = True
+
+                if isinstance(cross_cluster_summary_payload, dict):
+                    cross_cluster_debug_artifact = dict(cross_cluster_summary_payload)
+                    cross_cluster_debug_artifact.setdefault(
+                        "summary_scope", "first_step_only"
+                    )
+                    cross_cluster_debug_artifact.setdefault(
+                        "captured_from_step_index", int(step_idx)
+                    )
+                    cross_cluster_debug_path.write_text(
+                        base.json.dumps(cross_cluster_debug_artifact, indent=2)
+                    )
+
+                checkpoints_records = build_cross_cluster_debug_records(
+                    prompt_id=prompt_id,
+                    completion_id=completion_id,
+                    step_index=step_idx,
+                    stream_name="cross_cluster_debug_checkpoints",
+                    records=normalize_cross_cluster_debug_records(
+                        cross_cluster_checkpoints_payload
+                    ),
+                )
+                cross_cluster_debug_checkpoints_path.write_text("")
+                cross_cluster_debug_checkpoints_written = base.append_jsonl_records(
+                    cross_cluster_debug_checkpoints_path,
+                    checkpoints_records,
+                )
+                cross_cluster_debug_checkpoints_status = (
+                    "captured"
+                    if cross_cluster_debug_checkpoints_written > 0
+                    else "captured_empty"
+                )
+
+                batch_records = build_cross_cluster_debug_records(
+                    prompt_id=prompt_id,
+                    completion_id=completion_id,
+                    step_index=step_idx,
+                    stream_name="cross_cluster_debug_batches",
+                    records=normalize_cross_cluster_debug_records(
+                        cross_cluster_batches_payload
+                    ),
+                )
+                cross_cluster_debug_batches_path.write_text("")
+                cross_cluster_debug_batches_written = base.append_jsonl_records(
+                    cross_cluster_debug_batches_path,
+                    batch_records,
+                )
+                cross_cluster_debug_batches_status = (
+                    "captured"
+                    if cross_cluster_debug_batches_written > 0
+                    else "captured_empty"
+                )
+        if resolved_dtype_map_artifact is None and isinstance(
+            compact_result.get("resolved_dtype_map"), dict
+        ):
+            resolved_dtype_map_artifact = compact_result["resolved_dtype_map"]
+        if resolved_exact_trace_internal_dtype_requested is None:
+            resolved_exact_trace_internal_dtype_requested = (
+                normalize_requested_exact_trace_internal_dtype(
+                    compact_result.get("exact_trace_internal_dtype_requested")
+                )
+                or normalize_requested_exact_trace_internal_dtype(
+                    compact_result.get("internal_precision_requested")
+                )
             )
 
         token_generation_start = time.perf_counter()
@@ -476,6 +636,19 @@ def trace_completion_compact_chunked(
                 "phase4_refresh_elapsed_seconds_total"
             ),
             "telemetry_max_events": compact_result.get("telemetry_max_events"),
+            "exact_trace_internal_dtype_requested": (
+                normalize_requested_exact_trace_internal_dtype(
+                    compact_result.get("exact_trace_internal_dtype_requested")
+                )
+                or normalize_requested_exact_trace_internal_dtype(
+                    compact_result.get("internal_precision_requested")
+                )
+                or exact_trace_internal_dtype
+            ),
+            "resolved_dtype_map": compact_result.get("resolved_dtype_map"),
+            "cross_cluster_debug_enabled": bool(
+                compact_result.get("cross_cluster_debug_enabled", cross_cluster_debug)
+            ),
         }
         step_records.append(step_record)
 
@@ -497,6 +670,9 @@ def trace_completion_compact_chunked(
     unique_phase4_feature_batch_sizes = sorted(set(observed_phase4_feature_batch_sizes))
     unique_phase4_planner_statuses = sorted(set(observed_phase4_planner_statuses))
     completion_end_to_end_seconds = time.perf_counter() - trace_start_perf
+    if cross_cluster_debug and not cross_cluster_debug_artifacts_captured:
+        cross_cluster_debug_checkpoints_status = "not_captured"
+        cross_cluster_debug_batches_status = "not_captured"
     manifest = {
         "prompt_id": prompt_id,
         "completion_id": completion_id,
@@ -535,7 +711,13 @@ def trace_completion_compact_chunked(
         "feature_batch_target_reserved_fraction": feature_batch_target_reserved_fraction,
         "feature_batch_min_free_fraction": feature_batch_min_free_fraction,
         "feature_batch_probe_batches": feature_batch_probe_batches,
+        "exact_trace_internal_dtype": exact_trace_internal_dtype,
+        "exact_trace_internal_dtype_requested": (
+            resolved_exact_trace_internal_dtype_requested or exact_trace_internal_dtype
+        ),
+        "resolved_dtype_map": resolved_dtype_map_artifact,
         "phase4_anomaly_debug": phase4_anomaly_debug,
+        "cross_cluster_debug": cross_cluster_debug,
         "telemetry_max_events": telemetry_max_events,
         "phase4_feature_batch_size_initial": initial_phase4_feature_batch_size,
         "phase4_feature_batch_sizes_observed": unique_phase4_feature_batch_sizes,
@@ -590,6 +772,43 @@ def trace_completion_compact_chunked(
             if phase4_anomaly_debug_artifact is not None
             else None
         ),
+        "cross_cluster_debug_enabled": bool(cross_cluster_debug),
+        "cross_cluster_debug_path": (
+            cross_cluster_debug_path.name
+            if cross_cluster_debug_artifact is not None
+            else None
+        ),
+        "cross_cluster_debug_status": (
+            cross_cluster_debug_artifact.get("status")
+            if isinstance(cross_cluster_debug_artifact, dict)
+            else None
+        ),
+        "cross_cluster_debug_summary_scope": (
+            cross_cluster_debug_artifact.get("summary_scope")
+            if isinstance(cross_cluster_debug_artifact, dict)
+            else None
+        ),
+        "cross_cluster_debug_captured_step_index": (
+            cross_cluster_debug_artifact.get("captured_from_step_index")
+            if isinstance(cross_cluster_debug_artifact, dict)
+            else None
+        ),
+        "cross_cluster_debug_checkpoints_path": (
+            cross_cluster_debug_checkpoints_path.name
+            if cross_cluster_debug_checkpoints_status is not None
+            else None
+        ),
+        "cross_cluster_debug_checkpoints_status": cross_cluster_debug_checkpoints_status,
+        "cross_cluster_debug_checkpoints_count": int(
+            cross_cluster_debug_checkpoints_written
+        ),
+        "cross_cluster_debug_batches_path": (
+            cross_cluster_debug_batches_path.name
+            if cross_cluster_debug_batches_status is not None
+            else None
+        ),
+        "cross_cluster_debug_batches_status": cross_cluster_debug_batches_status,
+        "cross_cluster_debug_batches_count": int(cross_cluster_debug_batches_written),
         "resource_snapshot": base.capture_resource_snapshot(),
         "timing_summary": base.build_completion_timing_summary(
             completion_end_to_end_seconds=completion_end_to_end_seconds,
@@ -640,6 +859,17 @@ def run_pipeline(args: argparse.Namespace) -> None:
         raise ValueError(
             "Phase-4 anomaly debug currently supports only compact exact-chunked output. "
             "--save-raw is unsupported with --phase4-anomaly-debug."
+        )
+    if args.cross_cluster_debug and args.save_raw:
+        raise ValueError(
+            "Cross-cluster debug currently supports only compact exact-chunked output. "
+            "--save-raw is unsupported with --cross-cluster-debug."
+        )
+    if args.save_raw and args.exact_trace_internal_dtype != "fp64":
+        raise ValueError(
+            "The explicit internal precision contract is currently supported only for "
+            "compact exact-chunked output. --save-raw/full-graph output does not support "
+            "--exact-trace-internal-dtype values other than the default-compatible fp64 mode."
         )
     if planner_enabled and args.save_raw:
         raise ValueError(
@@ -718,7 +948,16 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "feature_batch_target_reserved_fraction": args.feature_batch_target_reserved_fraction,
         "feature_batch_min_free_fraction": args.feature_batch_min_free_fraction,
         "feature_batch_probe_batches": args.feature_batch_probe_batches,
+        "exact_trace_internal_dtype": args.exact_trace_internal_dtype,
+        "exact_trace_internal_dtype_requested": args.exact_trace_internal_dtype,
+        "exact_trace_internal_dtype_contract_supported": not args.save_raw,
+        "exact_trace_internal_dtype_contract_status": (
+            "compact_exact_chunked"
+            if not args.save_raw
+            else "unsupported_full_graph_path_default_compat_only"
+        ),
         "phase4_anomaly_debug": args.phase4_anomaly_debug,
+        "cross_cluster_debug": args.cross_cluster_debug,
         "telemetry_max_events": args.telemetry_max_events,
         "prepared_prompt_file": args.prepared_prompt_file,
         "prepared_prompt_meta_file": args.prepared_prompt_meta_file,
@@ -803,6 +1042,14 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 feature_batch_min_free_fraction=args.feature_batch_min_free_fraction,
                 feature_batch_probe_batches=args.feature_batch_probe_batches,
                 phase4_anomaly_debug=args.phase4_anomaly_debug,
+                **(
+                    {
+                        "exact_trace_internal_dtype": args.exact_trace_internal_dtype,
+                        "cross_cluster_debug": args.cross_cluster_debug,
+                    }
+                    if not args.save_raw
+                    else {}
+                ),
                 prompt_token_count=prompt_meta["prompt_token_count"],
                 prompt_source=prompt_meta["prompt_source"],
                 fixture_name=prompt_meta.get("fixture_name"),
@@ -1025,9 +1272,22 @@ if __name__ == "__main__":
         help="Number of preflight Phase-4 probe batches used by the planner",
     )
     parser.add_argument(
+        "--exact-trace-internal-dtype",
+        type=parse_exact_trace_internal_dtype,
+        default="fp64",
+        help=(
+            "Internal dtype for exact-trace normalization/ranking path (fp32 or fp64)"
+        ),
+    )
+    parser.add_argument(
         "--phase4-anomaly-debug",
         action="store_true",
         help="Enable opt-in Phase-4 anomaly shadow diagnostics (compact exact-chunked path only)",
+    )
+    parser.add_argument(
+        "--cross-cluster-debug",
+        action="store_true",
+        help="Enable broad scalar-only cross-cluster debug summary artifact (compact exact-chunked path only)",
     )
     parser.add_argument(
         "--telemetry-max-events",

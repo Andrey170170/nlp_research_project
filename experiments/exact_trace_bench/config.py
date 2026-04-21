@@ -48,6 +48,8 @@ def base_trace_defaults() -> dict[str, Any]:
         "feature_batch_min_free_fraction": 0.05,
         "feature_batch_probe_batches": 1,
         "phase4_anomaly_debug": False,
+        "cross_cluster_debug": False,
+        "telemetry_max_events": None,
         "max_steps": 1,
         "method": "exact",
     }

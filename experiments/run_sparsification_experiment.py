@@ -424,6 +424,12 @@ def build_command(
             )
         if scenario.get("phase4_anomaly_debug", False):
             cmd.append("--phase4-anomaly-debug")
+        if scenario.get("cross_cluster_debug", False):
+            cmd.append("--cross-cluster-debug")
+        if scenario.get("telemetry_max_events") is not None:
+            cmd.extend(
+                ["--telemetry-max-events", str(scenario["telemetry_max_events"])]
+            )
 
     if scenario.get("verbose_attribution", False):
         cmd.append("--verbose-attribution")
