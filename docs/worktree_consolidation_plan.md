@@ -2,6 +2,27 @@
 
 Last reviewed: 2026-04-21
 
+## Execution status
+
+Completed on `exact-trace-bench-harness`:
+
+- Stage 1: imported opt-worktree docs/source and recorded the consolidation plan
+- Stage 2: merged the overlapping chunked-tracing files while keeping main's
+  richer cross-cluster debug flow and adopting `exact_trace_internal_dtype`
+- Stage 3: completed lightweight local validation
+
+Validation commands run successfully:
+
+- `uv run ruff check trace_pipeline_chunked.py experiments/exact_trace_bench/config.py experiments/exact_trace_bench/scenarios.py experiments/run_sparsification_experiment.py experiments/exact_trace_bench/extract.py experiments/extract_benchmark_index.py tests/test_cross_cluster_debug_artifacts.py`
+- `uv run python tests/test_cross_cluster_debug_artifacts.py`
+- `uv run python trace_pipeline_chunked.py --help`
+
+Still intentionally left out of the merge history:
+
+- `midpoint_checkin_draft.md`
+- generated artifacts under `experiments/generated/`
+- `midpoint_report.pdf`
+
 ## Decisions locked after review
 
 - prefer **main worktree behavior** when there is a conceptual overlap, because it is more comprehensive and exposes more control

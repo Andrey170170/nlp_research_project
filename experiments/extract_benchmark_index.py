@@ -1348,15 +1348,23 @@ def build_row(result_path: Path) -> dict[str, Any]:
     scenario_path = scenario_root / "scenario.json"
     scenario = read_json(scenario_path) if scenario_path.exists() else {}
     artifact_dir = Path(result.get("output_dir") or scenario_root / "artifacts")
+    run_config_path = artifact_dir / "run_config.json"
+    run_config = read_json(run_config_path) if run_config_path.exists() else {}
     profiling = result.get("profiling_summary", {})
     artifact_summary = _summarize_artifacts(artifact_dir)
     special_case = _special_case_label(scenario_root, scenario)
     cache_bytes = scenario.get("cross_batch_decoder_cache_bytes")
     save_raw = scenario.get("save_raw")
-    exact_trace_internal_dtype = scenario.get(
+    exact_trace_internal_dtype = run_config.get(
         "exact_trace_internal_dtype",
-        scenario.get("exact_trace_internal_dtype_requested"),
+        run_config.get("exact_trace_internal_dtype_requested"),
     )
+    if exact_trace_internal_dtype is None:
+        exact_trace_internal_dtype = scenario.get("exact_trace_internal_dtype")
+    if exact_trace_internal_dtype is None:
+        exact_trace_internal_dtype = scenario.get(
+            "exact_trace_internal_dtype_requested"
+        )
 
     row = {
         "scenario_root": str(scenario_root),
@@ -1379,9 +1387,16 @@ def build_row(result_path: Path) -> dict[str, Any]:
         "logit_batch_size": scenario.get("logit_batch_size"),
         "decoder_chunk_size": scenario.get("decoder_chunk_size"),
         "exact_trace_internal_dtype": exact_trace_internal_dtype,
-        "exact_trace_internal_dtype_contract_supported": not bool(save_raw),
-        "cross_cluster_debug": scenario.get("cross_cluster_debug"),
-        "telemetry_max_events": scenario.get("telemetry_max_events"),
+        "exact_trace_internal_dtype_contract_supported": run_config.get(
+            "exact_trace_internal_dtype_contract_supported",
+            not bool(save_raw),
+        ),
+        "cross_cluster_debug": run_config.get(
+            "cross_cluster_debug", scenario.get("cross_cluster_debug")
+        ),
+        "telemetry_max_events": run_config.get(
+            "telemetry_max_events", scenario.get("telemetry_max_events")
+        ),
         "decoder_cache_bytes": cache_bytes,
         "decoder_cache_gib": None if cache_bytes is None else cache_bytes / (1024**3),
         "max_feature_nodes": scenario.get("max_feature_nodes"),

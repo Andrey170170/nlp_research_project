@@ -15,6 +15,9 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+EXPERIMENTS_DIR = PROJECT_ROOT / "experiments"
+if str(EXPERIMENTS_DIR) not in sys.path:
+    sys.path.insert(0, str(EXPERIMENTS_DIR))
 
 
 def run_checks() -> None:
@@ -130,7 +133,7 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
 
         assert legacy_row["exact_trace_internal_dtype"] == "fp64"
         assert legacy_row["exact_trace_internal_dtype_contract_supported"] is False
-        assert legacy_row["telemetry_max_events"] == 17
+        assert legacy_row["telemetry_max_events"] == 11
 
 
 def main() -> None:
