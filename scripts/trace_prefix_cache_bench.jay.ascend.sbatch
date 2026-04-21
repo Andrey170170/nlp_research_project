@@ -2,12 +2,13 @@
 #SBATCH --job-name=prefix-cache-bench-jay
 #SBATCH --account=PAS2136
 #SBATCH --cluster=ascend
+#SBATCH --partition=quad
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32
+#SBATCH --cpus-per-task=10
 #SBATCH --gpus-per-task=1
-#SBATCH --mem-per-cpu=10724
-#SBATCH --time=02:00:00
+#SBATCH --mem=700G
+#SBATCH --time=03:00:00
 #SBATCH --output=logs/slurm-%x-%j.out
 #SBATCH --error=logs/slurm-%x-%j.err
 
@@ -43,7 +44,14 @@ uv run python -u -m prefix_caching.trace_pipeline_cached \
     --temperature 0 \
     --max-steps 20 \
     --attribution-batch-size 128 \
+    --feature-batch-size 128 \
+    --logit-batch-size 128 \
     --decoder-chunk-size 2048 \
+    --cross-batch-decoder-cache-bytes 12884901888 \
+    --max-feature-nodes 8192 \
+    --max-edges 20000 \
+    --max-n-logits 3 \
+    --desired-logit-prob 0.8 \
     --output-dir "${OUTPUT_ROOT}"
 
 echo "End: $(date)"
