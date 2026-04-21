@@ -57,6 +57,17 @@ HF_REPO = "google/gemma-scope-2-1b-it"
 CLT_SUBFOLDER = "clt/width_262k_l0_medium_affine"
 
 
+def parse_exact_trace_internal_dtype(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized in {"fp32", "float32", "torch.float32"}:
+        return "fp32"
+    if normalized in {"fp64", "float64", "torch.float64"}:
+        return "fp64"
+    raise argparse.ArgumentTypeError(
+        f"Expected one of {{fp32, fp64, float32, float64}}, got: {value!r}"
+    )
+
+
 # ── feature cap patch ────────────────────────────────────────────────
 # The 262K-width cross-layer transcoders produce ~100K+ active features
 # per forward pass.  select_decoder_vectors() gathers decoder vectors
@@ -663,6 +674,7 @@ def extract_graph(
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
     phase4_anomaly_debug: bool = False,
+    exact_trace_internal_dtype: str = "fp64",
 ):
     planner_enabled = bool(plan_feature_batch_size or auto_scale_feature_batch_size)
     if planner_enabled or phase4_anomaly_debug:
@@ -704,6 +716,7 @@ def extract_graph(
         "feature_batch_target_reserved_fraction": feature_batch_target_reserved_fraction,
         "feature_batch_min_free_fraction": feature_batch_min_free_fraction,
         "feature_batch_probe_batches": feature_batch_probe_batches,
+        "exact_trace_internal_dtype": exact_trace_internal_dtype,
     }
     return attribute(**attribute_kwargs)
 
@@ -799,6 +812,7 @@ def trace_completion(
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
     phase4_anomaly_debug: bool = False,
+    exact_trace_internal_dtype: str = "fp64",
     save_raw: bool = False,
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
@@ -874,6 +888,7 @@ def trace_completion(
             feature_batch_target_reserved_fraction=feature_batch_target_reserved_fraction,
             feature_batch_min_free_fraction=feature_batch_min_free_fraction,
             feature_batch_probe_batches=feature_batch_probe_batches,
+            exact_trace_internal_dtype=exact_trace_internal_dtype,
         )
         attribution_seconds = time.perf_counter() - attribution_start
 
@@ -977,6 +992,7 @@ def trace_completion(
         "feature_batch_target_reserved_fraction": feature_batch_target_reserved_fraction,
         "feature_batch_min_free_fraction": feature_batch_min_free_fraction,
         "feature_batch_probe_batches": feature_batch_probe_batches,
+        "exact_trace_internal_dtype": exact_trace_internal_dtype,
         "sparsification": (
             {
                 "per_layer_position_topk": sparsification.per_layer_position_topk,
@@ -1034,6 +1050,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "logit_batch_size": args.logit_batch_size,
         "max_n_logits": args.max_n_logits,
         "desired_logit_prob": args.desired_logit_prob,
+        "exact_trace_internal_dtype": args.exact_trace_internal_dtype,
         "offload": offload,
         "verbose_attribution": args.verbose_attribution,
         "attribution_update_interval": args.attribution_update_interval,
@@ -1089,6 +1106,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 logit_batch_size=args.logit_batch_size,
                 max_n_logits=args.max_n_logits,
                 desired_logit_prob=args.desired_logit_prob,
+                exact_trace_internal_dtype=args.exact_trace_internal_dtype,
                 offload=offload,
                 verbose_attribution=args.verbose_attribution,
                 attribution_update_interval=args.attribution_update_interval,
@@ -1220,6 +1238,14 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Debug-only early active-feature cap for profiling/scaling experiments",
+    )
+    parser.add_argument(
+        "--exact-trace-internal-dtype",
+        type=parse_exact_trace_internal_dtype,
+        default="fp64",
+        help=(
+            "Internal dtype for exact-trace normalization/ranking path (fp32 or fp64)"
+        ),
     )
     args = parser.parse_args()
 

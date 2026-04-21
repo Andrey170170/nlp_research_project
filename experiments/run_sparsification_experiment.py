@@ -332,6 +332,13 @@ def build_command(
         cmd.extend(["--feature-batch-size", str(scenario["feature_batch_size"])])
     if scenario.get("logit_batch_size") is not None:
         cmd.extend(["--logit-batch-size", str(scenario["logit_batch_size"])])
+    if scenario.get("exact_trace_internal_dtype") is not None:
+        cmd.extend(
+            [
+                "--exact-trace-internal-dtype",
+                str(scenario["exact_trace_internal_dtype"]),
+            ]
+        )
 
     if method != "old_patch":
         cmd.extend(["--decoder-chunk-size", str(scenario["decoder_chunk_size"])])
