@@ -29,6 +29,117 @@ on login nodes.
   `cross_batch_decoder_cache_bytes` Phase-4 cache budget instead of re-explaining
   that local fork feature each session.
 
+## Working-doc roles
+
+- `AGENTS.md` = durable repo operating instructions and workflow conventions.
+- `PLAN.md` = current scratch/working plan for the active task; do not treat it
+  as the durable source of project policy.
+- `EXPERIMENTS.md` = living experiment inventory, findings, run-family meaning,
+  and current interpretation notes.
+- `docs/phase4_refresh_optimization_spec.md` = durable design/spec document for
+  normalization stability and refresh-path optimization work.
+
+When updating project guidance:
+
+- put durable workflow rules in `AGENTS.md`,
+- put current execution steps in `PLAN.md`,
+- put observed results and run interpretation in `EXPERIMENTS.md`,
+- put chosen implementation strategy/tradeoffs in the relevant spec under
+  `docs/`.
+
+## Worktree strategy
+
+- Primary workspace (`./`) is the canonical branch for **cross-cluster drift
+  investigation**.
+- Optimization work should happen in the sibling worktree at:
+  - `../worktrees_opt/nlp_research_project`
+- The project repo is never enough by itself: every workspace also depends on a
+  sibling `circuit-tracer_chunked` checkout.
+- Required pairings:
+  - main project workspace: `./` ↔ main library workspace: `../circuit-tracer_chunked`
+  - optimization project workspace: `../worktrees_opt/nlp_research_project` ↔
+    optimization library workspace: `../worktrees_opt/circuit-tracer_chunked`
+- Before any serious run, compare **both** the project and sibling library git
+  state (branch, commit, dirty files) so we do not accidentally validate one repo
+  against the wrong library checkout.
+- SLURM launches from a workspace will import whichever sibling library exists at
+  that relative path, so library state must be treated as part of the experiment
+  definition.
+
+Important:
+
+- do **not** blindly recreate or wipe the optimization worktree,
+- refresh it carefully from the validated main baseline,
+- refresh the optimization **project+library pair together**, not one without the
+  other,
+- preserve any still-useful untracked content there (for example docs, fixture
+  files, or generated scenario inputs needed to keep the worktree operational),
+- only remove/replace files after checking whether they carry unique information.
+
+## Two-track development split
+
+### Track A — cross-cluster investigation
+
+Use the main workspace for:
+
+- paired Ascend/Cardinal debug launches,
+- instability localization,
+- validation of the canonical debug artifact schema,
+- correctness-focused interpretation work.
+
+Preferred prompt sequence:
+
+1. `828_base` in normal `fast`
+2. `94_base` in normal `anomaly`
+
+Use:
+
+- `cross_cluster_debug=true`
+- `exact_trace_internal_dtype=fp64`
+
+until a permanent overflow fix exists.
+
+### Track B — optimization
+
+Use the optimization worktree for:
+
+1. permanent overflow fix,
+2. upcast / RSS redesign,
+3. remaining refresh-path speedups,
+4. later replay-path or other secondary speed work.
+
+For the permanent overflow fix, follow the chosen spec direction in
+`docs/phase4_refresh_optimization_spec.md`:
+
+- preferred first implementation: **scaled row-L1 computation** (or an
+  equivalent exact stable normalization representation),
+- goal: avoid raw row-abs-sum overflow without relying on fp32 collapse.
+
+## Run placement convention
+
+Keep scratch outputs organized only by:
+
+- cluster: `ascend` / `cardinal`
+- tier: `fast` / `anomaly` / `long_eval`
+
+Do **not** introduce extra organizational buckets like `matched_debug` for
+ordinary test/debug runs.
+
+Instead, distinguish runs with:
+
+- `run_id`
+- `run_name`
+- `run_description`
+- `run_goal`
+- scenario names
+
+Examples:
+
+- `828_base` quick validation/debug runs go under `ascend/fast` and
+  `cardinal/fast`
+- `94_base` instability/debug runs go under `ascend/anomaly` and
+  `cardinal/anomaly`
+
 ## Repo layout
 
 ```

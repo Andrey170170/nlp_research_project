@@ -1,517 +1,358 @@
-# Current Implementation Plan — Worktree Consolidation + Launcher Wiring
+# Current Implementation Plan — Library Merge + Worktree-Pair Refresh
 
 ## Problem statement
 
-We now have two worktrees that partially overlap:
+The project repo has already been consolidated, but the sibling fork library has
+not.
 
-- main repo worktree: `exact-trace-bench-harness`
-- sibling worktree: `../worktrees_opt/nlp_research_project` on `exact-trace-bench-opt`
+Current situation:
 
-The opt branch is ahead in git history, but the main worktree has newer local
-changes in the files that now matter most:
+- main project workspace is now the canonical merged branch,
+- main sibling library `../circuit-tracer_chunked` is still on
+  `exact-trace-hidden-knobs@62f5271` with uncommitted local edits,
+- optimization sibling library `../worktrees_opt/circuit-tracer_chunked` is on
+  `exact-trace-hidden-knobs-opt@e99647c`, which is two commits ahead of the base,
+- the old optimization project worktree `../worktrees_opt/nlp_research_project`
+  is also stale and still carries unique local/untracked content.
 
-- `trace_pipeline_chunked.py`
-- `experiments/exact_trace_bench/extract.py`
-- `experiments/extract_benchmark_index.py`
-- `PLAN.md`
+That means the **project repo and library are out of sync across workspaces**.
+Because the runtime always imports the sibling library from the current
+workspace-relative path, this is not just cleanup — it directly affects what code
+our SLURM jobs are running.
 
-The main risk is no longer branch divergence by itself; it is **semantic drift**
-between two versions of the same control surface:
+So the next task is:
 
-1. the opt worktree introduces the newer public dtype knob naming
-   (`exact_trace_internal_dtype`) and newer findings/docs,
-2. the main worktree has the more comprehensive debug/control surface,
-   especially cross-cluster debug artifact capture and richer extraction,
-3. the benchmark harness currently does **not** wire all of the main-side debug
-   knobs through to the launcher path.
-
-We should consolidate now before more code accumulates on both sides.
-
-Supporting investigation notes live in:
-
-- `docs/worktree_consolidation_plan.md`
-
-This `PLAN.md` is the active execution plan for the consolidation itself.
+1. carefully merge the sibling library states,
+2. establish one validated main project+library baseline,
+3. carefully refresh the old optimization project+library pair from that
+   baseline,
+4. preserve unique operational files in the old optimization pair.
 
 ## Scope
 
 This phase covers:
 
-- merging the worktree changes back into the main repo state,
-- defining one canonical public runtime knob surface,
-- preserving the richer main-side debug and extraction behavior,
-- fixing benchmark-harness propagation for the retained knobs,
-- reconciling `PLAN.md`, `EXPERIMENTS.md`, and
-  `docs/phase4_refresh_optimization_spec.md`.
+- comparing main vs optimization library checkouts,
+- merging committed optimization-branch library work into the main sibling
+  library while preserving main-side debug/checkpoint behavior,
+- validating the merged library with lightweight local checks,
+- refreshing the old optimization project+library pair together,
+- preserving still-useful unique untracked material in the optimization pair.
 
 ## Non-goals
 
-- no generated artifact merge,
-- no heavy tracing runs on login nodes,
-- no new algorithmic Phase-4 optimization work during the merge itself,
-- no attempt to solve the deeper numerical-stability problem in the same change,
-- no broad cleanup of all historical docs unless it is required for consistency,
-- do not touch `midpoint_checkin_draft.md` in this phase.
+- do not touch or rewrite `midpoint_checkin_draft.md`,
+- do not run GPU tracing on login nodes,
+- do not treat generated artifacts as authoritative source material,
+- do not blindly delete or recreate the old optimization worktree pair,
+- do not open new optimization or cross-cluster investigation changes until the
+  library merge is settled,
+- do not rely on fp32 collapse as a "feature"; the permanent fix must remain
+  semantics-preserving.
 
-## Locked decisions
+## Current branch relationship
 
-### 1. Prefer main behavior on conceptual overlap
+### Project repo
 
-When main and opt express different versions of the same idea, prefer the main
-worktree behavior if it is more comprehensive and exposes more control.
+- main project workspace: merged and validated on `exact-trace-bench-harness`
+- old optimization project workspace: `exact-trace-bench-opt` with local docs
+  drift and useful untracked operational files
 
-This especially applies to:
+### Sibling library
 
-- cross-cluster debug artifacts,
-- debug telemetry capture,
-- richer extraction/manifests,
-- broader roadmap framing.
+- main library workspace: `exact-trace-hidden-knobs@62f5271` plus local edits
+- optimization library workspace: `exact-trace-hidden-knobs-opt@e99647c`
+- optimization branch is ahead by two commits from the shared base:
+  1. `b01ca8b` — `Add bounded refresh chunk caching`
+  2. `e99647c` — `Add exact trace internal dtype control`
 
-### 2. Adopt the opt branch's public dtype knob name
+## Merge goals by side
 
-The canonical public name should be:
+### Preserve from main library workspace
 
-- `exact_trace_internal_dtype`
+- float64 / stable exact-trace behavior currently used by the main project repo,
+- cross-cluster debug/checkpoint telemetry scaffolding,
+- richer debug summary payloads,
+- main-side local edits in:
+  - `circuit_tracer/attribution/context_nnsight.py`
+  - `circuit_tracer/replacement_model/replacement_model_nnsight.py`
+  - `tests/test_chunked_decoder_optimizations.py`
 
-We should rename directly and stop treating `internal_precision` as the public
-contract. Backward compatibility is not required for this consolidation.
+### Preserve from optimization library workspace
 
-### 3. Keep main-side cross-cluster debug and debug telemetry
+- bounded refresh chunk caching,
+- explicit exact-trace internal dtype control,
+- `graph.py` compute-dtype plumbing,
+- optimization-branch tests around caching / telemetry / partial influences,
+- the optimization-oriented implementation direction already chosen in the spec.
 
-Do not drop the newer main-side artifact flow during the rename/plumbing merge.
+## Highest-risk merge hotspots
 
-Required preserved behavior:
+These need explicit manual review rather than blind restore/cherry-pick:
 
-- `cross_cluster_debug_summary.json`
-- `cross_cluster_debug_checkpoints.jsonl`
-- `cross_cluster_debug_batches.jsonl`
-- manifest fields that describe those artifacts
-- extraction fields that surface those artifacts downstream
+- `circuit_tracer/attribution/attribute_nnsight.py`
+- `circuit_tracer/graph.py`
+- `tests/test_partial_influences.py`
 
-### 4. Preserve opt-side findings docs
+These are important but likely more one-sided:
 
-The opt worktree contains newer findings that should survive the merge,
-especially:
-
-- true `fp32` vs `fp64` findings in `EXPERIMENTS.md`,
-- the newer findings added to
-  `docs/phase4_refresh_optimization_spec.md`.
-
-### 5. Ignore generated artifacts during source consolidation
-
-Do not merge generated directories or PDFs as source-of-truth.
-
-Generated artifacts should be regenerated later from the consolidated code.
-
-## Why this matters for the research roadmap
-
-After consolidation, the repo should be in a state where future work can happen
-in one place again.
-
-The downstream technical goals remain:
-
-- explicit internal dtype control,
-- broad cross-cluster diagnostics,
-- better visibility into memory spikes,
-- later refresh-path optimization work.
-
-But we should not continue those efforts on split worktrees.
+- `circuit_tracer/attribution/context_nnsight.py`
+- `circuit_tracer/replacement_model/replacement_model_nnsight.py`
+- `circuit_tracer/attribution/attribute.py`
+- `tests/test_attribute_nnsight_telemetry.py`
+- `tests/test_chunked_decoder_optimizations.py`
 
 ## Proposed approach
 
-## Workstream A — Establish one canonical merge target
+## Workstream A — Create one canonical library baseline in the main pair
 
 ### Goal
 
-Make the main repo the only active target again and treat the worktree as an
-input source, not as an independently evolving branch.
+Make the main project workspace plus `../circuit-tracer_chunked` the canonical,
+validated baseline for both tracks.
 
-### Tasks
+### Strategy
 
-1. checkpoint current main local work before any content merge,
-2. intake opt-only committed files first,
-3. manually reconcile the overlapping Python files,
-4. update docs so the final repo explains the merged state clearly.
+Use the **main library checkout as the behavioral base**, then reapply the
+optimization-branch commits carefully on top of it.
 
-### Files in this bucket
+Why:
 
-Mostly safe to intake from opt:
+- main already matches the newly consolidated project repo more closely,
+- main carries the cross-cluster debug/checkpoint work we want to preserve,
+- optimization branch contributes important committed work we do not want to lose
+  (dtype control + bounded refresh chunk caching).
 
-- `EXPERIMENTS.md`
-- `docs/phase4_refresh_optimization_spec.md`
-- `trace_pipeline.py`
-- `experiments/exact_trace_bench/config.py`
-- `experiments/exact_trace_bench/scenarios.py`
-- `experiments/run_sparsification_experiment.py`
+### Merge order inside the library
 
-Manual-merge files:
+1. inspect and snapshot current main library dirty state,
+2. ingest optimization-only files/ideas,
+3. manually reconcile the hotspot files,
+4. unify/expand tests,
+5. run lightweight library-local validation.
 
-- `trace_pipeline_chunked.py`
-- `experiments/exact_trace_bench/extract.py`
-- `experiments/extract_benchmark_index.py`
-- `PLAN.md`
+## Workstream B — Library file-by-file reconciliation
 
-## Workstream B — Control-surface consolidation
-
-### Goal
-
-End up with one consistent runtime/control surface that combines:
-
-- opt's dtype naming,
-- main's richer debug capture,
-- main's richer extraction schema.
-
-### Final API direction
-
-Canonical public field / CLI name:
-
-- `exact_trace_internal_dtype`
-
-Canonical debug fields to keep exposed:
-
-- `phase4_anomaly_debug`
-- `cross_cluster_debug`
-- `telemetry_max_events`
-
-Canonical manifest/extraction information to preserve:
-
-- requested dtype value,
-- resolved dtype map,
-- cross-cluster debug artifact presence/status/counts,
-- telemetry presence/status/counts.
-
-### Detailed reconciliation plan by file
-
-#### `trace_pipeline_chunked.py`
+### 1. `circuit_tracer/attribution/attribute_nnsight.py`
 
 Target state:
 
-- retain main's cross-cluster debug capture helpers,
-- retain main's manifest/debug-artifact writing,
-- rename the public dtype control to `exact_trace_internal_dtype`,
-- keep step/manifests rich enough for downstream extraction,
-- preserve safety checks around unsupported combinations.
+- preserve main-side debug/checkpoint and summary schema,
+- preserve whatever wiring the project repo now expects for cross-cluster debug,
+- incorporate optimization branch support for:
+  - bounded refresh chunk caching,
+  - exact trace internal dtype control,
+  - any related counters/telemetry,
+- avoid reintroducing older semantics or silently dropping main-side debug data.
 
-Implementation intent:
+Acceptance:
 
-- do not accept the opt version wholesale,
-- instead apply the dtype naming/plumbing changes onto the main version.
+- canonical debug artifacts still work,
+- optimization cache + dtype control are present,
+- the file remains consistent with the merged project repo interface.
 
-#### `experiments/exact_trace_bench/extract.py`
-
-Target state:
-
-- keep main's cross-cluster debug extraction fields,
-- keep main's resolved dtype map extraction,
-- update naming/columns so the canonical dtype field is aligned with
-  `exact_trace_internal_dtype`.
-
-#### `experiments/extract_benchmark_index.py`
+### 2. `circuit_tracer/graph.py`
 
 Target state:
 
-- same principle as the main extractor above,
-- preserve cross-cluster debug visibility,
-- preserve dtype-map visibility,
-- standardize the benchmark-row schema around the final public knob naming.
+- keep explicit compute-dtype control,
+- keep semantics aligned with the chosen exact normalization contract,
+- preserve any main-side safety changes,
+- do not regress partial influence correctness.
 
-## Workstream C — Fix launcher/config propagation
+### 3. `circuit_tracer/attribution/context_nnsight.py`
 
-### Goal
+Target state:
 
-Make sure the benchmark harness can actually launch the merged control surface.
+- preserve main-side edits,
+- confirm they remain compatible with optimization-branch caching/dtype changes,
+- make only minimal merge-driven edits if needed.
 
-### Current bug
+### 4. `circuit_tracer/replacement_model/replacement_model_nnsight.py`
 
-Today, the runtime pipeline exposes more debug controls than the launcher path
-forwards.
+Target state:
 
-Current mismatch in main:
+- preserve main-side edits,
+- verify they still match the merged tracing path expectations.
 
-- `trace_pipeline_chunked.py` exposes:
-  - dtype control,
-  - `--cross-cluster-debug`,
-  - `--telemetry-max-events`
-- but `experiments/run_sparsification_experiment.py` currently only forwards:
-  - `--phase4-anomaly-debug`
+### 5. Tests
 
-This means the harness cannot fully exercise the newer debug path even though
-the pipeline supports it.
+Target state:
 
-### Required config/launcher changes
+- preserve optimization-branch tests:
+  - `tests/test_attribute_nnsight_telemetry.py`
+  - relevant additions in `tests/test_partial_influences.py`
+- preserve main-side tests:
+  - `tests/test_chunked_decoder_optimizations.py`
+- update tests so they reflect the merged debug + dtype + cache behavior.
 
-#### `experiments/exact_trace_bench/config.py`
-
-Add these to `base_trace_defaults()`:
-
-- `exact_trace_internal_dtype`
-- `cross_cluster_debug`
-- `telemetry_max_events`
-
-#### `experiments/exact_trace_bench/scenarios.py`
-
-Ensure `EXACT_MODE_KNOB_KEYS` includes:
-
-- `exact_trace_internal_dtype`
-- `cross_cluster_debug`
-- `telemetry_max_events`
-
-This matters so scenario generation and scenario serialization preserve those
-fields.
-
-#### `experiments/run_sparsification_experiment.py`
-
-Update command construction so it forwards, when present:
-
-- `--exact-trace-internal-dtype`
-- `--cross-cluster-debug`
-- `--telemetry-max-events`
-
-### Acceptance for this workstream
-
-- scenario JSON can store these fields,
-- generated commands include these flags when requested,
-- runtime manifests reflect the launched values.
-
-## Workstream D — Docs reconciliation
+## Workstream C — Tie the merged library back to the project repo
 
 ### Goal
 
-Bring the documentation back to one coherent story.
+Confirm the merged project repo and merged main library actually agree.
 
-### Canonical doc roles after consolidation
+### Required checks
 
-- `PLAN.md` = active roadmap / execution plan
-- `EXPERIMENTS.md` = living experiment inventory and findings
-- `docs/phase4_refresh_optimization_spec.md` = detailed refresh and stability
-  spec
+1. project repo uses the canonical public knob `exact_trace_internal_dtype`,
+2. library still exposes the behavior expected by the project repo,
+3. cross-cluster debug artifacts still flow end-to-end,
+4. requested dtype / resolved dtype data still appear consistently,
+5. no project-side launcher/config assumptions are broken by the library merge.
 
-### Doc-specific intent
-
-#### `PLAN.md`
-
-This file should track the active merge/consolidation execution plan now, then
-later return to the post-consolidation implementation roadmap.
-
-#### `EXPERIMENTS.md`
-
-Preserve:
-
-- the true `fp32` / `fp64` comparison matrix,
-- the conclusion that healthy-prompt speedups were more about dtype behavior
-  than the first refresh-cache attempt,
-- the current understanding that `fp64` is the right immediate default.
-
-#### `docs/phase4_refresh_optimization_spec.md`
-
-Preserve:
-
-- refresh-path optimization context,
-- newer normalization-precision findings,
-- the warning that fp64 is an immediate default, not the final permanent
-  numerical-stability solution.
-
-#### `midpoint_checkin_draft.md`
-
-Keep as secondary narrative/report material only.
-
-Do not edit it during this phase.
-
-## Workstream E — Safe validation
+## Workstream D — Refresh the old optimization pair carefully
 
 ### Goal
 
-Validate the consolidation without violating the repo's HPC constraints.
+Make the old optimization pair operational again without wiping still-useful
+files.
 
-### Allowed validation in this phase
+Target pair:
 
-- lightweight Python checks via `uv run`
-- lightweight unit-style checks
-- lint/type checks if touched files need them
+- project: `../worktrees_opt/nlp_research_project`
+- library: `../worktrees_opt/circuit-tracer_chunked`
 
-### Recommended validation set
+### Refresh principle
 
-1. `uv run python tests/test_cross_cluster_debug_artifacts.py`
-2. targeted sanity check that scenario command construction includes the new
-   flags when requested
-3. `uv run ruff check` on touched files or repo-wide if cheap enough
+Refresh the **pair together** from the validated main baseline.
 
-### Explicitly disallowed here
+Do not refresh only the project or only the library.
 
-- no GPU tracing on login nodes,
-- no heavy extraction over scratch unless intentionally submitted through the
-  proper job path.
+### Required pre-refresh inspection
+
+Before replacing anything, inventory:
+
+- local tracked modifications,
+- untracked docs/spec notes,
+- fixture catalogs,
+- generated scenario inputs,
+- any other operational files needed to keep the optimization worktree usable.
+
+### Refresh goal
+
+After refresh, the optimization pair should:
+
+- inherit the validated merged baseline,
+- still contain any unique operational files worth keeping,
+- be ready for the permanent overflow fix implementation.
+
+## Workstream E — Use the chosen overflow-fix direction
+
+### Goal
+
+Make sure the optimization track begins from the already chosen spec direction,
+not from an open-ended redesign.
+
+Chosen direction from `docs/phase4_refresh_optimization_spec.md`:
+
+- preferred first permanent fix: **scaled row-L1 computation** (or equivalent
+  exact stable normalization representation)
+
+Why this remains first:
+
+- fp32 collapse on `828_base` and `361_base` is not acceptable as a stable
+  solution,
+- fp64 is the current safe default, but it is not the permanent numerical fix,
+- the permanent fix should preserve exact semantics while removing raw
+  row-abs-sum overflow as a failure mode.
+
+## Safe validation plan
+
+Only run lightweight local validation during the merge itself.
+
+### Allowed
+
+- `uv run ruff check ...`
+- lightweight targeted unit tests
+- `uv run python -m pytest <small test selection>` if cheap enough
+
+### Not allowed here
+
+- no direct GPU tracing on login nodes,
+- no heavy benchmark reruns until the library merge is stable.
+
+### Validation focus
+
+1. partial influence correctness,
+2. cache behavior / counters,
+3. dtype-control behavior,
+4. telemetry/debug artifact compatibility,
+5. project-repo integration assumptions.
 
 ## Sequencing
 
-### Phase 1 — Plan and checkpoint
+### Phase 1 — Main library merge
 
-1. finish this `PLAN.md`
-2. preserve main local state before any merge/cherry-pick attempt
-3. use `docs/worktree_consolidation_plan.md` as the detailed reference during
-   execution
+1. capture current main library state,
+2. compare hotspot files against optimization library,
+3. merge and validate the main library,
+4. only then treat the main pair as canonical.
 
-### Phase 2 — Intake opt-only source/docs
+### Phase 2 — Optimization pair refresh plan
 
-Bring over the opt worktree content that is mostly non-conflicting:
+1. inspect unique files in the old optimization project+library pair,
+2. identify what must be preserved,
+3. define exact refresh actions before applying them.
 
-- `EXPERIMENTS.md`
-- `docs/phase4_refresh_optimization_spec.md`
-- `trace_pipeline.py`
-- launcher/config/scenario updates from the opt branch as inputs
+### Phase 3 — Optimization pair refresh
 
-Important:
+1. refresh old optimization project worktree from the validated main project
+   baseline,
+2. refresh old optimization library worktree from the validated main library
+   baseline,
+3. re-apply preserved unique files intentionally,
+4. verify the pair is still operational.
 
-- preserve the newer local doc edits from the opt worktree too, not just the two
-  committed branch commits
+### Phase 4 — Resume two-track work
 
-### Phase 3 — Manually merge overlapping files
+After the pair refresh:
 
-Order:
-
-1. `trace_pipeline_chunked.py`
-2. `experiments/exact_trace_bench/extract.py`
-3. `experiments/extract_benchmark_index.py`
-
-Guiding rule:
-
-- use main as the behavioral base,
-- reapply dtype naming/plumbing from opt on top of that base.
-
-### Phase 4 — Fix launcher propagation
-
-Immediately after the overlapping file merge:
-
-1. update `config.py`
-2. update `scenarios.py`
-3. update `run_sparsification_experiment.py`
-4. verify end-to-end flag propagation in the generated command path
-
-### Phase 5 — Validate the consolidated state first
-
-Before starting any new investigation or optimization work:
-
-1. run the lightweight validation set,
-2. confirm launcher/config propagation is working,
-3. confirm manifests/extraction still surface the expected debug + dtype fields,
-4. fix any regressions immediately before opening new workstreams.
-
-This phase exists specifically to avoid continuing on top of a broken merge.
-
-### Phase 6 — Reconcile final docs
-
-1. keep `PLAN.md` as the active roadmap,
-2. keep `EXPERIMENTS.md` factual,
-3. keep the spec detailed,
-4. leave generated artifacts out of the merge.
-
-### Phase 7 — Split into parallel post-merge tracks
-
-Only after Phase 5 passes cleanly:
-
-#### Track A — Cross-cluster drift investigation
-
-Use the consolidated branch as the canonical correctness/debug branch.
-
-Immediate focus:
-
-- paired Ascend/Cardinal reruns,
-- earliest-divergence localization,
-- validating whether drift begins before Phase 4,
-- using the retained cross-cluster debug artifacts as the main evidence source.
-
-Constraint:
-
-- avoid mixing in new optimization changes that would muddy the debug signal.
-
-#### Track B — Optimization work
-
-Run optimization work in a separate branch/worktree off the validated
-consolidated state.
-
-Immediate focus:
-
-- refresh-path optimization,
-- memory-pressure reduction,
-- later numerical-stability improvements.
-
-Constraint:
-
-- periodically rebase/merge from the validated consolidated branch,
-- do not let optimization experiments redefine the canonical debug schema.
-
-#### Coordination rule
-
-Track A owns the canonical interpretation/debug surface.
-
-Track B may optimize implementation details, but if it changes:
-
-- dtype semantics,
-- debug artifact schema,
-- launch/config shape,
-
-then those changes need explicit review before becoming the new baseline.
+- main pair resumes cross-cluster investigation,
+- optimization pair begins the permanent overflow fix,
+- both tracks use the standard run placement convention:
+  `ascend|cardinal` × `fast|anomaly|long_eval`.
 
 ## Acceptance criteria
 
-The consolidation phase is successful when all of the following are true:
+This merge phase is complete when all of the following are true:
 
-1. there is one active repo/worktree again for normal development,
-2. the public dtype knob name is `exact_trace_internal_dtype`,
-3. main's cross-cluster debug artifact flow is preserved,
-4. extraction still exposes dtype-map and debug-artifact information,
-5. benchmark harness config/scenario/launcher code can actually propagate:
-   - `exact_trace_internal_dtype`
-   - `cross_cluster_debug`
-   - `telemetry_max_events`
-6. `EXPERIMENTS.md` and the spec preserve the newer worktree findings,
-7. generated artifacts are excluded from the source merge.
+1. main project repo and main sibling library are intentionally merged and locally
+   validated as a pair,
+2. the main pair preserves:
+   - canonical cross-cluster debug behavior,
+   - explicit dtype control,
+   - optimization-branch cache work,
+3. old optimization project+library worktrees are refreshed together from that
+   validated baseline,
+4. useful untracked operational files from the optimization pair are preserved,
+5. the optimization pair is ready to begin the permanent overflow fix from the
+   chosen spec direction,
+6. future runs can no longer accidentally mix project and library state without
+   us noticing.
 
-## Risks
+## Risks and open questions
 
-### 1. Silent schema drift
+### Risks
 
-Risk:
+1. **Hotspot merge risk in `attribute_nnsight.py`**
+   - easiest place to silently lose either debug schema or optimization logic.
 
-- the CLI name changes, but manifests/extraction/benchmark tables still use the
-  old field names inconsistently.
+2. **Project/library contract drift**
+   - the project repo may assume interfaces or payloads that a careless library
+     merge breaks.
 
-Mitigation:
+3. **Optimization pair refresh damage**
+   - blindly resetting the old worktree pair could lose useful docs/fixtures.
 
-- treat this as an explicit schema merge,
-- review runtime args, manifests, extraction, and scenario generation together.
+4. **False confidence from project-only validation**
+   - the repo merge looked good, but jobs still depend on the sibling library.
 
-### 2. Launcher appears fixed but still drops knobs
+### Open questions
 
-Risk:
-
-- config defaults are updated but command construction still forgets a flag.
-
-Mitigation:
-
-- do a direct command-generation sanity check as part of validation.
-
-### 3. Docs become duplicated instead of clarified
-
-Risk:
-
-- findings get copied into multiple docs without clear ownership.
-
-Mitigation:
-
-- keep strict roles: plan vs experiment log vs detailed spec.
-
-### 4. Generated artifacts contaminate the merge
-
-Risk:
-
-- generated directories distract from the true source merge or create noisy diffs.
-
-Mitigation:
-
-- explicitly exclude them from the source merge and regenerate later if needed.
-
-## Open questions
-
-- after consolidation, should the next active implementation plan return first
-  to cross-cluster diagnostics or to numerical-stability cleanup?
+- which files in the old optimization project worktree are genuinely unique and
+  must survive the refresh?
+- which files in the old optimization library worktree, if any, contain local
+  uncommitted but still-useful material beyond the committed branch state?
+- after the library merge, do we want a dedicated lightweight integration test at
+  the project level that asserts the expected debug payload fields against the
+  sibling library behavior?
