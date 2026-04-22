@@ -1,6 +1,8 @@
 # Experiments inventory
 
-This file is a living note for experiment artifacts currently stored on scratch.
+This file is a living note for experiment artifacts currently stored on scratch
+and a dated investigation log for important decisions, launches, findings, and
+result reinterpretations.
 
 For now it documents:
 
@@ -12,6 +14,341 @@ The goal is to make it easy to answer:
 - where they live,
 - what each family was trying to test,
 - and which runs should be treated as baseline / debug / anomaly / exploratory.
+
+## Investigation log conventions
+
+For important updates, include:
+
+- date,
+- project repo provenance,
+- sibling library provenance,
+- whether the run came from a live workspace or immutable snapshot,
+- enough context to reconstruct later why we trusted or reinterpreted a
+  baseline.
+
+## Recent investigation updates
+
+### 2026-04-22 — intended next diagnostic batch: 6 matched `94_base` jobs
+
+Purpose:
+
+- use one queued batch to both **diagnose** the Phase-0 divergence and **test** a
+  narrow mitigation without needing a second edit-submit cycle,
+- keep the next batch focused on `94_base`, since that is the prompt of most
+  immediate interest for the cross-cluster anomaly story.
+
+Planning provenance:
+
+- project repo: `nlp_research_project`
+  - workspace: main workspace `./`
+  - branch: `exact-trace-bench-harness`
+  - commit baseline for planning: `94e4283a9e2b0c04d63409890b5936c07c17108c`
+  - current workspace state: live workspace with pending local edits to docs,
+    scripts, and generated scenario files before the next implementation snapshot
+- sibling library repo: `circuit-tracer_chunked`
+  - workspace: main sibling workspace `../circuit-tracer_chunked`
+  - branch: `exact-trace-hidden-knobs`
+  - commit baseline for planning: `d1f3df3e456fdb5430b5462a0a6834bdaf7fa716`
+
+Queueing / launch policy for the next batch:
+
+- use immutable workspace snapshots only,
+- keep default sbatch walltime at `01:00:00` on both clusters,
+- keep the batch fully matched across clusters except for the explicit Phase-0
+  compare-mode variant under test.
+
+Shared intended config across all six jobs:
+
+- fixture: `94_base`
+- tier: `anomaly`
+- `max_steps=1`
+- `cross_cluster_debug=true`
+- `exact_trace_internal_dtype=fp64`
+- `decoder_chunk_size=2048`
+- `cross_batch_decoder_cache_bytes=0`
+- `temperature=0.0`
+- `completions=1`
+- `max_feature_nodes=8192`
+- `max_edges=20000`
+- `attribution_batch_size=128`
+- `feature_batch_size=128`
+- `logit_batch_size=128`
+- `max_n_logits=3`
+- `desired_logit_prob=0.8`
+- `attribution_update_interval=4`
+- `feature_batch_target_reserved_fraction=0.9`
+- `feature_batch_min_free_fraction=0.05`
+- `feature_batch_probe_batches=1`
+- `verbose_attribution=true`
+- `profile_attribution=true`
+
+Planned six-job matrix:
+
+1. Ascend baseline Phase-0 compare path
+2. Cardinal baseline Phase-0 compare path
+3. Ascend Phase-0 compare upcast = `fp32`
+4. Cardinal Phase-0 compare upcast = `fp32`
+5. Ascend Phase-0 compare upcast = `fp64`
+6. Cardinal Phase-0 compare upcast = `fp64`
+
+Additional diagnostics intended in this batch:
+
+- Phase-0:
+  - canonical sorted active-feature hash,
+  - near-threshold counts,
+  - sample borderline features near the JumpReLU threshold,
+  - clearer separation of membership drift vs ordering-only drift.
+- Phase-3:
+  - top-K seed influences,
+  - cutoff margin / near-tie counts,
+  - richer shadow-frontier overlap diagnostics,
+  - more explicit row-input / row-abs-sum comparison fields.
+
+Decision rationale:
+
+- a 4-job batch (baseline + one mitigation) would tell us whether *some*
+  upcast helps,
+- the chosen 6-job batch should tell us whether:
+  - no targeted upcast helps,
+  - fp32 is already sufficient,
+  - or fp64 gives a materially better reduction in Phase-0 and Phase-3 drift.
+
+Current expectation before launch:
+
+- if the Phase-0 divergence is primarily caused by bf16 threshold flips in the
+  transcoder sparse encode path, then the fp32/fp64 compare variants should
+  reduce active-feature membership drift relative to the baseline pair,
+- if drift remains essentially unchanged across all three modes, then the root
+  cause is likely earlier model/transcoder activation differences rather than the
+  final threshold compare precision alone.
+
+### 2026-04-22 — first analysis of matched cross-cluster debug pairs (`828_base` / `94_base`)
+
+Runs analyzed:
+
+- `828_base` fast:
+  - Ascend output: `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260422_001758_409577_matched-cross-cluster-828-fast-ascend/ascend_matched_cross_cluster_828_base_fast_b128_c2048_cache0g`
+  - Cardinal output: `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260422_001758_483504_matched-cross-cluster-828-fast-cardinal/cardinal_matched_cross_cluster_828_base_fast_b128_c2048_cache0g`
+- `94_base` anomaly:
+  - Ascend output: `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_001758_549185_matched-cross-cluster-94-anomaly-ascend/ascend_matched_cross_cluster_94_base_anomaly_b128_c2048_cache0g`
+  - Cardinal output: `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_001758_619013_matched-cross-cluster-94-anomaly-cardinal/cardinal_matched_cross_cluster_94_base_anomaly_b128_c2048_cache0g`
+
+Important scope note:
+
+- these are still **single-step** (`max_steps=1`) debug runs,
+- so they are good for locating the first divergence checkpoint, but they do not
+  directly test later-step "refresh every step" behavior.
+
+Observed `828_base` results:
+
+- both clusters generated the same first token: `Here` (`token_id=8291`),
+- next-token logprob remained very close (`Δ ≈ 1.45e-05`),
+- Phase-1 target-logit hash matched exactly,
+- first hash divergence appeared already at `phase0_sparse_setup`,
+- compact artifact comparison:
+  - feature Jaccard `0.99343`
+  - edge Jaccard `0.45940`
+  - weighted edge Jaccard `0.49887`
+- Phase-4 wall-clock still differed substantially:
+  - Ascend `1051.30s`
+  - Cardinal `564.60s`
+
+Observed `94_base` results:
+
+- both clusters generated the same first token: `Let` (`token_id=6481`),
+- next-token logprob stayed close but less tightly than `828_base`
+  (`Δ ≈ 7.65e-04`),
+- Phase-1 target-logit hash matched exactly,
+- first hash divergence again appeared at `phase0_sparse_setup`,
+- compact artifact comparison:
+  - feature Jaccard `0.99362`
+  - edge Jaccard `0.57094`
+  - weighted edge Jaccard `0.61281`
+- Phase-4 wall-clock still differed substantially:
+  - Ascend `1201.76s`
+  - Cardinal `818.57s`
+
+Checkpoint interpretation:
+
+- for **both prompts**, the first structural divergence appears in
+  `phase0_sparse_setup` via differing retained feature sets / active-feature
+  hashes,
+- despite that early structural difference, `phase1_target_logits` still matched
+  exactly on the chosen first token for both prompts,
+- by `phase3_seed_ranking_pre_phase4`, the ranking/frontier hashes diverged on
+  both prompts, so Phase 3 is the first checkpoint where the difference is more
+  clearly expressed in the actual frontier/ranking state,
+- `phase4_entry` itself had no dedicated hash difference record, but Phase-4
+  runtime remained materially different across clusters.
+
+Current interpretation:
+
+- under matched `fp64` + matched `decoder_chunk_size=2048`, the first-step
+  cross-cluster story is **not** "Cardinal immediately collapses while Ascend
+  stays healthy" for `94_base`,
+- instead, both prompts show the same pattern:
+  - early feature-set divergence at Phase 0,
+  - matching target-logit state at Phase 1,
+  - frontier/ranking divergence visible by Phase 3,
+  - substantial Phase-4 runtime differences despite the matched tracing
+    contract,
+- this supports treating Phase 0 as the first structural divergence point and
+  Phase 3 as the first obviously downstream-meaningful divergence point,
+- to test the earlier overflow / repeated-refresh hypothesis directly, we likely
+  need a later-step or multi-step matched run on `94_base`, not just the current
+  single-step check.
+
+### 2026-04-22 — launched matched cross-cluster debug pairs for `828_base` and `94_base`
+
+Purpose:
+
+- start the main-branch cross-cluster investigation with **matched configs** so
+  cluster is the intended primary source of variance,
+- pair one healthy control prompt (`828_base` in `fast`) with one anomalous
+  prompt (`94_base` in `anomaly`).
+
+Launch provenance:
+
+- source project workspace before snapshot: main workspace `./`
+  - branch: `exact-trace-bench-harness`
+  - commit: `94e4283a9e2b0c04d63409890b5936c07c17108c`
+- source sibling library before snapshot: `../circuit-tracer_chunked`
+  - branch: `exact-trace-hidden-knobs`
+  - commit: `d1f3df3e456fdb5430b5462a0a6834bdaf7fa716`
+- immutable snapshot container:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_001720_matched_cross_cluster_828_94_fp64`
+- snapshot project root:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_001720_matched_cross_cluster_828_94_fp64/nlp_research_project`
+- snapshot library root:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_001720_matched_cross_cluster_828_94_fp64/circuit-tracer_chunked`
+
+Matched launch config used on **all four** runs:
+
+- exact tracing, single-step (`max_steps=1`)
+- `cross_cluster_debug=true`
+- `exact_trace_internal_dtype=fp64`
+- `decoder_chunk_size=2048`
+- `cross_batch_decoder_cache_bytes=0`
+- `temperature=0.0`
+- `completions=1`
+- `max_feature_nodes=8192`
+- `max_edges=20000`
+- `attribution_batch_size=128`
+- `feature_batch_size=128`
+- `logit_batch_size=128`
+- `max_n_logits=3`
+- `desired_logit_prob=0.8`
+- `attribution_update_interval=4`
+- `feature_batch_target_reserved_fraction=0.9`
+- `feature_batch_min_free_fraction=0.05`
+- `feature_batch_probe_batches=1`
+- `verbose_attribution=true`
+- `profile_attribution=true`
+
+Scenario files used:
+
+- `experiments/generated/exact_trace_bench/matched_cross_cluster_828_fast_ascend.json`
+- `experiments/generated/exact_trace_bench/matched_cross_cluster_828_fast_cardinal.json`
+- `experiments/generated/exact_trace_bench/matched_cross_cluster_94_anomaly_ascend.json`
+- `experiments/generated/exact_trace_bench/matched_cross_cluster_94_anomaly_cardinal.json`
+
+Submitted jobs:
+
+- Ascend `828_base` fast:
+  - SLURM job `5024202`
+  - run id `20260422_001758_409577_matched-cross-cluster-828-fast-ascend`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260422_001758_409577_matched-cross-cluster-828-fast-ascend`
+- Cardinal `828_base` fast:
+  - SLURM job `8694599`
+  - run id `20260422_001758_483504_matched-cross-cluster-828-fast-cardinal`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260422_001758_483504_matched-cross-cluster-828-fast-cardinal`
+- Ascend `94_base` anomaly:
+  - SLURM job `5024203`
+  - run id `20260422_001758_549185_matched-cross-cluster-94-anomaly-ascend`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_001758_549185_matched-cross-cluster-94-anomaly-ascend`
+- Cardinal `94_base` anomaly:
+  - SLURM job `8694600`
+  - run id `20260422_001758_619013_matched-cross-cluster-94-anomaly-cardinal`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_001758_619013_matched-cross-cluster-94-anomaly-cardinal`
+
+Interpretation / intent:
+
+- these launches intentionally remove the earlier `decoder_chunk_size`
+  asymmetry (`2048` on Ascend vs `4096` on Cardinal) from the initial
+  cross-cluster comparison,
+- the point of this run set is not to preserve each cluster's historical native
+  benchmark config, but to isolate where the two clusters first diverge under a
+  **matched tracing contract**,
+- analysis is still pending; this entry records the exact launch decision and
+  provenance so later interpretation can reconstruct what was submitted.
+
+### 2026-04-22 — post-library-merge within-cluster baseline consistency check
+
+Purpose:
+
+- verify that the merged main baseline did not silently change `828_base`
+  outputs **within each cluster** before starting cross-cluster drift analysis.
+
+Project + library provenance for the checked baseline pair:
+
+- project repo: `nlp_research_project`
+  - workspace: main workspace `./`
+  - branch: `exact-trace-bench-harness`
+  - commit: `94e4283a9e2b0c04d63409890b5936c07c17108c`
+- sibling library repo: `circuit-tracer_chunked`
+  - workspace: main sibling workspace `../circuit-tracer_chunked`
+  - branch: `exact-trace-hidden-knobs`
+  - commit: `d1f3df3e456fdb5430b5462a0a6834bdaf7fa716`
+
+Runs checked:
+
+- Ascend current baseline-check run:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/ascend_quick_fp64_cross_cluster_828_base_postlibmerge_b128_c2048_cache0g`
+  - launched from the live main workspace
+- Ascend same-cluster reference run:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/ascend_quick_fp64_cross_cluster_828_base_b128_c2048_cache0g`
+- Cardinal current baseline-check run:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260421_214702_004280_quick-cross-cluster-fp64-828-postlibmerge-snapshot/cardinal_quick_fp64_cross_cluster_828_base_postlibmerge_b128_c4096_cache0g`
+  - launched from immutable snapshot workspace `workspace_20260421_214702_cardinal_828_postlibmerge`
+- Cardinal same-cluster reference run:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260420_131422_618249_prompt828-debug-cardinal-float64-norm-general/cardinal_fast_828_base_b128_c4096_cache0g`
+
+Validation notes:
+
+- live main `trace_pipeline_chunked.py` matched the Cardinal snapshot copy by
+  file hash,
+- live main `circuit_tracer/attribution/attribute_nnsight.py` matched the
+  Cardinal snapshot copy by file hash.
+
+Observed within-cluster comparisons:
+
+- Ascend matched exactly against the earlier same-cluster fp64 quick run for:
+  - generated token (`Here`),
+  - next-token id/logprob,
+  - active feature count (`2993540`),
+  - telemetry event count (`2760`),
+  - saved `step_000.npz` file hash,
+  - saved `feature_ids`, `row_idx`, `col_idx`, and `weights` hashes.
+- Cardinal matched exactly against the earlier same-cluster prompt-828 debug
+  run for:
+  - generated token (`Here`),
+  - next-token id/logprob,
+  - active feature count (`2993606`),
+  - telemetry event count (`1952`),
+  - saved `step_000.npz` file hash,
+  - saved `feature_ids`, `row_idx`, `col_idx`, and `weights` hashes.
+- Cardinal run-metadata/debug-mode fields differed (`cross_cluster_debug` in
+  the new run versus `phase4_anomaly_debug` in the older debug campaign), but
+  the saved compact step artifact for `828_base` was unchanged within Cardinal.
+
+Interpretation:
+
+- this check supports that we did **not** accidentally move onto a bad merged
+  baseline for either cluster,
+- treat the project/library pair `94e4283` + `d1f3df3` as a validated baseline
+  pair for continuing the **cross-cluster** investigation,
+- remaining Ascend/Cardinal differences are expected and should be investigated
+  as actual cross-cluster drift rather than as evidence of baseline corruption.
 
 ## Scratch layout
 
