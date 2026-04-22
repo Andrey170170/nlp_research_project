@@ -36,6 +36,13 @@ from trace_pipeline_chunked import (
     extract_compact_chunked_attribution,
 )
 
+try:
+    from circuit_tracer.attribution.prefix_cache import (
+        PrefixActivationCache as LibraryPrefixCache,
+    )
+except ImportError:  # library version predates the forward cache
+    LibraryPrefixCache = None  # type: ignore[assignment,misc]
+
 
 def trace_completion_with_cache_validation(
     model,
@@ -64,6 +71,7 @@ def trace_completion_with_cache_validation(
     prompt_source: str = "gsm8k",
     fixture_name: str | None = None,
     fixture_kind: str | None = None,
+    use_library_prefix_cache: bool = False,
 ) -> dict[str, Any]:
     """Trace a completion with prefix-cache validation at each step.
 
@@ -71,6 +79,14 @@ def trace_completion_with_cache_validation(
     each attribution call, compares the active features against what was
     cached from the previous step.  Writes per-step comparison stats to
     ``cache_validation.json``.
+
+    Parameters
+    ----------
+    use_library_prefix_cache:
+        When True, instantiates a ``circuit_tracer.attribution.PrefixActivationCache``
+        and passes it into every ``attribute()`` call so the library can
+        populate and consult it across consecutive steps.  The in-process
+        ``PrefixCache`` validator is still recorded (features side).
     """
     tokenizer = model.tokenizer
     prompt_id = f"prompt_{prompt_idx:03d}"
@@ -104,6 +120,19 @@ def trace_completion_with_cache_validation(
 
     cache = PrefixCache()
 
+    library_cache = None
+    if use_library_prefix_cache:
+        if LibraryPrefixCache is None:
+            raise RuntimeError(
+                "use_library_prefix_cache=True but the installed circuit_tracer "
+                "build has no PrefixActivationCache.  Pull the jay/prefix-caching "
+                "branch of circuit-tracer_chunked (or newer)."
+            )
+        library_cache = LibraryPrefixCache()
+        print(
+            f"  [{prompt_id}/{completion_id}] Library-side forward cache is ENABLED"
+        )
+
     print(f"\n  [{prompt_id}/{completion_id}] Starting cached trace (temp={temperature})")
 
     for step_idx in range(max_steps):
@@ -128,6 +157,7 @@ def trace_completion_with_cache_validation(
             profile_log_interval=profile_log_interval,
             diagnostic_feature_cap=diagnostic_feature_cap,
             sparsification=sparsification,
+            prefix_cache=library_cache,
         )
 
         if torch.cuda.is_available():
@@ -143,6 +173,16 @@ def trace_completion_with_cache_validation(
             "total_active_features": int(active_features.shape[0]),
             "attribution_seconds": round(attribution_seconds, 4),
         }
+
+        if library_cache is not None:
+            cache_record["library_cache"] = {
+                "enabled": True,
+                "hit_count": int(library_cache.hit_count),
+                "miss_count": int(library_cache.miss_count),
+                "cached_prefix_len": int(library_cache.cached_prefix_len),
+            }
+        else:
+            cache_record["library_cache"] = {"enabled": False}
 
         if cache.has_data:
             compare_result = cache.compare(active_features)
@@ -278,6 +318,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "decoder_chunk_size": args.decoder_chunk_size,
         "cross_batch_decoder_cache_bytes": args.cross_batch_decoder_cache_bytes,
         "output_dir": str(output_dir),
+        "use_library_prefix_cache": bool(args.use_library_prefix_cache),
     }
     (output_dir / "run_config.json").write_text(json.dumps(run_config, indent=2))
 
@@ -331,6 +372,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 prompt_source=prompt_meta["prompt_source"],
                 fixture_name=prompt_meta.get("fixture_name"),
                 fixture_kind=prompt_meta.get("fixture_kind"),
+                use_library_prefix_cache=args.use_library_prefix_cache,
             )
 
     print(f"\nPipeline complete! {done} completions traced to {output_dir}")
@@ -450,6 +492,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--no-lazy-decoder", action="store_true",
         help="Eagerly load decoder weights",
+    )
+    parser.add_argument(
+        "--use-library-prefix-cache", action="store_true",
+        help=(
+            "Pass a circuit_tracer.attribution.PrefixActivationCache into "
+            "every attribute() call.  The library populates it after each "
+            "step and emits phase0.setup.prefix_cache_{lookup,store} trace "
+            "events.  This infrastructure run does not yet skip forward-pass "
+            "compute; it records diagnostic evidence of reuse potential."
+        ),
     )
     args = parser.parse_args()
 
