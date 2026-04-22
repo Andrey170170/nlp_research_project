@@ -302,13 +302,13 @@ Update:
 
 - now completed / analyzed
 
-Main findings from the true-dtype comparison:
+Main findings from the true-dtype comparison (pre-fix code state):
 
 - `828_base` and `361_base` genuinely collapse under true fp32 internal dtype
 - `94_base` does not collapse via the same mechanism
-- fp64 should remain the default runtime dtype for exact compact tracing
-- the healthy-prompt speedups previously observed are best explained by the
-  float64 normalization path, not by the refresh-cache attempt
+- for that pre-fix state, fp64 was the safer immediate runtime default
+- the healthy-prompt speedups previously observed there were best explained by
+  the float64 normalization path, not by the refresh-cache attempt
 
 Observed healthy-prompt fp32 collapse signature:
 
@@ -336,9 +336,8 @@ Interpretation:
 
 - fp64 improves `361_base` by roughly `16.7%` end-to-end and `18.3%` in Phase 4
 - the improvement comes with much higher host RAM usage
-- for long-token / long-trace scaling, fp64 is likely the right immediate
-  default but not the final permanent solution if raw normalization sums can
-  keep growing toward fp64 overflow
+- this pre-fix behavior is superseded by the validated permanent overflow fix in
+  §14, where fp32/fp64 match exactly on the validation prompts
 
 ### 11. Long-eval runs
 
@@ -445,6 +444,152 @@ Then summarize `benchmark_enriched.csv` by:
 - cluster / group
 - run name
 - fixture set
+
+## Recent launch update — overflow-fix validation
+
+Purpose: validate the permanent overflow-fix implementation on the optimization
+project+library pair after landing the two library commits:
+
+- `3d9d01a` — `fix exact compact normalization overflow with stable row denominators`
+- `ac368bb` — `harden shared normalization overflow paths and retained-mass stats`
+
+Provenance:
+
+- launch time: `2026-04-21 23:57:57`
+- project workspace: `exact-trace-bench-opt@94e4283`
+- library workspace: `exact-trace-hidden-knobs-opt@ac368bb`
+
+Launches submitted on Ascend:
+
+- fast validation array job: `5024044`
+- anomaly/gate validation array job: `5024045`
+
+Scenario files used:
+
+- `experiments/generated/exact_trace_overflow_fix_fast_ascend_scenarios.json`
+- `experiments/generated/exact_trace_overflow_fix_anomaly_ascend_scenarios.json`
+
+Run metadata:
+
+- fast run id: `20260421_235757_overflow-fix-fast-ascend`
+- anomaly run id: `20260421_235757_overflow-fix-anomaly-ascend`
+
+Submitted scenario matrix:
+
+- `828_base` on `ascend/fast` with `exact_trace_internal_dtype=fp32`
+- `828_base` on `ascend/fast` with `exact_trace_internal_dtype=fp64`
+- `361_base` on `ascend/fast` with `exact_trace_internal_dtype=fp32`
+- `361_base` on `ascend/fast` with `exact_trace_internal_dtype=fp64`
+- `94_base` on `ascend/anomaly` with `exact_trace_internal_dtype=fp32`
+- `94_base` on `ascend/anomaly` with `exact_trace_internal_dtype=fp64`
+
+Shared runtime config:
+
+- `attribution_batch_size=256`
+- `feature_batch_size=256`
+- `logit_batch_size=256`
+- `decoder_chunk_size=4096`
+- `cross_batch_decoder_cache_bytes=0`
+- `completions=1`
+- `temperature=0.0`
+- `max_steps=1`
+- `cross_cluster_debug=false`
+- `phase4_anomaly_debug=false`
+- `save_raw=false`
+
+Expected output roots:
+
+- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_828_base_overflow_fix_fp32_b256_c4096_cache0`
+- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_828_base_overflow_fix_fp64_b256_c4096_cache0`
+- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_361_base_overflow_fix_fp32_b256_c4096_cache0`
+- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_361_base_overflow_fix_fp64_b256_c4096_cache0`
+- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/ascend_anomaly_94_base_overflow_fix_fp32_b256_c4096_cache0`
+- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/ascend_anomaly_94_base_overflow_fix_fp64_b256_c4096_cache0`
+
+Interpretation goal:
+
+- confirm healthy prompts (`828_base`, `361_base`) no longer show the old fp32
+  collapse signature,
+- confirm `fp64` remains sane after the permanent fix,
+- keep `94_base` as the gate/anomaly prompt for non-collapse regressions.
+
+Status:
+
+- completed and analyzed.
+
+Analysis provenance:
+
+- analysis time: `2026-04-22 14:25:58`
+- project workspace: `exact-trace-bench-opt@94e4283`
+- library workspace: `exact-trace-hidden-knobs-opt@ac368bb`
+
+Observed result summary:
+
+- all 6 scenarios finished successfully.
+- all 6 runs retained the full configured `20000` edges.
+- fp32 and fp64 compact artifacts matched exactly for all three prompts under
+  `compare-compact`:
+  - `mean_feature_jaccard = 1.0`
+  - `mean_edge_jaccard = 1.0`
+  - `mean_weighted_edge_jaccard = 1.0`
+
+Current fp32/fp64 paired results:
+
+- `828_base`:
+  - fp32: `808.97s` completion, `542.90s` Phase 4 wall, `1107` decoder loads,
+    `20000` edges retained
+  - fp64: `927.49s` completion, `659.29s` Phase 4 wall, `1107` decoder loads,
+    `20000` edges retained
+- `361_base`:
+  - fp32: `2130.47s` completion, `1722.67s` Phase 4 wall, `1650` decoder loads,
+    `20000` edges retained
+  - fp64: `2335.41s` completion, `1948.25s` Phase 4 wall, `1650` decoder loads,
+    `20000` edges retained
+- `94_base`:
+  - fp32: `920.13s` completion, `650.00s` Phase 4 wall, `1200` decoder loads,
+    `20000` edges retained
+  - fp64: `984.86s` completion, `696.68s` Phase 4 wall, `1200` decoder loads,
+    `20000` edges retained
+
+Primary interpretation:
+
+- the old healthy-prompt fp32 collapse signature is absent after the permanent
+  overflow fix.
+- on `828_base` and `361_base`, fp32 no longer falls into the previous degenerate
+  regime with truncated edge retention and inflated decoder-load counts.
+- current fp32 and fp64 outputs are not merely similar; for these three probes
+  they are artifact-identical at the compact saved-output level.
+- runtime policy update from this validated post-fix matrix: fp32 is now the
+  default exact compact tracing dtype; fp64 remains an optional parity mode.
+
+Important contrast vs the earlier true-dtype comparison runs:
+
+- earlier true-fp32 runs showed the collapse signature on healthy prompts,
+  including:
+  - only `8192` retained edges on `828_base` / `361_base`
+  - much larger decoder-load counts (`21164` on `828_base`, `22254` on
+    `361_base`)
+- the new overflow-fix fp32 runs instead show:
+  - full `20000` retained edges
+  - decoder-load counts aligned with fp64 at the same runtime config
+  - non-degenerate Phase 4 refresh behavior
+
+Performance interpretation for the new code state:
+
+- with the overflow fix in place, fp32 is now modestly faster than fp64 on this
+  Ascend validation matrix while preserving identical compact outputs:
+  - `828_base`: fp32 about `12.8%` faster end-to-end, `17.7%` faster in Phase 4
+  - `361_base`: fp32 about `8.8%` faster end-to-end, `11.6%` faster in Phase 4
+  - `94_base`: fp32 about `6.6%` faster end-to-end, `6.7%` faster in Phase 4
+
+Caveat:
+
+- do not compare absolute wall times directly against the older true-dtype runs
+  without accounting for config differences (`b256/c4096` here vs older
+  `b128/c2048`, and older debug-mode runs for some 828 comparisons).
+- the important conclusion from this validation pass is the disappearance of the
+  fp32 collapse signature and the exact fp32/fp64 artifact match on the tested
+  prompts.
 
 ## Status of this note
 

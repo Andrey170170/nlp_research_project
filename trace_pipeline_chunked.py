@@ -79,7 +79,7 @@ def extract_compact_chunked_attribution(
     feature_batch_target_reserved_fraction: float = 0.9,
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
-    exact_trace_internal_dtype: str = "fp64",
+    exact_trace_internal_dtype: str = "fp32",
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
     telemetry_max_events: int | None = None,
@@ -315,7 +315,7 @@ def trace_completion_compact_chunked(
     feature_batch_target_reserved_fraction: float = 0.9,
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
-    exact_trace_internal_dtype: str = "fp64",
+    exact_trace_internal_dtype: str = "fp32",
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
     telemetry_max_events: int | None = None,
@@ -865,11 +865,11 @@ def run_pipeline(args: argparse.Namespace) -> None:
             "Cross-cluster debug currently supports only compact exact-chunked output. "
             "--save-raw is unsupported with --cross-cluster-debug."
         )
-    if args.save_raw and args.exact_trace_internal_dtype != "fp64":
+    if args.save_raw and args.exact_trace_internal_dtype != "fp32":
         raise ValueError(
             "The explicit internal precision contract is currently supported only for "
             "compact exact-chunked output. --save-raw/full-graph output does not support "
-            "--exact-trace-internal-dtype values other than the default-compatible fp64 mode."
+            "--exact-trace-internal-dtype values other than the default-compatible fp32 mode."
         )
     if planner_enabled and args.save_raw:
         raise ValueError(
@@ -1274,7 +1274,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--exact-trace-internal-dtype",
         type=parse_exact_trace_internal_dtype,
-        default="fp64",
+        default="fp32",
         help=(
             "Internal dtype for exact-trace normalization/ranking path (fp32 or fp64)"
         ),

@@ -375,106 +375,38 @@ This is the best current candidate because it directly targets the measured
 growth in refresh time while staying compatible with the current planner-based,
 frontier-preserving Phase 4 flow.
 
-## 9.5 Normalization precision findings
+## 9.5 Normalization precision findings (post-fix)
 
-Follow-up matched runs established that normalization precision is a first-class
-systems/correctness concern, separate from the refresh-cache experiment.
+The permanent overflow fix is now validated on the canonical prompt set
+(`828_base`, `361_base`, `94_base`) using paired fp32/fp64 runs on the fixed
+code path.
 
-### Main result
+### Validation result
 
-Using the new external runtime knob `exact_trace_internal_dtype`, true fp32 vs
-fp64 runs showed:
+- fp32 and fp64 compact artifacts matched exactly on the validation prompts
+  (`mean_feature_jaccard = 1.0`, `mean_edge_jaccard = 1.0`,
+  `mean_weighted_edge_jaccard = 1.0`)
+- the old healthy-prompt fp32 collapse signature is absent on the fixed path
+- all validation runs retained the full configured edge budget (`20000`)
 
-- `828_base` and `361_base` **collapse under fp32**
-- `94_base` does **not** collapse via the same mechanism
-- fp64 materially improves runtime on healthy prompts by preventing the fp32
-  collapse mode
+### Historical clarification (important)
 
-### Observed fp32 collapse pattern on `828_base` and `361_base`
+The earlier findings that "fp32 collapses on healthy prompts" were real for the
+older pre-fix code state, but they are no longer representative of current
+behavior after the validated permanent overflow fix.
 
-- Phase-3 logit-row absolute sums overflow to `inf`
-- later refresh ranking signal becomes effectively all-zero
-- debug summaries show:
-  - `rank_signal_effectively_all_zero_refresh_count = 16`
-  - deterministic-shadow overlap collapses to `0.0`
-  - float64-shadow overlap remains `1.0`
-- telemetry shifts from a healthy regime to a degenerate one:
-  - tiny `phase4.refresh`
-  - huge `phase4.feature_batch` / `context.compute_batch`
-  - large decoder-load counts
-- compact output still keeps the same selected feature set, but fp32 runs on the
-  healthy prompts retain only `8192` top edges rather than the full intended
-  `20000`
+### Runtime policy
 
-### Observed fp64 behavior
+- fp32 is now the default runtime dtype for exact compact tracing
+- fp64 remains available for parity checks and targeted diagnostics
+- refresh-path optimization should proceed on top of this post-fix default
 
-- fp64 eliminates the healthy-prompt collapse mode
-- `361_base` clean baseline improves by roughly:
-  - `~16.7%` end-to-end
-  - `~18.3%` in Phase 4
-- decoder-load counts drop drastically under fp64 on `828_base` / `361_base`
-- host RSS increases substantially
+## 9.6 Long-trace considerations after the permanent fix
 
-### Interpretation
-
-The earlier large speedups on healthy prompts are best explained by the
-float64-normalization path, not by the first refresh-cache attempt.
-
-## 9.6 Long-trace scaling risk
-
-fp64 is the right default for the current regime, but it is not a permanent
-proof against overflow for arbitrarily long or unstable traces.
-
-### Why fp64 may still fail eventually
-
-The current exact path still forms raw L1 normalization sums over attribution
-rows. If row magnitudes keep growing with trace depth / token count, then even
-fp64 can eventually overflow (`~1e308`), just much later than fp32.
-
-So the current fp64 default should be treated as:
-
-- the correct immediate default,
-- but not the final numerical-stability solution for very long autoregressive
-  traces.
-
-### Likely permanent-solution direction
-
-The robust long-term fix is to stop representing the normalization denominator as
-an unscaled raw sum that can overflow.
-
-Promising designs:
-
-1. **Scaled row-L1 computation (recommended first)**
-   - For each row, compute:
-     - `row_max_abs = max(abs(row))`
-     - `scaled_l1 = sum(abs(row / row_max_abs))`
-     - `row_l1 = row_max_abs * scaled_l1`
-   - Keep the normalization in a scaled representation rather than immediately
-     collapsing to one raw float that can overflow.
-   - This preserves semantics while extending the safe numeric range.
-
-2. **Exponent/mantissa normalization representation**
-   - Store row normalization as something like `(mantissa, exponent)` or an
-     equivalent `frexp`-style decomposition.
-   - Use that representation directly inside the influence solver instead of a
-     single floating-point scalar.
-
-3. **Log-domain / log-scale normalization metadata**
-   - More invasive, but can make very large dynamic ranges tractable.
-   - Higher risk because solver math becomes less direct.
-
-### Practical takeaway
-
-For now:
-
-- keep fp64 as the default runtime dtype
-- do not revert to fp32 for exact compact tracing on healthy prompts
-
-For longer-token tracing / scaling work:
-
-- plan a dedicated numerical-stability refactor for row normalization
-- treat “raw row-abs-sum overflow avoidance” as its own workstream, separate
-  from replay scheduling and refresh caching
+The validated fix removes the previously observed overflow-driven fp32 collapse
+mode on the canonical validation prompts. Ongoing long-trace work should still
+preserve stable normalization design principles (scaled row-L1 / equivalent exact
+stable representations), but default operation is now the post-fix fp32 path.
 
 ## 10. Direction A implementation plan: exact row-chunk reuse / caching
 

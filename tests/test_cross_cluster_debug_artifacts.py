@@ -8,6 +8,7 @@ Usage::
 from __future__ import annotations
 
 import json
+import inspect
 import sys
 import tempfile
 from pathlib import Path
@@ -21,9 +22,12 @@ if str(EXPERIMENTS_DIR) not in sys.path:
 
 
 def run_checks() -> None:
+    from trace_pipeline import extract_graph, trace_completion
     from trace_pipeline_chunked import (
         build_cross_cluster_debug_records,
+        extract_compact_chunked_attribution,
         normalize_cross_cluster_debug_records,
+        trace_completion_compact_chunked,
     )
 
     payload = [
@@ -48,6 +52,21 @@ def run_checks() -> None:
     assert records[0]["record_index"] == 0
     assert records[1]["record_index"] == 1
     assert records[1]["checkpoint_name"] == "phase1_target_logits"
+
+    extract_signature = inspect.signature(extract_compact_chunked_attribution)
+    trace_signature = inspect.signature(trace_completion_compact_chunked)
+    full_graph_extract_signature = inspect.signature(extract_graph)
+    full_graph_trace_signature = inspect.signature(trace_completion)
+    assert extract_signature.parameters["exact_trace_internal_dtype"].default == "fp32"
+    assert trace_signature.parameters["exact_trace_internal_dtype"].default == "fp32"
+    assert (
+        full_graph_extract_signature.parameters["exact_trace_internal_dtype"].default
+        == "fp32"
+    )
+    assert (
+        full_graph_trace_signature.parameters["exact_trace_internal_dtype"].default
+        == "fp32"
+    )
 
 
 def run_launcher_and_extractor_roundtrip_checks() -> None:
@@ -96,8 +115,8 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         }
         run_config_payload = {
             "save_raw": True,
-            "exact_trace_internal_dtype": "fp64",
-            "exact_trace_internal_dtype_requested": "fp64",
+            "exact_trace_internal_dtype": "fp32",
+            "exact_trace_internal_dtype_requested": "fp32",
             "exact_trace_internal_dtype_contract_supported": False,
             "cross_cluster_debug": False,
             "telemetry_max_events": 11,
@@ -127,11 +146,11 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         benchmark_row = build_benchmark_index_row(scenario_root / "result.json")
         legacy_row = build_row(scenario_root / "result.json")
 
-        assert benchmark_row["exact_trace_internal_dtype"] == "fp64"
+        assert benchmark_row["exact_trace_internal_dtype"] == "fp32"
         assert benchmark_row["exact_trace_internal_dtype_contract_supported"] is False
         assert benchmark_row["telemetry_max_events"] == 11
 
-        assert legacy_row["exact_trace_internal_dtype"] == "fp64"
+        assert legacy_row["exact_trace_internal_dtype"] == "fp32"
         assert legacy_row["exact_trace_internal_dtype_contract_supported"] is False
         assert legacy_row["telemetry_max_events"] == 11
 
