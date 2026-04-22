@@ -27,6 +27,7 @@ EXACT_MODE_KNOB_KEYS = (
     "stage_error_vectors_on_cpu",
     "row_subchunk_size",
     "exact_trace_internal_dtype",
+    "phase0_activation_threshold_compare_mode",
     "plan_feature_batch_size",
     "auto_scale_feature_batch_size",
     "feature_batch_size_max",

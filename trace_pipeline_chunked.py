@@ -40,6 +40,26 @@ def parse_exact_trace_internal_dtype(value: str) -> str:
     )
 
 
+def parse_phase0_activation_threshold_compare_mode(value: str) -> str:
+    normalized = value.strip().lower()
+    aliases = {
+        "baseline": "baseline",
+        "default": "baseline",
+        "bf16": "bf16",
+        "bfloat16": "bf16",
+        "fp32": "fp32",
+        "float32": "fp32",
+        "fp64": "fp64",
+        "float64": "fp64",
+    }
+    resolved = aliases.get(normalized)
+    if resolved is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{baseline, bf16, fp32, fp64}}, got: {value!r}"
+        )
+    return resolved
+
+
 def resolve_internal_precision(exact_trace_internal_dtype: str) -> str:
     normalized = parse_exact_trace_internal_dtype(exact_trace_internal_dtype)
     return "float32" if normalized == "fp32" else "float64"
@@ -80,6 +100,7 @@ def extract_compact_chunked_attribution(
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
     exact_trace_internal_dtype: str = "fp64",
+    phase0_activation_threshold_compare_mode: str = "baseline",
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
     telemetry_max_events: int | None = None,
@@ -127,6 +148,7 @@ def extract_compact_chunked_attribution(
         cross_cluster_debug=cross_cluster_debug,
         telemetry_max_events=telemetry_max_events,
         compact_output=True,
+        phase0_activation_threshold_compare_mode=phase0_activation_threshold_compare_mode,
     )
 
 
@@ -316,6 +338,7 @@ def trace_completion_compact_chunked(
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
     exact_trace_internal_dtype: str = "fp64",
+    phase0_activation_threshold_compare_mode: str = "baseline",
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
     telemetry_max_events: int | None = None,
@@ -412,6 +435,7 @@ def trace_completion_compact_chunked(
             feature_batch_min_free_fraction=feature_batch_min_free_fraction,
             feature_batch_probe_batches=feature_batch_probe_batches,
             exact_trace_internal_dtype=exact_trace_internal_dtype,
+            phase0_activation_threshold_compare_mode=phase0_activation_threshold_compare_mode,
             phase4_anomaly_debug=phase4_anomaly_debug,
             cross_cluster_debug=cross_cluster_debug,
             telemetry_max_events=telemetry_max_events,
@@ -636,6 +660,10 @@ def trace_completion_compact_chunked(
                 "phase4_refresh_elapsed_seconds_total"
             ),
             "telemetry_max_events": compact_result.get("telemetry_max_events"),
+            "phase0_activation_threshold_compare_mode": compact_result.get(
+                "phase0_activation_threshold_compare_mode",
+                phase0_activation_threshold_compare_mode,
+            ),
             "exact_trace_internal_dtype_requested": (
                 normalize_requested_exact_trace_internal_dtype(
                     compact_result.get("exact_trace_internal_dtype_requested")
@@ -714,6 +742,9 @@ def trace_completion_compact_chunked(
         "exact_trace_internal_dtype": exact_trace_internal_dtype,
         "exact_trace_internal_dtype_requested": (
             resolved_exact_trace_internal_dtype_requested or exact_trace_internal_dtype
+        ),
+        "phase0_activation_threshold_compare_mode": (
+            phase0_activation_threshold_compare_mode
         ),
         "resolved_dtype_map": resolved_dtype_map_artifact,
         "phase4_anomaly_debug": phase4_anomaly_debug,
@@ -871,6 +902,12 @@ def run_pipeline(args: argparse.Namespace) -> None:
             "compact exact-chunked output. --save-raw/full-graph output does not support "
             "--exact-trace-internal-dtype values other than the default-compatible fp64 mode."
         )
+    if args.save_raw and args.phase0_activation_threshold_compare_mode != "baseline":
+        raise ValueError(
+            "Phase-0 activation threshold compare mode is currently supported only for "
+            "compact exact-chunked output. --save-raw/full-graph output must keep "
+            "--phase0-activation-threshold-compare-mode=baseline."
+        )
     if planner_enabled and args.save_raw:
         raise ValueError(
             "Phase-4 feature batch planner currently supports only compact exact-chunked output. "
@@ -950,6 +987,9 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "feature_batch_probe_batches": args.feature_batch_probe_batches,
         "exact_trace_internal_dtype": args.exact_trace_internal_dtype,
         "exact_trace_internal_dtype_requested": args.exact_trace_internal_dtype,
+        "phase0_activation_threshold_compare_mode": (
+            args.phase0_activation_threshold_compare_mode
+        ),
         "exact_trace_internal_dtype_contract_supported": not args.save_raw,
         "exact_trace_internal_dtype_contract_status": (
             "compact_exact_chunked"
@@ -1045,6 +1085,9 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 **(
                     {
                         "exact_trace_internal_dtype": args.exact_trace_internal_dtype,
+                        "phase0_activation_threshold_compare_mode": (
+                            args.phase0_activation_threshold_compare_mode
+                        ),
                         "cross_cluster_debug": args.cross_cluster_debug,
                     }
                     if not args.save_raw
@@ -1277,6 +1320,15 @@ if __name__ == "__main__":
         default="fp64",
         help=(
             "Internal dtype for exact-trace normalization/ranking path (fp32 or fp64)"
+        ),
+    )
+    parser.add_argument(
+        "--phase0-activation-threshold-compare-mode",
+        type=parse_phase0_activation_threshold_compare_mode,
+        default="baseline",
+        help=(
+            "Phase-0 JumpReLU activation/threshold compare mode "
+            "(baseline, bf16, fp32, or fp64)"
         ),
     )
     parser.add_argument(

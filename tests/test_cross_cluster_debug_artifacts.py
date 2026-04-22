@@ -71,6 +71,7 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         "gsm8k_indices": [94],
         "decoder_chunk_size": 2048,
         "exact_trace_internal_dtype": "fp32",
+        "phase0_activation_threshold_compare_mode": "fp32",
         "cross_cluster_debug": True,
         "telemetry_max_events": 17,
         "phase4_anomaly_debug": False,
@@ -82,6 +83,18 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
     assert "--cross-cluster-debug" in command
     assert "--telemetry-max-events" in command
     assert "17" in command
+    assert "--phase0-activation-threshold-compare-mode" in command
+    assert "fp32" in command
+
+    old_patch_command = build_command(
+        Path("/tmp/out"),
+        {
+            **scenario,
+            "method": "old_patch",
+        },
+    )
+    assert "trace_pipeline.py" in old_patch_command[1]
+    assert "--phase0-activation-threshold-compare-mode" not in old_patch_command
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         scenario_root = Path(tmp_dir) / "scenario"
@@ -99,6 +112,7 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
             "exact_trace_internal_dtype": "fp64",
             "exact_trace_internal_dtype_requested": "fp64",
             "exact_trace_internal_dtype_contract_supported": False,
+            "phase0_activation_threshold_compare_mode": "bf16",
             "cross_cluster_debug": False,
             "telemetry_max_events": 11,
             "attribution_batch_size": 128,
@@ -130,10 +144,12 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         assert benchmark_row["exact_trace_internal_dtype"] == "fp64"
         assert benchmark_row["exact_trace_internal_dtype_contract_supported"] is False
         assert benchmark_row["telemetry_max_events"] == 11
+        assert benchmark_row["phase0_activation_threshold_compare_mode"] == "bf16"
 
         assert legacy_row["exact_trace_internal_dtype"] == "fp64"
         assert legacy_row["exact_trace_internal_dtype_contract_supported"] is False
         assert legacy_row["telemetry_max_events"] == 11
+        assert legacy_row["phase0_activation_threshold_compare_mode"] == "bf16"
 
 
 def main() -> None:

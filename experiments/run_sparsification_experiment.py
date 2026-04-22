@@ -339,6 +339,16 @@ def build_command(
                 str(scenario["exact_trace_internal_dtype"]),
             ]
         )
+    if (
+        method != "old_patch"
+        and scenario.get("phase0_activation_threshold_compare_mode") is not None
+    ):
+        cmd.extend(
+            [
+                "--phase0-activation-threshold-compare-mode",
+                str(scenario["phase0_activation_threshold_compare_mode"]),
+            ]
+        )
 
     if method != "old_patch":
         cmd.extend(["--decoder-chunk-size", str(scenario["decoder_chunk_size"])])

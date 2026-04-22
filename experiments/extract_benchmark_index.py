@@ -1365,6 +1365,13 @@ def build_row(result_path: Path) -> dict[str, Any]:
         exact_trace_internal_dtype = scenario.get(
             "exact_trace_internal_dtype_requested"
         )
+    phase0_activation_threshold_compare_mode = run_config.get(
+        "phase0_activation_threshold_compare_mode"
+    )
+    if phase0_activation_threshold_compare_mode is None:
+        phase0_activation_threshold_compare_mode = scenario.get(
+            "phase0_activation_threshold_compare_mode"
+        )
 
     row = {
         "scenario_root": str(scenario_root),
@@ -1387,6 +1394,9 @@ def build_row(result_path: Path) -> dict[str, Any]:
         "logit_batch_size": scenario.get("logit_batch_size"),
         "decoder_chunk_size": scenario.get("decoder_chunk_size"),
         "exact_trace_internal_dtype": exact_trace_internal_dtype,
+        "phase0_activation_threshold_compare_mode": (
+            phase0_activation_threshold_compare_mode
+        ),
         "exact_trace_internal_dtype_contract_supported": run_config.get(
             "exact_trace_internal_dtype_contract_supported",
             not bool(save_raw),

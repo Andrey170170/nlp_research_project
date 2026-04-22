@@ -41,6 +41,7 @@ def base_trace_defaults() -> dict[str, Any]:
         "stage_error_vectors_on_cpu": None,
         "row_subchunk_size": None,
         "exact_trace_internal_dtype": "fp64",
+        "phase0_activation_threshold_compare_mode": "baseline",
         "plan_feature_batch_size": False,
         "auto_scale_feature_batch_size": False,
         "feature_batch_size_max": None,

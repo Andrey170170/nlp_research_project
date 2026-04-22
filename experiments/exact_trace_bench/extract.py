@@ -1550,6 +1550,10 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
                 scenario.get("exact_trace_internal_dtype"),
             ),
         ),
+        "phase0_activation_threshold_compare_mode": run_config.get(
+            "phase0_activation_threshold_compare_mode",
+            scenario.get("phase0_activation_threshold_compare_mode"),
+        ),
         "exact_trace_internal_dtype_contract_supported": run_config.get(
             "exact_trace_internal_dtype_contract_supported",
             not bool(run_config.get("save_raw")),
