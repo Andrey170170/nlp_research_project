@@ -16,7 +16,7 @@ set -euo pipefail
 
 cd "$SLURM_SUBMIT_DIR"
 
-OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS2136/jjivandas/temporal_prefix_cache/forward_cache}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS2136/jjivandas/temporal_prefix_cache/forward_cache_v2}"
 
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 export TOKENIZERS_PARALLELISM=false
