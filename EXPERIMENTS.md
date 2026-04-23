@@ -981,7 +981,411 @@ Resubmission:
 - replacement array job: `5044682`
 - replacement run id: `20260422_212821_phase4-rowstore-file-io-rerun-fast-ascend`
 
-- resubmitted; results pending.
+- completed and analyzed.
+
+Analysis provenance:
+
+- analysis time: `2026-04-22 22:10:00 -0400`
+- project workspace: `exact-trace-bench-opt@e73486a` (**dirty**)
+- library workspace: `exact-trace-hidden-knobs-opt@a370f0d`
+
+Observed result summary:
+
+- `5044682_0` (`828_base`) completed in `00:30:15`
+- `5044682_1` (`361_base`) hit the `01:00:00` walltime and timed out
+- the broad read/write file-I/O rewrite was a bad direction:
+  - `828_base` completion regressed from about `678.3s` to `1771.1s`
+  - `828_base` Phase 4 wall regressed from about `423.2s` to `1499.7s`
+  - `828_base` Phase 5 wall regressed from about `0.73s` to `24.51s`
+  - `828_base` refresh total regressed from about `160.3s` to `1277.6s`
+- process file RSS behavior improved, but the overall tradeoff was unacceptable.
+
+Interpretation:
+
+- replacing the **read path** with explicit file-I/O copies destroyed the cheap
+  demand-paged access pattern used by refresh and Phase 5,
+- the broad rewrite was therefore rejected,
+- the correct lesson was: fix **append/writeback residency** without replacing
+  the cheap read/materialization path.
+
+## Recent launch update — Phase 4 hybrid row-store rerun
+
+Purpose: rerun the canonical `828_base` / `361_base` Phase 4 memory probe after
+the **hybrid** row-store fix, which preserves the cheap read path and changes
+only append/writeback behavior.
+
+Library commits included in this rerun point:
+
+- `b79706e` — `add targeted phase4 memory attribution telemetry`
+- `e485fd3` — `Revert "replace exact row store memmap with file io"`
+- `db4705a` — `use direct writes for exact row-store appends`
+
+Provenance:
+
+- launch time: `2026-04-22 22:51:15 -0400`
+- project workspace: `exact-trace-bench-opt@e73486a` (**dirty**)
+- library workspace: `exact-trace-hidden-knobs-opt@db4705a`
+
+Launch submitted on Ascend:
+
+- fast validation array job: `5045541`
+
+Scenario file used:
+
+- `experiments/generated/exact_trace_phase4_hybrid_rowstore_rerun_fast_ascend_scenarios.json`
+
+Run metadata:
+
+- fast run id: `20260422_225115_phase4-hybrid-rowstore-rerun-fast-ascend`
+- run name: `phase4_hybrid_rowstore_rerun_fast_ascend`
+
+Submitted scenario matrix:
+
+- `828_base` on `ascend/fast` with `exact_trace_internal_dtype=fp32`
+- `361_base` on `ascend/fast` with `exact_trace_internal_dtype=fp32`
+
+Expected analysis targets:
+
+- compare batch-to-batch file RSS growth against the original Phase 4 probe,
+- confirm refresh wall time stays near the original probe baseline,
+- confirm Phase 5 wall time stays sane,
+- check whether the hybrid cut improves cgroup/Grafana behavior without the broad
+  file-I/O regression.
+
+Status:
+
+- completed and analyzed.
+
+Analysis provenance:
+
+- analysis time: `2026-04-22 23:20:00 -0400`
+- project workspace: `exact-trace-bench-opt@e73486a` (**dirty**)
+- library workspace: `exact-trace-hidden-knobs-opt@db4705a`
+
+Observed result summary:
+
+- both scenarios finished successfully.
+- job accounting:
+  - `5045541_0` (`828_base`) completed in `00:12:21`
+  - `5045541_1` (`361_base`) completed in `00:23:36`
+
+Exactness / artifact comparison:
+
+- compared against the original Phase 4 memory probe, the hybrid rerun preserved
+  exact compact outputs on both prompts:
+  - `mean_feature_jaccard = 1.0`
+  - `mean_edge_jaccard = 1.0`
+  - `mean_weighted_edge_jaccard = 1.0`
+
+Runtime comparison vs the original Phase 4 memory probe:
+
+- `828_base`:
+  - completion `678.30s -> 686.40s`
+  - Phase 4 wall `423.24s -> 434.24s`
+  - Phase 5 wall `0.73s -> 0.83s`
+  - refresh total `160.27s -> 141.14s`
+  - final RSS snapshot `133.32 GiB -> 133.29 GiB`
+- `361_base`:
+  - completion end-to-end `958.62s -> 1365.45s`
+  - attribution-only time `956.88s -> 1049.37s`
+  - Phase 4 wall `600.89s -> 674.39s`
+  - Phase 5 wall `1.08s -> 1.04s`
+  - refresh total `291.27s -> 247.71s`
+  - final RSS snapshot `229.10 GiB -> 229.08 GiB`
+
+Memory-behavior comparison vs the original Phase 4 memory probe:
+
+- the hybrid fix removed the strong **process file RSS** batch-to-batch growth
+  signature:
+  - `828_base`: median process-file jump between successive Phase 4 batch starts
+    fell from about `2.853 GiB` to about `0.0 GiB`
+  - `361_base`: median process-file jump fell from about `4.981 GiB` to about
+    `0.001 GiB`
+- however, the broader cgroup-visible growth still remained:
+  - `828_base`: median cgroup-current jump stayed about `2.867 GiB -> 2.861 GiB`
+  - `361_base`: median cgroup-current jump stayed about `5.003 GiB -> 4.993 GiB`
+
+Interpretation:
+
+- the hybrid fix is much better than the rejected broad file-I/O rewrite,
+- `828_base` is effectively back near the original probe baseline,
+- `361_base` still has a meaningful end-to-end slowdown, but the core
+  attribution-path timings remain much closer to baseline than the rejected
+  broad rewrite,
+- the remaining large cgroup growth looks more like **file-cache / kernel-level
+  accounting pressure** than a process-mapped file-RSS problem.
+
+About the weird `361_base` low-memory / low-utilization tail:
+
+- the log shows the main attribution work finished normally:
+  - `Feature attributions completed in 674.39s`
+  - `Phase 5` remained only about `1.04s`
+  - `teardown.cleanup` telemetry was only about `12.91s`
+- by teardown start, current memory had already collapsed sharply:
+  - `rss_current ≈ 10.25 GiB`
+  - `proc_file ≈ 0.45 GiB`
+  - `cg_current ≈ 42.95 GiB`
+- `completion_end_to_end_seconds` exceeded the attribution-only time by about
+  `316s`, so the long tail appears to live **outside** the instrumented
+  attribution phases.
+
+Current interpretation of the tail:
+
+- most likely outer pipeline / process-finalization / filesystem cleanup time,
+- not ongoing Phase 4 graph exploration,
+- not a Phase 5 packaging blow-up,
+- and not active GPU attribution work.
+
+Current conclusion:
+
+- the hybrid append/writeback fix is **good enough for now**.
+- RSS still grows, but not in a way that currently looks dramatic enough to make
+  the jobs unusable.
+- the remaining growth appears to be dominated more by **file-cache / broader
+  system accounting behavior** than by the original process file-RSS signature.
+- the only likely way to remove the problem much more aggressively would be a
+  broader redesign of Phase 4 (and possibly even Phase 3), which is out of scope
+  for the current safe fix.
+
+## Recent launch update — prompt-diversity validation after the hybrid fix
+
+Purpose: check how the current hybrid fix behaves on other healthy prompts beyond
+the canonical one-token base probes.
+
+Library commit included in this run point:
+
+- `db4705a` — `use direct writes for exact row-store appends`
+
+Provenance:
+
+- launch time: `2026-04-23 00:43:14 -0400`
+- project workspace: `exact-trace-bench-opt@e73486a` (**dirty**)
+- library workspace: `exact-trace-hidden-knobs-opt@db4705a`
+
+Launch submitted on Ascend:
+
+- fast validation array job: `5046318`
+
+Scenario file used:
+
+- `experiments/generated/exact_trace_prompt_diversity_fast_ascend_scenarios.json`
+
+Run metadata:
+
+- fast run id: `20260423_004314_prompt-diversity-fast-ascend`
+- run name: `prompt_diversity_fast_ascend`
+
+Submitted scenario matrix:
+
+- `828_late` on `ascend/fast` with `exact_trace_internal_dtype=fp32`
+- `361_late` on `ascend/fast` with `exact_trace_internal_dtype=fp32`
+
+Expected analysis targets:
+
+- see whether the hybrid fix generalizes beyond the canonical base one-token
+  probes,
+- inspect whether later-prefix healthy prompts produce qualitatively different
+  RSS or tail behavior,
+- compare runtime scaling against the known `828` / `361` base results.
+
+Status:
+
+- submitted; results pending.
+
+## Recent launch update — small multistep validation after the hybrid fix
+
+Purpose: inspect per-step cleanup/tail behavior and confirm that modest multistep
+generation remains operationally sane under the current hybrid fix.
+
+Library commit included in this run point:
+
+- `db4705a` — `use direct writes for exact row-store appends`
+
+Provenance:
+
+- launch time: `2026-04-23 00:43:14 -0400`
+- project workspace: `exact-trace-bench-opt@e73486a` (**dirty**)
+- library workspace: `exact-trace-hidden-knobs-opt@db4705a`
+
+Launch submitted on Ascend:
+
+- fast validation array job: `5046319`
+
+Scenario file used:
+
+- `experiments/generated/exact_trace_multistep_fast_ascend_scenarios.json`
+
+Run metadata:
+
+- fast run id: `20260423_004314_multistep-fast-ascend`
+- run name: `multistep_fast_ascend`
+
+Submitted scenario matrix:
+
+- `828_base` on `ascend/fast` with `exact_trace_internal_dtype=fp32` and
+  `max_steps=3`
+- `361_base` on `ascend/fast` with `exact_trace_internal_dtype=fp32` and
+  `max_steps=2`
+
+Expected analysis targets:
+
+- measure whether the weird `361` tail reproduces in multistep generation,
+- inspect whether cleanup/finalization cost appears per step or mostly at the end
+  of the completion,
+- understand whether step-to-step timing stays operationally reasonable.
+
+Status:
+
+- completed / analyzed
+
+Observed result summary:
+
+- `828_base` multistep succeeded for `max_steps=3`
+- `361_base` multistep succeeded for `max_steps=2`
+- the earlier weird one-step `361` completion tail did **not** reproduce as a
+  strong multistep pathology,
+- both prompts remained operationally sane under the current hybrid fix,
+- Phase 4 still remained the dominant wall-clock cost.
+
+Interpretation:
+
+- the hybrid append/writeback fix is operationally acceptable for modest
+  multistep base runs,
+- the remaining main within-trace speed target is still Phase 4,
+- the old weird `361` tail now looks more like a run-specific outer-tail effect
+  than a stable per-step tracing failure.
+
+## Recent launch update — Phase 4 locality / batch-shaping validation
+
+Purpose: validate the first fixed-frontier Phase 4 locality / batch-shaping pass
+against the current hybrid baseline on canonical fast prompts.
+
+Code state used:
+
+- library repo commit: `77393db` — `improve phase4 locality-shaped batching`
+
+Scenario file:
+
+- `experiments/generated/exact_trace_phase4_locality_validation_fast_ascend_scenarios.json`
+
+Launch metadata:
+
+- validation array job: `5058313`
+- run id: `20260423_phase4-locality-validation-fast-ascend`
+- run name: `phase4_locality_validation_fast_ascend`
+
+Scenarios:
+
+- `ascend_fast_828_base_phase4_locality_validation_fp32_b256_c4096_cache0`
+- `ascend_fast_361_base_phase4_locality_validation_fp32_b256_c4096_cache0`
+
+Status:
+
+- completed / analyzed
+
+Result summary vs the hybrid fp32 baseline:
+
+### `828_base`
+
+- completion text unchanged: `Here`
+- active features unchanged: `2993540`
+- retained edges unchanged: `20000`
+- Phase 4 wall-clock **regressed slightly**:
+  - baseline: `434.24 s`
+  - locality pass: `449.27 s`
+- total attribution also regressed slightly:
+  - baseline: `685.01 s`
+  - locality pass: `705.71 s`
+- RSS increased modestly:
+  - baseline: `133.29 GiB`
+  - locality pass: `136.05 GiB`
+- decoder loads improved slightly:
+  - baseline: `1107`
+  - locality pass: `1077`
+- Phase 4 refreshes / batches increased:
+  - baseline: `8 / 32`
+  - locality pass: `10 / 40`
+
+Interpretation for `828_base`:
+
+- the first shaping heuristic appears to have **over-split** the easier prompt,
+- small decoder-load / refresh improvements were not enough to offset the added
+  batch churn.
+
+### `361_base`
+
+- completion text unchanged: `Let`
+- active features unchanged: `5223267`
+- retained edges unchanged: `20000`
+- Phase 4 wall-clock improved materially:
+  - baseline: `674.39 s`
+  - locality pass: `504.12 s`
+- total attribution improved materially:
+  - baseline: `1049.37 s`
+  - locality pass: `867.39 s`
+- RSS increased:
+  - baseline: `229.08 GiB`
+  - locality pass: `244.25 GiB`
+- decoder loads improved slightly:
+  - baseline: `1650`
+  - locality pass: `1623`
+- Phase 4 refreshes / batches increased:
+  - baseline: `8 / 32`
+  - locality pass: `10 / 37`
+
+Interpretation for `361_base`:
+
+- the locality direction is likely **real** on the harder base prompt,
+- but the first heuristic was too aggressive overall.
+
+Overall conclusion from the first locality pass:
+
+- not ready to call finished,
+- keep the locality direction,
+- refine the split heuristic to reduce gratuitous over-splitting before deciding
+  whether the approach is a clean win.
+
+## Recent launch update — Phase 4 locality / batch-shaping validation v2
+
+Purpose: rerun the canonical fast validation after making the locality split
+heuristic more conservative.
+
+Code state used:
+
+- library repo commit: `3592685` — `tune phase4 locality split thresholds`
+
+What changed relative to the first locality pass:
+
+- avoid too-small leading split batches,
+- only preserve relatively short trailing layer/chunk runs,
+- keep the locality direction while reducing over-splitting pressure.
+
+Scenario file:
+
+- `experiments/generated/exact_trace_phase4_locality_validation_v2_fast_ascend_scenarios.json`
+
+Launch metadata:
+
+- validation array job: `5063198`
+- run id: `20260423_phase4-locality-validation-v2-fast-ascend`
+- run name: `phase4_locality_validation_v2_fast_ascend`
+
+Scenarios:
+
+- `ascend_fast_828_base_phase4_locality_validation_v2_fp32_b256_c4096_cache0`
+- `ascend_fast_361_base_phase4_locality_validation_v2_fp32_b256_c4096_cache0`
+
+Expected analysis targets:
+
+- see whether the `828_base` regression disappears or shrinks,
+- see whether a useful share of the `361_base` improvement remains,
+- compare refresh counts / batch counts against both the hybrid baseline and the
+  first locality run,
+- decide whether locality is ready to keep or still needs another refinement.
+
+Status:
+
+- submitted; results pending.
 
 ## Status of this note
 

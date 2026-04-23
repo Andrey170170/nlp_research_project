@@ -1,203 +1,277 @@
-# Current Implementation Plan — Phase 4 Hybrid Row-Store Fix
+# Current Implementation Plan — Phase 4 Frontier Planner V1
 
 ## 1. Problem statement
 
-The permanent overflow fix remains validated and fp32 remains the correct default
-for exact compact tracing.
+The current Phase 4 locality / batch-shaping work is useful, but it is still an
+ad hoc layer on top of the old scheduler loop. While the v2 locality validation
+is queued, the next implementation item is to build a real **Phase 4 Frontier
+Planner V1**.
 
-The latest Phase 4 investigation changed the immediate priority again.
+Planner V1 is not intended to be the final scheduler optimization. It is the
+foundation for later cache-aware, membership-aware, or adaptive policies.
 
-Current best-supported conclusion:
+Immediate goal:
 
-- the main recurring scheduler-relevant Phase 4 growth is still concentrated
-  **between** `compute_batch(...)` calls,
-- the strongest current suspect remains the **row append / writeback path**, not
-  refresh ranking itself,
-- however, the broad row-store rewrite that replaced the full read/write path
-  with explicit file I/O was the wrong fix:
-  - refresh became far slower,
-  - Phase 5 also became much slower,
-  - RSS behavior did not improve enough to justify the regression.
+> consolidate Phase 4 frontier selection, ordering, batch construction,
+> boundary reasons, invariants, flags, and telemetry into one explicit planner
+> path while preserving selected-node membership for each refresh.
 
-Operational conclusion:
+## 2. Working assumptions
 
-- the current problem is still a **row-store memory behavior** problem,
-- but the safe fix is **not** a full row-store file-I/O replacement,
-- we need to preserve the cheap read path for refresh and Phase 5,
-- and target only the **append/writeback residency behavior**.
+- fp32 exact compact tracing remains the default.
+- The hybrid row-store append/writeback fix remains the accepted memory baseline.
+- The current locality-shaped path remains the validated fallback until Planner V1
+  clears canonical validation.
+- This work is within-trace optimization, not cross-trace or prefix reuse.
+- This is a live experimental scheduler path, not shadow mode.
+- Git rollback is acceptable, but cluster time is not free; therefore diagnostics
+  must be rich enough to localize regressions quickly.
+- Planner V1 should preserve frontier membership within a refresh; later planner
+  versions can relax this deliberately.
 
-## 2. Chosen approach
-
-Chosen implementation direction:
-
-1. **keep/reintroduce the cheap mmap-style read path** for:
-   - `read_feature_rows(...)`
-   - `materialize_dense_feature_slice(...)`
-2. **change only the append/writeback path** so Phase 4 no longer keeps a
-   long-lived writable full-file mapping hot across batches,
-3. validate that this reduces the batch-aligned file-backed RSS growth without
-   regressing refresh or Phase 5,
-4. only after that, revisit smaller staging/cache cleanup.
-
-Explicitly rejected as the current path:
-
-- full row-store file-I/O replacement for both writes and reads,
-- refresh/scheduler redesign as the immediate fix,
-- cheaper frontier indexes/scores as the immediate fix,
-- two-tier storage as the immediate fix.
-
-## 3. Scope / non-goals
+## 3. Scope
 
 ### In scope
 
-- `_FileBackedFeatureRowStore.append_rows(...)`,
-- row-store writeback mechanics and append-side residency behavior,
-- preserving or restoring the cheap existing read/materialization path,
-- focused tests for exact row content, ordering, and denominator semantics,
-- lightweight follow-up staging/cache hygiene only after the main hybrid fix is
-  validated.
+- Add a feature-gated Phase 4 planner mode.
+- Consolidate current rank → locality reorder → shaped slicing logic into a
+  structured planner result.
+- Emit structured planner telemetry and stable scheduler metadata.
+- Add invariants for selected-node membership, duplicate/missing nodes, and
+  non-advancing batch boundaries.
+- Add focused local tests for planner behavior and telemetry shape.
+- Prepare canonical fast validation against existing baselines.
 
-Primary files likely in scope:
+Primary library files likely in scope:
 
 - `../worktrees_opt/circuit-tracer_chunked/circuit_tracer/attribution/attribute_nnsight.py`
-- `../worktrees_opt/circuit-tracer_chunked/tests/test_attribute_nnsight_telemetry.py`
-- `../worktrees_opt/circuit-tracer_chunked/tests/test_partial_influences.py`
 - `../worktrees_opt/circuit-tracer_chunked/tests/test_chunked_decoder_optimizations.py`
+- `../worktrees_opt/circuit-tracer_chunked/tests/test_attribute_nnsight_telemetry.py`
 
-### Non-goals
+Project files likely in scope if flag plumbing is needed:
 
-- no frontier-selection changes,
-- no approximate scheduler/index redesign,
-- no full read-path replacement,
-- no major `compute_batch(...)` redesign in this phase,
-- no GPU launches from login nodes.
+- `trace_pipeline_chunked.py`
+- scenario-generation helpers under `experiments/`
 
-## 4. Root-cause model to act on
+### Non-goals for Planner V1
 
-Current working model:
+- Do not change selected frontier membership as a policy goal.
+- Do not introduce approximation on the exact compact path.
+- Do not reopen broad row-store read-path rewrite.
+- Do not start a large decoder-cache or hidden-knob sweep.
+- Do not make Planner V1 the default until canonical validation passes.
 
-1. `ctx.compute_batch(...)` produces a large row block,
-2. Phase 4 staging prepares CPU rows,
-3. append/writeback makes more of the backing row store hot/resident,
-4. that batch-aligned growth drives the bad file-backed/cgroup pattern.
+## 4. Required flags / metadata
 
-New lesson from the rejected experiment:
+Planner V1 must be selectable without code patches between runs.
 
-- replacing **reads** with explicit file-I/O copies destroys the cheap demand-
-  paged path used heavily by refresh and Phase 5,
-- so the next fix must stay narrow:
-  **fix writeback residency while preserving read efficiency**.
+Required scheduler mode flag:
 
-## 5. Main implementation workstreams
+- `phase4_scheduler_mode`
+  - `locality` = current validated locality-shaped fixed-frontier path,
+  - `planner_v1` = new membership-preserving planner path,
+  - `legacy` can exist if cheap to preserve, but is not required if it complicates
+    the implementation,
+  - later reserved modes: `planner_v2`, `adaptive`.
 
-### Workstream A — hybrid row-store fix
+Required debug / telemetry controls:
 
-Goal: keep the row-store read path cheap while changing append/writeback behavior
-to reduce batch-aligned file-backed RSS growth.
+- `phase4_scheduler_debug` or equivalent,
+- optional `phase4_scheduler_telemetry_detail=summary|normal|debug` if the event
+  volume needs finer control,
+- compatibility with existing `profile`, `compact_output`, `cross_cluster_debug`,
+  and `telemetry_max_events`.
 
-Target design:
+Every run should record:
 
-- use a **hybrid** row-store,
-- preserve mmap-style cheap reads/materialization,
-- replace only the append-side writable full-file behavior with a narrower write
-  mechanism, such as:
-  - explicit offset writes, or
-  - a short-lived append-window mapping that is flushed/unmapped immediately,
-- if needed, reopen/invalidate the read view after append so semantics remain
-  simple and exact.
+- `phase4_scheduler_mode`,
+- `phase4_scheduler_version`,
+- `phase4_scheduler_policy`,
+- `phase4_scheduler_debug`,
+- `phase4_scheduler_telemetry_detail` if present,
+- `feature_batch_size`,
+- `update_interval`,
+- `actual_max_feature_nodes`,
+- `total_active_features`,
+- `exact_chunked_decoder`,
+- `decoder_chunk_size`,
+- `cross_batch_decoder_cache_bytes`,
+- `exact_trace_internal_dtype`,
+- whether membership-preservation checks were enabled.
 
-Implementation constraints:
+## 5. Planner V1 design target
 
-- exact same row content,
-- exact same `row_to_node_index` alignment,
-- exact same denominator semantics,
-- no silent approximation,
-- no change to frontier or queue semantics.
+Create a small planner surface that takes refresh-time state and returns a plan.
 
-### Workstream B — validate the hybrid cut before extras
+Conceptual inputs:
 
-Goal: show that the writeback-targeted fix improves memory behavior without the
-large read-path regression seen in the rejected full file-I/O attempt.
+- unvisited feature rank / candidate indices,
+- candidate scores or score lookup,
+- visited mask,
+- feature metadata: layer, position, feature id, decoder chunk,
+- feature batch size,
+- update interval,
+- selected-feature target and current `n_visited`,
+- scheduler mode/config.
 
-Questions to answer:
+Conceptual output:
 
-1. does batch-aligned file-backed RSS growth shrink materially,
-2. does refresh wall time stay near the earlier probe baseline,
-3. does Phase 5 wall time stay sane,
-4. do outputs remain unchanged.
+- selected frontier tensor,
+- list of planned feature batches,
+- selected membership hash,
+- selected order hash,
+- locality / fragmentation summary,
+- batch-size distribution,
+- batch boundary reasons,
+- invariant/debug summary,
+- telemetry payloads for refresh and batch events.
 
-### Workstream C — follow-up staging/cache hygiene after validation
+Planner V1 policy:
 
-This stays **second**, not first.
+1. select the same top unvisited influence candidates as the current locality path
+   would select for that refresh,
+2. order/group the selected frontier for source-layer and decoder-chunk locality,
+3. build shaped batches with explicit boundary reasons,
+4. execute planned batches directly in the Phase 4 loop,
+5. record plan-level and batch-level telemetry.
 
-Candidate follow-up cleanup:
+## 6. Required telemetry
 
-- reduce or disable row-store read cache only if it still contributes after the
-  hybrid fix,
-- shrink/reset reusable CPU staging buffers when safe,
-- remove obviously unnecessary staging retention.
+The durable telemetry requirements live in
+`docs/phase4_scheduler_v2_spec.md`. For this implementation pass, make sure the
+following minimum set lands:
 
-Decision rule:
+### Phase summary
 
-- do this only after the hybrid writeback fix is validated, so its effect stays
-  measurable.
+- scheduler mode/version/policy,
+- selected feature count,
+- Phase 4 wall time,
+- refresh count,
+- feature-batch count,
+- total refresh elapsed time,
+- selected-node membership/order hashes,
+- peak memory snapshots already supported by existing helpers.
 
-## 6. Implementation order
+### Refresh/plan summary
 
-Recommended sequence:
+- refresh index,
+- stored row count,
+- visited count,
+- unvisited candidate count,
+- pre-plan frontier size,
+- planned frontier size,
+- frontier hash and sample,
+- candidate score stats / cutoff margin,
+- planner decision elapsed time,
+- locality fragmentation summary,
+- planned batch count and batch-size distribution,
+- boundary reason counts.
 
-1. back out the rejected broad read/write file-I/O replacement if needed,
-2. implement the **append-side-only** hybrid writeback change,
-3. preserve or restore cheap mmap-style reads/materialization,
-4. update focused tests for row-store correctness and telemetry invariants,
-5. run lightweight local validation,
-6. rerun the small Ascend Phase 4 memory probe on:
-   - `828_base`
-   - `361_base`
-7. compare:
-   - batch-to-batch file RSS growth,
-   - cgroup/Grafana spike shape,
-   - refresh wall time,
-   - Phase 5 wall time,
-   - exact artifact/correctness invariants,
-8. only then add the smaller staging/cache hygiene cleanup.
+### Batch summary
 
-## 7. Acceptance criteria
+- global Phase 4 batch index,
+- originating refresh index,
+- batch row count,
+- batch node hash/sample,
+- distinct source layers,
+- distinct decoder chunks,
+- monotonic chunk-order flag,
+- compute-batch elapsed time,
+- row append/writeback timing if cheap to expose,
+- memory before/after.
 
-This plan is successful when:
+### Invariants
 
-1. the batch-aligned file-backed RSS growth is materially reduced on the canonical
-   fast prompts,
-2. process file RSS no longer tracks Phase 4 batch-buffer size nearly 1:1,
-3. refresh wall time does not suffer a major regression relative to the earlier
-   Phase 4 memory probe baseline,
-4. Phase 5 wall time does not blow up,
-5. fp32 compact outputs remain stable,
-6. retained edges remain `20000`,
-7. decoder-load counts remain stable.
+- membership-preservation hash check against the current locality-selected
+  frontier,
+- duplicate selected-node count,
+- missing selected-node count,
+- non-advancing boundary detection,
+- nonfinite score count,
+- explicit fallback/abort reason if Planner V1 cannot form a valid plan.
 
-## 8. Risks and open questions
+## 7. Implementation sequence
 
-- append-side-only changes may still leave too much residency pressure,
-- keeping cheap reads may preserve some of the original file-backed growth,
-- reopening/invalidation logic must stay simple enough to avoid row-store bugs,
-- staging/cache hygiene may still be needed, but it should remain secondary,
-- broader scheduler ideas may still be valuable later, but they should not be
-  mixed into the current safe fix.
+1. Add scheduler mode parsing / validation in the library attribution path.
+2. Add a small internal planner result structure and helper functions.
+3. Move current locality reorder + shaped batch slicing into Planner V1 while
+   preserving current membership semantics.
+4. Route the Phase 4 loop through the planner when
+   `phase4_scheduler_mode=planner_v1`.
+5. Keep the current locality path available as the A/B fallback.
+6. Add scheduler metadata to run/phase telemetry.
+7. Add refresh-level plan telemetry.
+8. Add batch-level plan telemetry.
+9. Add invariant checks and clear error/fallback reporting.
+10. Add focused tests.
+11. Run lightweight local validation only.
+12. Prepare small Ascend validation scenarios for `828_base` and `361_base`.
 
-## 9. Later scheduler-redesign considerations
+## 8. Local validation
 
-These are **not** standalone work items for the current phase.
+Run only lightweight checks locally:
 
-Do not pursue them now as separate optimization tracks. Only reconsider them if
-they become useful during a later **scheduler/frontier redesign** and only in
-that broader context where we can reason about graph exploration behavior and the
-memory operations implied by the new scheduler shape.
+- `uv run pytest tests/test_chunked_decoder_optimizations.py`
+- `uv run pytest tests/test_attribute_nnsight_telemetry.py`
+- `uv run ruff check circuit_tracer/attribution/attribute_nnsight.py tests/test_chunked_decoder_optimizations.py tests/test_attribute_nnsight_telemetry.py`
 
-Examples to keep in mind later, not now:
+No GPU/model execution outside SLURM.
 
-- two-tier hot/cold row storage,
-- cheaper scheduler indexes/summaries,
-- incremental refresh state,
-- approximate ranking or prefilter schemes,
-- larger storage/layout redesigns coordinated with scheduler work.
+## 9. Cluster validation after implementation
+
+First validation should compare Planner V1 against current locality/hybrid
+baselines on canonical fast prompts:
+
+- `828_base`
+- `361_base`
+
+Primary questions:
+
+1. did selected-node membership remain stable by design,
+2. did compact outputs / retained edges remain acceptable,
+3. did Planner V1 avoid obvious runtime regression,
+4. did telemetry explain batch counts, refresh counts, and locality shape,
+5. did `828_base` avoid the over-splitting behavior seen in the first locality
+   pass,
+6. did `361_base` preserve a meaningful Phase 4 improvement.
+
+Do not use `361_late` as the first Planner V1 benchmark; it still looks partly
+like a parameter-feasibility / VRAM-planning problem.
+
+## 10. Acceptance criteria
+
+Planner V1 is successful as a foundation when:
+
+1. it runs behind an explicit mode flag,
+2. it preserves current selected-frontier membership within a refresh,
+3. it emits the required scheduler/plan telemetry,
+4. focused local tests pass,
+5. canonical fast validation is easy to compare against current baselines,
+6. any runtime regression can be localized to candidate scoring, frontier
+   grouping, refresh cadence, decoder-load churn, row-store behavior, or memory
+   pressure.
+
+Planner V1 does not need to reach the final ~3 minute end-to-end trace target by
+itself. Its main job is to make later scheduler policies cheap and safe to test.
+
+## 11. Later work unlocked by Planner V1
+
+After Planner V1 validates, choose the next policy experiment:
+
+1. **bounded membership-aware Planner V2** — choose from a wider high-score window
+   to improve cache locality while measuring overlap/score loss,
+2. **adaptive refresh planner** — adjust refresh cadence based on cutoff margin,
+   fragmentation, useful chunk runs, or memory signals,
+3. **hard-prompt planner** — safer long-prefix behavior for cases like
+   `361_late`,
+4. **decoder-cache tuning** — use Planner V1 telemetry to choose cache sizes more
+   intelligently rather than sweeping blindly.
+
+## 12. Current risks / open questions
+
+- Planner V1 may mostly improve code structure and telemetry rather than runtime.
+- Rich telemetry may need caps to avoid large artifacts.
+- Membership-preserving scheduling may not be enough for the ~3 minute target;
+  Planner V2 likely needs bounded membership changes.
+- The current locality v2 validation result may slightly change the fallback path
+  we compare against, but it should not block Planner V1 implementation.
