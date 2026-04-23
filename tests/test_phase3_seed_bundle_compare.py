@@ -74,4 +74,57 @@ def test_compare_phase3_seed_bundles_reports_shared_support_decomposition(
 
     assert result["frontier_post_locality"]["jaccard"] == (1 / 3)
     assert result["frontier_post_locality"]["shared_support_only_jaccard"] == 1.0
+    assert result["frontier_post_locality"][
+        "shared_support_improvement"
+    ] == pytest.approx(2 / 3)
+    assert (
+        result["shared_support_score_stability"]["seed_feature_influences"][
+            "shared_count"
+        ]
+        == 2
+    )
+    assert (
+        result["shared_support_score_stability"]["seed_feature_influences"][
+            "topk_overlap"
+        ]["64"]["shared_count"]
+        == 2
+    )
+    assert result["unique_support_details"]["left_top_unique_by_abs_influence"][0][
+        "feature"
+    ] == [0, 0, 3]
     assert result["interpretation"] == "phase3_mostly_explained_by_phase0_support_split"
+
+
+def test_compare_phase3_seed_bundles_reports_shared_rank_reordering(tmp_path) -> None:
+    left = tmp_path / "left_phase3_seed_bundle.npz"
+    right = tmp_path / "right_phase3_seed_bundle.npz"
+    features = [(0, 0, 1), (0, 0, 2), (0, 0, 3), (0, 0, 4)]
+
+    _write_bundle(
+        left,
+        active_features=features,
+        activation_values=[4.0, 3.0, 2.0, 1.0],
+        influences=[0.4, 0.3, 0.2, 0.1],
+        pre=[0, 1, 2, 3],
+        post=[0, 1, 2, 3],
+    )
+    _write_bundle(
+        right,
+        active_features=features,
+        activation_values=[1.0, 2.0, 3.0, 4.0],
+        influences=[0.1, 0.2, 0.3, 0.4],
+        pre=[3, 2, 1, 0],
+        post=[3, 2, 1, 0],
+    )
+
+    result = compare_phase3_seed_bundles(left, right)
+    influence_stability = result["shared_support_score_stability"][
+        "seed_feature_influences"
+    ]
+    post_rank_drift = result["frontier_post_locality"]["rank_drift"]
+
+    assert influence_stability["shared_count"] == 4
+    assert influence_stability["spearman"] == pytest.approx(-1.0)
+    assert influence_stability["topk_overlap"]["64"]["overlap_fraction_of_k"] == 1.0
+    assert post_rank_drift["shared_frontier_count"] == 4
+    assert post_rank_drift["abs_rank_delta_quantiles"]["q100"] == pytest.approx(3.0)
