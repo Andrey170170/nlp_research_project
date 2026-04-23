@@ -268,6 +268,11 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     cross_cluster_debug_batches_manifest_counts: list[int] = []
     exact_trace_internal_dtype_requested_values: list[str] = []
     resolved_dtype_maps: list[dict[str, Any]] = []
+    phase4_scheduler_modes: list[str] = []
+    phase4_scheduler_versions: list[str] = []
+    phase4_scheduler_policies: list[str] = []
+    phase4_scheduler_debug_values: list[bool] = []
+    phase4_scheduler_telemetry_details: list[str] = []
     completion_timing_summary_count = 0
     completion_timing_completion_end_to_end_values: list[float] = []
     completion_timing_step_counts: list[int] = []
@@ -443,6 +448,28 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
         resolved_dtype_map = manifest.get("resolved_dtype_map")
         if isinstance(resolved_dtype_map, dict):
             resolved_dtype_maps.append(resolved_dtype_map)
+
+        scheduler_mode = manifest.get("phase4_scheduler_mode_effective")
+        if not isinstance(scheduler_mode, str):
+            scheduler_mode = manifest.get("phase4_scheduler_mode")
+        if isinstance(scheduler_mode, str):
+            phase4_scheduler_modes.append(scheduler_mode)
+        scheduler_version = manifest.get("phase4_scheduler_version")
+        if isinstance(scheduler_version, str):
+            phase4_scheduler_versions.append(scheduler_version)
+        scheduler_policy = manifest.get("phase4_scheduler_policy")
+        if isinstance(scheduler_policy, str):
+            phase4_scheduler_policies.append(scheduler_policy)
+        scheduler_debug = manifest.get("phase4_scheduler_debug_effective")
+        if not isinstance(scheduler_debug, bool):
+            scheduler_debug = manifest.get("phase4_scheduler_debug")
+        if isinstance(scheduler_debug, bool):
+            phase4_scheduler_debug_values.append(scheduler_debug)
+        scheduler_detail = manifest.get("phase4_scheduler_telemetry_detail_effective")
+        if not isinstance(scheduler_detail, str):
+            scheduler_detail = manifest.get("phase4_scheduler_telemetry_detail")
+        if isinstance(scheduler_detail, str):
+            phase4_scheduler_telemetry_details.append(scheduler_detail)
 
         cross_cluster_debug_ref = manifest.get("cross_cluster_debug_path")
         resolved_cross_cluster_debug_path: Path | None = None
@@ -1001,6 +1028,56 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
             manifest_phase4_planner_skip_reasons[-1]
             if manifest_phase4_planner_skip_reasons
             else None
+        ),
+        **(
+            {
+                "phase4_scheduler_mode": phase4_scheduler_modes[-1],
+                "phase4_scheduler_modes_observed": sorted(set(phase4_scheduler_modes)),
+            }
+            if phase4_scheduler_modes
+            else {}
+        ),
+        **(
+            {
+                "phase4_scheduler_version": phase4_scheduler_versions[-1],
+                "phase4_scheduler_versions_observed": sorted(
+                    set(phase4_scheduler_versions)
+                ),
+            }
+            if phase4_scheduler_versions
+            else {}
+        ),
+        **(
+            {
+                "phase4_scheduler_policy": phase4_scheduler_policies[-1],
+                "phase4_scheduler_policies_observed": sorted(
+                    set(phase4_scheduler_policies)
+                ),
+            }
+            if phase4_scheduler_policies
+            else {}
+        ),
+        **(
+            {
+                "phase4_scheduler_debug": phase4_scheduler_debug_values[-1],
+                "phase4_scheduler_debug_values_observed": sorted(
+                    set(phase4_scheduler_debug_values)
+                ),
+            }
+            if phase4_scheduler_debug_values
+            else {}
+        ),
+        **(
+            {
+                "phase4_scheduler_telemetry_detail": phase4_scheduler_telemetry_details[
+                    -1
+                ],
+                "phase4_scheduler_telemetry_details_observed": sorted(
+                    set(phase4_scheduler_telemetry_details)
+                ),
+            }
+            if phase4_scheduler_telemetry_details
+            else {}
         ),
         "exact_trace_internal_dtype_requested": (
             exact_trace_internal_dtype_requested_values[-1]
