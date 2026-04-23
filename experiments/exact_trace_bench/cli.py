@@ -16,6 +16,7 @@ from .fixtures import describe_fixture_tiers
 from .graph_compare import compare_artifact_dirs
 from .io_utils import ensure_dir
 from .jobs import render_launch_plan
+from .phase3_seed_bundle_compare import compare_phase3_seed_bundles_to_json
 from .presets import preset_names, run_preset
 from .scenarios import SCENARIO_TIERS, build_tier_config, write_tier_config
 from .workspace import (
@@ -76,6 +77,17 @@ def _cmd_compare_compact(args: argparse.Namespace) -> None:
         ensure_dir(args.output_json.parent)
         args.output_json.write_text(json.dumps(summary, indent=2), encoding="utf-8")
         print(f"Wrote comparison summary to {args.output_json}")
+    print(json.dumps(summary, indent=2))
+
+
+def _cmd_compare_phase3_seed_bundles(args: argparse.Namespace) -> None:
+    summary = compare_phase3_seed_bundles_to_json(
+        args.left_bundle,
+        args.right_bundle,
+        output_json=args.output_json,
+    )
+    if args.output_json is not None:
+        print(f"Wrote Phase-3 seed bundle comparison to {args.output_json}")
     print(json.dumps(summary, indent=2))
 
 
@@ -248,6 +260,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional output path for comparison JSON",
     )
     compare_compact.set_defaults(func=_cmd_compare_compact)
+
+    compare_phase3 = subparsers.add_parser(
+        "compare-phase3-seed-bundles",
+        help="Compare two saved Phase-3 seed bundle artifacts",
+    )
+    compare_phase3.add_argument("left_bundle", type=Path)
+    compare_phase3.add_argument("right_bundle", type=Path)
+    compare_phase3.add_argument(
+        "--output-json",
+        type=Path,
+        default=None,
+        help="Optional output path for comparison JSON",
+    )
+    compare_phase3.set_defaults(func=_cmd_compare_phase3_seed_bundles)
 
     snapshot = subparsers.add_parser(
         "snapshot-workspace",
