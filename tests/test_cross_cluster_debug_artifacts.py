@@ -89,6 +89,7 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         "exact_trace_internal_dtype": "fp32",
         "phase0_activation_threshold_compare_mode": "fp32",
         "cross_cluster_debug": True,
+        "capture_phase3_seed_bundle": True,
         "telemetry_max_events": 17,
         "phase4_anomaly_debug": False,
     }
@@ -101,6 +102,7 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
     assert "17" in command
     assert "--phase0-activation-threshold-compare-mode" in command
     assert "fp32" in command
+    assert "--capture-phase3-seed-bundle" in command
 
     old_patch_command = build_command(
         Path("/tmp/out"),
@@ -111,6 +113,7 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
     )
     assert "trace_pipeline.py" in old_patch_command[1]
     assert "--phase0-activation-threshold-compare-mode" not in old_patch_command
+    assert "--capture-phase3-seed-bundle" not in old_patch_command
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         scenario_root = Path(tmp_dir) / "scenario"
@@ -154,6 +157,44 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
             json.dumps(run_config_payload, indent=2)
         )
 
+        prompt_dir = artifact_dir / "prompt_000"
+        completion_dir = prompt_dir / "completion_000"
+        completion_dir.mkdir(parents=True, exist_ok=True)
+        (prompt_dir / "prompt_meta.json").write_text(
+            json.dumps(
+                {
+                    "prompt_source": "gsm8k",
+                    "prompt_token_count": 12,
+                    "initial_input_token_count": 12,
+                },
+                indent=2,
+            )
+        )
+        seed_bundle_name = "step_000_phase3_seed_bundle.npz"
+        (completion_dir / seed_bundle_name).write_bytes(b"placeholder")
+        (completion_dir / "completion.json").write_text(
+            json.dumps(
+                {
+                    "prompt_source": "gsm8k",
+                    "prompt_token_count": 12,
+                    "initial_input_token_count": 12,
+                    "generated_token_count": 1,
+                    "n_steps_traced": 1,
+                    "phase3_seed_bundle_capture_enabled": True,
+                    "phase3_seed_bundle_status": "captured",
+                    "phase3_seed_bundle_statuses_observed": ["captured"],
+                    "steps": [
+                        {
+                            "phase3_seed_bundle_capture_enabled": True,
+                            "phase3_seed_bundle_path": seed_bundle_name,
+                            "phase3_seed_bundle_status": "captured",
+                        }
+                    ],
+                },
+                indent=2,
+            )
+        )
+
         benchmark_row = build_benchmark_index_row(scenario_root / "result.json")
         legacy_row = build_row(scenario_root / "result.json")
 
@@ -166,6 +207,14 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         assert legacy_row["exact_trace_internal_dtype_contract_supported"] is False
         assert legacy_row["telemetry_max_events"] == 11
         assert legacy_row["phase0_activation_threshold_compare_mode"] == "bf16"
+
+        assert benchmark_row["phase3_seed_bundle_present"] is True
+        assert benchmark_row["phase3_seed_bundle_file_count"] == 1
+        assert benchmark_row["phase3_seed_bundle_status"] == "captured"
+
+        assert legacy_row["phase3_seed_bundle_present"] is True
+        assert legacy_row["phase3_seed_bundle_file_count"] == 1
+        assert legacy_row["phase3_seed_bundle_status"] == "captured"
 
 
 def main() -> None:

@@ -71,6 +71,57 @@ def normalize_requested_exact_trace_internal_dtype(value: Any) -> str | None:
     return parse_exact_trace_internal_dtype(value)
 
 
+def _to_numpy_seed_bundle_array(value: Any) -> base.np.ndarray:
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu().numpy()
+    if isinstance(value, base.np.ndarray):
+        return value
+    if isinstance(value, (list, tuple)):
+        return base.np.asarray(value)
+    return base.np.asarray(value)
+
+
+def save_phase3_seed_bundle(
+    payload: dict[str, Any],
+    path: Path,
+) -> None:
+    status = payload.get("status")
+    planner_compute_dtype = payload.get("planner_compute_dtype")
+    influence_compute_dtype = payload.get("influence_compute_dtype")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    base.np.savez_compressed(
+        str(path),
+        active_features=_to_numpy_seed_bundle_array(payload.get("active_features", [])),
+        activation_values=_to_numpy_seed_bundle_array(
+            payload.get("activation_values", [])
+        ),
+        seed_feature_influences=_to_numpy_seed_bundle_array(
+            payload.get("seed_feature_influences", [])
+        ),
+        frontier_pre_locality=_to_numpy_seed_bundle_array(
+            payload.get("frontier_pre_locality", [])
+        ),
+        frontier_post_locality=_to_numpy_seed_bundle_array(
+            payload.get("frontier_post_locality", [])
+        ),
+        queue_size=base.np.array(payload.get("queue_size", 0), dtype=base.np.int64),
+        actual_max_feature_nodes=base.np.array(
+            payload.get("actual_max_feature_nodes", 0), dtype=base.np.int64
+        ),
+        total_active_features=base.np.array(
+            payload.get("total_active_features", 0), dtype=base.np.int64
+        ),
+        status=base.np.array("" if status is None else str(status)),
+        planner_compute_dtype=base.np.array(
+            "" if planner_compute_dtype is None else str(planner_compute_dtype)
+        ),
+        influence_compute_dtype=base.np.array(
+            "" if influence_compute_dtype is None else str(influence_compute_dtype)
+        ),
+    )
+
+
 def extract_compact_chunked_attribution(
     model,
     prompt: str | torch.Tensor | list[int],
@@ -103,6 +154,7 @@ def extract_compact_chunked_attribution(
     phase0_activation_threshold_compare_mode: str = "baseline",
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
+    capture_phase3_seed_bundle: bool = False,
     telemetry_max_events: int | None = None,
 ) -> dict[str, Any]:
     gc.collect()
@@ -146,6 +198,7 @@ def extract_compact_chunked_attribution(
         internal_precision=internal_precision,
         phase4_anomaly_debug=phase4_anomaly_debug,
         cross_cluster_debug=cross_cluster_debug,
+        capture_phase3_seed_bundle=capture_phase3_seed_bundle,
         telemetry_max_events=telemetry_max_events,
         compact_output=True,
         phase0_activation_threshold_compare_mode=phase0_activation_threshold_compare_mode,
@@ -341,6 +394,7 @@ def trace_completion_compact_chunked(
     phase0_activation_threshold_compare_mode: str = "baseline",
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
+    capture_phase3_seed_bundle: bool = False,
     telemetry_max_events: int | None = None,
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
@@ -393,6 +447,8 @@ def trace_completion_compact_chunked(
     cross_cluster_debug_artifacts_captured = False
     resolved_dtype_map_artifact: dict[str, Any] | None = None
     resolved_exact_trace_internal_dtype_requested: str | None = None
+    phase3_seed_bundle_statuses: list[str] = []
+    phase3_seed_bundle_captured_count = 0
 
     candidate_stop_ids = [tokenizer.eos_token_id, tokenizer.pad_token_id]
     end_of_turn = tokenizer.convert_tokens_to_ids("<end_of_turn>")
@@ -438,6 +494,7 @@ def trace_completion_compact_chunked(
             phase0_activation_threshold_compare_mode=phase0_activation_threshold_compare_mode,
             phase4_anomaly_debug=phase4_anomaly_debug,
             cross_cluster_debug=cross_cluster_debug,
+            capture_phase3_seed_bundle=capture_phase3_seed_bundle,
             telemetry_max_events=telemetry_max_events,
         )
         attribution_seconds = time.perf_counter() - attribution_start
@@ -604,6 +661,34 @@ def trace_completion_compact_chunked(
             max_edges=max_edges,
         )
 
+        phase3_seed_bundle_path: Path | None = None
+        phase3_seed_bundle_status = "disabled"
+        if capture_phase3_seed_bundle:
+            phase3_seed_bundle_path = (
+                completion_dir / f"step_{step_idx:03d}_phase3_seed_bundle.npz"
+            )
+            phase3_seed_bundle_payload = compact_result.get("phase3_seed_bundle")
+            if isinstance(phase3_seed_bundle_payload, dict):
+                payload_status = str(
+                    phase3_seed_bundle_payload.get("status", "captured")
+                )
+                try:
+                    save_phase3_seed_bundle(
+                        phase3_seed_bundle_payload,
+                        phase3_seed_bundle_path,
+                    )
+                    phase3_seed_bundle_status = (
+                        "captured"
+                        if payload_status == "captured"
+                        else f"captured_{payload_status}"
+                    )
+                    phase3_seed_bundle_captured_count += 1
+                except Exception:
+                    phase3_seed_bundle_status = "save_failed"
+            else:
+                phase3_seed_bundle_status = "missing_payload"
+        phase3_seed_bundle_statuses.append(phase3_seed_bundle_status)
+
         artifact_save_start = time.perf_counter()
         save_compact(step_data, completion_dir / f"step_{step_idx:03d}.npz")
         artifact_save_seconds = time.perf_counter() - artifact_save_start
@@ -677,6 +762,13 @@ def trace_completion_compact_chunked(
             "cross_cluster_debug_enabled": bool(
                 compact_result.get("cross_cluster_debug_enabled", cross_cluster_debug)
             ),
+            "phase3_seed_bundle_capture_enabled": bool(capture_phase3_seed_bundle),
+            "phase3_seed_bundle_path": (
+                phase3_seed_bundle_path.name
+                if phase3_seed_bundle_path is not None
+                else None
+            ),
+            "phase3_seed_bundle_status": phase3_seed_bundle_status,
         }
         step_records.append(step_record)
 
@@ -749,6 +841,7 @@ def trace_completion_compact_chunked(
         "resolved_dtype_map": resolved_dtype_map_artifact,
         "phase4_anomaly_debug": phase4_anomaly_debug,
         "cross_cluster_debug": cross_cluster_debug,
+        "capture_phase3_seed_bundle": capture_phase3_seed_bundle,
         "telemetry_max_events": telemetry_max_events,
         "phase4_feature_batch_size_initial": initial_phase4_feature_batch_size,
         "phase4_feature_batch_sizes_observed": unique_phase4_feature_batch_sizes,
@@ -840,6 +933,17 @@ def trace_completion_compact_chunked(
         ),
         "cross_cluster_debug_batches_status": cross_cluster_debug_batches_status,
         "cross_cluster_debug_batches_count": int(cross_cluster_debug_batches_written),
+        "phase3_seed_bundle_capture_enabled": bool(capture_phase3_seed_bundle),
+        "phase3_seed_bundle_captured_count": int(phase3_seed_bundle_captured_count),
+        "phase3_seed_bundle_status": (
+            phase3_seed_bundle_statuses[-1] if phase3_seed_bundle_statuses else None
+        ),
+        "phase3_seed_bundle_statuses_observed": sorted(
+            set(phase3_seed_bundle_statuses)
+        ),
+        "phase3_seed_bundle_path_template": (
+            "step_<idx>_phase3_seed_bundle.npz" if capture_phase3_seed_bundle else None
+        ),
         "resource_snapshot": base.capture_resource_snapshot(),
         "timing_summary": base.build_completion_timing_summary(
             completion_end_to_end_seconds=completion_end_to_end_seconds,
@@ -895,6 +999,11 @@ def run_pipeline(args: argparse.Namespace) -> None:
         raise ValueError(
             "Cross-cluster debug currently supports only compact exact-chunked output. "
             "--save-raw is unsupported with --cross-cluster-debug."
+        )
+    if args.capture_phase3_seed_bundle and args.save_raw:
+        raise ValueError(
+            "Phase-3 seed bundle capture supports only compact exact-chunked output. "
+            "--save-raw is unsupported with --capture-phase3-seed-bundle."
         )
     if args.save_raw and args.exact_trace_internal_dtype != "fp64":
         raise ValueError(
@@ -998,6 +1107,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         ),
         "phase4_anomaly_debug": args.phase4_anomaly_debug,
         "cross_cluster_debug": args.cross_cluster_debug,
+        "capture_phase3_seed_bundle": args.capture_phase3_seed_bundle,
         "telemetry_max_events": args.telemetry_max_events,
         "prepared_prompt_file": args.prepared_prompt_file,
         "prepared_prompt_meta_file": args.prepared_prompt_meta_file,
@@ -1089,6 +1199,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
                             args.phase0_activation_threshold_compare_mode
                         ),
                         "cross_cluster_debug": args.cross_cluster_debug,
+                        "capture_phase3_seed_bundle": args.capture_phase3_seed_bundle,
                     }
                     if not args.save_raw
                     else {}
@@ -1340,6 +1451,11 @@ if __name__ == "__main__":
         "--cross-cluster-debug",
         action="store_true",
         help="Enable broad scalar-only cross-cluster debug summary artifact (compact exact-chunked path only)",
+    )
+    parser.add_argument(
+        "--capture-phase3-seed-bundle",
+        action="store_true",
+        help="Save per-step Phase-3 seed bundle artifacts (compact exact-chunked path only)",
     )
     parser.add_argument(
         "--telemetry-max-events",

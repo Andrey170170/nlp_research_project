@@ -266,6 +266,11 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     cross_cluster_debug_batches_missing_paths: set[str] = set()
     cross_cluster_debug_batches_statuses: list[str] = []
     cross_cluster_debug_batches_manifest_counts: list[int] = []
+    phase3_seed_bundle_declared_paths: set[str] = set()
+    phase3_seed_bundle_existing_paths: set[str] = set()
+    phase3_seed_bundle_missing_paths: set[str] = set()
+    phase3_seed_bundle_statuses: list[str] = []
+    phase3_seed_bundle_capture_enabled_values: list[int] = []
     exact_trace_internal_dtype_requested_values: list[str] = []
     resolved_dtype_maps: list[dict[str, Any]] = []
     completion_timing_summary_count = 0
@@ -586,6 +591,59 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
         if batches_count is not None:
             cross_cluster_debug_batches_manifest_counts.append(batches_count)
 
+        phase3_seed_bundle_capture_enabled = manifest.get(
+            "phase3_seed_bundle_capture_enabled"
+        )
+        if isinstance(phase3_seed_bundle_capture_enabled, bool):
+            phase3_seed_bundle_capture_enabled_values.append(
+                int(phase3_seed_bundle_capture_enabled)
+            )
+        manifest_phase3_seed_bundle_status = manifest.get("phase3_seed_bundle_status")
+        if isinstance(manifest_phase3_seed_bundle_status, str):
+            phase3_seed_bundle_statuses.append(manifest_phase3_seed_bundle_status)
+        manifest_phase3_seed_bundle_statuses = manifest.get(
+            "phase3_seed_bundle_statuses_observed"
+        )
+        if isinstance(manifest_phase3_seed_bundle_statuses, list):
+            phase3_seed_bundle_statuses.extend(
+                status
+                for status in manifest_phase3_seed_bundle_statuses
+                if isinstance(status, str)
+            )
+
+        manifest_steps = manifest.get("steps")
+        if isinstance(manifest_steps, list):
+            for step in manifest_steps:
+                if not isinstance(step, dict):
+                    continue
+                phase3_seed_bundle_ref = step.get("phase3_seed_bundle_path")
+                if (
+                    isinstance(phase3_seed_bundle_ref, str)
+                    and phase3_seed_bundle_ref.strip()
+                ):
+                    declared_phase3_seed_bundle_path = (
+                        completion_dir / phase3_seed_bundle_ref.strip()
+                    )
+                    relative_path = _relative_to_or_str(
+                        declared_phase3_seed_bundle_path,
+                        artifact_dir,
+                    )
+                    phase3_seed_bundle_declared_paths.add(relative_path)
+                    if declared_phase3_seed_bundle_path.exists():
+                        phase3_seed_bundle_existing_paths.add(relative_path)
+                    else:
+                        phase3_seed_bundle_missing_paths.add(relative_path)
+                step_phase3_seed_bundle_status = step.get("phase3_seed_bundle_status")
+                if isinstance(step_phase3_seed_bundle_status, str):
+                    phase3_seed_bundle_statuses.append(step_phase3_seed_bundle_status)
+                step_phase3_seed_bundle_enabled = step.get(
+                    "phase3_seed_bundle_capture_enabled"
+                )
+                if isinstance(step_phase3_seed_bundle_enabled, bool):
+                    phase3_seed_bundle_capture_enabled_values.append(
+                        int(step_phase3_seed_bundle_enabled)
+                    )
+
         telemetry_event_count = _to_int(manifest.get("telemetry_event_count"))
         if telemetry_event_count is not None:
             telemetry_manifest_event_counts.append(telemetry_event_count)
@@ -863,6 +921,9 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     cross_cluster_debug_batches_missing_paths_sorted = sorted(
         cross_cluster_debug_batches_missing_paths
     )
+    phase3_seed_bundle_existing_paths_sorted = sorted(phase3_seed_bundle_existing_paths)
+    phase3_seed_bundle_declared_paths_sorted = sorted(phase3_seed_bundle_declared_paths)
+    phase3_seed_bundle_missing_paths_sorted = sorted(phase3_seed_bundle_missing_paths)
     resolved_dtype_map_latest = resolved_dtype_maps[-1] if resolved_dtype_maps else None
     step_phase4_feature_batch_sizes = [
         int(step["phase4_feature_batch_size"])
@@ -1153,6 +1214,40 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
             cross_cluster_debug_batches_manifest_counts[-1]
             if cross_cluster_debug_batches_manifest_counts
             else None
+        ),
+        "phase3_seed_bundle_capture_enabled_fraction": (
+            round(
+                mean(
+                    [
+                        float(value)
+                        for value in phase3_seed_bundle_capture_enabled_values
+                    ]
+                ),
+                6,
+            )
+            if phase3_seed_bundle_capture_enabled_values
+            else None
+        ),
+        "phase3_seed_bundle_present": bool(phase3_seed_bundle_existing_paths_sorted),
+        "phase3_seed_bundle_manifest_declared_count": len(
+            phase3_seed_bundle_declared_paths_sorted
+        ),
+        "phase3_seed_bundle_file_count": len(phase3_seed_bundle_existing_paths_sorted),
+        "phase3_seed_bundle_missing_file_count": len(
+            phase3_seed_bundle_missing_paths_sorted
+        ),
+        "phase3_seed_bundle_path_example": (
+            phase3_seed_bundle_existing_paths_sorted[0]
+            if phase3_seed_bundle_existing_paths_sorted
+            else phase3_seed_bundle_declared_paths_sorted[0]
+            if phase3_seed_bundle_declared_paths_sorted
+            else None
+        ),
+        "phase3_seed_bundle_status": (
+            phase3_seed_bundle_statuses[-1] if phase3_seed_bundle_statuses else None
+        ),
+        "phase3_seed_bundle_statuses_observed": sorted(
+            set(phase3_seed_bundle_statuses)
         ),
         "telemetry_present": bool(telemetry_existing_paths_sorted),
         "telemetry_manifest_declared_count": len(telemetry_declared_paths_sorted),
