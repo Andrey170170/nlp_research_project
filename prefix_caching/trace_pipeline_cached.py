@@ -203,6 +203,16 @@ def trace_completion_with_cache_validation(
                 f"attrib={attribution_seconds:.1f}s"
             )
 
+        # Print library-side cache counters to stdout every step so they
+        # survive SLURM timeout even if completion.json never flushes.
+        if library_cache is not None:
+            print(
+                f"        [library_cache] hit={library_cache.hit_count} "
+                f"miss={library_cache.miss_count} "
+                f"cached_prefix_len={library_cache.cached_prefix_len}",
+                flush=True,
+            )
+
         # ── Store current step's features for next comparison ──
         cache.store(input_ids[0], active_features)
 

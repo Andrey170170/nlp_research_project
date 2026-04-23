@@ -8,7 +8,7 @@
 #SBATCH --cpus-per-task=10
 #SBATCH --gpus-per-task=1
 #SBATCH --mem=700G
-#SBATCH --time=03:00:00
+#SBATCH --time=08:00:00
 #SBATCH --output=logs/slurm-%x-%j.out
 #SBATCH --error=logs/slurm-%x-%j.err
 
@@ -42,6 +42,14 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
 # emits phase0.setup.prefix_cache_{lookup,store} trace events so we can
 # later compare cached vs uncached step_NNN.npz artifacts for fidelity
 # and measure hit rates.
+#
+# --time bumped to 08:00:00 (from 03:00:00) so the run can:
+#   1. complete more than 5 steps for extended fidelity data
+#   2. let the completion.json / cache_validation.json actually flush
+#      (the 3 h cap killed the prior run mid step-5)
+# The driver prints library_cache hit/miss/cached_prefix_len to stdout
+# every step now, so even if this run also times out we still have the
+# counters in the log.
 uv run python -u -m prefix_caching.trace_pipeline_cached \
     --gsm8k-indices 94 \
     --completions 1 \
