@@ -28,6 +28,120 @@ For important updates, include:
 
 ## Recent investigation updates
 
+### 2026-04-23 — chose stronger Phase-0 → Phase-3 causality experiment design
+
+Purpose:
+
+- record the follow-up design decision after discussing how to link an early
+  Phase-0 mismatch to the later Phase-3 divergence more confidently,
+- clarify that the currently queued boundary-fingerprint pair is useful but not
+  sufficient for a strong causal claim by itself.
+
+Decision summary:
+
+- Treat the current queued boundary-fingerprint pair as an **earliest-divergence
+  localization** run only.
+- The next stronger matched rerun should add a passive **Phase-3 seed bundle**
+  artifact so we can test offline whether Phase-3 disagreement is mostly carried
+  by Phase-0-unique features.
+- Defer donor/swap/replay intervention as an **extra** follow-up rather than the
+  first stronger implementation step.
+
+Chosen stronger-evidence direction:
+
+- keep the Phase-0 boundary fingerprints,
+- add per-step saved Phase-3 seed bundle state,
+- add offline comparison for:
+  - shared vs unique Phase-0 feature counts,
+  - Phase-3 influence mass on shared vs unique support,
+  - frontier overlap before/after restricting to shared support.
+
+Interpretation target:
+
+- if Phase-3 disagreement mostly disappears once Phase-0-unique support is
+  removed, treat that as strong evidence that the later split is downstream
+  amplification of earlier drift,
+- if substantial Phase-3 disagreement remains even on shared support, treat that
+  as evidence that Phase-3 likely contributes additional instability and reserve
+  replay/intervention for the next escalation step.
+
+### 2026-04-23 — launched matched `94_base` boundary-fingerprinting baseline pair
+
+Purpose:
+
+- run the next matched single-step `94_base` pair after the compare-upcast
+  hypothesis closed negative,
+- use the new upstream Phase-0 boundary fingerprints to localize whether the
+  first cross-cluster divergence appears:
+  - before CLT encode (`mlp_in_cache`),
+  - in preactivation / margin,
+  - or only at mask / post-mask.
+
+Launch provenance:
+
+- project repo source commit:
+  - repo: `nlp_research_project`
+  - workspace used for launch prep: main workspace `./`
+  - branch: `exact-trace-bench-harness`
+  - commit: `f86c7e1c7f24c03c822a2682202cd9b5c44db4ad`
+- sibling library source commit:
+  - repo: `circuit-tracer_chunked`
+  - workspace used for launch prep: main sibling workspace `../circuit-tracer_chunked`
+  - branch: `exact-trace-hidden-knobs`
+  - commit: `b06d35e73d8ec782acd6f6911789ee424b44eb6a`
+- clean paired worktrees used before snapshot:
+  - `/users/PAS2119/andreykopanev/worktrees_probe_94_boundary/nlp_research_project`
+  - `/users/PAS2119/andreykopanev/worktrees_probe_94_boundary/circuit-tracer_chunked`
+- immutable snapshot container:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260423_124304_matched_cross_cluster_94_boundary_probe`
+- snapshot project root:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260423_124304_matched_cross_cluster_94_boundary_probe/nlp_research_project`
+- snapshot library root:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260423_124304_matched_cross_cluster_94_boundary_probe/circuit-tracer_chunked`
+
+Shared config across both jobs:
+
+- fixture: `94_base`
+- tier: `anomaly`
+- `max_steps=1`
+- `cross_cluster_debug=true`
+- `exact_trace_internal_dtype=fp64`
+- `phase0_activation_threshold_compare_mode=baseline`
+- `decoder_chunk_size=2048`
+- `cross_batch_decoder_cache_bytes=0`
+- batch sizes `128`
+- `temperature=0.0`
+- `completions=1`
+- walltime override: `01:00:00`
+
+Scenario files used:
+
+- `experiments/generated/exact_trace_bench/matched_cross_cluster_94_anomaly_baseline_ascend.json`
+- `experiments/generated/exact_trace_bench/matched_cross_cluster_94_anomaly_baseline_cardinal.json`
+
+Submitted jobs:
+
+- Ascend boundary probe:
+  - SLURM job `5059551`
+  - run id `20260423_124423_578647_matched-cross-cluster-94-anomaly-boundary-probe-ascend`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260423_124423_578647_matched-cross-cluster-94-anomaly-boundary-probe-ascend`
+- Cardinal boundary probe:
+  - SLURM job `8726006`
+  - run id `20260423_124423_723348_matched-cross-cluster-94-anomaly-boundary-probe-cardinal`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260423_124423_723348_matched-cross-cluster-94-anomaly-boundary-probe-cardinal`
+
+Intended interpretation:
+
+- if divergence already appears in pre-CLT input fingerprints, move upstream of
+  CLT encode in the next debug pass,
+- if pre-CLT input matches but preactivation / margin diverges, focus next on
+  CLT encode precision / determinism,
+- if preactivation matches but mask / post-mask diverges, focus next on the
+  boundary logic itself,
+- only after localizing the earliest differing boundary should we decide whether
+  the Phase-3 divergence is downstream amplification or needs its own separate
+  root-cause investigation.
+
 ### 2026-04-23 — compare-upcast hypothesis closed negative; move to upstream boundary fingerprinting
 
 Purpose:
