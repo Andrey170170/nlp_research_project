@@ -25,8 +25,11 @@ launching the next matched Ascend/Cardinal pair.
   - pre-CLT input fingerprints differed in all 26 layers,
   - downstream preactivation/margin/mask/post-activation also differed in all 26
     layers.
-- Basic Phase-3 seed bundle capture is implemented and committed.
-- Basic offline Phase-3 seed bundle comparison is implemented and committed.
+- Phase-3 seed bundle capture is implemented and committed.
+- Enriched offline Phase-3 seed-bundle, compact-graph, and semantic-descriptor
+  comparison helpers are implemented and committed.
+- Passive feature semantic descriptor capture is implemented and committed in the
+  project and sibling library.
 - The queued boundary-localization pair did **not** include Phase-3 seed bundles
   or semantic descriptors, so it cannot answer the full downstream-stability
   question.
@@ -318,13 +321,13 @@ Jobs:
 
 Before launching the next matched pair:
 
-- [ ] Phase-3 bundle comparator reports rank/score/top-k stability.
-- [ ] Compact graph comparator reports shared/unique edge decomposition.
-- [ ] Semantic descriptor capture emits bounded artifact under an opt-in flag.
-- [ ] Semantic descriptor comparator can match intentionally substituted features
+- [x] Phase-3 bundle comparator reports rank/score/top-k stability.
+- [x] Compact graph comparator reports shared/unique edge decomposition.
+- [x] Semantic descriptor capture emits bounded artifact under an opt-in flag.
+- [x] Semantic descriptor comparator can match intentionally substituted features
       in a synthetic test.
-- [ ] Scenario plumbing exposes all capture flags.
-- [ ] Completion manifests and extractors report all new artifacts.
+- [x] Scenario plumbing exposes all capture flags.
+- [x] Completion manifests and extractors report all new artifacts.
 - [ ] Safe local validation passes with `uv run` only.
 - [ ] Project and sibling library commits are clean and recorded.
 - [ ] Immutable paired workspace snapshot is created from the clean commits.

@@ -12,26 +12,34 @@ This workspace is for **cross-cluster investigation**, not optimization.
    - project: `./`
    - sibling library: `../circuit-tracer_chunked`
 
-3. Implement passive Phase-3 seed bundle capture for the next stronger rerun.
+3. Use the implemented passive capture stack for the next stronger rerun:
+   - Phase-3 seed bundle artifacts,
+   - feature semantic descriptor artifacts,
+   - enriched shared/unique graph and semantic comparison helpers.
 
 4. Verify cross-cluster debug artifacts now include compact boundary fields for:
    - pre-CLT input fingerprints,
    - transcoder constant fingerprints,
    - preactivation/margin/mask/post-mask fingerprints,
    - expanded near-threshold counts,
-   - plus saved Phase-3 seed bundle artifacts.
+   - saved Phase-3 seed bundle artifacts,
+   - saved feature semantic descriptor artifacts.
 
 5. Add offline Ascend/Cardinal bundle comparison for:
-   - shared vs unique Phase-0 support,
-   - Phase-3 influence mass split,
-   - frontier overlap after restricting to shared support.
+    - shared vs unique Phase-0 support,
+    - Phase-3 influence mass split,
+    - frontier overlap after restricting to shared support,
+    - compact graph shared/unique endpoint decomposition,
+    - semantic substitute matching for high-mass unmatched features.
 
 6. Relaunch one matched `94_base` baseline pair (Ascend + Cardinal) from an
    immutable snapshot with the stronger artifact set:
    - `cross_cluster_debug=true`
    - `exact_trace_internal_dtype=fp64`
-   - `phase0_activation_threshold_compare_mode=baseline`
-   - single-step (`max_steps=1`) configuration.
+    - `phase0_activation_threshold_compare_mode=baseline`
+    - `capture_phase3_seed_bundle=true`
+    - `capture_feature_semantic_descriptors=true`
+    - single-step (`max_steps=1`) configuration.
 
 7. From `phase0_sparse_setup`, identify the first divergence boundary:
    - pre-CLT input vs
@@ -45,6 +53,8 @@ This workspace is for **cross-cluster investigation**, not optimization.
 - If not, is it introduced only at mask/post-mask boundary logic?
 - Does Phase-3 disagreement mostly disappear once Phase-0-unique support is
   removed?
+- If exact-ID graph overlap stays weak, do high-mass unmatched features have
+  semantic substitutes by descriptor / local-neighborhood evidence?
 - If not, does Phase-3 appear to add its own extra instability and therefore
   justify a later replay/intervention step?
 

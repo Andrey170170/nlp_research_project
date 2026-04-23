@@ -88,6 +88,8 @@ offline.
 Preferred artifact:
 
 - `step_000_phase3_seed_bundle.npz`
+- `step_000_feature_semantic_descriptors.npz` when semantic descriptor capture is
+  enabled
 
 Minimum contents:
 
@@ -107,6 +109,21 @@ The offline comparator should report:
 - whether the Phase-3 mismatch largely disappears once Phase-0-unique features
   are removed.
 
+The semantic descriptor artifact should remain bounded and passive. It captures
+top seed/frontier candidate labels, ranks, activations, influences, Phase-4
+selection membership when available, and a compact descriptor sketch. The current
+first implementation uses `fallback_identity_metadata_v1`; future SLURM-only
+descriptor jobs may replace or augment this with decoder-vector sketches if exact
+ID mismatch remains semantically ambiguous.
+
+Semantic comparison should report:
+
+- exact candidate support overlap,
+- shared-candidate activation/influence stability,
+- high-mass unmatched candidates,
+- same-layer/same-position descriptor-nearest substitutes,
+- mass-weighted coverage of unmatched features by high-confidence substitutes.
+
 ## Chosen tradeoffs
 
 ### Chosen
@@ -119,6 +136,8 @@ The offline comparator should report:
   current schema.
 - Use **passive bundle capture + offline decomposition** as the first stronger
   Phase-0 → Phase-3 test instead of immediately building a replay mode.
+- Add bounded semantic descriptor capture before the next expensive run so exact
+  ID graph churn can be separated from possible semantic stability.
 
 ### Rejected for now
 
@@ -141,6 +160,11 @@ The offline comparator should report:
 - If substantial Phase-3 disagreement remains even after controlling for shared
   support, treat that as evidence that Phase-3 likely contributes additional
   instability and consider the deferred replay/intervention step.
+- If exact-ID feature/edge overlap is weak but high-mass unmatched features have
+  high-confidence semantic substitutes, treat the graph as semantically more
+  stable than exact-ID metrics alone suggest.
+- If high-mass unmatched features lack semantic substitutes, treat the drift as a
+  candidate genuine graph instability requiring mitigation or replay analysis.
 
 ## Extra follow-up (deferred)
 
@@ -155,6 +179,6 @@ counterfactual, but it should be a separate follow-up task.
   preserved through summary / stream emission.
 - Extend CLT diagnostic tests to assert new Phase-0 fingerprint fields exist and
   reflect post-zero-position masking.
-- Add bundle-capture round-trip coverage and a small CPU-only comparison check if
-  practical.
+- Add bundle-capture, descriptor-capture, graph-decomposition, and semantic
+  comparison CPU-only checks.
 - Only run safe local validation (`uv run ...`), no GPU workloads outside SLURM.

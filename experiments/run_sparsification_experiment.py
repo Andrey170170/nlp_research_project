@@ -244,6 +244,18 @@ def _summarize_artifacts(run_output_dir: Path) -> dict[str, Any]:
         for step in manifest.get("steps", [])
         if step.get("transcoder_diagnostics")
     ]
+    feature_semantic_descriptor_statuses = [
+        step.get("feature_semantic_descriptor_status")
+        for manifest in completion_manifests
+        for step in manifest.get("steps", [])
+        if isinstance(step.get("feature_semantic_descriptor_status"), str)
+    ]
+    feature_semantic_descriptor_paths = [
+        Path(path).parent / step.get("feature_semantic_descriptor_path")
+        for path, manifest in zip(completion_files, completion_manifests, strict=False)
+        for step in manifest.get("steps", [])
+        if isinstance(step.get("feature_semantic_descriptor_path"), str)
+    ]
 
     first_prompt_meta = prompt_metas[0] if prompt_metas else {}
     first_completion = completion_manifests[0] if completion_manifests else {}
@@ -271,6 +283,14 @@ def _summarize_artifacts(run_output_dir: Path) -> dict[str, Any]:
         "decoder_cache_eviction_count": max(cache_evictions)
         if cache_evictions
         else None,
+        "feature_semantic_descriptor_status": (
+            feature_semantic_descriptor_statuses[-1]
+            if feature_semantic_descriptor_statuses
+            else None
+        ),
+        "feature_semantic_descriptor_file_count": sum(
+            1 for path in feature_semantic_descriptor_paths if path.exists()
+        ),
         "resource_snapshot": first_completion.get("resource_snapshot"),
     }
 
@@ -438,6 +458,22 @@ def build_command(
             cmd.append("--cross-cluster-debug")
         if scenario.get("capture_phase3_seed_bundle", False):
             cmd.append("--capture-phase3-seed-bundle")
+        if scenario.get("capture_feature_semantic_descriptors", False):
+            cmd.append("--capture-feature-semantic-descriptors")
+        if scenario.get("semantic_descriptor_top_k") is not None:
+            cmd.extend(
+                [
+                    "--semantic-descriptor-top-k",
+                    str(scenario["semantic_descriptor_top_k"]),
+                ]
+            )
+        if scenario.get("semantic_descriptor_dim") is not None:
+            cmd.extend(
+                [
+                    "--semantic-descriptor-dim",
+                    str(scenario["semantic_descriptor_dim"]),
+                ]
+            )
         if scenario.get("telemetry_max_events") is not None:
             cmd.extend(
                 ["--telemetry-max-events", str(scenario["telemetry_max_events"])]

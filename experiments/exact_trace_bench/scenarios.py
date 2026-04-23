@@ -37,6 +37,9 @@ EXACT_MODE_KNOB_KEYS = (
     "phase4_anomaly_debug",
     "cross_cluster_debug",
     "capture_phase3_seed_bundle",
+    "capture_feature_semantic_descriptors",
+    "semantic_descriptor_top_k",
+    "semantic_descriptor_dim",
     "telemetry_max_events",
 )
 

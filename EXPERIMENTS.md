@@ -28,6 +28,49 @@ For important updates, include:
 
 ## Recent investigation updates
 
+### 2026-04-23 — implemented full passive downstream/semantic stability capture before rerun
+
+Purpose:
+
+- prepare the next expensive matched `94_base` rerun to answer whether upstream
+  numerical drift materially changes the extracted circuit or mostly causes
+  exact-ID/score churn around a semantically similar graph.
+
+Implementation summary:
+
+- Added enriched Phase-3 seed-bundle comparison for shared-support score/rank
+  stability, top-k overlap, unique-support mass, and frontier rank drift.
+- Added compact graph decomposition by shared/unique feature endpoints and
+  shared-endpoint edge weight stability.
+- Added opt-in feature semantic descriptor artifact capture:
+  - `step_<idx>_feature_semantic_descriptors.npz`,
+  - bounded top seed/frontier candidate set,
+  - Phase-4 selection membership when available,
+  - current descriptor kind: `fallback_identity_metadata_v1`.
+- Added semantic descriptor comparison for high-mass unmatched features and
+  mass-weighted semantic substitute coverage.
+- Plumbed scenario/extractor support so future run indexes report descriptor
+  artifact presence, status, and paths.
+
+Provenance after implementation:
+
+- project repo:
+  - workspace: main workspace `./`
+  - branch: `exact-trace-bench-harness`
+  - relevant commits through the scenario/extractor/docs plumbing commit that
+    introduced this entry; see git log after implementation
+- sibling library repo:
+  - workspace: `../circuit-tracer_chunked`
+  - branch: `exact-trace-hidden-knobs`
+  - commit: `fc22162` (`Capture semantic feature descriptors`)
+
+Next launch requirement:
+
+- new matched Ascend/Cardinal `94_base` anomaly baseline pair should enable both:
+  - `capture_phase3_seed_bundle=true`,
+  - `capture_feature_semantic_descriptors=true`.
+- This is still passive capture, not a donor/replay intervention.
+
 ### 2026-04-23 — chose stronger Phase-0 → Phase-3 causality experiment design
 
 Purpose:
