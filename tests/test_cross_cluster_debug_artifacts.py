@@ -169,6 +169,11 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
             "exact_trace_internal_dtype_contract_supported": False,
             "cross_cluster_debug": False,
             "telemetry_max_events": 11,
+            "phase4_scheduler_mode": "planner_v1",
+            "phase4_scheduler_version": "planner_v1",
+            "phase4_scheduler_policy": "membership_preserving_locality",
+            "phase4_scheduler_debug": True,
+            "phase4_scheduler_telemetry_detail": "debug",
             "attribution_batch_size": 128,
             "decoder_chunk_size": 2048,
             "max_feature_nodes": 8192,
@@ -198,10 +203,22 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         assert benchmark_row["exact_trace_internal_dtype"] == "fp32"
         assert benchmark_row["exact_trace_internal_dtype_contract_supported"] is False
         assert benchmark_row["telemetry_max_events"] == 11
+        assert benchmark_row["phase4_scheduler_mode"] == "planner_v1"
+        assert benchmark_row["phase4_scheduler_version"] == "planner_v1"
+        assert (
+            benchmark_row["phase4_scheduler_policy"] == "membership_preserving_locality"
+        )
+        assert benchmark_row["phase4_scheduler_debug"] is True
+        assert benchmark_row["phase4_scheduler_telemetry_detail"] == "debug"
 
         assert legacy_row["exact_trace_internal_dtype"] == "fp32"
         assert legacy_row["exact_trace_internal_dtype_contract_supported"] is False
         assert legacy_row["telemetry_max_events"] == 11
+        assert legacy_row["phase4_scheduler_mode"] == "planner_v1"
+        assert legacy_row["phase4_scheduler_version"] == "planner_v1"
+        assert legacy_row["phase4_scheduler_policy"] == "membership_preserving_locality"
+        assert legacy_row["phase4_scheduler_debug"] is True
+        assert legacy_row["phase4_scheduler_telemetry_detail"] == "debug"
 
 
 def main() -> None:

@@ -1394,6 +1394,18 @@ def build_row(result_path: Path) -> dict[str, Any]:
         "cross_cluster_debug": run_config.get(
             "cross_cluster_debug", scenario.get("cross_cluster_debug")
         ),
+        "phase4_scheduler_mode": run_config.get(
+            "phase4_scheduler_mode", scenario.get("phase4_scheduler_mode")
+        ),
+        "phase4_scheduler_version": run_config.get("phase4_scheduler_version"),
+        "phase4_scheduler_policy": run_config.get("phase4_scheduler_policy"),
+        "phase4_scheduler_debug": run_config.get(
+            "phase4_scheduler_debug", scenario.get("phase4_scheduler_debug")
+        ),
+        "phase4_scheduler_telemetry_detail": run_config.get(
+            "phase4_scheduler_telemetry_detail",
+            scenario.get("phase4_scheduler_telemetry_detail"),
+        ),
         "telemetry_max_events": run_config.get(
             "telemetry_max_events", scenario.get("telemetry_max_events")
         ),
