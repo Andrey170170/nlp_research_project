@@ -1,192 +1,203 @@
-# Current Implementation Plan — Upcast / RSS Redesign
+# Current Implementation Plan — Phase 4 Hybrid Row-Store Fix
 
 ## 1. Problem statement
 
-The permanent overflow fix is now validated on the optimization project+library
-pair.
+The permanent overflow fix remains validated and fp32 remains the correct default
+for exact compact tracing.
 
-Current validated state:
+The latest Phase 4 investigation changed the immediate priority again.
 
-- the earlier healthy-prompt fp32 collapse findings applied to the **pre-fix**
-  code path,
-- on the fixed code path, fp32/fp64 compact artifacts matched exactly on
-  `828_base`, `361_base`, and `94_base`,
-- fp32 is now the default runtime dtype for exact compact tracing,
-- the next optimization target is no longer normalization correctness; it is
-  **memory/transient allocation behavior**, especially host RSS spikes.
+Current best-supported conclusion:
 
-The next workstream is therefore:
+- the main recurring scheduler-relevant Phase 4 growth is still concentrated
+  **between** `compute_batch(...)` calls,
+- the strongest current suspect remains the **row append / writeback path**, not
+  refresh ranking itself,
+- however, the broad row-store rewrite that replaced the full read/write path
+  with explicit file I/O was the wrong fix:
+  - refresh became far slower,
+  - Phase 5 also became much slower,
+  - RSS behavior did not improve enough to justify the regression.
 
-- reduce transient RSS spikes,
-- decouple stable normalization semantics from expensive eager CPU upcasts,
-- preserve the newly validated post-fix semantics.
+Operational conclusion:
 
-The main suspicion is that the current runtime still pays avoidable host-memory
-costs from CPU staging, dense slice materialization, denominator handling,
-packaging, and other eager conversions that are no longer required for the
-permanent overflow fix itself.
+- the current problem is still a **row-store memory behavior** problem,
+- but the safe fix is **not** a full row-store file-I/O replacement,
+- we need to preserve the cheap read path for refresh and Phase 5,
+- and target only the **append/writeback residency behavior**.
 
-## 2. Scope / non-goals
+## 2. Chosen approach
+
+Chosen implementation direction:
+
+1. **keep/reintroduce the cheap mmap-style read path** for:
+   - `read_feature_rows(...)`
+   - `materialize_dense_feature_slice(...)`
+2. **change only the append/writeback path** so Phase 4 no longer keeps a
+   long-lived writable full-file mapping hot across batches,
+3. validate that this reduces the batch-aligned file-backed RSS growth without
+   regressing refresh or Phase 5,
+4. only after that, revisit smaller staging/cache cleanup.
+
+Explicitly rejected as the current path:
+
+- full row-store file-I/O replacement for both writes and reads,
+- refresh/scheduler redesign as the immediate fix,
+- cheaper frontier indexes/scores as the immediate fix,
+- two-tier storage as the immediate fix.
+
+## 3. Scope / non-goals
 
 ### In scope
 
-- compact exact-trace CPU staging and row movement,
-- denominator storage and any associated dtype/upcast choices,
-- file-backed row-store read/materialization behavior,
-- refresh-path and packaging-path transient allocations,
-- telemetry additions needed to attribute RSS spikes to concrete operations,
-- small project-side/runtime-default adjustments only if required to expose or
-  validate the redesign.
+- `_FileBackedFeatureRowStore.append_rows(...)`,
+- row-store writeback mechanics and append-side residency behavior,
+- preserving or restoring the cheap existing read/materialization path,
+- focused tests for exact row content, ordering, and denominator semantics,
+- lightweight follow-up staging/cache hygiene only after the main hybrid fix is
+  validated.
 
 Primary files likely in scope:
 
 - `../worktrees_opt/circuit-tracer_chunked/circuit_tracer/attribution/attribute_nnsight.py`
-- `../worktrees_opt/circuit-tracer_chunked/circuit_tracer/attribution/context_nnsight.py`
-- `../worktrees_opt/circuit-tracer_chunked/circuit_tracer/graph.py`
-- `../worktrees_opt/circuit-tracer_chunked/circuit_tracer/utils/telemetry.py`
 - `../worktrees_opt/circuit-tracer_chunked/tests/test_attribute_nnsight_telemetry.py`
-- `../worktrees_opt/circuit-tracer_chunked/tests/test_chunked_decoder_optimizations.py`
 - `../worktrees_opt/circuit-tracer_chunked/tests/test_partial_influences.py`
-- `trace_pipeline_chunked.py` only if manifests/telemetry wiring needs updating
+- `../worktrees_opt/circuit-tracer_chunked/tests/test_chunked_decoder_optimizations.py`
 
 ### Non-goals
 
-- no replay-path redesign yet,
-- no frontier/ranking policy changes,
-- no approximate solver changes,
-- no broad refresh-path speedups unless they fall directly out of RSS work,
-- no new cross-cluster investigation work,
+- no frontier-selection changes,
+- no approximate scheduler/index redesign,
+- no full read-path replacement,
+- no major `compute_batch(...)` redesign in this phase,
 - no GPU launches from login nodes.
 
-## 3. Proposed approach
+## 4. Root-cause model to act on
 
-### Workstream A — pinpoint the actual RSS hotspots
+Current working model:
 
-Goal: replace vague “RSS is high” reasoning with operation-level attribution.
+1. `ctx.compute_batch(...)` produces a large row block,
+2. Phase 4 staging prepares CPU rows,
+3. append/writeback makes more of the backing row store hot/resident,
+4. that batch-aligned growth drives the bad file-backed/cgroup pattern.
 
-Immediate audit targets:
+New lesson from the rejected experiment:
 
-1. `rows.cpu()` and related host transfers in Phase 3 / Phase 4 row production
-2. `_stage_tensor_on_cpu(...)` in `context_nnsight.py`
-3. `_FileBackedFeatureRowStore.materialize_dense_feature_slice(...)`
-4. denominator/diagnostic materialization that reconstructs larger CPU tensors
-5. packaging/save-time materialization after attribution is already complete
+- replacing **reads** with explicit file-I/O copies destroys the cheap demand-
+  paged path used heavily by refresh and Phase 5,
+- so the next fix must stay narrow:
+  **fix writeback residency while preserving read efficiency**.
 
-Tasks:
+## 5. Main implementation workstreams
 
-- identify every `.cpu()`, `.to(device="cpu", ...)`, pinned-memory stage, and
-  dense temporary in the compact exact path,
-- classify each as:
-  - semantically required,
-  - implementation convenience,
-  - debug/telemetry only,
-  - packaging only,
-- add enough telemetry/checkpoints to measure peak RSS before/after each major
-  phase boundary.
+### Workstream A — hybrid row-store fix
 
-### Workstream B — separate stable semantics from storage/upcast policy
+Goal: keep the row-store read path cheap while changing append/writeback behavior
+to reduce batch-aligned file-backed RSS growth.
 
-Goal: make stable normalization representation cheap to keep around.
+Target design:
 
-Design direction:
+- use a **hybrid** row-store,
+- preserve mmap-style cheap reads/materialization,
+- replace only the append-side writable full-file behavior with a narrower write
+  mechanism, such as:
+  - explicit offset writes, or
+  - a short-lived append-window mapping that is flushed/unmapped immediately,
+- if needed, reopen/invalidate the read view after append so semantics remain
+  simple and exact.
 
-- stable scaled row-L1 semantics are already validated,
-- those semantics should not force eager fp64-style host behavior or oversized
-  CPU temporaries,
-- denominator storage, compute dtype, and debug materialization should be
-  treated as separate concerns.
+Implementation constraints:
 
-Tasks:
+- exact same row content,
+- exact same `row_to_node_index` alignment,
+- exact same denominator semantics,
+- no silent approximation,
+- no change to frontier or queue semantics.
 
-1. audit whether `row_abs_max` / `row_l1_scaled` storage can stay in a cheaper
-   representation without changing solver semantics,
-2. remove any leftover “stable normalization implies eager wider CPU tensor”
-   assumption,
-3. ensure debug/stat code does not reconstruct expensive CPU views in hot paths
-   unless explicitly needed.
+### Workstream B — validate the hybrid cut before extras
 
-### Workstream C — reduce avoidable CPU staging and dense materialization
+Goal: show that the writeback-targeted fix improves memory behavior without the
+large read-path regression seen in the rejected full file-I/O attempt.
 
-Goal: keep the compact path compact in practice, not only in theory.
+Questions to answer:
 
-Likely targets:
+1. does batch-aligned file-backed RSS growth shrink materially,
+2. does refresh wall time stay near the earlier probe baseline,
+3. does Phase 5 wall time stay sane,
+4. do outputs remain unchanged.
 
-- avoid staging more columns than the current consumer actually needs,
-- avoid creating dense CPU tensors solely for telemetry/debug summaries,
-- delay or chunk packaging materialization where possible,
-- make row-store reads and packaging paths respect the minimum necessary dtype.
+### Workstream C — follow-up staging/cache hygiene after validation
 
-Specific questions to answer:
+This stays **second**, not first.
 
-1. can row production append directly in the needed host/storage dtype without an
-   extra transient copy,
-2. can refresh-path readers avoid materializing full dense slices when only a
-   narrow view is needed,
-3. can packaging/stat summaries reuse existing buffers or operate on chunked
-   reductions instead of full reconstructions,
-4. can CPU staging paths avoid unconditional pinning/contiguity copies when they
-   are not providing measurable value.
+Candidate follow-up cleanup:
 
-### Workstream D — preserve semantics with explicit regression checks
+- reduce or disable row-store read cache only if it still contributes after the
+  hybrid fix,
+- shrink/reset reusable CPU staging buffers when safe,
+- remove obviously unnecessary staging retention.
 
-Goal: ensure RSS work does not accidentally reintroduce correctness drift.
+Decision rule:
 
-Required safeguards:
+- do this only after the hybrid writeback fix is validated, so its effect stays
+  measurable.
 
-- fp32/fp64 compact artifact parity remains intact on the validated prompt set,
-- retained edge counts stay stable,
-- decoder-load counts do not regress toward the old collapse signature,
-- no row-to-node alignment or frontier-selection changes.
-
-Testing approach:
-
-- add/extend lightweight unit tests for any refactored staging/materialization
-  helper,
-- keep focused regression coverage around denominator handling,
-- use telemetry-oriented tests where new counters/checkpoints are introduced.
-
-### Workstream E — sequence the redesign conservatively
+## 6. Implementation order
 
 Recommended sequence:
 
-1. add attribution-grade telemetry for RSS/staging hotspots,
-2. land the smallest no-semantic-change reduction in eager CPU staging,
-3. validate targeted tests locally,
-4. only then make deeper row-store/materialization changes,
-5. once local checks are stable, prepare the next small Ascend validation pass.
+1. back out the rejected broad read/write file-I/O replacement if needed,
+2. implement the **append-side-only** hybrid writeback change,
+3. preserve or restore cheap mmap-style reads/materialization,
+4. update focused tests for row-store correctness and telemetry invariants,
+5. run lightweight local validation,
+6. rerun the small Ascend Phase 4 memory probe on:
+   - `828_base`
+   - `361_base`
+7. compare:
+   - batch-to-batch file RSS growth,
+   - cgroup/Grafana spike shape,
+   - refresh wall time,
+   - Phase 5 wall time,
+   - exact artifact/correctness invariants,
+8. only then add the smaller staging/cache hygiene cleanup.
 
-Validation guidance for the later HPC pass:
-
-- keep the same canonical validation prompts:
-  - `828_base`
-  - `361_base`
-  - `94_base`
-- first compare post-redesign fp32 against current validated fp32 baseline,
-- use fp64 only as a parity spot-check, not as the main optimization target.
-
-## 4. Acceptance criteria
+## 7. Acceptance criteria
 
 This plan is successful when:
 
-1. the main transient RSS hotspots are identified and tied to concrete runtime
-   operations,
-2. stable normalization semantics remain validated while denominator/storage
-   handling becomes cheaper in practice,
-3. at least one meaningful source of avoidable CPU upcast/materialization is
-   removed or reduced,
-4. no correctness regression appears in focused local tests,
-5. the next Ascend validation run can answer whether RSS/transient allocation
-   behavior materially improved without changing compact outputs.
+1. the batch-aligned file-backed RSS growth is materially reduced on the canonical
+   fast prompts,
+2. process file RSS no longer tracks Phase 4 batch-buffer size nearly 1:1,
+3. refresh wall time does not suffer a major regression relative to the earlier
+   Phase 4 memory probe baseline,
+4. Phase 5 wall time does not blow up,
+5. fp32 compact outputs remain stable,
+6. retained edges remain `20000`,
+7. decoder-load counts remain stable.
 
-## 5. Risks and open questions
+## 8. Risks and open questions
 
-- some observed RSS may still be dominated by packaging or other late-stage work
-  rather than refresh itself,
-- host RSS seen in logs may mix reclaimable file-backed behavior with genuinely
-  dangerous anonymous allocations,
-- removing one copy may expose a different hidden copy later in the pipeline,
-- some staging paths may be required for throughput even if they are expensive in
-  memory,
-- telemetry itself can perturb memory behavior if added too aggressively,
-- we still need to decide how much denominator/debug metadata should be kept
-  materializable by default versus only on demand.
+- append-side-only changes may still leave too much residency pressure,
+- keeping cheap reads may preserve some of the original file-backed growth,
+- reopening/invalidation logic must stay simple enough to avoid row-store bugs,
+- staging/cache hygiene may still be needed, but it should remain secondary,
+- broader scheduler ideas may still be valuable later, but they should not be
+  mixed into the current safe fix.
+
+## 9. Later scheduler-redesign considerations
+
+These are **not** standalone work items for the current phase.
+
+Do not pursue them now as separate optimization tracks. Only reconsider them if
+they become useful during a later **scheduler/frontier redesign** and only in
+that broader context where we can reason about graph exploration behavior and the
+memory operations implied by the new scheduler shape.
+
+Examples to keep in mind later, not now:
+
+- two-tier hot/cold row storage,
+- cheaper scheduler indexes/summaries,
+- incremental refresh state,
+- approximate ranking or prefilter schemes,
+- larger storage/layout redesigns coordinated with scheduler work.
