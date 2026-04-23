@@ -20,6 +20,26 @@ import trace_pipeline as base
 from circuit_utils import StepData, save_compact
 
 
+_PHASE4_SCHEDULER_MODE_ALIAS: dict[str, str] = {
+    "legacy": "locality",
+}
+
+_PHASE4_SCHEDULER_TELEMETRY_DETAIL_ALIAS: dict[str, str] = {
+    "compact": "summary",
+    "full": "debug",
+}
+
+_PHASE4_SCHEDULER_VERSION_BY_MODE: dict[str, str] = {
+    "locality": "locality_v1",
+    "planner_v1": "planner_v1",
+}
+
+_PHASE4_SCHEDULER_POLICY_BY_MODE: dict[str, str] = {
+    "locality": "fixed_frontier_locality",
+    "planner_v1": "membership_preserving_locality",
+}
+
+
 def parse_optional_bool(value: str) -> bool:
     lowered = value.strip().lower()
     if lowered in {"1", "true", "t", "yes", "y", "on"}:
@@ -38,6 +58,58 @@ def parse_exact_trace_internal_dtype(value: str) -> str:
     raise argparse.ArgumentTypeError(
         f"Expected one of {{fp32, fp64, float32, float64}}, got: {value!r}"
     )
+
+
+def _normalize_phase4_scheduler_mode(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    normalized = _PHASE4_SCHEDULER_MODE_ALIAS.get(normalized, normalized)
+    if normalized not in _PHASE4_SCHEDULER_VERSION_BY_MODE:
+        return None
+    return normalized
+
+
+def parse_phase4_scheduler_mode(value: str) -> str:
+    normalized = _normalize_phase4_scheduler_mode(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{locality, planner_v1, legacy}}, got: {value!r}"
+        )
+    return normalized
+
+
+def _normalize_phase4_scheduler_telemetry_detail(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    normalized = _PHASE4_SCHEDULER_TELEMETRY_DETAIL_ALIAS.get(normalized, normalized)
+    if normalized not in {"summary", "normal", "debug"}:
+        return None
+    return normalized
+
+
+def parse_phase4_scheduler_telemetry_detail(value: str) -> str:
+    normalized = _normalize_phase4_scheduler_telemetry_detail(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{summary, normal, debug, compact, full}}, got: {value!r}"
+        )
+    return normalized
+
+
+def resolve_phase4_scheduler_version(phase4_scheduler_mode: Any) -> str | None:
+    normalized = _normalize_phase4_scheduler_mode(phase4_scheduler_mode)
+    if normalized is None:
+        return None
+    return _PHASE4_SCHEDULER_VERSION_BY_MODE.get(normalized)
+
+
+def resolve_phase4_scheduler_policy(phase4_scheduler_mode: Any) -> str | None:
+    normalized = _normalize_phase4_scheduler_mode(phase4_scheduler_mode)
+    if normalized is None:
+        return None
+    return _PHASE4_SCHEDULER_POLICY_BY_MODE.get(normalized)
 
 
 def resolve_internal_precision(exact_trace_internal_dtype: str) -> str:
@@ -83,6 +155,9 @@ def extract_compact_chunked_attribution(
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
     telemetry_max_events: int | None = None,
+    phase4_scheduler_mode: str = "locality",
+    phase4_scheduler_debug: bool = False,
+    phase4_scheduler_telemetry_detail: str = "normal",
 ) -> dict[str, Any]:
     gc.collect()
     if torch.cuda.is_available():
@@ -126,6 +201,9 @@ def extract_compact_chunked_attribution(
         phase4_anomaly_debug=phase4_anomaly_debug,
         cross_cluster_debug=cross_cluster_debug,
         telemetry_max_events=telemetry_max_events,
+        phase4_scheduler_mode=phase4_scheduler_mode,
+        phase4_scheduler_debug=phase4_scheduler_debug,
+        phase4_scheduler_telemetry_detail=phase4_scheduler_telemetry_detail,
         compact_output=True,
     )
 
@@ -231,6 +309,11 @@ def build_step_telemetry_records(
     step_index: int,
     phase4_feature_batch_size: int,
     phase4_feature_batch_planner_status: str,
+    phase4_scheduler_mode: str,
+    phase4_scheduler_version: str | None,
+    phase4_scheduler_policy: str | None,
+    phase4_scheduler_debug: bool,
+    phase4_scheduler_telemetry_detail: str,
     events: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
@@ -242,6 +325,11 @@ def build_step_telemetry_records(
             "event_index": event_index,
             "phase4_feature_batch_size": phase4_feature_batch_size,
             "phase4_feature_batch_planner_status": phase4_feature_batch_planner_status,
+            "phase4_scheduler_mode": phase4_scheduler_mode,
+            "phase4_scheduler_version": phase4_scheduler_version,
+            "phase4_scheduler_policy": phase4_scheduler_policy,
+            "phase4_scheduler_debug": phase4_scheduler_debug,
+            "phase4_scheduler_telemetry_detail": phase4_scheduler_telemetry_detail,
         }
         record.update(event)
         records.append(record)
@@ -319,6 +407,9 @@ def trace_completion_compact_chunked(
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
     telemetry_max_events: int | None = None,
+    phase4_scheduler_mode: str = "locality",
+    phase4_scheduler_debug: bool = False,
+    phase4_scheduler_telemetry_detail: str = "normal",
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
     fixture_name: str | None = None,
@@ -350,6 +441,11 @@ def trace_completion_compact_chunked(
     observed_phase4_feature_batch_sizes: list[int] = []
     observed_phase4_planner_statuses: list[str] = []
     observed_phase4_planner_skip_reasons: list[str] = []
+    observed_phase4_scheduler_modes: list[str] = []
+    observed_phase4_scheduler_versions: list[str] = []
+    observed_phase4_scheduler_policies: list[str] = []
+    observed_phase4_scheduler_debug_values: list[bool] = []
+    observed_phase4_scheduler_telemetry_details: list[str] = []
     telemetry_jsonl_path = completion_dir / "telemetry.jsonl"
     telemetry_jsonl_path.write_text("")
     telemetry_events_written = 0
@@ -415,6 +511,9 @@ def trace_completion_compact_chunked(
             phase4_anomaly_debug=phase4_anomaly_debug,
             cross_cluster_debug=cross_cluster_debug,
             telemetry_max_events=telemetry_max_events,
+            phase4_scheduler_mode=phase4_scheduler_mode,
+            phase4_scheduler_debug=phase4_scheduler_debug,
+            phase4_scheduler_telemetry_detail=phase4_scheduler_telemetry_detail,
         )
         attribution_seconds = time.perf_counter() - attribution_start
 
@@ -440,6 +539,43 @@ def trace_completion_compact_chunked(
             observed_phase4_planner_skip_reasons.append(
                 resolved_phase4_planner_skip_reason
             )
+
+        resolved_phase4_scheduler_mode = (
+            _normalize_phase4_scheduler_mode(
+                compact_result.get("phase4_scheduler_mode")
+            )
+            or phase4_scheduler_mode
+        )
+        observed_phase4_scheduler_modes.append(resolved_phase4_scheduler_mode)
+        resolved_phase4_scheduler_version = compact_result.get(
+            "phase4_scheduler_version"
+        )
+        if not isinstance(resolved_phase4_scheduler_version, str):
+            resolved_phase4_scheduler_version = resolve_phase4_scheduler_version(
+                resolved_phase4_scheduler_mode
+            )
+        if isinstance(resolved_phase4_scheduler_version, str):
+            observed_phase4_scheduler_versions.append(resolved_phase4_scheduler_version)
+        resolved_phase4_scheduler_policy = compact_result.get("phase4_scheduler_policy")
+        if not isinstance(resolved_phase4_scheduler_policy, str):
+            resolved_phase4_scheduler_policy = resolve_phase4_scheduler_policy(
+                resolved_phase4_scheduler_mode
+            )
+        if isinstance(resolved_phase4_scheduler_policy, str):
+            observed_phase4_scheduler_policies.append(resolved_phase4_scheduler_policy)
+        resolved_phase4_scheduler_debug = bool(
+            compact_result.get("phase4_scheduler_debug", phase4_scheduler_debug)
+        )
+        observed_phase4_scheduler_debug_values.append(resolved_phase4_scheduler_debug)
+        resolved_phase4_scheduler_telemetry_detail = (
+            _normalize_phase4_scheduler_telemetry_detail(
+                compact_result.get("phase4_scheduler_telemetry_detail")
+            )
+            or phase4_scheduler_telemetry_detail
+        )
+        observed_phase4_scheduler_telemetry_details.append(
+            resolved_phase4_scheduler_telemetry_detail
+        )
 
         attribution_telemetry_summary = base.summarize_attribution_telemetry(
             compact_result.get("telemetry_summary")
@@ -468,6 +604,11 @@ def trace_completion_compact_chunked(
             step_index=step_idx,
             phase4_feature_batch_size=resolved_phase4_feature_batch_size,
             phase4_feature_batch_planner_status=resolved_phase4_planner_status,
+            phase4_scheduler_mode=resolved_phase4_scheduler_mode,
+            phase4_scheduler_version=resolved_phase4_scheduler_version,
+            phase4_scheduler_policy=resolved_phase4_scheduler_policy,
+            phase4_scheduler_debug=resolved_phase4_scheduler_debug,
+            phase4_scheduler_telemetry_detail=resolved_phase4_scheduler_telemetry_detail,
             events=telemetry_events,
         )
         telemetry_events_written += base.append_jsonl_records(
@@ -627,6 +768,11 @@ def trace_completion_compact_chunked(
             ),
             "phase4_feature_batch_planner_status": resolved_phase4_planner_status,
             "phase4_feature_batch_planner_skip_reason": resolved_phase4_planner_skip_reason,
+            "phase4_scheduler_mode": resolved_phase4_scheduler_mode,
+            "phase4_scheduler_version": resolved_phase4_scheduler_version,
+            "phase4_scheduler_policy": resolved_phase4_scheduler_policy,
+            "phase4_scheduler_debug": resolved_phase4_scheduler_debug,
+            "phase4_scheduler_telemetry_detail": resolved_phase4_scheduler_telemetry_detail,
             "phase4_anomaly_debug_enabled": bool(
                 compact_result.get("phase4_anomaly_debug_enabled", phase4_anomaly_debug)
             ),
@@ -669,6 +815,12 @@ def trace_completion_compact_chunked(
     completion_text = tokenizer.decode(generated_token_ids, skip_special_tokens=True)
     unique_phase4_feature_batch_sizes = sorted(set(observed_phase4_feature_batch_sizes))
     unique_phase4_planner_statuses = sorted(set(observed_phase4_planner_statuses))
+    unique_phase4_scheduler_modes = sorted(set(observed_phase4_scheduler_modes))
+    unique_phase4_scheduler_versions = sorted(set(observed_phase4_scheduler_versions))
+    unique_phase4_scheduler_policies = sorted(set(observed_phase4_scheduler_policies))
+    unique_phase4_scheduler_telemetry_details = sorted(
+        set(observed_phase4_scheduler_telemetry_details)
+    )
     completion_end_to_end_seconds = time.perf_counter() - trace_start_perf
     if cross_cluster_debug and not cross_cluster_debug_artifacts_captured:
         cross_cluster_debug_checkpoints_status = "not_captured"
@@ -753,6 +905,40 @@ def trace_completion_compact_chunked(
             observed_phase4_planner_skip_reasons[-1]
             if observed_phase4_planner_skip_reasons
             else None
+        ),
+        "phase4_scheduler_mode": phase4_scheduler_mode,
+        "phase4_scheduler_mode_effective": (
+            observed_phase4_scheduler_modes[-1]
+            if observed_phase4_scheduler_modes
+            else phase4_scheduler_mode
+        ),
+        "phase4_scheduler_modes_observed": unique_phase4_scheduler_modes,
+        "phase4_scheduler_version": (
+            observed_phase4_scheduler_versions[-1]
+            if observed_phase4_scheduler_versions
+            else resolve_phase4_scheduler_version(phase4_scheduler_mode)
+        ),
+        "phase4_scheduler_versions_observed": unique_phase4_scheduler_versions,
+        "phase4_scheduler_policy": (
+            observed_phase4_scheduler_policies[-1]
+            if observed_phase4_scheduler_policies
+            else resolve_phase4_scheduler_policy(phase4_scheduler_mode)
+        ),
+        "phase4_scheduler_policies_observed": unique_phase4_scheduler_policies,
+        "phase4_scheduler_debug": bool(phase4_scheduler_debug),
+        "phase4_scheduler_debug_effective": (
+            observed_phase4_scheduler_debug_values[-1]
+            if observed_phase4_scheduler_debug_values
+            else bool(phase4_scheduler_debug)
+        ),
+        "phase4_scheduler_telemetry_detail": phase4_scheduler_telemetry_detail,
+        "phase4_scheduler_telemetry_detail_effective": (
+            observed_phase4_scheduler_telemetry_details[-1]
+            if observed_phase4_scheduler_telemetry_details
+            else phase4_scheduler_telemetry_detail
+        ),
+        "phase4_scheduler_telemetry_details_observed": (
+            unique_phase4_scheduler_telemetry_details
         ),
         "sparsification": (
             {
@@ -871,6 +1057,15 @@ def run_pipeline(args: argparse.Namespace) -> None:
             "compact exact-chunked output. --save-raw/full-graph output does not support "
             "--exact-trace-internal-dtype values other than the default-compatible fp32 mode."
         )
+    if args.save_raw and (
+        args.phase4_scheduler_mode != "locality"
+        or args.phase4_scheduler_debug
+        or args.phase4_scheduler_telemetry_detail != "normal"
+    ):
+        raise ValueError(
+            "Phase-4 scheduler controls currently support only compact exact-chunked output. "
+            "--save-raw/full-graph output is unsupported with non-default scheduler flags."
+        )
     if planner_enabled and args.save_raw:
         raise ValueError(
             "Phase-4 feature batch planner currently supports only compact exact-chunked output. "
@@ -959,6 +1154,15 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "phase4_anomaly_debug": args.phase4_anomaly_debug,
         "cross_cluster_debug": args.cross_cluster_debug,
         "telemetry_max_events": args.telemetry_max_events,
+        "phase4_scheduler_mode": args.phase4_scheduler_mode,
+        "phase4_scheduler_version": resolve_phase4_scheduler_version(
+            args.phase4_scheduler_mode
+        ),
+        "phase4_scheduler_policy": resolve_phase4_scheduler_policy(
+            args.phase4_scheduler_mode
+        ),
+        "phase4_scheduler_debug": args.phase4_scheduler_debug,
+        "phase4_scheduler_telemetry_detail": args.phase4_scheduler_telemetry_detail,
         "prepared_prompt_file": args.prepared_prompt_file,
         "prepared_prompt_meta_file": args.prepared_prompt_meta_file,
         "graph_packaging_mode": (
@@ -1046,6 +1250,9 @@ def run_pipeline(args: argparse.Namespace) -> None:
                     {
                         "exact_trace_internal_dtype": args.exact_trace_internal_dtype,
                         "cross_cluster_debug": args.cross_cluster_debug,
+                        "phase4_scheduler_mode": args.phase4_scheduler_mode,
+                        "phase4_scheduler_debug": args.phase4_scheduler_debug,
+                        "phase4_scheduler_telemetry_detail": args.phase4_scheduler_telemetry_detail,
                     }
                     if not args.save_raw
                     else {}
@@ -1283,6 +1490,29 @@ if __name__ == "__main__":
         "--phase4-anomaly-debug",
         action="store_true",
         help="Enable opt-in Phase-4 anomaly shadow diagnostics (compact exact-chunked path only)",
+    )
+    parser.add_argument(
+        "--phase4-scheduler-mode",
+        type=parse_phase4_scheduler_mode,
+        default="locality",
+        help=(
+            "Phase-4 frontier scheduler mode "
+            "(locality, planner_v1; legacy aliases to locality)"
+        ),
+    )
+    parser.add_argument(
+        "--phase4-scheduler-debug",
+        action="store_true",
+        help="Enable additional Phase-4 scheduler debug diagnostics",
+    )
+    parser.add_argument(
+        "--phase4-scheduler-telemetry-detail",
+        type=parse_phase4_scheduler_telemetry_detail,
+        default="normal",
+        help=(
+            "Phase-4 scheduler telemetry detail "
+            "(summary, normal, debug; compact/full accepted as aliases)"
+        ),
     )
     parser.add_argument(
         "--cross-cluster-debug",

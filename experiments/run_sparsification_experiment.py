@@ -424,6 +424,22 @@ def build_command(
             )
         if scenario.get("phase4_anomaly_debug", False):
             cmd.append("--phase4-anomaly-debug")
+        if scenario.get("phase4_scheduler_mode") is not None:
+            cmd.extend(
+                [
+                    "--phase4-scheduler-mode",
+                    str(scenario["phase4_scheduler_mode"]),
+                ]
+            )
+        if scenario.get("phase4_scheduler_debug", False):
+            cmd.append("--phase4-scheduler-debug")
+        if scenario.get("phase4_scheduler_telemetry_detail") is not None:
+            cmd.extend(
+                [
+                    "--phase4-scheduler-telemetry-detail",
+                    str(scenario["phase4_scheduler_telemetry_detail"]),
+                ]
+            )
         if scenario.get("cross_cluster_debug", False):
             cmd.append("--cross-cluster-debug")
         if scenario.get("telemetry_max_events") is not None:

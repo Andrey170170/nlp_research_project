@@ -34,6 +34,9 @@ EXACT_MODE_KNOB_KEYS = (
     "feature_batch_min_free_fraction",
     "feature_batch_probe_batches",
     "phase4_anomaly_debug",
+    "phase4_scheduler_mode",
+    "phase4_scheduler_debug",
+    "phase4_scheduler_telemetry_detail",
     "cross_cluster_debug",
     "telemetry_max_events",
 )

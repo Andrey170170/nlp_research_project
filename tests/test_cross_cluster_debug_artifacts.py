@@ -7,6 +7,7 @@ Usage::
 
 from __future__ import annotations
 
+import argparse
 import json
 import inspect
 import sys
@@ -27,6 +28,8 @@ def run_checks() -> None:
         build_cross_cluster_debug_records,
         extract_compact_chunked_attribution,
         normalize_cross_cluster_debug_records,
+        parse_phase4_scheduler_mode,
+        parse_phase4_scheduler_telemetry_detail,
         trace_completion_compact_chunked,
     )
 
@@ -58,7 +61,19 @@ def run_checks() -> None:
     full_graph_extract_signature = inspect.signature(extract_graph)
     full_graph_trace_signature = inspect.signature(trace_completion)
     assert extract_signature.parameters["exact_trace_internal_dtype"].default == "fp32"
+    assert extract_signature.parameters["phase4_scheduler_mode"].default == "locality"
+    assert extract_signature.parameters["phase4_scheduler_debug"].default is False
+    assert (
+        extract_signature.parameters["phase4_scheduler_telemetry_detail"].default
+        == "normal"
+    )
     assert trace_signature.parameters["exact_trace_internal_dtype"].default == "fp32"
+    assert trace_signature.parameters["phase4_scheduler_mode"].default == "locality"
+    assert trace_signature.parameters["phase4_scheduler_debug"].default is False
+    assert (
+        trace_signature.parameters["phase4_scheduler_telemetry_detail"].default
+        == "normal"
+    )
     assert (
         full_graph_extract_signature.parameters["exact_trace_internal_dtype"].default
         == "fp32"
@@ -67,6 +82,32 @@ def run_checks() -> None:
         full_graph_trace_signature.parameters["exact_trace_internal_dtype"].default
         == "fp32"
     )
+
+    assert parse_phase4_scheduler_mode("locality") == "locality"
+    assert parse_phase4_scheduler_mode("planner_v1") == "planner_v1"
+    assert parse_phase4_scheduler_mode("legacy") == "locality"
+
+    assert parse_phase4_scheduler_telemetry_detail("summary") == "summary"
+    assert parse_phase4_scheduler_telemetry_detail("normal") == "normal"
+    assert parse_phase4_scheduler_telemetry_detail("debug") == "debug"
+    assert parse_phase4_scheduler_telemetry_detail("compact") == "summary"
+    assert parse_phase4_scheduler_telemetry_detail("full") == "debug"
+
+    try:
+        parse_phase4_scheduler_mode("unknown")
+    except argparse.ArgumentTypeError:
+        pass
+    else:
+        raise AssertionError("Expected scheduler mode parser to reject unknown value")
+
+    try:
+        parse_phase4_scheduler_telemetry_detail("verbose")
+    except argparse.ArgumentTypeError:
+        pass
+    else:
+        raise AssertionError(
+            "Expected scheduler telemetry detail parser to reject unknown value"
+        )
 
 
 def run_launcher_and_extractor_roundtrip_checks() -> None:
@@ -93,6 +134,9 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         "cross_cluster_debug": True,
         "telemetry_max_events": 17,
         "phase4_anomaly_debug": False,
+        "phase4_scheduler_mode": "planner_v1",
+        "phase4_scheduler_debug": True,
+        "phase4_scheduler_telemetry_detail": "debug",
     }
 
     command = build_command(Path("/tmp/out"), scenario)
@@ -101,6 +145,11 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
     assert "--cross-cluster-debug" in command
     assert "--telemetry-max-events" in command
     assert "17" in command
+    assert "--phase4-scheduler-mode" in command
+    assert "planner_v1" in command
+    assert "--phase4-scheduler-debug" in command
+    assert "--phase4-scheduler-telemetry-detail" in command
+    assert "debug" in command
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         scenario_root = Path(tmp_dir) / "scenario"
