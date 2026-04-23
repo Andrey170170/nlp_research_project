@@ -19,6 +19,7 @@ from .jobs import render_launch_plan
 from .phase3_seed_bundle_compare import compare_phase3_seed_bundles_to_json
 from .presets import preset_names, run_preset
 from .scenarios import SCENARIO_TIERS, build_tier_config, write_tier_config
+from .semantic_feature_compare import compare_semantic_feature_descriptors_to_json
 from .workspace import (
     DEFAULT_SNAPSHOT_ROOT,
     create_workspace_snapshot,
@@ -88,6 +89,19 @@ def _cmd_compare_phase3_seed_bundles(args: argparse.Namespace) -> None:
     )
     if args.output_json is not None:
         print(f"Wrote Phase-3 seed bundle comparison to {args.output_json}")
+    print(json.dumps(summary, indent=2))
+
+
+def _cmd_compare_semantic_features(args: argparse.Namespace) -> None:
+    summary = compare_semantic_feature_descriptors_to_json(
+        args.left_descriptor,
+        args.right_descriptor,
+        output_json=args.output_json,
+        position_window=args.position_window,
+        similarity_threshold=args.similarity_threshold,
+    )
+    if args.output_json is not None:
+        print(f"Wrote semantic feature comparison to {args.output_json}")
     print(json.dumps(summary, indent=2))
 
 
@@ -274,6 +288,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional output path for comparison JSON",
     )
     compare_phase3.set_defaults(func=_cmd_compare_phase3_seed_bundles)
+
+    compare_semantic = subparsers.add_parser(
+        "compare-semantic-features",
+        help="Compare two saved feature semantic descriptor artifacts",
+    )
+    compare_semantic.add_argument("left_descriptor", type=Path)
+    compare_semantic.add_argument("right_descriptor", type=Path)
+    compare_semantic.add_argument(
+        "--position-window",
+        type=int,
+        default=0,
+        help="Maximum position distance allowed for semantic substitute matching",
+    )
+    compare_semantic.add_argument(
+        "--similarity-threshold",
+        type=float,
+        default=0.95,
+        help="Cosine threshold for high-confidence semantic substitute matches",
+    )
+    compare_semantic.add_argument(
+        "--output-json",
+        type=Path,
+        default=None,
+        help="Optional output path for comparison JSON",
+    )
+    compare_semantic.set_defaults(func=_cmd_compare_semantic_features)
 
     snapshot = subparsers.add_parser(
         "snapshot-workspace",
