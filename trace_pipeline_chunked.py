@@ -122,6 +122,74 @@ def save_phase3_seed_bundle(
     )
 
 
+def save_feature_semantic_descriptors(
+    payload: dict[str, Any],
+    path: Path,
+) -> None:
+    status = payload.get("status")
+    descriptor_version = payload.get("descriptor_version")
+    descriptor_kind = payload.get("descriptor_kind")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    base.np.savez_compressed(
+        str(path),
+        candidate_features=_to_numpy_seed_bundle_array(
+            payload.get("candidate_features", [])
+        ),
+        candidate_row_indices=_to_numpy_seed_bundle_array(
+            payload.get("candidate_row_indices", [])
+        ),
+        activation_value=_to_numpy_seed_bundle_array(
+            payload.get("activation_value", [])
+        ),
+        seed_influence=_to_numpy_seed_bundle_array(payload.get("seed_influence", [])),
+        seed_rank=_to_numpy_seed_bundle_array(payload.get("seed_rank", [])),
+        is_top_seed=_to_numpy_seed_bundle_array(payload.get("is_top_seed", [])),
+        is_frontier_pre=_to_numpy_seed_bundle_array(payload.get("is_frontier_pre", [])),
+        frontier_pre_rank=_to_numpy_seed_bundle_array(
+            payload.get("frontier_pre_rank", [])
+        ),
+        is_frontier_post=_to_numpy_seed_bundle_array(
+            payload.get("is_frontier_post", [])
+        ),
+        frontier_post_rank=_to_numpy_seed_bundle_array(
+            payload.get("frontier_post_rank", [])
+        ),
+        is_selected_phase4=_to_numpy_seed_bundle_array(
+            payload.get("is_selected_phase4", [])
+        ),
+        phase4_selected_rank=_to_numpy_seed_bundle_array(
+            payload.get("phase4_selected_rank", [])
+        ),
+        semantic_sketch=_to_numpy_seed_bundle_array(payload.get("semantic_sketch", [])),
+        status=base.np.array("" if status is None else str(status)),
+        descriptor_version=base.np.array(
+            "" if descriptor_version is None else str(descriptor_version)
+        ),
+        descriptor_kind=base.np.array(
+            "" if descriptor_kind is None else str(descriptor_kind)
+        ),
+        descriptor_dim=base.np.array(
+            payload.get("descriptor_dim", 0), dtype=base.np.int64
+        ),
+        semantic_descriptor_top_k=base.np.array(
+            payload.get("semantic_descriptor_top_k", 0), dtype=base.np.int64
+        ),
+        candidate_count=base.np.array(
+            payload.get("candidate_count", 0), dtype=base.np.int64
+        ),
+        total_active_features=base.np.array(
+            payload.get("total_active_features", 0), dtype=base.np.int64
+        ),
+        phase4_selection_available=base.np.array(
+            bool(payload.get("phase4_selection_available", False))
+        ),
+        seed_influence_available=base.np.array(
+            bool(payload.get("seed_influence_available", False))
+        ),
+    )
+
+
 def extract_compact_chunked_attribution(
     model,
     prompt: str | torch.Tensor | list[int],
@@ -155,6 +223,9 @@ def extract_compact_chunked_attribution(
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
     capture_phase3_seed_bundle: bool = False,
+    capture_feature_semantic_descriptors: bool = False,
+    semantic_descriptor_top_k: int = 2048,
+    semantic_descriptor_dim: int = 64,
     telemetry_max_events: int | None = None,
 ) -> dict[str, Any]:
     gc.collect()
@@ -199,6 +270,9 @@ def extract_compact_chunked_attribution(
         phase4_anomaly_debug=phase4_anomaly_debug,
         cross_cluster_debug=cross_cluster_debug,
         capture_phase3_seed_bundle=capture_phase3_seed_bundle,
+        capture_feature_semantic_descriptors=capture_feature_semantic_descriptors,
+        semantic_descriptor_top_k=semantic_descriptor_top_k,
+        semantic_descriptor_dim=semantic_descriptor_dim,
         telemetry_max_events=telemetry_max_events,
         compact_output=True,
         phase0_activation_threshold_compare_mode=phase0_activation_threshold_compare_mode,
@@ -395,6 +469,9 @@ def trace_completion_compact_chunked(
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
     capture_phase3_seed_bundle: bool = False,
+    capture_feature_semantic_descriptors: bool = False,
+    semantic_descriptor_top_k: int = 2048,
+    semantic_descriptor_dim: int = 64,
     telemetry_max_events: int | None = None,
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
@@ -449,6 +526,8 @@ def trace_completion_compact_chunked(
     resolved_exact_trace_internal_dtype_requested: str | None = None
     phase3_seed_bundle_statuses: list[str] = []
     phase3_seed_bundle_captured_count = 0
+    feature_semantic_descriptor_statuses: list[str] = []
+    feature_semantic_descriptor_captured_count = 0
 
     candidate_stop_ids = [tokenizer.eos_token_id, tokenizer.pad_token_id]
     end_of_turn = tokenizer.convert_tokens_to_ids("<end_of_turn>")
@@ -495,6 +574,9 @@ def trace_completion_compact_chunked(
             phase4_anomaly_debug=phase4_anomaly_debug,
             cross_cluster_debug=cross_cluster_debug,
             capture_phase3_seed_bundle=capture_phase3_seed_bundle,
+            capture_feature_semantic_descriptors=capture_feature_semantic_descriptors,
+            semantic_descriptor_top_k=semantic_descriptor_top_k,
+            semantic_descriptor_dim=semantic_descriptor_dim,
             telemetry_max_events=telemetry_max_events,
         )
         attribution_seconds = time.perf_counter() - attribution_start
@@ -689,6 +771,36 @@ def trace_completion_compact_chunked(
                 phase3_seed_bundle_status = "missing_payload"
         phase3_seed_bundle_statuses.append(phase3_seed_bundle_status)
 
+        feature_semantic_descriptor_path: Path | None = None
+        feature_semantic_descriptor_status = "disabled"
+        if capture_feature_semantic_descriptors:
+            feature_semantic_descriptor_path = (
+                completion_dir / f"step_{step_idx:03d}_feature_semantic_descriptors.npz"
+            )
+            feature_semantic_descriptor_payload = compact_result.get(
+                "feature_semantic_descriptors"
+            )
+            if isinstance(feature_semantic_descriptor_payload, dict):
+                payload_status = str(
+                    feature_semantic_descriptor_payload.get("status", "captured")
+                )
+                try:
+                    save_feature_semantic_descriptors(
+                        feature_semantic_descriptor_payload,
+                        feature_semantic_descriptor_path,
+                    )
+                    feature_semantic_descriptor_status = (
+                        "captured"
+                        if payload_status == "captured"
+                        else f"captured_{payload_status}"
+                    )
+                    feature_semantic_descriptor_captured_count += 1
+                except Exception:
+                    feature_semantic_descriptor_status = "save_failed"
+            else:
+                feature_semantic_descriptor_status = "missing_payload"
+        feature_semantic_descriptor_statuses.append(feature_semantic_descriptor_status)
+
         artifact_save_start = time.perf_counter()
         save_compact(step_data, completion_dir / f"step_{step_idx:03d}.npz")
         artifact_save_seconds = time.perf_counter() - artifact_save_start
@@ -769,6 +881,15 @@ def trace_completion_compact_chunked(
                 else None
             ),
             "phase3_seed_bundle_status": phase3_seed_bundle_status,
+            "feature_semantic_descriptor_capture_enabled": bool(
+                capture_feature_semantic_descriptors
+            ),
+            "feature_semantic_descriptor_path": (
+                feature_semantic_descriptor_path.name
+                if feature_semantic_descriptor_path is not None
+                else None
+            ),
+            "feature_semantic_descriptor_status": feature_semantic_descriptor_status,
         }
         step_records.append(step_record)
 
@@ -842,6 +963,9 @@ def trace_completion_compact_chunked(
         "phase4_anomaly_debug": phase4_anomaly_debug,
         "cross_cluster_debug": cross_cluster_debug,
         "capture_phase3_seed_bundle": capture_phase3_seed_bundle,
+        "capture_feature_semantic_descriptors": capture_feature_semantic_descriptors,
+        "semantic_descriptor_top_k": semantic_descriptor_top_k,
+        "semantic_descriptor_dim": semantic_descriptor_dim,
         "telemetry_max_events": telemetry_max_events,
         "phase4_feature_batch_size_initial": initial_phase4_feature_batch_size,
         "phase4_feature_batch_sizes_observed": unique_phase4_feature_batch_sizes,
@@ -944,6 +1068,27 @@ def trace_completion_compact_chunked(
         "phase3_seed_bundle_path_template": (
             "step_<idx>_phase3_seed_bundle.npz" if capture_phase3_seed_bundle else None
         ),
+        "feature_semantic_descriptor_capture_enabled": bool(
+            capture_feature_semantic_descriptors
+        ),
+        "feature_semantic_descriptor_top_k": int(semantic_descriptor_top_k),
+        "feature_semantic_descriptor_dim": int(semantic_descriptor_dim),
+        "feature_semantic_descriptor_captured_count": int(
+            feature_semantic_descriptor_captured_count
+        ),
+        "feature_semantic_descriptor_status": (
+            feature_semantic_descriptor_statuses[-1]
+            if feature_semantic_descriptor_statuses
+            else None
+        ),
+        "feature_semantic_descriptor_statuses_observed": sorted(
+            set(feature_semantic_descriptor_statuses)
+        ),
+        "feature_semantic_descriptor_path_template": (
+            "step_<idx>_feature_semantic_descriptors.npz"
+            if capture_feature_semantic_descriptors
+            else None
+        ),
         "resource_snapshot": base.capture_resource_snapshot(),
         "timing_summary": base.build_completion_timing_summary(
             completion_end_to_end_seconds=completion_end_to_end_seconds,
@@ -1005,6 +1150,11 @@ def run_pipeline(args: argparse.Namespace) -> None:
             "Phase-3 seed bundle capture supports only compact exact-chunked output. "
             "--save-raw is unsupported with --capture-phase3-seed-bundle."
         )
+    if args.capture_feature_semantic_descriptors and args.save_raw:
+        raise ValueError(
+            "Feature semantic descriptor capture supports only compact exact-chunked output. "
+            "--save-raw is unsupported with --capture-feature-semantic-descriptors."
+        )
     if args.save_raw and args.exact_trace_internal_dtype != "fp64":
         raise ValueError(
             "The explicit internal precision contract is currently supported only for "
@@ -1036,6 +1186,10 @@ def run_pipeline(args: argparse.Namespace) -> None:
         raise ValueError("feature_batch_min_free_fraction must be in [0, 1)")
     if args.feature_batch_probe_batches <= 0:
         raise ValueError("feature_batch_probe_batches must be > 0")
+    if args.semantic_descriptor_top_k <= 0:
+        raise ValueError("semantic_descriptor_top_k must be > 0")
+    if args.semantic_descriptor_dim <= 0:
+        raise ValueError("semantic_descriptor_dim must be > 0")
     sparsification = build_sparsification_config(args)
     model = base.load_model(
         lazy_encoder=not args.no_lazy_encoder,
@@ -1108,6 +1262,9 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "phase4_anomaly_debug": args.phase4_anomaly_debug,
         "cross_cluster_debug": args.cross_cluster_debug,
         "capture_phase3_seed_bundle": args.capture_phase3_seed_bundle,
+        "capture_feature_semantic_descriptors": args.capture_feature_semantic_descriptors,
+        "semantic_descriptor_top_k": args.semantic_descriptor_top_k,
+        "semantic_descriptor_dim": args.semantic_descriptor_dim,
         "telemetry_max_events": args.telemetry_max_events,
         "prepared_prompt_file": args.prepared_prompt_file,
         "prepared_prompt_meta_file": args.prepared_prompt_meta_file,
@@ -1200,6 +1357,11 @@ def run_pipeline(args: argparse.Namespace) -> None:
                         ),
                         "cross_cluster_debug": args.cross_cluster_debug,
                         "capture_phase3_seed_bundle": args.capture_phase3_seed_bundle,
+                        "capture_feature_semantic_descriptors": (
+                            args.capture_feature_semantic_descriptors
+                        ),
+                        "semantic_descriptor_top_k": args.semantic_descriptor_top_k,
+                        "semantic_descriptor_dim": args.semantic_descriptor_dim,
                     }
                     if not args.save_raw
                     else {}
@@ -1456,6 +1618,26 @@ if __name__ == "__main__":
         "--capture-phase3-seed-bundle",
         action="store_true",
         help="Save per-step Phase-3 seed bundle artifacts (compact exact-chunked path only)",
+    )
+    parser.add_argument(
+        "--capture-feature-semantic-descriptors",
+        action="store_true",
+        help=(
+            "Save per-step bounded semantic descriptor artifacts for Phase-3 candidates "
+            "(compact exact-chunked path only)"
+        ),
+    )
+    parser.add_argument(
+        "--semantic-descriptor-top-k",
+        type=int,
+        default=2048,
+        help="Maximum number of candidate features to keep in semantic descriptor artifacts",
+    )
+    parser.add_argument(
+        "--semantic-descriptor-dim",
+        type=int,
+        default=64,
+        help="Semantic descriptor sketch width (number of float values per candidate)",
     )
     parser.add_argument(
         "--telemetry-max-events",

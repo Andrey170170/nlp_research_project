@@ -12,6 +12,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import numpy as np
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -217,9 +219,60 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         assert legacy_row["phase3_seed_bundle_status"] == "captured"
 
 
+def run_feature_semantic_descriptor_save_checks() -> None:
+    import torch
+
+    from trace_pipeline_chunked import save_feature_semantic_descriptors
+
+    payload = {
+        "status": "captured",
+        "descriptor_version": "v1",
+        "descriptor_kind": "fallback_identity_metadata_v1",
+        "descriptor_dim": 4,
+        "semantic_descriptor_top_k": 16,
+        "candidate_count": 2,
+        "total_active_features": 5,
+        "candidate_features": torch.tensor([[0, 0, 7], [1, 2, 3]], dtype=torch.int64),
+        "candidate_row_indices": torch.tensor([1, 4], dtype=torch.int64),
+        "activation_value": torch.tensor([0.2, -0.7], dtype=torch.float32),
+        "seed_influence": torch.tensor([0.9, 0.1], dtype=torch.float64),
+        "seed_rank": torch.tensor([0, 4], dtype=torch.int64),
+        "is_top_seed": torch.tensor([True, False], dtype=torch.bool),
+        "is_frontier_pre": torch.tensor([True, True], dtype=torch.bool),
+        "frontier_pre_rank": torch.tensor([1, 3], dtype=torch.int64),
+        "is_frontier_post": torch.tensor([False, True], dtype=torch.bool),
+        "frontier_post_rank": torch.tensor([-1, 2], dtype=torch.int64),
+        "is_selected_phase4": torch.tensor([True, False], dtype=torch.bool),
+        "phase4_selected_rank": torch.tensor([0, -1], dtype=torch.int64),
+        "phase4_selection_available": True,
+        "seed_influence_available": True,
+        "semantic_sketch": torch.tensor(
+            [[0.1, 0.2, 0.3, 0.4], [0.5, -0.2, 0.7, -0.8]],
+            dtype=torch.float32,
+        ),
+    }
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        path = Path(tmp_dir) / "step_000_feature_semantic_descriptors.npz"
+        save_feature_semantic_descriptors(payload, path)
+        loaded = np.load(path, allow_pickle=False)
+
+        assert loaded["candidate_features"].shape == (2, 3)
+        assert loaded["candidate_row_indices"].shape == (2,)
+        assert loaded["semantic_sketch"].shape == (2, 4)
+        assert loaded["status"].item() == "captured"
+        assert loaded["descriptor_version"].item() == "v1"
+        assert loaded["descriptor_kind"].item() == "fallback_identity_metadata_v1"
+        assert int(loaded["descriptor_dim"].item()) == 4
+        assert int(loaded["candidate_count"].item()) == 2
+        assert bool(loaded["phase4_selection_available"].item()) is True
+        assert bool(loaded["seed_influence_available"].item()) is True
+
+
 def main() -> None:
     run_checks()
     run_launcher_and_extractor_roundtrip_checks()
+    run_feature_semantic_descriptor_save_checks()
     print("OK: cross-cluster debug helper and round-trip checks passed")
 
 
