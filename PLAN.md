@@ -1,114 +1,68 @@
-# Current Implementation Plan — Phase-0 → Phase-3 Causality Experiment
+# Current Implementation Plan — Full Downstream/Semantic Stability Capture
 
-## Objective
+## Problem statement
 
-Implement the next stronger cross-cluster experiment for `94_base` so we can
-move from:
+The finished `94_base` boundary-localization pair showed that Ascend/Cardinal
+diverge already at the **pre-CLT input** boundary while CLT constants match. That
+is plausible hardware/runtime numerical drift. The next expensive run should
+therefore be loaded with enough artifacts to answer the more important question:
 
-- "Phase-0 diverges first, and Phase-3 diverges later"
+> Does upstream numerical drift materially change the extracted circuit, or is
+> the graph semantically stable despite exact-ID / score perturbations?
 
-to a stronger test of:
-
-- whether the Phase-3 divergence is mostly downstream amplification of earlier
-  Phase-0 drift,
-- or whether Phase-3 has an additional cluster-sensitive instability of its own.
-
-The full experiment has two layers:
-
-1. **Core layer (required)** — Phase-0 boundary fingerprints + saved Phase-3
-   seed bundle for offline shared-vs-unique decomposition.
-2. **Extra layer (defer unless still needed)** — stronger donor/replay-style
-   intervention that reruns Phase-3/4 from saved early-state artifacts.
-
-The current queued boundary-fingerprint pair is still useful, but by itself it
-is **not** enough to prove a causal Phase-0 → Phase-3 link.
+We should implement the full passive capture and offline analysis stack **before**
+launching the next matched Ascend/Cardinal pair.
 
 ## Current state
 
 - Within-cluster baseline consistency has already been validated.
-- Matched single-step cross-cluster runs for `828_base` and `94_base` completed.
-- Current interpretation:
-  - first structural divergence appears in `phase0_sparse_setup`,
-  - Phase-1 target logit state still matches,
-  - Phase-3 seed ranking/frontier diverges downstream.
-- The 6-job compare matrix showed that Phase-0 compare-mode upcasts (`fp32`,
-  `fp64`) do **not** reduce the `94_base` cross-cluster split.
-- Phase-0 boundary-fingerprint logging has already been implemented and a new
-  matched baseline pair has been launched.
+- The 6-job Phase-0 compare-mode matrix was negative for `94_base`:
+  `baseline`, `fp32`, and `fp64` all produced the same cross-cluster split.
+- Boundary localization pair completed successfully:
+  - first token still matched: `Let`,
+  - Phase-1 target-logit hash still matched: `437d56a13df41ec1`,
+  - transcoder constants matched globally: `31c83df182f3f365`,
+  - pre-CLT input fingerprints differed in all 26 layers,
+  - downstream preactivation/margin/mask/post-activation also differed in all 26
+    layers.
+- Basic Phase-3 seed bundle capture is implemented and committed.
+- Basic offline Phase-3 seed bundle comparison is implemented and committed.
+- The queued boundary-localization pair did **not** include Phase-3 seed bundles
+  or semantic descriptors, so it cannot answer the full downstream-stability
+  question.
 
-## Why the current queued pair is not enough
+## Scope
 
-Boundary fingerprints can tell us **where the first mismatch starts**:
+Implement additional **passive** capture and CPU-offline comparison so the next
+run can quantify four stability levels:
 
-1. before CLT encode (`mlp_in_cache` input into CLT),
-2. inside CLT encode preactivation / margin computation,
-3. only at JumpReLU mask/post-mask.
+1. **Support stability** — how much Phase-0/Phase-3 mass is on shared vs unique
+   features.
+2. **Score/rank stability** — whether shared features keep similar activations,
+   influences, ranks, and frontier status.
+3. **Graph stability** — whether edge structure and weights are stable after
+   decomposing shared/unique endpoints.
+4. **Semantic stability** — whether exact-ID-unmatched features are still close
+   semantic substitutes by descriptor / decoder-neighborhood evidence.
 
-But even a clean early mismatch does not, by itself, prove that the later
-Phase-3 split is entirely downstream of Phase-0. We need an additional test that
-asks whether Phase-3 disagreement is mostly concentrated in Phase-0-unique
-features or persists even after restricting to shared early-state support.
+## Non-goals
 
-## Immediate goals
+- Do not attempt to eliminate all raw floating-point drift before this diagnostic
+  run.
+- Do not implement donor/swap/replay intervention yet.
+- Do not save full dense tensors or full decoder matrices into artifacts.
+- Do not run GPU/model-loading code outside SLURM.
+- Do not launch the next matched pair until the run-readiness checklist below
+  passes.
 
-1. Keep the current Phase-0 boundary-fingerprint work as the earliest-divergence
-   localization layer.
-2. Add a compact **Phase-3 seed bundle artifact** that can be saved per traced
-   step without changing run behavior.
-3. Add offline comparison support for shared-vs-unique decomposition of Phase-3
-   influence/frontier behavior.
-4. Relaunch a new matched `94_base` pair from immutable snapshot using the
-   stronger artifact set.
-5. Only if ambiguity remains, plan an explicit donor/replay intervention mode as
-   an extra follow-up.
+## Proposed implementation phases
 
-## Required implementation changes
+### Phase 1 — enrich Phase-3 seed-bundle offline comparison
 
-### A. Preserve / validate Phase-0 boundary localization layer
+Extend `experiments/exact_trace_bench/phase3_seed_bundle_compare.py` and CLI
+output to report shared-support score/rank stability.
 
-Keep and validate the already chosen Phase-0 boundary instrumentation:
-
-- `../circuit-tracer_chunked/circuit_tracer/replacement_model/replacement_model_nnsight.py`
-- `../circuit-tracer_chunked/circuit_tracer/transcoder/cross_layer_transcoder.py`
-- `../circuit-tracer_chunked/circuit_tracer/attribution/attribute_nnsight.py`
-
-Required fields remain:
-
-- pre-CLT input (`mlp_in_cache`) hash + compact stats,
-- transcoder encode constants (W_enc/b_enc/threshold fingerprints),
-- preactivation hash + compact stats,
-- compare-margin (`preactivation - threshold`) hash + compact stats,
-- JumpReLU mask hash / membership hash,
-- post-mask activation hash + compact stats.
-
-Also expand near-threshold epsilon counts for better boundary-mass coverage.
-
-Constraints:
-
-- preserve existing cross-cluster artifact compatibility (add fields, do not
-  remove existing ones),
-- keep payload scalar/compact (no large tensor dumps).
-
-### B. Add Phase-3 seed bundle capture (**core stronger-evidence layer**)
-
-Goal:
-
-- capture enough Phase-3 state to test, offline, whether the later divergence is
-  mostly explained by the earlier Phase-0 split.
-
-Target files:
-
-- `../circuit-tracer_chunked/circuit_tracer/attribution/attribute_nnsight.py`
-- `trace_pipeline_chunked.py`
-- `experiments/run_sparsification_experiment.py`
-- `experiments/exact_trace_bench/scenarios.py` (only if a scenario knob is used)
-- extractors / manifests if needed for indexing
-
-Preferred artifact:
-
-- `step_000_phase3_seed_bundle.npz`
-
-Minimum bundle contents:
+Inputs already available in `step_000_phase3_seed_bundle.npz`:
 
 - `active_features`
 - `activation_values`
@@ -117,59 +71,200 @@ Minimum bundle contents:
 - `frontier_post_locality`
 - `queue_size`
 - `actual_max_feature_nodes`
-- any small metadata needed to align bundle rows with existing Phase-0 support
 
-Constraints:
+Add metrics:
 
-- do not change planner behavior,
-- do not change seed ranking/frontier selection semantics,
-- keep this as a passive saved artifact for offline comparison.
+- shared-support activation statistics:
+  - Pearson correlation,
+  - Spearman/rank correlation or deterministic rank-delta summary,
+  - absolute/relative delta quantiles,
+  - top-k activation overlap for configurable `k` values.
+- shared-support seed-influence statistics:
+  - Pearson correlation,
+  - rank correlation / rank-delta quantiles,
+  - sign agreement if signed influences are retained,
+  - top-k overlap for `k in {64, 128, 256, 512, 1024}` clipped to available rows.
+- unique-support contribution:
+  - shared/left-only/right-only absolute influence mass,
+  - top unique features by influence,
+  - whether top unique features are near the seed cutoff / tie boundary.
+- frontier decomposition:
+  - pre/post frontier overlap overall,
+  - pre/post frontier overlap restricted to shared support,
+  - rank drift for shared frontier features,
+  - improvement ratio from shared-support restriction.
 
-### C. Add offline comparison / interpretation support (**core stronger-evidence layer**)
+Acceptance criteria:
 
-Goal:
+- Existing basic comparator output remains backwards-compatible.
+- Synthetic tests cover shared-only, unique-heavy, and rank-reordered cases.
+- Local validation: `uv run ruff check ...` and `uv run pytest
+  tests/test_phase3_seed_bundle_compare.py -q`.
 
-- compare Ascend/Cardinal saved Phase-3 bundles and quantify whether the Phase-3
-  mismatch is concentrated in Phase-0-unique features.
+### Phase 2 — add shared/unique compact graph decomposition
 
-Required outputs:
+Extend `experiments/exact_trace_bench/graph_compare.py` or add a sibling helper
+for richer compact graph analysis.
 
-- shared vs unique Phase-0 feature counts,
-- influence mass on shared vs unique feature sets,
-- frontier overlap before/after restricting to shared features,
-- summary verdict on whether Phase-3 mismatch largely disappears once the
-  earlier support mismatch is controlled.
+Current compact graph comparison reports global feature/edge Jaccard. Add:
 
-This can live in a small CPU-only compare helper or notebook-friendly script.
+- feature support decomposition:
+  - shared, left-only, right-only counts by layer and position bucket.
+- edge endpoint-class decomposition:
+  - shared→shared,
+  - shared→unique,
+  - unique→shared,
+  - unique→unique,
+  - feature→logit / feature→error-like rows separately when identifiable.
+- edge stability on shared endpoints:
+  - unweighted Jaccard,
+  - weighted Jaccard,
+  - common-edge weight Pearson correlation,
+  - common-edge absolute/relative delta quantiles,
+  - top-k edge overlap by absolute weight.
+- graph-mass accounting:
+  - fraction of retained edge mass involving only shared features,
+  - fraction involving any unique feature,
+  - fraction going directly to logit rows.
 
-### D. Docs + durable strategy note
+Acceptance criteria:
+
+- Existing `compare-compact` command still works.
+- Enhanced output makes it clear whether low global edge Jaccard is due to
+  unique endpoint churn or changed edges among shared features.
+- Add small CPU-only tests with hand-built `StepData` fixtures.
+
+### Phase 3 — implement passive semantic descriptor capture for candidate features
+
+Add an opt-in runtime artifact, for example:
+
+- `step_000_feature_semantic_descriptors.npz`
+
+The goal is not to dump full decoder matrices. The goal is to save compact
+descriptors for a bounded candidate set so unmatched features can be compared
+semantically after the run.
+
+Candidate feature sources:
+
+- top seed-influence features,
+- Phase-3 pre-locality frontier,
+- Phase-3 post-locality frontier,
+- final selected/retained feature set if accessible after Phase-4,
+- compact-graph edge endpoints if practical without a second GPU pass.
+
+Descriptor fields:
+
+- `candidate_features`: `(M, 3)` `[layer, position, feature_idx]`,
+- source masks / ranks:
+  - `is_top_seed`, `seed_rank`, `seed_influence`,
+  - `is_frontier_pre`, `frontier_pre_rank`,
+  - `is_frontier_post`, `frontier_post_rank`,
+  - `is_selected_phase4` if available,
+- `activation_value`,
+- compact decoder/semantic sketch:
+  - fixed-size deterministic projection, e.g. 32–128 floats,
+  - sampled coordinate sketch and/or top-absolute-coordinate sketch,
+  - descriptor metadata including projection seed/version and source tensor kind.
+
+Implementation notes:
+
+- Add flags such as:
+  - `--capture-feature-semantic-descriptors`,
+  - `--semantic-descriptor-top-k`, default bounded, e.g. `2048`,
+  - `--semantic-descriptor-dim`, default bounded, e.g. `64`.
+- Prefer capturing from already-loaded decoder/provider state to avoid a large
+  second pass.
+- If full decoder access is too invasive in Phase 3, implement a fallback
+  descriptor that still captures candidate labels, ranks, activations, influence,
+  and local graph-neighborhood signatures; then plan a separate SLURM semantic
+  descriptor job only if needed.
+- Keep artifact size bounded and record truncation/candidate-count metadata.
+
+Acceptance criteria:
+
+- Artifact is emitted only when the flag is enabled.
+- Descriptor capture does not change attribution ranking/frontier behavior.
+- Manifest/extractor/indexing reports descriptor artifact path/status.
+- Unit tests validate descriptor artifact schema on small fake tensors/helpers.
+
+### Phase 4 — implement semantic comparison and remapped graph analysis
+
+Add an offline comparator, for example:
+
+- `experiments/exact_trace_bench/semantic_feature_compare.py`
+- CLI command: `compare-semantic-features`
+
+Inputs:
+
+- left/right Phase-3 seed bundles,
+- left/right compact graph `.npz`,
+- left/right semantic descriptor `.npz` if present.
+
+Outputs:
+
+- exact-ID unmatched candidate summary:
+  - top left-only and right-only features by seed influence / edge mass,
+  - layer/position distribution of unmatched high-mass features.
+- candidate semantic matching:
+  - nearest-neighbor matches constrained by same layer and same/near position,
+  - descriptor cosine similarity,
+  - seed-influence / activation similarity,
+  - local edge-neighborhood Jaccard when compact graph endpoints are available.
+- semantic-substitute report:
+  - fraction of left-only high-mass features with a strong right-side semantic
+    match,
+  - fraction of right-only high-mass features with a strong left-side match,
+  - mass-weighted semantic-match coverage.
+- optional remapped graph metrics:
+  - exact graph metrics before remapping,
+  - graph metrics after mapping high-confidence semantic substitutes,
+  - list of high-confidence and ambiguous matches.
+
+Interpretation labels:
+
+- `exact_id_stable`
+- `semantic_substitutes_explain_mismatch`
+- `shared_support_scores_unstable`
+- `unique_features_semantically_unmatched`
+- `insufficient_descriptor_coverage`
+
+Acceptance criteria:
+
+- Works entirely CPU-offline on saved artifacts.
+- Has synthetic tests where exact IDs differ but descriptors intentionally match.
+- Fails clearly when descriptor artifacts are absent, or degrades to
+  neighborhood-only comparison with an explicit warning.
+
+### Phase 5 — scenario plumbing, extraction, docs, and launch readiness
+
+Add scenario/config passthrough for all new flags:
+
+- `capture_phase3_seed_bundle=true`,
+- `capture_feature_semantic_descriptors=true`,
+- descriptor top-k / dimension knobs.
 
 Update:
 
-- `PLAN.md` (this file),
-- `EXPERIMENTS.md` with a dated note that compare-upcast was negative and
-  the next stronger causality experiment now adds Phase-3 bundle capture,
-- `TODO.md` immediate tasks,
-- `docs/phase0_boundary_fingerprinting_spec.md` as durable strategy/tradeoff
-  reference.
+- `trace_pipeline_chunked.py`,
+- `experiments/run_sparsification_experiment.py`,
+- `experiments/exact_trace_bench/scenarios.py`,
+- extractors/indexers,
+- `EXPERIMENTS.md`,
+- `TODO.md`,
+- `docs/phase0_boundary_fingerprinting_spec.md` or a new dedicated semantic
+  stability spec if this becomes large.
 
-### E. Extra follow-up — donor/replay intervention (**extra; do not block core experiment**) 
+Acceptance criteria:
 
-Only do this if the core bundle-capture experiment still leaves ambiguity.
+- Scenario JSON can request the richer capture set.
+- Completion manifest records artifact statuses and paths.
+- Extracted benchmark index includes both seed-bundle and semantic-descriptor
+  artifacts.
+- Docs state that this is passive capture, not an intervention.
 
-Possible direction:
+## Intended next launch batch after implementation
 
-- load a saved donor Phase-0 or Phase-3 bundle,
-- rerun downstream ranking/frontier logic on the other cluster,
-- test whether Phase-3 follows the donor early-state support.
-
-This is stronger causal evidence, but it is also much more invasive and should
-not be the first implementation step.
-
-## Intended next launch batch
-
-Run a **new 2-job matched baseline pair** for `94_base` via immutable snapshot
-after the core stronger-evidence artifacts land.
+Run a new **2-job matched baseline pair** for `94_base` via immutable snapshot.
 
 Shared config:
 
@@ -198,39 +293,62 @@ Shared config:
 - `profile_attribution=true`
 - Phase-0 boundary fingerprints enabled
 - Phase-3 seed bundle capture enabled
+- feature semantic descriptor capture enabled
 
 Jobs:
 
 1. Ascend baseline
 2. Cardinal baseline
 
-## Success criteria
+## Post-run analysis order
 
-Implementation success:
+1. Confirm provenance and run success for both project and sibling library
+   snapshots.
+2. Confirm first-token and Phase-1 target-logit invariants.
+3. Re-run Phase-0 boundary comparison and record earliest divergent boundary.
+4. Run enriched Phase-3 seed-bundle comparison.
+5. Run enhanced compact graph shared/unique decomposition.
+6. Run semantic descriptor matching for unmatched high-mass features.
+7. Decide whether the graph is:
+   - exact-ID stable,
+   - semantically stable despite ID churn,
+   - or genuinely unstable and in need of mitigation/replay work.
 
-- boundary fingerprint fields appear in `phase0_sparse_setup`,
-- per-layer hashes are available for pre-CLT input, preactivation, margin,
-  mask membership, and post-mask activation,
-- Phase-3 seed bundle artifacts are emitted and indexed cleanly,
-- no GPU work is run locally outside SLURM.
+## Run-readiness checklist
 
-Experimental success:
+Before launching the next matched pair:
 
-- we can identify the earliest divergent boundary among:
-  - pre-CLT input,
-  - preactivation/margin,
-  - mask/post-mask.
-- we can quantify whether Phase-3 divergence is mostly carried by Phase-0-unique
-  features,
-- we can say whether the evidence supports "Phase-3 is downstream amplification"
-  versus "Phase-3 likely adds its own extra instability".
+- [ ] Phase-3 bundle comparator reports rank/score/top-k stability.
+- [ ] Compact graph comparator reports shared/unique edge decomposition.
+- [ ] Semantic descriptor capture emits bounded artifact under an opt-in flag.
+- [ ] Semantic descriptor comparator can match intentionally substituted features
+      in a synthetic test.
+- [ ] Scenario plumbing exposes all capture flags.
+- [ ] Completion manifests and extractors report all new artifacts.
+- [ ] Safe local validation passes with `uv run` only.
+- [ ] Project and sibling library commits are clean and recorded.
+- [ ] Immutable paired workspace snapshot is created from the clean commits.
 
-## Non-goals
+## Risks and open questions
 
-- do not move optimization work into this workspace,
-- do not treat this as the permanent overflow fix,
-- do not implement donor/replay intervention until the passive bundle-capture
-  experiment has been analyzed,
-- do not widen scope into multi-step replay unless the single-step causality
-  evidence remains ambiguous,
-- do not use live-workspace launches for the next diagnostic batch.
+- Decoder-vector access may be expensive or awkward in the exact chunked path. If
+  so, implement candidate/rank/neighborhood descriptors first and schedule a
+  separate SLURM-only descriptor job for decoder sketches.
+- Semantic matching can create false comfort if descriptors are too weak. Use
+  conservative thresholds and report ambiguous matches separately.
+- Candidate caps may miss low-rank but high-edge-mass features. Include graph
+  endpoint candidates if practical, and record descriptor coverage.
+- Hash/fingerprint differences are sampled diagnostics. They are strong
+  localization evidence but not full dense equality proofs.
+
+## Local validation commands
+
+Use only safe login-node checks:
+
+```bash
+uv run ruff check .
+uv run pytest tests/test_phase3_seed_bundle_compare.py -q
+uv run pytest tests/test_cross_cluster_debug_artifacts.py -q
+```
+
+Add targeted tests for any new graph/semantic comparator modules as they land.
