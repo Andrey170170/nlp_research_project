@@ -27,7 +27,16 @@ def run_checks() -> None:
     )
 
     payload = [
-        {"checkpoint_name": "phase0_sparse_setup", "active_feature_count": 123},
+        {
+            "checkpoint_name": "phase0_sparse_setup",
+            "active_feature_count": 123,
+            "phase0_pre_clt_input_global_hash": "abcd1234",
+            "phase0_boundary_fingerprints": {
+                "global_hashes": {
+                    "pre_activation_hash_global": "beef5678",
+                }
+            },
+        },
         "skip-me",
         {"checkpoint_name": "phase1_target_logits", "target_count": 5},
     ]
@@ -46,6 +55,13 @@ def run_checks() -> None:
     assert records[0]["prompt_id"] == "prompt_000"
     assert records[0]["stream_name"] == "cross_cluster_debug_checkpoints"
     assert records[0]["record_index"] == 0
+    assert records[0]["phase0_pre_clt_input_global_hash"] == "abcd1234"
+    assert (
+        records[0]["phase0_boundary_fingerprints"]["global_hashes"][
+            "pre_activation_hash_global"
+        ]
+        == "beef5678"
+    )
     assert records[1]["record_index"] == 1
     assert records[1]["checkpoint_name"] == "phase1_target_logits"
 

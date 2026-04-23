@@ -28,6 +28,336 @@ For important updates, include:
 
 ## Recent investigation updates
 
+### 2026-04-23 — compare-upcast hypothesis closed negative; move to upstream boundary fingerprinting
+
+Purpose:
+
+- record the decision boundary after full baseline/`fp32`/`fp64` compare-matrix
+  readout for `94_base`,
+- document the new immediate investigation direction.
+
+Decision summary:
+
+- The narrow Phase-0 compare-mode hypothesis is now treated as **negative** for
+  `94_base` in the matched single-step setup.
+- Baseline, `fp32`, and `fp64` compare modes preserved the same cross-cluster
+  divergence pattern (Phase-0 structural split, Phase-1 match, downstream
+  Phase-3 frontier differences).
+- The next step is to localize divergence **upstream** with boundary
+  fingerprints rather than iterate more compare-mode variants.
+
+New implementation direction:
+
+- Add compact per-layer fingerprints for:
+  - pre-CLT input (`mlp_in_cache`),
+  - CLT encode constants (W_enc/b_enc/threshold),
+  - preactivation,
+  - margin (`preactivation - threshold`),
+  - mask membership,
+  - post-mask activation.
+- Expand near-threshold epsilon counts to better characterize borderline mass.
+- Keep artifact payloads compact (hashes + compact stats only).
+
+Planning provenance at decision time:
+
+- project repo:
+  - workspace: main workspace `./`
+  - branch: `exact-trace-bench-harness`
+  - commit baseline: `bad09e38da850ece4cae085eefeabbe7e63ca056`
+- sibling library repo:
+  - workspace: `../circuit-tracer_chunked`
+  - branch: `exact-trace-hidden-knobs`
+  - commit baseline: `bd9f3c16bbfddfe499706eb357863c5d9ac0d1b1`
+
+Immediate batch direction:
+
+- Run one new matched baseline pair (`94_base`, single-step,
+  `cross_cluster_debug=true`) with upstream boundary fingerprints enabled and
+  compare mode left at baseline.
+
+### 2026-04-22 — launched 6-job matched `94_base` Phase-0 compare matrix
+
+Purpose:
+
+- execute the planned single-step `94_base` diagnostic matrix in one queue wave,
+- compare the baseline Phase-0 threshold path against narrow Phase-0 compare
+  upcasts (`fp32`, `fp64`) while keeping the rest of the tracing contract
+  matched across clusters.
+
+Launch provenance:
+
+- source project workspace before snapshot:
+  - repo: `nlp_research_project`
+  - workspace: main workspace `./`
+  - branch: `exact-trace-bench-harness`
+  - commit: `bad09e38da850ece4cae085eefeabbe7e63ca056`
+- source sibling library before snapshot:
+  - repo: `circuit-tracer_chunked`
+  - workspace: main sibling workspace `../circuit-tracer_chunked`
+  - branch: `exact-trace-hidden-knobs`
+  - commit: `bd9f3c16bbfddfe499706eb357863c5d9ac0d1b1`
+- immutable snapshot container:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_154606_matched_cross_cluster_94_phase0_compare_matrix`
+- snapshot project root:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_154606_matched_cross_cluster_94_phase0_compare_matrix/nlp_research_project`
+- snapshot library root:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_154606_matched_cross_cluster_94_phase0_compare_matrix/circuit-tracer_chunked`
+
+Shared config across all six jobs:
+
+- fixture: `94_base`
+- tier: `anomaly`
+- `max_steps=1`
+- `cross_cluster_debug=true`
+- `exact_trace_internal_dtype=fp64`
+- `decoder_chunk_size=2048`
+- `cross_batch_decoder_cache_bytes=0`
+- `temperature=0.0`
+- `completions=1`
+- `max_feature_nodes=8192`
+- `max_edges=20000`
+- `attribution_batch_size=128`
+- `feature_batch_size=128`
+- `logit_batch_size=128`
+- `max_n_logits=3`
+- `desired_logit_prob=0.8`
+- `attribution_update_interval=4`
+- `feature_batch_target_reserved_fraction=0.9`
+- `feature_batch_min_free_fraction=0.05`
+- `feature_batch_probe_batches=1`
+- `verbose_attribution=true`
+- `profile_attribution=true`
+- walltime override: `01:00:00`
+
+Scenario files used:
+
+- `experiments/generated/exact_trace_bench/matched_cross_cluster_94_anomaly_baseline_ascend.json`
+- `experiments/generated/exact_trace_bench/matched_cross_cluster_94_anomaly_baseline_cardinal.json`
+- `experiments/generated/exact_trace_bench/matched_cross_cluster_94_anomaly_fp32_ascend.json`
+- `experiments/generated/exact_trace_bench/matched_cross_cluster_94_anomaly_fp32_cardinal.json`
+- `experiments/generated/exact_trace_bench/matched_cross_cluster_94_anomaly_fp64_ascend.json`
+- `experiments/generated/exact_trace_bench/matched_cross_cluster_94_anomaly_fp64_cardinal.json`
+
+Submitted jobs:
+
+- Ascend baseline:
+  - SLURM job `5040750`
+  - run id `20260422_154658_571947_matched-cross-cluster-94-anomaly-baseline-ascend`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154658_571947_matched-cross-cluster-94-anomaly-baseline-ascend`
+- Cardinal baseline:
+  - SLURM job `8706829`
+  - run id `20260422_154658_754153_matched-cross-cluster-94-anomaly-baseline-cardinal`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_154658_754153_matched-cross-cluster-94-anomaly-baseline-cardinal`
+- Ascend Phase-0 compare `fp32`:
+  - SLURM job `5040751`
+  - run id `20260422_154658_838439_matched-cross-cluster-94-anomaly-p0-fp32-ascend`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154658_838439_matched-cross-cluster-94-anomaly-p0-fp32-ascend`
+- Cardinal Phase-0 compare `fp32`:
+  - SLURM job `8706832`
+  - run id `20260422_154658_929983_matched-cross-cluster-94-anomaly-p0-fp32-cardinal`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_154658_929983_matched-cross-cluster-94-anomaly-p0-fp32-cardinal`
+- Ascend Phase-0 compare `fp64`:
+  - SLURM job `5040752`
+  - run id `20260422_154659_015092_matched-cross-cluster-94-anomaly-p0-fp64-ascend`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154659_015092_matched-cross-cluster-94-anomaly-p0-fp64-ascend`
+- Cardinal Phase-0 compare `fp64`:
+  - SLURM job `8706834`
+  - run id `20260422_154659_103228_matched-cross-cluster-94-anomaly-p0-fp64-cardinal`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_154659_103228_matched-cross-cluster-94-anomaly-p0-fp64-cardinal`
+
+Intended interpretation:
+
+- baseline pair measures current Phase-0 divergence with richer diagnostics,
+- `fp32` pair tests whether a moderate upcast at the Phase-0 threshold compare
+  boundary is enough to reduce membership drift,
+- `fp64` pair tests whether a stronger compare upcast further reduces
+  Phase-0/Phase-3 divergence,
+- all six runs remain single-step, so they still target the first-next-logit
+  divergence question rather than later-step replay behavior.
+
+### 2026-04-22 — preliminary Ascend-only readout for the 6-job `94_base` Phase-0 compare matrix
+
+Purpose:
+
+- record the early signal available while Cardinal remained queued / incomplete,
+- check whether the Ascend baseline, `fp32`, and `fp64` variants already show
+  any within-cluster behavioral change from the narrow Phase-0 compare-mode
+  edit.
+
+Analysis provenance:
+
+- project repo provenance from the immutable launch snapshot:
+  - repo: `nlp_research_project`
+  - source workspace before snapshot: main workspace `./`
+  - branch: `exact-trace-bench-harness`
+  - commit: `bad09e38da850ece4cae085eefeabbe7e63ca056`
+- sibling library provenance from the immutable launch snapshot:
+  - repo: `circuit-tracer_chunked`
+  - source workspace before snapshot: main sibling workspace `../circuit-tracer_chunked`
+  - branch: `exact-trace-hidden-knobs`
+  - commit: `bd9f3c16bbfddfe499706eb357863c5d9ac0d1b1`
+- snapshot container:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_154606_matched_cross_cluster_94_phase0_compare_matrix`
+
+Runs analyzed:
+
+- Ascend baseline:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154658_571947_matched-cross-cluster-94-anomaly-baseline-ascend/ascend_matched_cross_cluster_94_base_anomaly_p0baseline_b128_c2048_cache0g`
+- Ascend Phase-0 compare `fp32`:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154658_838439_matched-cross-cluster-94-anomaly-p0-fp32-ascend/ascend_matched_cross_cluster_94_base_anomaly_p0fp32_b128_c2048_cache0g`
+- Ascend Phase-0 compare `fp64`:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154659_015092_matched-cross-cluster-94-anomaly-p0-fp64-ascend/ascend_matched_cross_cluster_94_base_anomaly_p0fp64_b128_c2048_cache0g`
+
+Observed Ascend-only results:
+
+- all three Ascend runs completed successfully,
+- the generated first token matched exactly across modes: `Let`,
+- the compact traced artifact `step_000.npz` matched exactly across modes,
+  including:
+  - `row_idx`, `col_idx`, and `weights`,
+  - `feature_ids`,
+  - token text and logprob,
+- Phase-0 active-feature membership was unchanged across baseline / `fp32` /
+  `fp64`:
+  - `active_feature_indices_hash = 7c2fdf6b069843d1`
+  - `active_feature_membership_hash_canonical = 2042e3cf71dc07b7`
+  - total near-threshold count (`abs_lte_1e-05`) remained `209` in all three
+    runs,
+- Phase-1 target-logit state also matched exactly:
+  - `target_logit_state_hash = 437d56a13df41ec1`,
+- Phase-2 feature ordering matched exactly,
+- Phase-3 frontier selection remained effectively unchanged:
+  - `frontier_pre_locality_hash = 060b1515c58914bf`
+  - `frontier_post_locality_hash = ab0d84d2e04d36d7`
+  - top seed identities and ranks matched across all three Ascend runs,
+- the only differences observed were tiny floating-point changes in some
+  Phase-3 scalar summaries / hashes (for example influence summaries and
+  normalization summary values), with top-seed influence deltas only around
+  `1e-12` and no seed-rank or frontier change.
+
+Interim interpretation:
+
+- for `94_base` on Ascend, the narrow Phase-0 compare-mode knob did **not**
+  produce a meaningful within-cluster behavioral change,
+- this does **not** yet rule out a cross-cluster benefit, because the key
+  remaining question is whether Cardinal moves toward the Ascend baseline once
+  the matched Cardinal `fp32` / `fp64` runs finish,
+- but the Ascend-only readout already says the new compare modes are not by
+  themselves perturbing the Ascend result for this prompt.
+
+Current status after this note:
+
+- treat this as a preliminary within-Ascend sanity check only,
+- do not reinterpret the Phase-0 hypothesis yet until the Cardinal half of the
+  matrix completes and we can compare the matched cross-cluster pairs directly.
+
+### 2026-04-23 — full readout of the 6-job matched `94_base` Phase-0 compare matrix
+
+Purpose:
+
+- finish the cross-cluster analysis once the delayed Cardinal jobs completed,
+- determine whether the narrow Phase-0 threshold-compare upcasts (`fp32`,
+  `fp64`) reduced the previously observed Ascend/Cardinal divergence for
+  `94_base`.
+
+Analysis provenance:
+
+- project repo provenance from the immutable launch snapshot:
+  - repo: `nlp_research_project`
+  - source workspace before snapshot: main workspace `./`
+  - branch: `exact-trace-bench-harness`
+  - commit: `bad09e38da850ece4cae085eefeabbe7e63ca056`
+- sibling library provenance from the immutable launch snapshot:
+  - repo: `circuit-tracer_chunked`
+  - source workspace before snapshot: main sibling workspace `../circuit-tracer_chunked`
+  - branch: `exact-trace-hidden-knobs`
+  - commit: `bd9f3c16bbfddfe499706eb357863c5d9ac0d1b1`
+- snapshot container:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_154606_matched_cross_cluster_94_phase0_compare_matrix`
+
+Runs analyzed:
+
+- Ascend baseline / `fp32` / `fp64`:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154658_571947_matched-cross-cluster-94-anomaly-baseline-ascend/ascend_matched_cross_cluster_94_base_anomaly_p0baseline_b128_c2048_cache0g`
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154658_838439_matched-cross-cluster-94-anomaly-p0-fp32-ascend/ascend_matched_cross_cluster_94_base_anomaly_p0fp32_b128_c2048_cache0g`
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154659_015092_matched-cross-cluster-94-anomaly-p0-fp64-ascend/ascend_matched_cross_cluster_94_base_anomaly_p0fp64_b128_c2048_cache0g`
+- Cardinal baseline / `fp32` / `fp64`:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_154658_754153_matched-cross-cluster-94-anomaly-baseline-cardinal/cardinal_matched_cross_cluster_94_base_anomaly_p0baseline_b128_c2048_cache0g`
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_154658_929983_matched-cross-cluster-94-anomaly-p0-fp32-cardinal/cardinal_matched_cross_cluster_94_base_anomaly_p0fp32_b128_c2048_cache0g`
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_154659_103228_matched-cross-cluster-94-anomaly-p0-fp64-cardinal/cardinal_matched_cross_cluster_94_base_anomaly_p0fp64_b128_c2048_cache0g`
+
+Observed within-cluster behavior:
+
+- Ascend remained invariant across baseline / `fp32` / `fp64`:
+  - identical `step_000.npz` compact artifacts,
+  - identical generated token / logprob,
+  - identical Phase-0 active-feature membership hashes,
+  - only tiny Phase-3 floating-point summary drift.
+- Cardinal showed the same pattern:
+  - identical `step_000.npz` compact artifacts across baseline / `fp32` /
+    `fp64`,
+  - identical generated token / logprob,
+  - identical Phase-0 active-feature membership hashes,
+  - only tiny Phase-3 floating-point summary drift.
+
+Observed cross-cluster behavior (same for baseline, `fp32`, and `fp64`):
+
+- both clusters still generated the same first token: `Let`,
+- next-token logprob delta stayed unchanged at approximately `7.65e-04`,
+- Phase-1 target-logit state still matched exactly in all three compare modes:
+  - `target_logit_state_hash = 437d56a13df41ec1`,
+- the **first structural divergence still appeared at Phase-0** in all three
+  compare modes:
+  - Ascend Phase-0 hashes stayed
+    - `active_feature_indices_hash = 7c2fdf6b069843d1`
+    - `active_feature_membership_hash_canonical = 2042e3cf71dc07b7`
+  - Cardinal Phase-0 hashes stayed
+    - `active_feature_indices_hash = 62b94f74a7172516`
+    - `active_feature_membership_hash_canonical = ba1ab906c0c08e5e`
+- the resulting compact graph similarity also stayed unchanged across all three
+  compare modes:
+  - feature Jaccard `0.9936243685806376`
+  - edge Jaccard `0.5709439233685891`
+  - weighted edge Jaccard `0.6128084788664958`
+- shared / differing feature counts also stayed unchanged across all three
+  compare modes:
+  - shared features: `3,359,910`
+  - Ascend-only features: `11,433`
+  - Cardinal-only features: `10,126`
+- Phase-3 divergence likewise remained unchanged at the structural level:
+  - frontier hashes still differed between clusters,
+  - the top-seed lists still agreed on the first several strongest seeds but not
+    the entire top-8 set,
+  - compare-mode upcasts did not improve that overlap.
+
+Wall-clock notes from this batch:
+
+- Ascend durations stayed around `1719.95s` to `1815.66s`,
+- Cardinal durations stayed around `1057.32s` to `1157.31s`,
+- the compare-mode choice did not reveal a meaningful runtime tradeoff at this
+  batch scale.
+
+Interpretation:
+
+- this 6-job matrix does **not** support the hypothesis that the current
+  Ascend/Cardinal `94_base` divergence is primarily caused by the final
+  bf16-vs-fp32/fp64 threshold comparison at the narrow Phase-0 JumpReLU
+  membership boundary,
+- more strongly: the tested compare-mode upcasts produced **no measurable
+  reduction** in cross-cluster divergence for this prompt under the matched
+  single-step configuration,
+- the most likely remaining explanation is that the important drift already
+  exists in earlier model / transcoder activations entering Phase-0 sparse setup,
+  rather than in the final threshold-compare precision alone.
+
+Updated takeaway:
+
+- treat the narrow Phase-0 compare-upcast idea as **negative for `94_base`** in
+  this matched single-step test,
+- future cross-cluster investigation should move upstream of the final threshold
+  compare boundary rather than expecting `fp32` / `fp64` compare-mode alone to
+  resolve the anomaly.
+
 ### 2026-04-22 — intended next diagnostic batch: 6 matched `94_base` jobs
 
 Purpose:
