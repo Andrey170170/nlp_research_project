@@ -1190,7 +1190,132 @@ Expected analysis targets:
 
 Status:
 
-- submitted; results pending.
+- completed / analyzed.
+
+Observed result summary:
+
+- both scenarios finished successfully.
+- job accounting:
+  - `5063198_0` / child job `5065500` (`828_base`) completed in about
+    `00:11:32`; harness duration `690.58s`.
+  - `5063198_1` (`361_base`) completed in about `00:16:34`; harness duration
+    `992.11s`.
+- output roots:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_828_base_phase4_locality_validation_v2_fp32_b256_c4096_cache0/`
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_361_base_phase4_locality_validation_v2_fp32_b256_c4096_cache0/`
+
+Exactness / artifact comparison vs the hybrid baseline:
+
+- `828_base`:
+  - completion text unchanged: `Here`
+  - active features unchanged: `2993540`
+  - compact feature Jaccard: `1.0`
+  - compact edge Jaccard: `0.995943`
+  - weighted edge Jaccard: `0.995224`
+- `361_base`:
+  - completion text unchanged: `Let`
+  - active features unchanged: `5223267`
+  - compact feature Jaccard: `1.0`
+  - compact edge Jaccard: `0.999492`
+  - weighted edge Jaccard: `0.999863`
+
+Runtime comparison vs hybrid baseline and first locality pass:
+
+### `828_base`
+
+- Phase 4 wall-clock:
+  - hybrid baseline: `434.24s`
+  - locality v1: `449.27s`
+  - locality v2: `392.82s`
+- attribution time:
+  - hybrid baseline: `685.01s`
+  - locality v1: `705.71s`
+  - locality v2: `645.08s`
+- completion end-to-end:
+  - hybrid baseline: `686.40s`
+  - locality v1: `707.12s`
+  - locality v2: `646.57s`
+- refreshes / feature batches:
+  - hybrid baseline: `8 / 32`
+  - locality v1: `10 / 40`
+  - locality v2: `9 / 33`
+- decoder loads:
+  - hybrid baseline: `1107`
+  - locality v1: `1077`
+  - locality v2: `1095`
+- final RSS snapshot:
+  - hybrid baseline: `133.29 GiB`
+  - locality v1: `136.05 GiB`
+  - locality v2: `141.99 GiB`
+- cgroup-current max at Phase 4 compute-batch starts remained essentially flat:
+  - hybrid baseline: `129.39 GiB`
+  - locality v1: `130.19 GiB`
+  - locality v2: `129.53 GiB`
+
+Interpretation for `828_base`:
+
+- the refined heuristic fixed the v1 over-splitting regression and turned the
+  prompt into a real win:
+  - Phase 4 improved about `9.5%` vs hybrid,
+  - attribution improved about `5.8%` vs hybrid,
+  - v2 reduced v1 batch count from `40` to `33`.
+- the final process RSS snapshot was higher, but cgroup-current during Phase 4 was
+  not materially worse; treat this as a watch item rather than a blocker.
+
+### `361_base`
+
+- Phase 4 wall-clock:
+  - hybrid baseline: `674.39s`
+  - locality v1: `504.12s`
+  - locality v2: `587.04s`
+- attribution time:
+  - hybrid baseline: `1049.37s`
+  - locality v1: `867.39s`
+  - locality v2: `947.01s`
+- completion end-to-end:
+  - hybrid baseline: `1365.45s`
+  - locality v1: `869.12s`
+  - locality v2: `948.87s`
+- refreshes / feature batches:
+  - hybrid baseline: `8 / 32`
+  - locality v1: `10 / 37`
+  - locality v2: `9 / 34`
+- decoder loads:
+  - hybrid baseline: `1650`
+  - locality v1: `1623`
+  - locality v2: `1635`
+- final RSS snapshot:
+  - hybrid baseline: `229.08 GiB`
+  - locality v1: `244.25 GiB`
+  - locality v2: `241.62 GiB`
+- cgroup-current max at Phase 4 compute-batch starts:
+  - hybrid baseline: `197.65 GiB`
+  - locality v1: `190.38 GiB`
+  - locality v2: `199.70 GiB`
+
+Interpretation for `361_base`:
+
+- locality v2 preserved a useful win vs hybrid, but gave back a large part of v1's
+  best-case speedup:
+  - Phase 4 remained about `13.0%` faster than hybrid,
+  - attribution remained about `9.8%` faster than hybrid,
+  - but Phase 4 was about `16.4%` slower than locality v1.
+- v2 did reduce v1's batch count from `37` to `34`, and final RSS improved
+  slightly vs v1, but cgroup-current max was not better than the hybrid baseline.
+
+Overall conclusion from locality v2:
+
+- the refined conservative split is a cleaner default candidate than locality v1:
+  - it removes the `828_base` regression,
+  - keeps a meaningful `361_base` speedup,
+  - and keeps exact compact artifacts stable.
+- it is not the final speed answer:
+  - refresh total grew on both prompts vs the hybrid baseline,
+  - RSS/cgroup behavior did not materially improve,
+  - and the harder prompt still leaves substantial Phase 4 time on the table.
+- this supports the current roadmap: keep locality v2 as the safer fallback and
+  move the main optimization effort to the explicit Phase 4 frontier planner /
+  scheduler path rather than another blind threshold tweak.
 
 ## Recent launch update — small multistep validation after the hybrid fix
 
@@ -1385,7 +1510,150 @@ Expected analysis targets:
 
 Status:
 
-- submitted; results pending.
+- completed / analyzed.
+
+Result summary:
+
+- `828_base`: v2 fixed the first-pass regression and improved over the hybrid
+  baseline.
+  - hybrid Phase 4 / attribution / scenario duration: `434.24 s` / `674.01 s` /
+    `735.71 s`
+  - locality v1: `449.27 s` / `705.71 s` / `778.97 s`
+  - locality v2: `392.82 s` / `636.25 s` / `690.58 s`
+  - refreshes / batches: `8 / 32` hybrid, `10 / 40` v1, `9 / 33` v2
+- `361_base`: v2 remained clearly better than hybrid, but gave back some of the
+  unusually strong first-pass locality win.
+  - hybrid Phase 4 / attribution / scenario duration: `674.39 s` / `1036.10 s` /
+    `1412.69 s`
+  - locality v1: `504.12 s` / `867.39 s` / `914.68 s`
+  - locality v2: `587.04 s` / `932.08 s` / `992.11 s`
+  - refreshes / batches: `8 / 32` hybrid, `10 / 37` v1, `9 / 34` v2
+
+Interpretation:
+
+- locality v2 is the safer current fallback/baseline because it removes the
+  `828_base` regression while preserving a useful `361_base` improvement over
+  hybrid,
+- locality v1 remains an interesting hint that harder prompts can benefit more
+  from aggressive locality, but it is not the default because it regressed the
+  easier prompt.
+
+## Recent launch update — Phase 4 Planner V1 validation
+
+Purpose: validate the first membership-preserving Phase 4 Frontier Planner V1
+execution path on canonical fast prompts, using the locality v2 behavior as the
+current fallback/baseline candidate.
+
+Code state used:
+
+- project repo commit: `04f1eea` — `prefer effective phase4 scheduler metadata`
+- library repo commit: `99b8873` — `tighten phase4 planner plumbing`
+
+Scenario file:
+
+- `experiments/generated/exact_trace_phase4_planner_v1_fast_ascend_scenarios.json`
+
+Launch metadata:
+
+- validation array job: `5066332`
+- run id: `20260423_phase4-planner-v1-fast-ascend`
+- run name: `phase4_planner_v1_fast_ascend`
+- output root: `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast`
+
+Scenarios:
+
+- `ascend_fast_828_base_phase4_planner_v1_fp32_b256_c4096_cache0`
+- `ascend_fast_361_base_phase4_planner_v1_fp32_b256_c4096_cache0`
+
+Key settings:
+
+- `phase4_scheduler_mode=planner_v1`
+- `phase4_scheduler_debug=true`
+- `phase4_scheduler_telemetry_detail=debug`
+- `exact_trace_internal_dtype=fp32`
+- `feature_batch_size=256`
+- `decoder_chunk_size=4096`
+- `cross_batch_decoder_cache_bytes=0`
+
+Expected analysis targets:
+
+- confirm Planner V1 selected-frontier membership remains stable relative to the
+  current locality path,
+- confirm compact outputs / retained edges remain acceptable,
+- compare Phase 4 wall-clock, refresh count, and batch count against locality v2,
+- inspect new planner telemetry:
+  - plan membership/order hashes,
+  - boundary reason counts,
+  - locality fragmentation summaries,
+  - per-batch layer/chunk locality stats.
+
+Status:
+
+- completed / analyzed.
+
+Validation result:
+
+- both array tasks completed successfully (`5066332_0`, `5066332_1`),
+- completion text unchanged relative to the comparison runs:
+  - `828_base`: `Here`
+  - `361_base`: `Let`
+- active feature counts unchanged:
+  - `828_base`: `2993540`
+  - `361_base`: `5223267`
+- retained edges unchanged: `20000` in both runs,
+- Planner V1 compact outputs matched locality v2 exactly:
+  - feature Jaccard: `1.0` for both prompts,
+  - edge Jaccard: `1.0` for both prompts,
+  - weighted edge Jaccard: `1.0` for both prompts.
+
+Performance summary vs locality v2:
+
+- `828_base`:
+  - locality v2 Phase 4 / attribution / scenario duration: `392.82 s` /
+    `636.25 s` / `690.58 s`
+  - Planner V1 Phase 4 / attribution / scenario duration: `314.78 s` /
+    `553.91 s` / `603.81 s`
+  - change vs locality v2: Phase 4 `-78.04 s` (`-19.9%`), attribution
+    `-82.34 s` (`-12.9%`), scenario duration `-86.77 s` (`-12.6%`)
+  - refreshes / batches: unchanged at `9 / 33`
+  - refresh elapsed: `180.19 s -> 173.89 s`
+  - Phase 4 batch elapsed sum: `212.43 s -> 140.67 s`
+- `361_base`:
+  - locality v2 Phase 4 / attribution / scenario duration: `587.04 s` /
+    `932.08 s` / `992.11 s`
+  - Planner V1 Phase 4 / attribution / scenario duration: `580.01 s` /
+    `941.48 s` / `998.25 s`
+  - change vs locality v2: Phase 4 `-7.03 s` (`-1.2%`), attribution `+9.40 s`
+    (`+1.0%`), scenario duration `+6.14 s` (`+0.6%`)
+  - refreshes / batches: unchanged at `9 / 34`
+  - refresh elapsed: `261.03 s -> 266.20 s`
+  - Phase 4 batch elapsed sum: `325.81 s -> 313.59 s`
+
+Telemetry notes:
+
+- Planner V1 emitted expected structured metadata in completion manifests and
+  telemetry events:
+  - `phase4_scheduler_mode=planner_v1`,
+  - `phase4_scheduler_version=planner_v1`,
+  - `phase4_scheduler_policy=membership_preserving_locality`,
+  - `phase4_scheduler_telemetry_detail=debug`.
+- Event counts were consistent with locality v2:
+  - `828_base`: `1499` telemetry events,
+  - `361_base`: `1968` telemetry events.
+- Planner refresh events included membership/order hashes, boundary reason
+  counts, invariant summaries, and fragmentation stats.
+- Planner batch events showed monotonic chunk order for all Phase 4 batches.
+
+Interpretation:
+
+- Planner V1 is correct enough to keep: it preserved locality-v2 compact outputs
+  exactly while enabling richer scheduler telemetry,
+- it produced a meaningful `828_base` speedup at the same refresh/batch counts,
+  mostly through lower feature-batch elapsed time rather than fewer refreshes,
+- `361_base` is effectively neutral against locality v2 and still clearly better
+  than hybrid, but worse than the aggressive locality v1 outlier,
+- next optimization should use Planner V1 as the instrumentation/control surface
+  for a policy experiment rather than returning to hidden cache sweeps.
 
 ## Status of this note
 
