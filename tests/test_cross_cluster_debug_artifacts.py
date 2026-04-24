@@ -208,11 +208,15 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
             "completion_id": "completion_000",
             "phase4_scheduler_mode": "planner_v2",
             "phase4_scheduler_requested_mode": "planner_v2",
-            "phase4_scheduler_effective_mode": "locality",
+            "phase4_scheduler_mode_requested": "planner_v2",
+            "phase4_scheduler_effective_mode": "planner_v2",
+            "phase4_scheduler_mode_effective": "planner_v2",
             "phase4_scheduler_version": "planner_v2",
-            "phase4_scheduler_effective_version": "locality_v1",
+            "phase4_scheduler_effective_version": "planner_v2",
+            "phase4_scheduler_version_effective": "planner_v2",
             "phase4_scheduler_policy": "bounded_membership_selection",
-            "phase4_scheduler_effective_policy": "fixed_frontier_locality",
+            "phase4_scheduler_effective_policy": "bounded_membership_selection",
+            "phase4_scheduler_policy_effective": "bounded_membership_selection",
             "phase4_scheduler_debug_effective": True,
             "phase4_scheduler_telemetry_detail_effective": "debug",
             "steps": [],
@@ -227,24 +231,26 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         assert benchmark_row["exact_trace_internal_dtype"] == "fp32"
         assert benchmark_row["exact_trace_internal_dtype_contract_supported"] is False
         assert benchmark_row["telemetry_max_events"] == 11
-        assert benchmark_row["phase4_scheduler_mode"] == "locality"
+        assert benchmark_row["phase4_scheduler_mode"] == "planner_v2"
         assert benchmark_row["phase4_scheduler_mode_requested"] == "planner_v2"
-        assert benchmark_row["phase4_scheduler_mode_effective"] == "locality"
-        assert benchmark_row["phase4_scheduler_version"] == "locality_v1"
+        assert benchmark_row["phase4_scheduler_mode_effective"] == "planner_v2"
+        assert benchmark_row["phase4_scheduler_version"] == "planner_v2"
         assert benchmark_row["phase4_scheduler_version_requested"] == "planner_v2"
-        assert benchmark_row["phase4_scheduler_version_effective"] == "locality_v1"
-        assert benchmark_row["phase4_scheduler_policy"] == "fixed_frontier_locality"
+        assert benchmark_row["phase4_scheduler_version_effective"] == "planner_v2"
+        assert (
+            benchmark_row["phase4_scheduler_policy"] == "bounded_membership_selection"
+        )
         assert (
             benchmark_row["phase4_scheduler_policy_requested"]
             == "bounded_membership_selection"
         )
         assert (
             benchmark_row["phase4_scheduler_policy_effective"]
-            == "fixed_frontier_locality"
+            == "bounded_membership_selection"
         )
         assert (
             benchmark_row["phase4_scheduler_effective_policy"]
-            == "fixed_frontier_locality"
+            == "bounded_membership_selection"
         )
         assert benchmark_row["phase4_scheduler_debug"] is True
         assert benchmark_row["phase4_scheduler_telemetry_detail"] == "debug"
@@ -252,22 +258,24 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         assert legacy_row["exact_trace_internal_dtype"] == "fp32"
         assert legacy_row["exact_trace_internal_dtype_contract_supported"] is False
         assert legacy_row["telemetry_max_events"] == 11
-        assert legacy_row["phase4_scheduler_mode"] == "locality"
+        assert legacy_row["phase4_scheduler_mode"] == "planner_v2"
         assert legacy_row["phase4_scheduler_mode_requested"] == "planner_v2"
-        assert legacy_row["phase4_scheduler_mode_effective"] == "locality"
-        assert legacy_row["phase4_scheduler_version"] == "locality_v1"
+        assert legacy_row["phase4_scheduler_mode_effective"] == "planner_v2"
+        assert legacy_row["phase4_scheduler_version"] == "planner_v2"
         assert legacy_row["phase4_scheduler_version_requested"] == "planner_v2"
-        assert legacy_row["phase4_scheduler_version_effective"] == "locality_v1"
-        assert legacy_row["phase4_scheduler_policy"] == "fixed_frontier_locality"
+        assert legacy_row["phase4_scheduler_version_effective"] == "planner_v2"
+        assert legacy_row["phase4_scheduler_policy"] == "bounded_membership_selection"
         assert (
             legacy_row["phase4_scheduler_policy_requested"]
             == "bounded_membership_selection"
         )
         assert (
-            legacy_row["phase4_scheduler_policy_effective"] == "fixed_frontier_locality"
+            legacy_row["phase4_scheduler_policy_effective"]
+            == "bounded_membership_selection"
         )
         assert (
-            legacy_row["phase4_scheduler_effective_policy"] == "fixed_frontier_locality"
+            legacy_row["phase4_scheduler_effective_policy"]
+            == "bounded_membership_selection"
         )
         assert legacy_row["phase4_scheduler_debug"] is True
         assert legacy_row["phase4_scheduler_telemetry_detail"] == "debug"
