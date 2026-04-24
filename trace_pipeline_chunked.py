@@ -1172,6 +1172,9 @@ def trace_completion_compact_chunked(
             "phase4_refresh_elapsed_seconds_total": compact_result.get(
                 "phase4_refresh_elapsed_seconds_total"
             ),
+            "phase4_feature_batch_elapsed_seconds_total": compact_result.get(
+                "phase4_feature_batch_elapsed_seconds_total"
+            ),
             "telemetry_max_events": compact_result.get("telemetry_max_events"),
             "exact_trace_internal_dtype_requested": (
                 normalize_requested_exact_trace_internal_dtype(
