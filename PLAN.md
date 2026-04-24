@@ -1,437 +1,374 @@
-# Current Implementation Plan — Phase 4 Planner V2
+# Current Implementation Plan — Phase 4 Execution V1
 
 ## 1. Problem statement
 
-Planner V1 is now validated as a safe scheduler foundation:
+Planner V1 is the current best Phase 4 scheduler baseline. Planner V2 validated
+the instrumentation path for bounded membership-aware selection, but it is not a
+runtime win:
 
-- it is selectable with `phase4_scheduler_mode=planner_v1`,
-- it preserves locality-v2 compact outputs exactly on canonical fast prompts,
-- it emits useful plan / batch / invariant telemetry,
-- it improved `828_base` substantially vs locality v2 and was effectively neutral
-  on `361_base`.
+- `828_base` Planner V2 vs Planner V1:
+  - Phase 4 `+57.47 s` (`+18.3%`),
+  - refresh elapsed `173.89 s -> 247.55 s`,
+  - weighted edge Jaccard vs V1 `0.955868`.
+- `361_base` Planner V2 vs Planner V1:
+  - Phase 4 `+129.78 s` (`+22.4%`),
+  - refresh elapsed `266.20 s -> 380.78 s`,
+  - weighted edge Jaccard vs V1 `0.907005`.
 
-The remaining limitation is that Planner V1 is **membership-preserving**. It can
-reorder and batch the selected frontier, but it cannot choose a frontier that is
-more locality-friendly than the canonical top-ranked set. The next experiment is
-therefore **Planner V2**: a bounded membership-aware scheduler that may choose
-from a slightly wider high-score candidate window to improve source-layer and
-decoder-chunk locality while measuring score loss, selected-node overlap, and
-compact-artifact drift.
+Conclusion: do **not** promote membership-changing Planner V2. Keep it as an
+experimental mode, but move the next optimization effort away from frontier
+membership changes and toward Phase 4 execution mechanics.
 
 Immediate goal:
 
-> implement a feature-gated `planner_v2` path that uses Planner V1 as the
-> reference plan, allows tightly bounded frontier membership changes, and emits
-> enough telemetry to decide after one small validation run whether the direction
-> is promising.
+> implement and validate two independent execution-side optimization tracks:
+> **refresh optimization** and **streaming row execution**, then test each alone
+> and together against the Planner V1 baseline.
+
+This effort should be named **Phase 4 Execution V1**, not Planner V3. Planner V1
+remains the scheduler; the new work changes refresh and row-execution internals
+under that scheduler.
 
 ## 2. Current baseline facts
 
-Use these as the comparison anchor for Planner V2.
+Use Planner V1 as the direct comparison baseline.
 
-### Validated baselines
+### `828_base` Planner V1
 
-- Hybrid row-store baseline remains the accepted memory baseline.
-- Locality v2 is the current conservative fallback path.
-- Planner V1 is the current best instrumented scheduler path and should be the
-  direct A/B comparator for Planner V2.
-- fp32 exact compact tracing remains the default.
+- scenario duration: `603.81 s`
+- completion duration: `563.91 s`
+- attribution time: `562.51 s`
+- Phase 0 wall-clock: `94.49 s`
+- Phase 3 wall-clock: `142.45 s`
+- Phase 4 wall-clock: `314.78 s`
+- Phase 4 refresh elapsed: `173.89 s`
+- Phase 4 feature-batch elapsed sum: `140.67 s`
+- refreshes / batches: `9 / 33`
+- active features: `2993540`
+- retained edges: `20000`
 
-### Recent fast-run results
+### `361_base` Planner V1
 
-`828_base`:
+- scenario duration: `998.25 s`
+- completion duration: `957.78 s`
+- attribution time: `956.02 s`
+- Phase 0 wall-clock: `135.67 s`
+- Phase 3 wall-clock: `223.61 s`
+- Phase 4 wall-clock: `580.01 s`
+- Phase 4 refresh elapsed: `266.20 s`
+- Phase 4 feature-batch elapsed sum: `313.59 s`
+- refreshes / batches: `9 / 34`
+- active features: `5223267`
+- retained edges: `20000`
 
-- hybrid Phase 4: `434.24 s`
-- locality v2 Phase 4: `392.82 s`
-- Planner V1 Phase 4: `314.78 s`
-- Planner V1 vs locality v2: `-78.04 s` (`-19.9%`)
-- Planner V1 refreshes / batches: `9 / 33`
-- Planner V1 compact outputs matched locality v2 exactly.
+Implications:
 
-`361_base`:
-
-- hybrid Phase 4: `674.39 s`
-- locality v1 Phase 4: `504.12 s` but with unsafe/generalization concern because
-  it regressed `828_base`
-- locality v2 Phase 4: `587.04 s`
-- Planner V1 Phase 4: `580.01 s`
-- Planner V1 vs locality v2: `-7.03 s` (`-1.2%`)
-- Planner V1 refreshes / batches: `9 / 34`
-- Planner V1 compact outputs matched locality v2 exactly.
-
-Interpretation for V2:
-
-- `828_base` already benefits from Planner V1; V2 must not give back that win.
-- `361_base` likely has more locality upside; V2 should try to recover some of
-  the v1-aggressive locality benefit without the `828_base` regression.
-- Any V2 membership drift must be explicit, measured, and easy to roll back.
+- Phase 4 is still the biggest cost.
+- Phase 3 is also large enough to matter.
+- Inside Phase 4, refresh/ranking is a first-class target, not just batch compute.
+- Streaming execution may help both Phase 3 and Phase 4 if it reduces dense block
+  materialization, CPU/GPU synchronization, and row-writeback stalls.
 
 ## 3. Working assumptions
 
-- This is still within-trace optimization, not cross-trace or prefix reuse.
-- Planner V2 is a live experimental path, not a default rollout.
-- `phase4_scheduler_mode=locality` and `planner_v1` must remain available.
-- V2 may change selected frontier membership **only inside bounded, logged
-  constraints**.
-- V2 must compute or reconstruct the Planner V1 reference frontier per refresh so
-  telemetry can report overlap and score-loss metrics.
-- If V2 cannot satisfy invariants, it should fail closed to Planner V1 for that
-  refresh with an explicit fallback reason, or raise in debug mode if the failure
-  indicates a bug.
+- fp32 exact compact tracing remains the default.
+- The hybrid row-store append/writeback fix remains the accepted memory baseline.
+- Planner V1 remains the scheduler baseline for this work.
+- Planner V2 remains available but is not used for baseline validation.
+- This work is within-trace optimization, not cross-trace or prefix reuse.
+- No silent approximation on the exact compact path.
 - No GPU/model execution outside SLURM.
 
 ## 4. Scope
 
 ### In scope
 
-- Add `phase4_scheduler_mode=planner_v2` in the library and project plumbing.
-- Implement a bounded membership-aware frontier selection policy.
-- Keep Planner V1 reference-plan generation for comparison and fallback.
-- Add V2-specific telemetry for membership drift, score loss, locality gain, and
-  fallback reasons.
-- Add local unit tests for selection bounds, fallback behavior, and telemetry.
-- Prepare canonical fast Ascend validation against Planner V1 and locality v2.
+Two independent flags / implementation tracks:
 
-Primary library files likely in scope:
+1. **Refresh optimization V1**
+   - reduce Phase 4 refresh/ranking elapsed time,
+   - preserve selected frontier semantics initially,
+   - improve or instrument row-store read / partial influence computation,
+   - produce refresh-specific telemetry explaining wins/regressions.
 
-- `../worktrees_opt/circuit-tracer_chunked/circuit_tracer/attribution/attribute_nnsight.py`
-- `../worktrees_opt/circuit-tracer_chunked/circuit_tracer/attribution/attribute.py`
-- `../worktrees_opt/circuit-tracer_chunked/tests/test_chunked_decoder_optimizations.py`
-- `../worktrees_opt/circuit-tracer_chunked/tests/test_attribute_nnsight_telemetry.py`
+2. **Streaming row executor V1**
+   - investigate and implement a row-execution path that streams attribution row
+     chunks through compute → normalization/sparsification → CPU/writeback more
+     continuously than the current batch-block flow,
+   - target Phase 4 first, but keep Phase 3 compatibility in mind because Phase 3
+     uses similar row-producing attribution mechanics,
+   - preserve exact compact outputs unless a deliberate experimental mode says
+     otherwise.
 
-Project files likely in scope:
+Validation should test:
 
-- `trace_pipeline_chunked.py`
-- `experiments/exact_trace_bench/config.py`
-- `experiments/exact_trace_bench/scenarios.py`
-- `experiments/run_sparsification_experiment.py`
-- `experiments/exact_trace_bench/extract.py`
-- `experiments/extract_benchmark_index.py`
-- `tests/test_cross_cluster_debug_artifacts.py`
+1. refresh-only,
+2. streaming-only,
+3. refresh + streaming together.
 
 ### Non-goals
 
-- Do not make Planner V2 the default.
-- Do not introduce silent approximation on the default exact compact path.
-- Do not reopen broad row-store read-path rewrite.
-- Do not run a large cache/hidden-knob sweep as part of the first V2 pass.
-- Do not start with `361_late`; validate base prompts first.
-- Do not change refresh cadence in the first V2 implementation unless needed for
-  fallback safety. Adaptive refresh remains a later policy.
+- Do not call this Planner V3.
+- Do not change frontier membership/ranking as part of this plan.
+- Do not promote Planner V2.
+- Do not start with `361_late`; use base prompts first.
+- Do not run a broad hidden-knob or decoder-cache sweep as part of the first pass.
+- Do not rewrite the entire row-store read/write subsystem unless a narrow
+  streaming interface proves it is necessary.
 
-## 5. Planner V2 policy design
+## 5. Proposed flags and run naming
 
-### 5.1 Reference frontier
+Keep the scheduler mode separate from execution flags.
 
-For each Phase 4 refresh, first form the same canonical selected frontier that
-Planner V1 would execute:
+Scheduler baseline:
 
-- same rank inputs,
-- same visited mask,
-- same target frontier size,
-- same locality ordering and batch shaping as Planner V1.
+- `phase4_scheduler_mode=planner_v1`
 
-Call this the **reference frontier**. It is used for:
+New execution flags:
 
-- fallback execution,
-- membership overlap metrics,
-- score-loss metrics,
-- compact-artifact drift interpretation.
+- `phase4_refresh_optimization=off|v1`
+- `phase4_row_executor=batched|streaming_v1`
 
-### 5.2 Candidate window
+Test matrix:
 
-Planner V2 may select from a wider candidate window than the reference frontier.
+| Variant | Scheduler | Refresh opt | Row executor |
+|---|---|---|---|
+| baseline | `planner_v1` | `off` | `batched` |
+| refresh-only | `planner_v1` | `v1` | `batched` |
+| streaming-only | `planner_v1` | `off` | `streaming_v1` |
+| combined | `planner_v1` | `v1` | `streaming_v1` |
 
-Initial conservative policy:
+Run / scenario family names:
 
-- `reference_frontier_size = F`
-- `candidate_window_size = min(unvisited_count, max(F, F * window_multiplier))`
-- default `window_multiplier`: `2`
-- cap candidate window to avoid pathological memory/CPU overhead; start with a
-  hard internal cap if plumbing another public knob is not worth it yet.
+- `phase4_refresh_opt_v1`
+- `phase4_streaming_executor_v1`
+- `phase4_refresh_streaming_v1`
 
-The window should be score-ordered by the same influence ranking used today. V2
-must not consider low-score arbitrary candidates outside this window.
+Example scenario names:
 
-### 5.3 Locked high-score prefix
+- `ascend_fast_828_base_phase4_refresh_opt_v1_fp32_b256_c4096_cache0`
+- `ascend_fast_828_base_phase4_streaming_executor_v1_fp32_b256_c4096_cache0`
+- `ascend_fast_828_base_phase4_refresh_streaming_v1_fp32_b256_c4096_cache0`
+- same for `361_base`.
 
-To avoid large semantic drift, the highest-ranked candidates should be locked into
-the V2 frontier.
+## 6. Track A — Refresh optimization V1
 
-Initial conservative policy:
+### 6.1 Problem
 
-- lock the top `50%` of the reference frontier by rank,
-- allow substitutions only in the lower half of the selected frontier,
-- preserve final selected count exactly unless fewer unvisited candidates exist.
+Planner V1 refresh time is large:
 
-This gives the policy enough freedom to improve locality while keeping the most
-important frontier mass stable.
+- `828_base`: `173.89 s`
+- `361_base`: `266.20 s`
 
-### 5.4 Membership-change bound
+Planner V2 made refresh roughly `42–43%` slower, which confirms refresh work is
+sensitive and can dominate any batch-execution gain.
 
-V2 must enforce an explicit maximum membership delta relative to the reference
-frontier.
+### 6.2 Likely code surfaces
 
-Initial conservative policy:
+Library repo:
 
-- maximum replaced fraction: `25%` of the reference frontier,
-- hard invariant: `selected_count == reference_selected_count`,
-- hard invariant: no duplicates,
-- hard invariant: no already-visited features.
+- `circuit_tracer/attribution/attribute_nnsight.py`
+  - Phase 4 refresh loop,
+  - planner/refresh telemetry,
+  - row-store read and influence-ranking call sites.
+- `circuit_tracer/graph.py`
+  - `compute_partial_feature_influences_streaming(...)`,
+  - chunk-cache / row-reader behavior if present.
 
-Telemetry must report:
+### 6.3 Initial implementation targets
 
-- retained reference count,
-- replaced count,
-- added count,
-- removed count,
-- selected-node Jaccard vs reference,
-- locked-prefix violation count.
+Start with measurement and a narrow exact optimization, not a policy change.
+
+Candidate refresh work:
+
+1. expose refresh substage telemetry:
+   - row-store read elapsed,
+   - partial influence compute elapsed,
+   - rank/top-k elapsed,
+   - normalization/denominator read elapsed if relevant,
+   - number of rows and chunks touched,
+   - chunk-cache hit/miss/store counters.
+2. enable or improve solver-local row-chunk reuse during refresh if existing
+   `compute_partial_feature_influences_streaming(...)` support allows it.
+3. avoid redundant row-store reads within the same refresh / adjacent refresh when
+   exact immutable chunks are reused.
+4. keep selected-frontier membership identical to Planner V1 for the first
+   refresh-opt implementation.
+
+### 6.4 Acceptance criteria for refresh-only
 
-### 5.5 Score-loss bound
-
-V2 should reject plans that buy locality by dropping too much influence score.
-
-Initial conservative policy:
-
-- compute reference selected score sum,
-- compute V2 selected score sum,
-- require V2 score sum to remain above a configured ratio of reference,
-- default minimum score-sum ratio: `0.995`,
-- also record min / p50 / max rank displacement for added nodes.
-
-If score values are unstable or not directly comparable for a refresh, V2 should
-fall back to Planner V1 and record `fallback_reason=score_metrics_unavailable`.
-
-### 5.6 Locality objective
-
-V2 should optimize locality inside the allowed replacement budget.
-
-Primary locality keys:
-
-1. source layer,
-2. decoder chunk id,
-3. token position if useful and cheap,
-4. original score rank as a final tie-breaker.
-
-Initial objective:
-
-- preserve locked prefix membership,
-- choose optional replacements that extend useful `(source_layer, decoder_chunk)`
-  runs already present in the reference frontier,
-- prefer candidates that reduce planned batch fragmentation,
-- avoid creating extra tiny batches,
-- keep final execution ordering compatible with Planner V1 batch shaping.
-
-Implementation can be simple for the first pass:
-
-1. build candidate groups by `(source_layer, decoder_chunk)`,
-2. score each possible group by:
-   - candidate influence score,
-   - group run length / batch-fill benefit,
-   - rank displacement penalty,
-3. fill the replaceable portion of the frontier from the best locality groups
-   until the selected count is reached,
-4. run the existing Planner V1 ordering/batch-shaping logic on the selected V2
-   membership.
-
-Avoid overengineering a global optimizer in the first pass. The goal is a
-diagnosable policy, not an optimal scheduler.
-
-### 5.7 Fallback behavior
-
-Fallback to Planner V1 for the refresh if any of these happen:
-
-- candidate window is unavailable or malformed,
-- score-loss metrics are unavailable,
-- selected count differs from reference selected count,
-- duplicate or visited feature appears,
-- locked-prefix preservation fails,
-- score-sum ratio is below threshold,
-- membership delta exceeds threshold,
-- batch boundaries do not advance,
-- telemetry serialization would fail.
-
-Fallback must be visible in telemetry:
-
-- `phase4_scheduler_mode=planner_v2`,
-- `phase4_scheduler_effective_policy=planner_v1_fallback` or equivalent,
-- `planner_v2_fallback_reason=<reason>`,
-- reference hashes and candidate-window summary where available.
-
-## 6. Required flags / metadata
-
-Keep the public surface small for the first V2 pass.
-
-Required mode:
-
-- `phase4_scheduler_mode=planner_v2`
-
-Reuse existing controls:
-
-- `phase4_scheduler_debug`
-- `phase4_scheduler_telemetry_detail=summary|normal|debug`
-- `telemetry_max_events`
-
-Optional V2 controls if they are cheap and low-risk to plumb:
-
-- `phase4_planner_v2_window_multiplier`
-- `phase4_planner_v2_locked_prefix_fraction`
-- `phase4_planner_v2_max_replacement_fraction`
-- `phase4_planner_v2_min_score_ratio`
-
-If adding all V2 knobs would slow implementation, hard-code conservative defaults
-in the library and expose only the scheduler mode first. Do not create a broad
-tuning surface before the policy shows promise.
-
-Every completion / step record should include:
-
-- requested scheduler mode,
-- effective scheduler mode / policy,
-- V2 policy version,
-- V2 defaults or explicit knob values,
-- V2 fallback count,
-- V2 fallback reasons observed,
-- V2 membership-overlap summary,
-- V2 score-loss summary.
-
-## 7. Required telemetry
-
-### Phase-level summary
-
-- scheduler mode/version/policy,
-- total selected features,
-- Phase 4 wall time,
-- refresh count,
-- feature-batch count,
-- total refresh elapsed time,
-- total feature-batch elapsed time,
-- Planner V2 refresh count,
-- Planner V2 fallback count,
-- aggregate membership Jaccard vs reference,
-- aggregate score-sum ratio vs reference,
-- compact retained-edge count when available.
-
-### Refresh-level V2 summary
-
-For each refresh, record:
-
-- refresh index,
-- reference frontier size,
-- candidate window size,
-- selected V2 frontier size,
-- reference membership hash,
-- V2 membership hash,
-- reference order hash,
-- V2 order hash,
-- retained / added / removed / replaced counts,
-- selected-node Jaccard vs reference,
-- locked-prefix size and violation count,
-- reference score sum,
-- V2 score sum,
-- score-sum ratio,
-- cutoff score and replacement score range if cheap,
-- rank displacement min / p50 / max for additions,
-- locality fragmentation before / after,
-- planned batch count before / after,
-- boundary reason counts,
-- fallback reason if V2 did not execute.
-
-### Batch-level V2 summary
-
-Reuse Planner V1 batch telemetry, and add if cheap:
-
-- whether the batch contains any V2-added nodes,
-- count of reference-retained vs V2-added nodes in the batch,
-- batch membership hash,
-- distinct source layers,
-- distinct decoder chunks,
-- monotonic chunk-order flag.
-
-### Compact comparison outputs after validation
-
-The analysis pass should compare V2 artifacts against both Planner V1 and
-locality v2:
-
-- feature Jaccard,
-- edge Jaccard,
-- weighted edge Jaccard,
-- retained edge count,
-- completion text,
-- active feature count,
-- Phase 4 wall time,
-- attribution wall time,
-- scenario duration,
-- refresh / batch count,
-- memory snapshots.
-
-## 8. Implementation sequence
-
-### Step 1 — library policy skeleton
-
-1. Add `planner_v2` to scheduler-mode validation.
-2. Add a V2 policy/version identifier.
-3. Make the V2 path call the existing Planner V1 plan builder to create the
-   reference plan.
-4. Initially execute the reference plan unchanged while emitting V2 identity
-   telemetry; this is the plumbing sanity checkpoint.
-
-### Step 2 — bounded candidate window
-
-1. Build the score-ordered candidate window from unvisited candidates.
-2. Add candidate-window telemetry.
-3. Add tests for window size, empty windows, and short-frontier edge cases.
-
-### Step 3 — membership-aware selection
-
-1. Lock the top reference prefix.
-2. Build replacement candidates from the candidate window outside the locked set.
-3. Select replacements using the simple locality objective.
-4. Enforce selected count, duplicate, visited, replacement-fraction, and score-loss
-   invariants.
-5. Fall back to Planner V1 on invariant failure.
-
-### Step 4 — batch construction and telemetry
-
-1. Reuse Planner V1 ordering and shaped-batch construction on V2-selected
-   membership.
-2. Emit reference-vs-V2 membership and score metrics on refresh events.
-3. Emit V2-added node counts on batch events if cheap.
-4. Add phase-level aggregate summaries.
-
-### Step 5 — project plumbing
-
-1. Ensure `trace_pipeline_chunked.py` accepts `planner_v2`.
-2. Ensure scenario config and run launcher pass the mode through.
-3. Ensure manifests, run configs, benchmark extraction, and index rows preserve
-   V2 mode/effective-policy fields.
-4. Add / update project round-trip tests.
-
-### Step 6 — focused local validation
-
-Run only lightweight checks:
-
-- library:
-  - `uv run pytest tests/test_chunked_decoder_optimizations.py -k 'phase4 or scheduler or planner'`
-  - `uv run pytest tests/test_attribute_nnsight_telemetry.py`
-  - `uv run ruff check circuit_tracer/attribution/attribute_nnsight.py circuit_tracer/attribution/attribute.py tests/test_chunked_decoder_optimizations.py tests/test_attribute_nnsight_telemetry.py`
-- project:
-  - `uv run python tests/test_cross_cluster_debug_artifacts.py`
-  - `uv run ruff check trace_pipeline_chunked.py experiments tests`
+- Compact outputs match Planner V1 exactly or near-exactly:
+  - feature Jaccard `1.0`,
+  - edge Jaccard ideally `1.0`,
+  - weighted edge Jaccard ideally `1.0`.
+- Refresh elapsed improves measurably:
+  - target first-pass win: at least `10%` refresh-time reduction on one prompt,
+  - no more than `5%` refresh-time regression on the other.
+- Phase 4 total improves or stays roughly neutral.
+- Memory / CUDA peak does not materially regress.
+- Telemetry explains which refresh substage changed.
+
+## 7. Track B — Streaming row executor V1
+
+### 7.1 Problem
+
+Current Phase 3 / Phase 4 attribution works in row batches. A batch can
+conceptually produce a dense block over all active features. For `361_base`, a
+`256 x 5.2M` fp32 block is about `5.3 GiB` before autograd state, decoder chunks,
+normalization, staging, and writeback. Batching is required, but the current
+batch-block lifecycle may force avoidable materialization and synchronization.
+
+### 7.2 Design direction
+
+Explore a streaming executor path that breaks attribution row production into
+smaller chunks:
+
+```text
+for planned feature batch/group:
+    compute attribution row chunk on GPU
+    normalize / sparsify chunk or partial row exactly
+    asynchronously stage/copy/write chunk to CPU row store
+    continue without waiting for the whole dense batch block when safe
+```
+
+This is not a guarantee that everything can be one continuous GPU stream. Autograd
+and replay constraints may still impose batch boundaries. The goal is to reduce
+peak dense intermediate size and CPU/GPU stalls where the current code already
+chunks internally.
+
+### 7.3 Likely code surfaces
+
+Library repo:
+
+- `circuit_tracer/attribution/context_nnsight.py`
+  - `compute_batch(...)`,
+  - `_compute_chunked_feature_attributions_from_grads(...)`,
+  - chunked feature replay and decoder chunk loops.
+- `circuit_tracer/attribution/attribute_nnsight.py`
+  - Phase 3 / Phase 4 batch execution,
+  - row normalization / denominator computation,
+  - append/writeback integration.
+- `circuit_tracer/transcoder/cross_layer_transcoder.py`
+  - decoder chunk access / caching interactions.
+
+### 7.4 Initial implementation targets
+
+Start with a narrow executor mode, not a full rewrite.
+
+Candidate streaming work:
+
+1. identify where `compute_batch(...)` already has internal chunked outputs or
+   can expose row chunks without changing math,
+2. add a `streaming_v1` path that streams chunk outputs into existing exact row
+   normalization/writeback helpers,
+3. keep the existing `batched` path untouched as fallback,
+4. emit executor telemetry:
+   - chunk count,
+   - chunk rows/features,
+   - GPU compute elapsed,
+   - CPU staging/copy elapsed,
+   - denominator / normalization elapsed,
+   - row append/writeback elapsed,
+   - peak memory before/after,
+   - sync/wait time if measurable.
+
+### 7.5 Acceptance criteria for streaming-only
+
+- Compact outputs remain acceptable vs Planner V1 baseline:
+  - target exact equality if the math is unchanged,
+  - any drift must be explained before further use.
+- Phase 4 feature-batch/executor elapsed improves measurably on at least one
+  prompt without increasing refresh time.
+- Phase 3 timing is not worsened; if the executor is also used in Phase 3, record
+  Phase 3-specific effects.
+- Peak CUDA memory should improve or remain neutral.
+- Existing `batched` mode remains available and tested.
+
+## 8. Combined validation
+
+After refresh-only and streaming-only are individually validated, run the combined
+variant:
+
+- `phase4_refresh_optimization=v1`
+- `phase4_row_executor=streaming_v1`
+- `phase4_scheduler_mode=planner_v1`
+
+The combined run must be evaluated separately because the optimizations can
+interact:
+
+- refresh optimization may change row-read/cache behavior that streaming also
+  touches,
+- streaming may change memory pressure and alter refresh/runtime side effects,
+- the combined win may be less than the sum of individual wins.
+
+Acceptance criteria for combined:
+
+- no compact-output regression beyond individually accepted behavior,
+- Phase 4 total should beat Planner V1 and both single-feature variants, or at
+  least explain why one component suppresses the other,
+- memory behavior must not regress materially.
+
+## 9. Project plumbing and metadata
+
+Project repo changes likely needed:
+
+- `trace_pipeline_chunked.py`
+  - CLI flags for `phase4_refresh_optimization` and `phase4_row_executor`,
+  - run config / completion manifest metadata,
+  - preserve requested/effective execution-mode fields if the library reports
+    fallback.
+- `experiments/exact_trace_bench/config.py`
+  - defaults: refresh `off`, row executor `batched`.
+- `experiments/exact_trace_bench/scenarios.py`
+  - include new exact-mode keys.
+- `experiments/run_sparsification_experiment.py`
+  - pass flags to `trace_pipeline_chunked.py`.
+- `experiments/exact_trace_bench/extract.py`
+  - extract refresh/executor fields and timing summaries.
+- `experiments/extract_benchmark_index.py`
+  - legacy index metadata support if still needed.
+- `tests/test_cross_cluster_debug_artifacts.py`
+  - round-trip new execution metadata.
+
+Library metadata should record:
+
+- `phase4_scheduler_mode`, still usually `planner_v1`,
+- `phase4_refresh_optimization_requested`,
+- `phase4_refresh_optimization_effective`,
+- `phase4_row_executor_requested`,
+- `phase4_row_executor_effective`,
+- fallback reason if either execution mode falls back,
+- refresh/executor telemetry detail level.
+
+## 10. Local validation
+
+Run only lightweight checks locally.
+
+Library examples:
+
+- `uv run pytest tests/test_chunked_decoder_optimizations.py -k 'phase4 or refresh or executor or scheduler'`
+- `uv run pytest tests/test_attribute_nnsight_telemetry.py -k 'phase4 or telemetry'`
+- `uv run ruff check circuit_tracer/attribution/attribute_nnsight.py circuit_tracer/attribution/context_nnsight.py circuit_tracer/graph.py tests/test_chunked_decoder_optimizations.py tests/test_attribute_nnsight_telemetry.py`
+
+Project examples:
+
+- `uv run python tests/test_cross_cluster_debug_artifacts.py`
+- `uv run ruff check trace_pipeline_chunked.py experiments tests`
 
 No model loading or GPU work outside SLURM.
 
-## 9. Cluster validation plan
+## 11. Cluster validation plan
 
-### First validation run
+### First validation matrix
 
-Run on Ascend fast tier only:
+Run on Ascend fast tier:
 
 - `828_base`
 - `361_base`
 
 Use the same canonical settings as Planner V1:
 
+- `phase4_scheduler_mode=planner_v1`
 - `exact_trace_internal_dtype=fp32`
 - `feature_batch_size=256`
 - `decoder_chunk_size=4096`
@@ -439,99 +376,85 @@ Use the same canonical settings as Planner V1:
 - `max_feature_nodes=8192`
 - `max_edges=20000`
 - `attribution_update_interval=4`
-- `phase4_scheduler_mode=planner_v2`
-- `phase4_scheduler_debug=true`
-- `phase4_scheduler_telemetry_detail=debug`
 
-Expected scenario names:
+Variants:
 
-- `ascend_fast_828_base_phase4_planner_v2_fp32_b256_c4096_cache0`
-- `ascend_fast_361_base_phase4_planner_v2_fp32_b256_c4096_cache0`
+1. refresh-only:
+   - `phase4_refresh_optimization=v1`
+   - `phase4_row_executor=batched`
+2. streaming-only:
+   - `phase4_refresh_optimization=off`
+   - `phase4_row_executor=streaming_v1`
+3. combined:
+   - `phase4_refresh_optimization=v1`
+   - `phase4_row_executor=streaming_v1`
 
-Compare against:
+Compare against existing Planner V1 outputs:
 
-1. Planner V1:
-   - `ascend_fast_828_base_phase4_planner_v1_fp32_b256_c4096_cache0`
-   - `ascend_fast_361_base_phase4_planner_v1_fp32_b256_c4096_cache0`
-2. locality v2:
-   - `ascend_fast_828_base_phase4_locality_validation_v2_fp32_b256_c4096_cache0`
-   - `ascend_fast_361_base_phase4_locality_validation_v2_fp32_b256_c4096_cache0`
-3. hybrid row-store baseline for broader historical comparison.
+- `ascend_fast_828_base_phase4_planner_v1_fp32_b256_c4096_cache0`
+- `ascend_fast_361_base_phase4_planner_v1_fp32_b256_c4096_cache0`
 
-### First validation questions
+### Validation metrics
 
-1. Did V2 execute or mostly fall back to V1?
-2. If V2 executed, how much membership changed per refresh?
-3. What was the score-sum ratio vs V1 reference?
-4. Did locality fragmentation improve?
-5. Did Phase 4 batch elapsed time improve?
-6. Did refresh elapsed time regress?
-7. Did compact edges drift mildly or catastrophically?
-8. Did `828_base` keep the Planner V1 win?
-9. Did `361_base` move toward the aggressive locality v1 result without `828_base`
-   regression?
+For each variant/prompt:
 
-### Optional second validation
+- completion text,
+- active feature count,
+- retained edge count,
+- compact feature Jaccard,
+- compact edge Jaccard,
+- weighted edge Jaccard,
+- Phase 0 / Phase 3 / Phase 4 wall-clock,
+- Phase 4 refresh elapsed,
+- Phase 4 feature-batch/executor elapsed,
+- row-store read/write counts,
+- decoder load/cache counters,
+- peak RSS / CUDA memory,
+- fallback counts/reasons for refresh and executor modes.
 
-Only if the first validation is promising:
+## 12. Acceptance criteria
 
-- rerun `828_base` and `361_base` with a slightly more permissive V2 policy, or
-- run one prompt-diversity / parity-oriented check before touching `361_late`.
+Phase 4 Execution V1 should be considered successful if:
 
-Do not use `361_late` until base-prompt behavior is understood.
+1. execution flags are explicit and default to current behavior,
+2. Planner V1 baseline behavior remains available and unchanged,
+3. refresh-only and streaming-only can be evaluated independently,
+4. compact outputs remain exact or any drift is clearly explained,
+5. at least one variant gives a clear Phase 4 win on `828_base` or `361_base`,
+6. no variant introduces unacceptable memory regression,
+7. telemetry makes wins/regressions attributable to refresh, executor, row-store,
+   decoder-load, or synchronization behavior.
 
-## 10. Acceptance criteria
+Promotion bar:
 
-Planner V2 is successful enough to keep iterating if all are true:
+- Do not make either execution flag default until both canonical prompts pass and
+  the combined behavior is understood.
+- A single-prompt win is enough to continue iteration, but not enough for default
+  rollout.
 
-1. it is fully feature-gated behind `phase4_scheduler_mode=planner_v2`,
-2. Planner V1 and locality fallback modes still work,
-3. local tests pass,
-4. V2 telemetry clearly reports membership drift and score loss,
-5. no invariant failures are silent,
-6. canonical fast runs complete successfully,
-7. completion text and active feature counts are unchanged,
-8. retained edges remain operationally sane,
-9. compact edge drift vs Planner V1 is explainable and not catastrophic,
-10. runtime is not materially worse than Planner V1 on `828_base`,
-11. `361_base` shows either a Phase 4 improvement or telemetry that clearly points
-    to the next policy adjustment.
+## 13. Risks and open questions
 
-Suggested first-pass quantitative gates:
+- **Refresh optimization ceiling:** refresh may be dominated by unavoidable dense
+  row-store scans; telemetry must prove where time goes before deeper refactors.
+- **Streaming executor complexity:** autograd/replay may not allow fully continuous
+  GPU streaming; a chunked executor may still need batch boundaries.
+- **Output exactness:** streaming normalization/writeback must preserve exact row
+  semantics. Any change in normalization order or sparsification can create drift.
+- **Interaction effects:** refresh caching and streaming may compete for memory or
+  alter row-read patterns.
+- **Phase 3 coupling:** streaming changes may help or hurt Phase 3 differently from
+  Phase 4; keep phase-specific telemetry.
+- **Scope creep:** do not let this become a broad storage-layout rewrite unless the
+  narrow streaming interface clearly requires it.
 
-- fallback count should be low enough to evaluate the policy; if fallback is high,
-  the run is a plumbing/policy-bound failure rather than a speed result,
-- average selected-node Jaccard vs V1 reference should stay high; start by treating
-  `< 0.85` as too aggressive,
-- score-sum ratio should stay `>= 0.995` unless there is a deliberate follow-up
-  experiment,
-- `828_base` Phase 4 should not regress by more than `5%` vs Planner V1,
-- `361_base` should ideally improve Phase 4 by at least `5%` vs Planner V1 to
-  justify further membership-changing work.
+## 14. Immediate next steps
 
-## 11. Risks and open questions
-
-- **Correctness / interpretability drift:** V2 intentionally changes selected
-  frontier membership, so exact compact outputs may differ. The goal is bounded,
-  measured drift, not exact Jaccard `1.0` vs V1.
-- **Score-loss metric quality:** influence score sums may not fully capture graph
-  quality. Compact edge comparison remains required.
-- **Prompt dependence:** `828_base` and `361_base` may prefer different locality
-  aggressiveness.
-- **Overfitting to batch locality:** reducing fragmentation can still lose if it
-  increases refresh cost or chooses lower-value nodes.
-- **Too many knobs:** expose only what is needed for controlled validation.
-- **Fallback ambiguity:** high fallback rates need to be distinguishable from a
-  successful conservative policy.
-
-## 12. Likely next step after Planner V2
-
-If V2 gives useful telemetry but mixed performance, choose one narrow follow-up:
-
-1. tune only the replacement budget / locked prefix,
-2. add adaptive refresh cadence using V2 fragmentation and score-margin metrics,
-3. test a nonzero decoder cache setting guided by V2 batch locality telemetry,
-4. run a small cross-cluster parity spot-check if compact drift looks meaningful.
-
-Avoid broad hidden-knob sweeps until Planner V2 either proves useful or is rolled
-back to Planner V1 as the stable scheduler foundation.
+1. Implement project/library plumbing for the two execution flags with defaults
+   preserving current Planner V1 behavior.
+2. Add refresh substage telemetry before changing refresh logic.
+3. Implement refresh-only optimization V1 and validate locally with unit tests.
+4. Design the narrow streaming row executor interface from current
+   `compute_batch(...)`/chunked attribution internals.
+5. Implement streaming-only behind `phase4_row_executor=streaming_v1`.
+6. Generate Ascend fast scenario files for refresh-only, streaming-only, and
+   combined validation.
