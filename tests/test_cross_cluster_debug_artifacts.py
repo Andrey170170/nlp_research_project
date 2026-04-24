@@ -85,6 +85,7 @@ def run_checks() -> None:
 
     assert parse_phase4_scheduler_mode("locality") == "locality"
     assert parse_phase4_scheduler_mode("planner_v1") == "planner_v1"
+    assert parse_phase4_scheduler_mode("planner_v2") == "planner_v2"
     assert parse_phase4_scheduler_mode("legacy") == "locality"
 
     assert parse_phase4_scheduler_telemetry_detail("summary") == "summary"
@@ -134,7 +135,7 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         "cross_cluster_debug": True,
         "telemetry_max_events": 17,
         "phase4_anomaly_debug": False,
-        "phase4_scheduler_mode": "planner_v1",
+        "phase4_scheduler_mode": "planner_v2",
         "phase4_scheduler_debug": True,
         "phase4_scheduler_telemetry_detail": "debug",
     }
@@ -146,7 +147,7 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
     assert "--telemetry-max-events" in command
     assert "17" in command
     assert "--phase4-scheduler-mode" in command
-    assert "planner_v1" in command
+    assert "planner_v2" in command
     assert "--phase4-scheduler-debug" in command
     assert "--phase4-scheduler-telemetry-detail" in command
     assert "debug" in command
@@ -169,9 +170,16 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
             "exact_trace_internal_dtype_contract_supported": False,
             "cross_cluster_debug": False,
             "telemetry_max_events": 11,
-            "phase4_scheduler_mode": "planner_v1",
-            "phase4_scheduler_version": "planner_v1",
-            "phase4_scheduler_policy": "membership_preserving_locality",
+            "phase4_scheduler_mode": "planner_v2",
+            "phase4_scheduler_mode_requested": "planner_v2",
+            "phase4_scheduler_mode_effective": "planner_v2",
+            "phase4_scheduler_version": "planner_v2",
+            "phase4_scheduler_version_requested": "planner_v2",
+            "phase4_scheduler_version_effective": "planner_v2",
+            "phase4_scheduler_policy": "bounded_membership_selection",
+            "phase4_scheduler_policy_requested": "bounded_membership_selection",
+            "phase4_scheduler_policy_effective": "bounded_membership_selection",
+            "phase4_scheduler_effective_policy": "bounded_membership_selection",
             "phase4_scheduler_debug": True,
             "phase4_scheduler_telemetry_detail": "debug",
             "attribution_batch_size": 128,
@@ -196,6 +204,28 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         (artifact_dir / "run_config.json").write_text(
             json.dumps(run_config_payload, indent=2)
         )
+        completion_dir = artifact_dir / "prompt_000" / "completion_000"
+        completion_dir.mkdir(parents=True, exist_ok=True)
+        completion_payload = {
+            "prompt_id": "prompt_000",
+            "completion_id": "completion_000",
+            "phase4_scheduler_mode": "planner_v2",
+            "phase4_scheduler_mode_requested": "planner_v2",
+            "phase4_scheduler_mode_effective": "locality",
+            "phase4_scheduler_version": "locality_v1",
+            "phase4_scheduler_version_requested": "planner_v2",
+            "phase4_scheduler_version_effective": "locality_v1",
+            "phase4_scheduler_policy": "fixed_frontier_locality",
+            "phase4_scheduler_policy_requested": "bounded_membership_selection",
+            "phase4_scheduler_policy_effective": "fixed_frontier_locality",
+            "phase4_scheduler_effective_policy": "fixed_frontier_locality",
+            "phase4_scheduler_debug_effective": True,
+            "phase4_scheduler_telemetry_detail_effective": "debug",
+            "steps": [],
+        }
+        (completion_dir / "completion.json").write_text(
+            json.dumps(completion_payload, indent=2)
+        )
 
         benchmark_row = build_benchmark_index_row(scenario_root / "result.json")
         legacy_row = build_row(scenario_root / "result.json")
@@ -203,10 +233,24 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         assert benchmark_row["exact_trace_internal_dtype"] == "fp32"
         assert benchmark_row["exact_trace_internal_dtype_contract_supported"] is False
         assert benchmark_row["telemetry_max_events"] == 11
-        assert benchmark_row["phase4_scheduler_mode"] == "planner_v1"
-        assert benchmark_row["phase4_scheduler_version"] == "planner_v1"
+        assert benchmark_row["phase4_scheduler_mode"] == "locality"
+        assert benchmark_row["phase4_scheduler_mode_requested"] == "planner_v2"
+        assert benchmark_row["phase4_scheduler_mode_effective"] == "locality"
+        assert benchmark_row["phase4_scheduler_version"] == "locality_v1"
+        assert benchmark_row["phase4_scheduler_version_requested"] == "planner_v2"
+        assert benchmark_row["phase4_scheduler_version_effective"] == "locality_v1"
+        assert benchmark_row["phase4_scheduler_policy"] == "fixed_frontier_locality"
         assert (
-            benchmark_row["phase4_scheduler_policy"] == "membership_preserving_locality"
+            benchmark_row["phase4_scheduler_policy_requested"]
+            == "bounded_membership_selection"
+        )
+        assert (
+            benchmark_row["phase4_scheduler_policy_effective"]
+            == "fixed_frontier_locality"
+        )
+        assert (
+            benchmark_row["phase4_scheduler_effective_policy"]
+            == "fixed_frontier_locality"
         )
         assert benchmark_row["phase4_scheduler_debug"] is True
         assert benchmark_row["phase4_scheduler_telemetry_detail"] == "debug"
@@ -214,9 +258,23 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         assert legacy_row["exact_trace_internal_dtype"] == "fp32"
         assert legacy_row["exact_trace_internal_dtype_contract_supported"] is False
         assert legacy_row["telemetry_max_events"] == 11
-        assert legacy_row["phase4_scheduler_mode"] == "planner_v1"
-        assert legacy_row["phase4_scheduler_version"] == "planner_v1"
-        assert legacy_row["phase4_scheduler_policy"] == "membership_preserving_locality"
+        assert legacy_row["phase4_scheduler_mode"] == "locality"
+        assert legacy_row["phase4_scheduler_mode_requested"] == "planner_v2"
+        assert legacy_row["phase4_scheduler_mode_effective"] == "locality"
+        assert legacy_row["phase4_scheduler_version"] == "locality_v1"
+        assert legacy_row["phase4_scheduler_version_requested"] == "planner_v2"
+        assert legacy_row["phase4_scheduler_version_effective"] == "locality_v1"
+        assert legacy_row["phase4_scheduler_policy"] == "fixed_frontier_locality"
+        assert (
+            legacy_row["phase4_scheduler_policy_requested"]
+            == "bounded_membership_selection"
+        )
+        assert (
+            legacy_row["phase4_scheduler_policy_effective"] == "fixed_frontier_locality"
+        )
+        assert (
+            legacy_row["phase4_scheduler_effective_policy"] == "fixed_frontier_locality"
+        )
         assert legacy_row["phase4_scheduler_debug"] is True
         assert legacy_row["phase4_scheduler_telemetry_detail"] == "debug"
 

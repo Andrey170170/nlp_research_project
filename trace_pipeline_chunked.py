@@ -32,11 +32,13 @@ _PHASE4_SCHEDULER_TELEMETRY_DETAIL_ALIAS: dict[str, str] = {
 _PHASE4_SCHEDULER_VERSION_BY_MODE: dict[str, str] = {
     "locality": "locality_v1",
     "planner_v1": "planner_v1",
+    "planner_v2": "planner_v2",
 }
 
 _PHASE4_SCHEDULER_POLICY_BY_MODE: dict[str, str] = {
     "locality": "fixed_frontier_locality",
     "planner_v1": "membership_preserving_locality",
+    "planner_v2": "bounded_membership_selection",
 }
 
 
@@ -74,7 +76,7 @@ def parse_phase4_scheduler_mode(value: str) -> str:
     normalized = _normalize_phase4_scheduler_mode(value)
     if normalized is None:
         raise argparse.ArgumentTypeError(
-            f"Expected one of {{locality, planner_v1, legacy}}, got: {value!r}"
+            f"Expected one of {{locality, planner_v1, planner_v2, legacy}}, got: {value!r}"
         )
     return normalized
 
@@ -309,9 +311,12 @@ def build_step_telemetry_records(
     step_index: int,
     phase4_feature_batch_size: int,
     phase4_feature_batch_planner_status: str,
-    phase4_scheduler_mode: str,
-    phase4_scheduler_version: str | None,
-    phase4_scheduler_policy: str | None,
+    phase4_scheduler_mode_requested: str,
+    phase4_scheduler_mode_effective: str,
+    phase4_scheduler_version_requested: str | None,
+    phase4_scheduler_version_effective: str | None,
+    phase4_scheduler_policy_requested: str | None,
+    phase4_scheduler_policy_effective: str | None,
     phase4_scheduler_debug: bool,
     phase4_scheduler_telemetry_detail: str,
     events: list[dict[str, Any]],
@@ -325,9 +330,16 @@ def build_step_telemetry_records(
             "event_index": event_index,
             "phase4_feature_batch_size": phase4_feature_batch_size,
             "phase4_feature_batch_planner_status": phase4_feature_batch_planner_status,
-            "phase4_scheduler_mode": phase4_scheduler_mode,
-            "phase4_scheduler_version": phase4_scheduler_version,
-            "phase4_scheduler_policy": phase4_scheduler_policy,
+            "phase4_scheduler_mode": phase4_scheduler_mode_effective,
+            "phase4_scheduler_mode_requested": phase4_scheduler_mode_requested,
+            "phase4_scheduler_mode_effective": phase4_scheduler_mode_effective,
+            "phase4_scheduler_version": phase4_scheduler_version_effective,
+            "phase4_scheduler_version_requested": phase4_scheduler_version_requested,
+            "phase4_scheduler_version_effective": phase4_scheduler_version_effective,
+            "phase4_scheduler_policy": phase4_scheduler_policy_effective,
+            "phase4_scheduler_policy_requested": phase4_scheduler_policy_requested,
+            "phase4_scheduler_policy_effective": phase4_scheduler_policy_effective,
+            "phase4_scheduler_effective_policy": phase4_scheduler_policy_effective,
             "phase4_scheduler_debug": phase4_scheduler_debug,
             "phase4_scheduler_telemetry_detail": phase4_scheduler_telemetry_detail,
         }
@@ -441,9 +453,12 @@ def trace_completion_compact_chunked(
     observed_phase4_feature_batch_sizes: list[int] = []
     observed_phase4_planner_statuses: list[str] = []
     observed_phase4_planner_skip_reasons: list[str] = []
-    observed_phase4_scheduler_modes: list[str] = []
-    observed_phase4_scheduler_versions: list[str] = []
-    observed_phase4_scheduler_policies: list[str] = []
+    observed_phase4_scheduler_modes_requested: list[str] = []
+    observed_phase4_scheduler_modes_effective: list[str] = []
+    observed_phase4_scheduler_versions_requested: list[str] = []
+    observed_phase4_scheduler_versions_effective: list[str] = []
+    observed_phase4_scheduler_policies_requested: list[str] = []
+    observed_phase4_scheduler_policies_effective: list[str] = []
     observed_phase4_scheduler_debug_values: list[bool] = []
     observed_phase4_scheduler_telemetry_details: list[str] = []
     telemetry_jsonl_path = completion_dir / "telemetry.jsonl"
@@ -540,29 +555,95 @@ def trace_completion_compact_chunked(
                 resolved_phase4_planner_skip_reason
             )
 
-        resolved_phase4_scheduler_mode = (
+        resolved_phase4_scheduler_mode_requested = (
             _normalize_phase4_scheduler_mode(
-                compact_result.get("phase4_scheduler_mode")
+                compact_result.get("phase4_scheduler_mode_requested")
             )
             or phase4_scheduler_mode
         )
-        observed_phase4_scheduler_modes.append(resolved_phase4_scheduler_mode)
-        resolved_phase4_scheduler_version = compact_result.get(
-            "phase4_scheduler_version"
+        observed_phase4_scheduler_modes_requested.append(
+            resolved_phase4_scheduler_mode_requested
         )
-        if not isinstance(resolved_phase4_scheduler_version, str):
-            resolved_phase4_scheduler_version = resolve_phase4_scheduler_version(
-                resolved_phase4_scheduler_mode
+        resolved_phase4_scheduler_mode_effective = (
+            _normalize_phase4_scheduler_mode(
+                compact_result.get("phase4_scheduler_mode_effective")
             )
-        if isinstance(resolved_phase4_scheduler_version, str):
-            observed_phase4_scheduler_versions.append(resolved_phase4_scheduler_version)
-        resolved_phase4_scheduler_policy = compact_result.get("phase4_scheduler_policy")
-        if not isinstance(resolved_phase4_scheduler_policy, str):
-            resolved_phase4_scheduler_policy = resolve_phase4_scheduler_policy(
-                resolved_phase4_scheduler_mode
+            or _normalize_phase4_scheduler_mode(
+                compact_result.get("phase4_scheduler_mode")
             )
-        if isinstance(resolved_phase4_scheduler_policy, str):
-            observed_phase4_scheduler_policies.append(resolved_phase4_scheduler_policy)
+            or resolved_phase4_scheduler_mode_requested
+        )
+        observed_phase4_scheduler_modes_effective.append(
+            resolved_phase4_scheduler_mode_effective
+        )
+
+        resolved_phase4_scheduler_version_requested = compact_result.get(
+            "phase4_scheduler_version_requested"
+        )
+        if not isinstance(resolved_phase4_scheduler_version_requested, str):
+            resolved_phase4_scheduler_version_requested = (
+                resolve_phase4_scheduler_version(
+                    resolved_phase4_scheduler_mode_requested
+                )
+            )
+        if isinstance(resolved_phase4_scheduler_version_requested, str):
+            observed_phase4_scheduler_versions_requested.append(
+                resolved_phase4_scheduler_version_requested
+            )
+
+        resolved_phase4_scheduler_version_effective = compact_result.get(
+            "phase4_scheduler_version_effective"
+        )
+        if not isinstance(resolved_phase4_scheduler_version_effective, str):
+            resolved_phase4_scheduler_version_effective = compact_result.get(
+                "phase4_scheduler_version"
+            )
+        if not isinstance(resolved_phase4_scheduler_version_effective, str):
+            resolved_phase4_scheduler_version_effective = (
+                resolve_phase4_scheduler_version(
+                    resolved_phase4_scheduler_mode_effective
+                )
+            )
+        if isinstance(resolved_phase4_scheduler_version_effective, str):
+            observed_phase4_scheduler_versions_effective.append(
+                resolved_phase4_scheduler_version_effective
+            )
+
+        resolved_phase4_scheduler_policy_requested = compact_result.get(
+            "phase4_scheduler_policy_requested"
+        )
+        if not isinstance(resolved_phase4_scheduler_policy_requested, str):
+            resolved_phase4_scheduler_policy_requested = (
+                resolve_phase4_scheduler_policy(
+                    resolved_phase4_scheduler_mode_requested
+                )
+            )
+        if isinstance(resolved_phase4_scheduler_policy_requested, str):
+            observed_phase4_scheduler_policies_requested.append(
+                resolved_phase4_scheduler_policy_requested
+            )
+
+        resolved_phase4_scheduler_policy_effective = compact_result.get(
+            "phase4_scheduler_policy_effective"
+        )
+        if not isinstance(resolved_phase4_scheduler_policy_effective, str):
+            resolved_phase4_scheduler_policy_effective = compact_result.get(
+                "phase4_scheduler_effective_policy"
+            )
+        if not isinstance(resolved_phase4_scheduler_policy_effective, str):
+            resolved_phase4_scheduler_policy_effective = compact_result.get(
+                "phase4_scheduler_policy"
+            )
+        if not isinstance(resolved_phase4_scheduler_policy_effective, str):
+            resolved_phase4_scheduler_policy_effective = (
+                resolve_phase4_scheduler_policy(
+                    resolved_phase4_scheduler_mode_effective
+                )
+            )
+        if isinstance(resolved_phase4_scheduler_policy_effective, str):
+            observed_phase4_scheduler_policies_effective.append(
+                resolved_phase4_scheduler_policy_effective
+            )
         resolved_phase4_scheduler_debug = bool(
             compact_result.get("phase4_scheduler_debug", phase4_scheduler_debug)
         )
@@ -604,9 +685,12 @@ def trace_completion_compact_chunked(
             step_index=step_idx,
             phase4_feature_batch_size=resolved_phase4_feature_batch_size,
             phase4_feature_batch_planner_status=resolved_phase4_planner_status,
-            phase4_scheduler_mode=resolved_phase4_scheduler_mode,
-            phase4_scheduler_version=resolved_phase4_scheduler_version,
-            phase4_scheduler_policy=resolved_phase4_scheduler_policy,
+            phase4_scheduler_mode_requested=resolved_phase4_scheduler_mode_requested,
+            phase4_scheduler_mode_effective=resolved_phase4_scheduler_mode_effective,
+            phase4_scheduler_version_requested=resolved_phase4_scheduler_version_requested,
+            phase4_scheduler_version_effective=resolved_phase4_scheduler_version_effective,
+            phase4_scheduler_policy_requested=resolved_phase4_scheduler_policy_requested,
+            phase4_scheduler_policy_effective=resolved_phase4_scheduler_policy_effective,
             phase4_scheduler_debug=resolved_phase4_scheduler_debug,
             phase4_scheduler_telemetry_detail=resolved_phase4_scheduler_telemetry_detail,
             events=telemetry_events,
@@ -768,9 +852,16 @@ def trace_completion_compact_chunked(
             ),
             "phase4_feature_batch_planner_status": resolved_phase4_planner_status,
             "phase4_feature_batch_planner_skip_reason": resolved_phase4_planner_skip_reason,
-            "phase4_scheduler_mode": resolved_phase4_scheduler_mode,
-            "phase4_scheduler_version": resolved_phase4_scheduler_version,
-            "phase4_scheduler_policy": resolved_phase4_scheduler_policy,
+            "phase4_scheduler_mode": resolved_phase4_scheduler_mode_effective,
+            "phase4_scheduler_mode_requested": resolved_phase4_scheduler_mode_requested,
+            "phase4_scheduler_mode_effective": resolved_phase4_scheduler_mode_effective,
+            "phase4_scheduler_version": resolved_phase4_scheduler_version_effective,
+            "phase4_scheduler_version_requested": resolved_phase4_scheduler_version_requested,
+            "phase4_scheduler_version_effective": resolved_phase4_scheduler_version_effective,
+            "phase4_scheduler_policy": resolved_phase4_scheduler_policy_effective,
+            "phase4_scheduler_policy_requested": resolved_phase4_scheduler_policy_requested,
+            "phase4_scheduler_policy_effective": resolved_phase4_scheduler_policy_effective,
+            "phase4_scheduler_effective_policy": resolved_phase4_scheduler_policy_effective,
             "phase4_scheduler_debug": resolved_phase4_scheduler_debug,
             "phase4_scheduler_telemetry_detail": resolved_phase4_scheduler_telemetry_detail,
             "phase4_anomaly_debug_enabled": bool(
@@ -815,9 +906,24 @@ def trace_completion_compact_chunked(
     completion_text = tokenizer.decode(generated_token_ids, skip_special_tokens=True)
     unique_phase4_feature_batch_sizes = sorted(set(observed_phase4_feature_batch_sizes))
     unique_phase4_planner_statuses = sorted(set(observed_phase4_planner_statuses))
-    unique_phase4_scheduler_modes = sorted(set(observed_phase4_scheduler_modes))
-    unique_phase4_scheduler_versions = sorted(set(observed_phase4_scheduler_versions))
-    unique_phase4_scheduler_policies = sorted(set(observed_phase4_scheduler_policies))
+    unique_phase4_scheduler_modes_requested = sorted(
+        set(observed_phase4_scheduler_modes_requested)
+    )
+    unique_phase4_scheduler_modes_effective = sorted(
+        set(observed_phase4_scheduler_modes_effective)
+    )
+    unique_phase4_scheduler_versions_requested = sorted(
+        set(observed_phase4_scheduler_versions_requested)
+    )
+    unique_phase4_scheduler_versions_effective = sorted(
+        set(observed_phase4_scheduler_versions_effective)
+    )
+    unique_phase4_scheduler_policies_requested = sorted(
+        set(observed_phase4_scheduler_policies_requested)
+    )
+    unique_phase4_scheduler_policies_effective = sorted(
+        set(observed_phase4_scheduler_policies_effective)
+    )
     unique_phase4_scheduler_telemetry_details = sorted(
         set(observed_phase4_scheduler_telemetry_details)
     )
@@ -907,24 +1013,72 @@ def trace_completion_compact_chunked(
             else None
         ),
         "phase4_scheduler_mode": phase4_scheduler_mode,
-        "phase4_scheduler_mode_effective": (
-            observed_phase4_scheduler_modes[-1]
-            if observed_phase4_scheduler_modes
+        "phase4_scheduler_mode_requested": (
+            observed_phase4_scheduler_modes_requested[-1]
+            if observed_phase4_scheduler_modes_requested
             else phase4_scheduler_mode
         ),
-        "phase4_scheduler_modes_observed": unique_phase4_scheduler_modes,
+        "phase4_scheduler_mode_effective": (
+            observed_phase4_scheduler_modes_effective[-1]
+            if observed_phase4_scheduler_modes_effective
+            else phase4_scheduler_mode
+        ),
+        "phase4_scheduler_modes_observed": unique_phase4_scheduler_modes_effective,
+        "phase4_scheduler_modes_requested_observed": (
+            unique_phase4_scheduler_modes_requested
+        ),
+        "phase4_scheduler_modes_effective_observed": (
+            unique_phase4_scheduler_modes_effective
+        ),
         "phase4_scheduler_version": (
-            observed_phase4_scheduler_versions[-1]
-            if observed_phase4_scheduler_versions
+            observed_phase4_scheduler_versions_effective[-1]
+            if observed_phase4_scheduler_versions_effective
             else resolve_phase4_scheduler_version(phase4_scheduler_mode)
         ),
-        "phase4_scheduler_versions_observed": unique_phase4_scheduler_versions,
+        "phase4_scheduler_version_requested": (
+            observed_phase4_scheduler_versions_requested[-1]
+            if observed_phase4_scheduler_versions_requested
+            else resolve_phase4_scheduler_version(phase4_scheduler_mode)
+        ),
+        "phase4_scheduler_version_effective": (
+            observed_phase4_scheduler_versions_effective[-1]
+            if observed_phase4_scheduler_versions_effective
+            else resolve_phase4_scheduler_version(phase4_scheduler_mode)
+        ),
+        "phase4_scheduler_versions_observed": unique_phase4_scheduler_versions_effective,
+        "phase4_scheduler_versions_requested_observed": (
+            unique_phase4_scheduler_versions_requested
+        ),
+        "phase4_scheduler_versions_effective_observed": (
+            unique_phase4_scheduler_versions_effective
+        ),
         "phase4_scheduler_policy": (
-            observed_phase4_scheduler_policies[-1]
-            if observed_phase4_scheduler_policies
+            observed_phase4_scheduler_policies_effective[-1]
+            if observed_phase4_scheduler_policies_effective
             else resolve_phase4_scheduler_policy(phase4_scheduler_mode)
         ),
-        "phase4_scheduler_policies_observed": unique_phase4_scheduler_policies,
+        "phase4_scheduler_policy_requested": (
+            observed_phase4_scheduler_policies_requested[-1]
+            if observed_phase4_scheduler_policies_requested
+            else resolve_phase4_scheduler_policy(phase4_scheduler_mode)
+        ),
+        "phase4_scheduler_policy_effective": (
+            observed_phase4_scheduler_policies_effective[-1]
+            if observed_phase4_scheduler_policies_effective
+            else resolve_phase4_scheduler_policy(phase4_scheduler_mode)
+        ),
+        "phase4_scheduler_effective_policy": (
+            observed_phase4_scheduler_policies_effective[-1]
+            if observed_phase4_scheduler_policies_effective
+            else resolve_phase4_scheduler_policy(phase4_scheduler_mode)
+        ),
+        "phase4_scheduler_policies_observed": unique_phase4_scheduler_policies_effective,
+        "phase4_scheduler_policies_requested_observed": (
+            unique_phase4_scheduler_policies_requested
+        ),
+        "phase4_scheduler_policies_effective_observed": (
+            unique_phase4_scheduler_policies_effective
+        ),
         "phase4_scheduler_debug": bool(phase4_scheduler_debug),
         "phase4_scheduler_debug_effective": (
             observed_phase4_scheduler_debug_values[-1]
@@ -1155,10 +1309,27 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "cross_cluster_debug": args.cross_cluster_debug,
         "telemetry_max_events": args.telemetry_max_events,
         "phase4_scheduler_mode": args.phase4_scheduler_mode,
+        "phase4_scheduler_mode_requested": args.phase4_scheduler_mode,
+        "phase4_scheduler_mode_effective": args.phase4_scheduler_mode,
         "phase4_scheduler_version": resolve_phase4_scheduler_version(
             args.phase4_scheduler_mode
         ),
+        "phase4_scheduler_version_requested": resolve_phase4_scheduler_version(
+            args.phase4_scheduler_mode
+        ),
+        "phase4_scheduler_version_effective": resolve_phase4_scheduler_version(
+            args.phase4_scheduler_mode
+        ),
         "phase4_scheduler_policy": resolve_phase4_scheduler_policy(
+            args.phase4_scheduler_mode
+        ),
+        "phase4_scheduler_policy_requested": resolve_phase4_scheduler_policy(
+            args.phase4_scheduler_mode
+        ),
+        "phase4_scheduler_policy_effective": resolve_phase4_scheduler_policy(
+            args.phase4_scheduler_mode
+        ),
+        "phase4_scheduler_effective_policy": resolve_phase4_scheduler_policy(
             args.phase4_scheduler_mode
         ),
         "phase4_scheduler_debug": args.phase4_scheduler_debug,
@@ -1497,7 +1668,7 @@ if __name__ == "__main__":
         default="locality",
         help=(
             "Phase-4 frontier scheduler mode "
-            "(locality, planner_v1; legacy aliases to locality)"
+            "(locality, planner_v1, planner_v2; legacy aliases to locality)"
         ),
     )
     parser.add_argument(
