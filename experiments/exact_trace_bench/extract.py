@@ -455,10 +455,14 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
 
         scheduler_mode_requested = manifest.get("phase4_scheduler_mode_requested")
         if not isinstance(scheduler_mode_requested, str):
+            scheduler_mode_requested = manifest.get("phase4_scheduler_requested_mode")
+        if not isinstance(scheduler_mode_requested, str):
             scheduler_mode_requested = manifest.get("phase4_scheduler_mode")
         if isinstance(scheduler_mode_requested, str):
             phase4_scheduler_modes_requested.append(scheduler_mode_requested)
         scheduler_mode_effective = manifest.get("phase4_scheduler_mode_effective")
+        if not isinstance(scheduler_mode_effective, str):
+            scheduler_mode_effective = manifest.get("phase4_scheduler_effective_mode")
         if not isinstance(scheduler_mode_effective, str):
             scheduler_mode_effective = manifest.get("phase4_scheduler_mode")
         if isinstance(scheduler_mode_effective, str):
@@ -470,6 +474,10 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
         if isinstance(scheduler_version_requested, str):
             phase4_scheduler_versions_requested.append(scheduler_version_requested)
         scheduler_version_effective = manifest.get("phase4_scheduler_version_effective")
+        if not isinstance(scheduler_version_effective, str):
+            scheduler_version_effective = manifest.get(
+                "phase4_scheduler_effective_version"
+            )
         if not isinstance(scheduler_version_effective, str):
             scheduler_version_effective = manifest.get("phase4_scheduler_version")
         if isinstance(scheduler_version_effective, str):
@@ -1688,13 +1696,19 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
         "phase4_scheduler_mode_requested": run_config.get(
             "phase4_scheduler_mode_requested",
             run_config.get(
-                "phase4_scheduler_mode", scenario.get("phase4_scheduler_mode")
+                "phase4_scheduler_requested_mode",
+                run_config.get(
+                    "phase4_scheduler_mode", scenario.get("phase4_scheduler_mode")
+                ),
             ),
         ),
         "phase4_scheduler_mode_effective": run_config.get(
             "phase4_scheduler_mode_effective",
             run_config.get(
-                "phase4_scheduler_mode", scenario.get("phase4_scheduler_mode")
+                "phase4_scheduler_effective_mode",
+                run_config.get(
+                    "phase4_scheduler_mode", scenario.get("phase4_scheduler_mode")
+                ),
             ),
         ),
         "phase4_scheduler_version": run_config.get("phase4_scheduler_version"),
@@ -1704,7 +1718,10 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
         ),
         "phase4_scheduler_version_effective": run_config.get(
             "phase4_scheduler_version_effective",
-            run_config.get("phase4_scheduler_version"),
+            run_config.get(
+                "phase4_scheduler_effective_version",
+                run_config.get("phase4_scheduler_version"),
+            ),
         ),
         "phase4_scheduler_policy": run_config.get("phase4_scheduler_policy"),
         "phase4_scheduler_policy_requested": run_config.get(
