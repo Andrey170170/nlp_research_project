@@ -1655,6 +1655,68 @@ Interpretation:
 - next optimization should use Planner V1 as the instrumentation/control surface
   for a policy experiment rather than returning to hidden cache sweeps.
 
+## Recent launch update — Phase 4 Planner V2 validation
+
+Purpose: validate the first bounded membership-aware Planner V2 policy on
+canonical fast prompts, using Planner V1 and locality v2 as the direct comparison
+baselines.
+
+Code state used:
+
+- project repo commit: `73ec4b0` — `align planner v2 metadata roundtrip test`
+- library repo commit: `aba297b` — `fix planner_v2 scheduler semantics and fallback telemetry`
+
+Scenario file:
+
+- `experiments/generated/exact_trace_phase4_planner_v2_fast_ascend_scenarios.json`
+
+Launch metadata:
+
+- validation array job: `5066777`
+- run id: `20260423_phase4-planner-v2-fast-ascend`
+- run name: `phase4_planner_v2_fast_ascend`
+- output root: `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast`
+
+Scenarios:
+
+- `ascend_fast_828_base_phase4_planner_v2_fp32_b256_c4096_cache0`
+- `ascend_fast_361_base_phase4_planner_v2_fp32_b256_c4096_cache0`
+
+Key settings:
+
+- `phase4_scheduler_mode=planner_v2`
+- `phase4_scheduler_debug=true`
+- `phase4_scheduler_telemetry_detail=debug`
+- `exact_trace_internal_dtype=fp32`
+- `feature_batch_size=256`
+- `decoder_chunk_size=4096`
+- `cross_batch_decoder_cache_bytes=0`
+
+Expected analysis targets:
+
+- confirm V2 executes or records explicit Planner V1 fallback per refresh,
+- measure membership drift vs Planner V1 reference:
+  - selected-node Jaccard,
+  - replacement count/fraction,
+  - score-sum ratio,
+  - rank displacement summaries,
+- compare compact artifacts against Planner V1 and locality v2:
+  - feature Jaccard,
+  - edge Jaccard,
+  - weighted edge Jaccard,
+  - retained-edge count,
+- compare runtime against Planner V1:
+  - Phase 4 wall-clock,
+  - refresh elapsed,
+  - feature-batch elapsed,
+  - refresh/batch counts,
+- check whether `828_base` keeps the Planner V1 win and whether `361_base` moves
+  toward the aggressive locality v1 result without an `828_base` regression.
+
+Status:
+
+- submitted; array job observed pending on Ascend shortly after launch.
+
 ## Status of this note
 
 This file is descriptive, not normative.
