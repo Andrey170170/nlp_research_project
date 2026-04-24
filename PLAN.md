@@ -389,6 +389,20 @@ Variants:
    - `phase4_refresh_optimization=v1`
    - `phase4_row_executor=streaming_v1`
 
+Generated Ascend fast scenario files:
+
+- `experiments/generated/exact_trace_phase4_refresh_opt_v1_fast_ascend_scenarios.json`
+- `experiments/generated/exact_trace_phase4_streaming_executor_v1_fast_ascend_scenarios.json`
+- `experiments/generated/exact_trace_phase4_refresh_streaming_v1_fast_ascend_scenarios.json`
+
+Submit each file through the standard exact benchmark launcher, for example:
+
+```bash
+sbatch --array=0-1 --export=ALL,SCENARIOS_FILE=experiments/generated/exact_trace_phase4_refresh_opt_v1_fast_ascend_scenarios.json,OUTPUT_ROOT=/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast scripts/trace_weekend_exact_chunked.ascend.sbatch
+sbatch --array=0-1 --export=ALL,SCENARIOS_FILE=experiments/generated/exact_trace_phase4_streaming_executor_v1_fast_ascend_scenarios.json,OUTPUT_ROOT=/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast scripts/trace_weekend_exact_chunked.ascend.sbatch
+sbatch --array=0-1 --export=ALL,SCENARIOS_FILE=experiments/generated/exact_trace_phase4_refresh_streaming_v1_fast_ascend_scenarios.json,OUTPUT_ROOT=/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast scripts/trace_weekend_exact_chunked.ascend.sbatch
+```
+
 Compare against existing Planner V1 outputs:
 
 - `ascend_fast_828_base_phase4_planner_v1_fp32_b256_c4096_cache0`
