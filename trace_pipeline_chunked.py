@@ -48,7 +48,7 @@ _PHASE4_REFRESH_OPTIMIZATION_VERSION_BY_MODE: dict[str, str] = {
 
 _PHASE4_REFRESH_OPTIMIZATION_EFFECTIVE_BY_MODE: dict[str, str] = {
     "off": "off",
-    "v1": "off",
+    "v1": "v1",
 }
 
 _PHASE4_ROW_EXECUTOR_VERSION_BY_MODE: dict[str, str] = {

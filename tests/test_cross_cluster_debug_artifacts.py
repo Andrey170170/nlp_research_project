@@ -32,6 +32,8 @@ def run_checks() -> None:
         parse_phase4_row_executor,
         parse_phase4_scheduler_mode,
         parse_phase4_scheduler_telemetry_detail,
+        resolve_phase4_refresh_optimization_effective,
+        resolve_phase4_row_executor_effective,
         trace_completion_compact_chunked,
     )
 
@@ -103,6 +105,8 @@ def run_checks() -> None:
     assert parse_phase4_refresh_optimization("v1") == "v1"
     assert parse_phase4_row_executor("batched") == "batched"
     assert parse_phase4_row_executor("streaming_v1") == "streaming_v1"
+    assert resolve_phase4_refresh_optimization_effective("v1") == "v1"
+    assert resolve_phase4_row_executor_effective("streaming_v1") == "batched"
 
     try:
         parse_phase4_scheduler_mode("unknown")
@@ -214,11 +218,11 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
             "phase4_refresh_optimization": "v1",
             "phase4_refresh_optimization_requested": "v1",
             "phase4_refresh_optimization_mode_requested": "v1",
-            "phase4_refresh_optimization_effective": "off",
-            "phase4_refresh_optimization_mode_effective": "off",
-            "phase4_refresh_optimization_version": "off_v1",
+            "phase4_refresh_optimization_effective": "v1",
+            "phase4_refresh_optimization_mode_effective": "v1",
+            "phase4_refresh_optimization_version": "v1",
             "phase4_refresh_optimization_version_requested": "v1",
-            "phase4_refresh_optimization_version_effective": "off_v1",
+            "phase4_refresh_optimization_version_effective": "v1",
             "phase4_row_executor": "streaming_v1",
             "phase4_row_executor_requested": "streaming_v1",
             "phase4_row_executor_mode_requested": "streaming_v1",
@@ -270,11 +274,11 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
             "phase4_refresh_optimization": "v1",
             "phase4_refresh_optimization_requested": "v1",
             "phase4_refresh_optimization_mode_requested": "v1",
-            "phase4_refresh_optimization_effective": "off",
-            "phase4_refresh_optimization_mode_effective": "off",
-            "phase4_refresh_optimization_version": "off_v1",
+            "phase4_refresh_optimization_effective": "v1",
+            "phase4_refresh_optimization_mode_effective": "v1",
+            "phase4_refresh_optimization_version": "v1",
             "phase4_refresh_optimization_version_requested": "v1",
-            "phase4_refresh_optimization_version_effective": "off_v1",
+            "phase4_refresh_optimization_version_effective": "v1",
             "phase4_row_executor": "streaming_v1",
             "phase4_row_executor_requested": "streaming_v1",
             "phase4_row_executor_mode_requested": "streaming_v1",
@@ -318,10 +322,10 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         )
         assert benchmark_row["phase4_scheduler_debug"] is True
         assert benchmark_row["phase4_scheduler_telemetry_detail"] == "debug"
-        assert benchmark_row["phase4_refresh_optimization"] == "off"
+        assert benchmark_row["phase4_refresh_optimization"] == "v1"
         assert benchmark_row["phase4_refresh_optimization_requested"] == "v1"
-        assert benchmark_row["phase4_refresh_optimization_mode_effective"] == "off"
-        assert benchmark_row["phase4_refresh_optimization_version"] == "off_v1"
+        assert benchmark_row["phase4_refresh_optimization_mode_effective"] == "v1"
+        assert benchmark_row["phase4_refresh_optimization_version"] == "v1"
         assert benchmark_row["phase4_refresh_optimization_version_requested"] == "v1"
         assert benchmark_row["phase4_row_executor"] == "batched"
         assert benchmark_row["phase4_row_executor_requested"] == "streaming_v1"
@@ -353,10 +357,10 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         )
         assert legacy_row["phase4_scheduler_debug"] is True
         assert legacy_row["phase4_scheduler_telemetry_detail"] == "debug"
-        assert legacy_row["phase4_refresh_optimization"] == "off"
+        assert legacy_row["phase4_refresh_optimization"] == "v1"
         assert legacy_row["phase4_refresh_optimization_requested"] == "v1"
-        assert legacy_row["phase4_refresh_optimization_mode_effective"] == "off"
-        assert legacy_row["phase4_refresh_optimization_version"] == "off_v1"
+        assert legacy_row["phase4_refresh_optimization_mode_effective"] == "v1"
+        assert legacy_row["phase4_refresh_optimization_version"] == "v1"
         assert legacy_row["phase4_refresh_optimization_version_requested"] == "v1"
         assert legacy_row["phase4_row_executor"] == "batched"
         assert legacy_row["phase4_row_executor_requested"] == "streaming_v1"
