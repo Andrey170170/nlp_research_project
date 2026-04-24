@@ -1715,7 +1715,106 @@ Expected analysis targets:
 
 Status:
 
-- submitted; array job observed pending on Ascend shortly after launch.
+- completed / analyzed.
+
+Job status:
+
+- `5066777_0`: completed successfully in `00:10:21`
+- `5066777_1`: completed successfully in `00:18:31`
+
+Correctness / artifact summary:
+
+- both scenarios completed successfully,
+- completion text unchanged relative to Planner V1 comparison runs:
+  - `828_base`: `Here`
+  - `361_base`: `Let`
+- active feature counts unchanged:
+  - `828_base`: `2993540`
+  - `361_base`: `5223267`
+- retained edges unchanged: `20000` in both runs.
+
+Compact comparison vs Planner V1:
+
+- `828_base`:
+  - feature Jaccard: `1.0`
+  - edge Jaccard: `0.948515`
+  - weighted edge Jaccard: `0.955868`
+- `361_base`:
+  - feature Jaccard: `1.0`
+  - edge Jaccard: `0.922501`
+  - weighted edge Jaccard: `0.907005`
+
+Planner V2 telemetry summary:
+
+- V2 executed without fallback on all refreshes:
+  - fallback count: `0 / 9` refreshes for both prompts,
+  - `scheduler_planner_v2_fallback_reason=None` throughout.
+- V2 selected membership changed only on a minority of refreshes:
+  - `828_base`: `3 / 9` refreshes changed membership,
+  - `361_base`: `2 / 9` refreshes changed membership.
+- Average replacement count was small:
+  - `828_base`: mean `1.67` replaced nodes / refresh, max `8`,
+  - `361_base`: mean `0.89` replaced nodes / refresh, max `5`.
+- Score loss stayed within the intended conservative bound:
+  - `828_base`: min score-sum ratio `0.999496`, mean `0.999920`,
+  - `361_base`: min score-sum ratio `0.999773`, mean `0.999964`.
+- Candidate window/reference checks behaved as expected:
+  - candidate windows included the reference frontier on all refreshes,
+  - candidate window multiplier was `2.0`,
+  - no fallback was needed for candidate-window construction.
+
+Performance summary vs Planner V1:
+
+- `828_base`:
+  - Planner V1 Phase 4 / attribution / scenario duration: `314.78 s` /
+    `562.51 s` / `603.81 s`
+  - Planner V2 Phase 4 / attribution / scenario duration: `372.25 s` /
+    `586.92 s` / `620.26 s`
+  - change vs Planner V1: Phase 4 `+57.47 s` (`+18.3%`), attribution
+    `+24.41 s` (`+4.3%`), scenario duration `+16.45 s` (`+2.7%`)
+  - refreshes / batches: unchanged at `9 / 33`
+  - refresh elapsed: `173.89 s -> 247.55 s`
+  - feature-batch elapsed sum improved: `140.67 s -> 124.49 s`
+- `361_base`:
+  - Planner V1 Phase 4 / attribution / scenario duration: `580.01 s` /
+    `956.02 s` / `998.25 s`
+  - Planner V2 Phase 4 / attribution / scenario duration: `709.79 s` /
+    `1072.91 s` / `1109.54 s`
+  - change vs Planner V1: Phase 4 `+129.78 s` (`+22.4%`), attribution
+    `+116.90 s` (`+12.2%`), scenario duration `+111.29 s` (`+11.1%`)
+  - refreshes / batches: unchanged at `9 / 34`
+  - refresh elapsed: `266.20 s -> 380.78 s`
+  - feature-batch elapsed sum also worsened: `313.59 s -> 328.80 s`
+
+Performance summary vs other baselines:
+
+- `828_base`: Planner V2 is still faster than locality v2 and hybrid:
+  - Phase 4 vs locality v2: `-20.57 s` (`-5.2%`),
+  - Phase 4 vs hybrid: `-61.99 s` (`-14.3%`).
+- `361_base`: Planner V2 regressed relative to Planner V1, locality v2, and even
+  the hybrid Phase 4 baseline:
+  - Phase 4 vs locality v2: `+122.75 s` (`+20.9%`),
+  - Phase 4 vs hybrid: `+35.40 s` (`+5.2%`),
+  - Phase 4 vs aggressive locality v1: `+205.67 s` (`+40.8%`).
+
+Interpretation:
+
+- Planner V2 is **not** worth promoting over Planner V1 in its current form.
+- The policy stayed conservative and did not fall back, but even tiny membership
+  changes caused noticeable compact-edge drift:
+  - about `4.4%` weighted edge drift on `828_base`,
+  - about `9.3%` weighted edge drift on `361_base`.
+- The main performance problem is refresh cost: V2 increased refresh elapsed by
+  about `42–43%` on both prompts. On `828_base`, feature-batch execution improved,
+  but the refresh overhead more than erased that gain. On `361_base`, both refresh
+  and feature-batch costs worsened.
+- Keep Planner V1 as the current best scheduler baseline.
+- Keep Planner V2 code/telemetry as an experimental surface, but the next policy
+  should either:
+  - make V2 selection much cheaper and only apply it when expected locality gain is
+    large, or
+  - abandon membership-changing selection for now and use Planner V1 plus a
+    lower-risk optimization such as adaptive refresh or guided decoder-cache tuning.
 
 ## Status of this note
 
