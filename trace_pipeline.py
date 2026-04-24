@@ -541,7 +541,10 @@ def graph_to_step_data(
     af = graph.active_features
     n_features = af.shape[0]
 
-    row_idx, col_idx, weights = sparsify_edges(adj, n_features, max_edges=max_edges)
+    activation_values = getattr(graph, "activation_values", None)  # NEW
+    row_idx, col_idx, weights = sparsify_edges(
+        adj, n_features, max_edges=max_edges, activation_values=activation_values  # NEW
+    )
 
     return StepData(
         step_idx=step_idx,

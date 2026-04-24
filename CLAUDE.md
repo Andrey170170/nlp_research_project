@@ -1,4 +1,7 @@
-# Temporal Circuit Stability for LLM Reliability
+/fs/scratch/PAS3272/vinson1/
+├── nlp_research_project/    ← this repo (the one you renamed)
+│       pyproject.toml says: path = "../circuit-tracer_chunked"
+└── circuit-tracer_chunked/  ← the separate circuit-tracer fork# Temporal Circuit Stability for LLM Reliability
 
 Research project investigating whether the temporal stability of internal
 attribution circuits during autoregressive generation can predict answer
