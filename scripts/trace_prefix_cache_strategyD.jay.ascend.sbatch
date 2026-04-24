@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=prefix-cache-run-jay
+#SBATCH --job-name=prefix-cache-strategyD-jay
 #SBATCH --account=PAS2136
 #SBATCH --cluster=ascend
 #SBATCH --partition=quad
@@ -16,7 +16,7 @@ set -euo pipefail
 
 cd "$SLURM_SUBMIT_DIR"
 
-OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS2136/jjivandas/temporal_prefix_cache/forward_cache_v2}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS2136/jjivandas/temporal_prefix_cache/strategy_d}"
 
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 export TOKENIZERS_PARALLELISM=false
@@ -34,22 +34,18 @@ echo "Output root: ${OUTPUT_ROOT}"
 echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-unset}"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
 
-# Cached run on the same prompt 94 used for the baseline
-# (scripts/trace_prefix_cache_bench.jay.ascend.sbatch).  Identical
-# attribution config; only difference is --use-library-prefix-cache, which
-# wires a circuit_tracer.attribution.PrefixActivationCache into every
-# attribute() call.  The library populates the cache after each step and
-# emits phase0.setup.prefix_cache_{lookup,store} trace events so we can
-# later compare cached vs uncached step_NNN.npz artifacts for fidelity
-# and measure hit rates.
+# Strategy D run: persist the 12 GiB decoder-chunk cache across
+# consecutive attribute() calls instead of rebuilding it each step.
+# Decoder chunks depend only on frozen model weights, so this is safe
+# by construction and targets the Phase-4 dominant cost.
 #
-# --time set to 02:30:00 and --max-steps capped at 3 so the job fits
-# comfortably in the quad queue (~2400s/step * 3 steps = ~7200s plus
-# setup/flush overhead).  Goal: finish cleanly and get a real flushed
-# cache_validation.json, not squeeze in more steps.
-# The driver prints library_cache hit/miss/cached_prefix_len to stdout
-# every step, so even if this run also times out we still have the
-# counters in the log.
+# Compared to the forward_cache_v2 run (same config + prompt + step
+# budget) we expect:
+#   - step 0: same cost as baseline (cold cache)
+#   - step 1+: lower Phase-4 time as decoder chunks hit instead of
+#     rebuilding.  The decoder_chunk_session stdout line prints
+#     bytes_resident + entries every step so the savings are auditable
+#     even if cache_validation.json never flushes.
 uv run python -u -m prefix_caching.trace_pipeline_cached \
     --gsm8k-indices 94 \
     --completions 1 \
@@ -65,6 +61,7 @@ uv run python -u -m prefix_caching.trace_pipeline_cached \
     --max-n-logits 3 \
     --desired-logit-prob 0.8 \
     --use-library-prefix-cache \
+    --use-decoder-chunk-session \
     --output-dir "${OUTPUT_ROOT}"
 
 echo "End: $(date)"

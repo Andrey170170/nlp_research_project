@@ -72,6 +72,7 @@ def trace_completion_with_cache_validation(
     fixture_name: str | None = None,
     fixture_kind: str | None = None,
     use_library_prefix_cache: bool = False,
+    use_decoder_chunk_session: bool = False,
 ) -> dict[str, Any]:
     """Trace a completion with prefix-cache validation at each step.
 
@@ -133,6 +134,34 @@ def trace_completion_with_cache_validation(
             f"  [{prompt_id}/{completion_id}] Library-side forward cache is ENABLED"
         )
 
+    # Strategy D: session-scoped decoder chunk cache.  When enabled, we
+    # build the cache once per completion (via the transcoder's own
+    # constructor) and pass the same instance into every attribute() call.
+    # The library branch we pull treats it as externally owned, so it is
+    # not cleared at the end of setup_attribution and its 12 GiB of
+    # resident chunks survive across steps.
+    decoder_chunk_session = None
+    if use_decoder_chunk_session:
+        transcoders = getattr(model, "transcoders", None)
+        create_cache = getattr(transcoders, "create_decoder_block_cache", None)
+        if not callable(create_cache):
+            raise RuntimeError(
+                "use_decoder_chunk_session=True but the transcoder does not "
+                "expose create_decoder_block_cache().  Ensure the library "
+                "has exact-chunked-decoder support and the configured "
+                "cross_batch_decoder_cache_bytes > 0."
+            )
+        decoder_chunk_session = create_cache()
+        if decoder_chunk_session is None:
+            raise RuntimeError(
+                "create_decoder_block_cache() returned None; confirm "
+                "lazy_decoder=True and cross_batch_decoder_cache_bytes > 0."
+            )
+        print(
+            f"  [{prompt_id}/{completion_id}] Session decoder-chunk cache "
+            f"is ENABLED (max_bytes={decoder_chunk_session.max_bytes})"
+        )
+
     print(f"\n  [{prompt_id}/{completion_id}] Starting cached trace (temp={temperature})")
 
     for step_idx in range(max_steps):
@@ -158,6 +187,7 @@ def trace_completion_with_cache_validation(
             diagnostic_feature_cap=diagnostic_feature_cap,
             sparsification=sparsification,
             prefix_cache=library_cache,
+            decoder_chunk_cache=decoder_chunk_session,
         )
 
         if torch.cuda.is_available():
@@ -183,6 +213,16 @@ def trace_completion_with_cache_validation(
             }
         else:
             cache_record["library_cache"] = {"enabled": False}
+
+        if decoder_chunk_session is not None:
+            cache_record["decoder_chunk_session"] = {
+                "enabled": True,
+                "max_bytes": int(decoder_chunk_session.max_bytes),
+                "bytes_resident": int(decoder_chunk_session.bytes_resident),
+                "entries_resident": len(decoder_chunk_session._entries),
+            }
+        else:
+            cache_record["decoder_chunk_session"] = {"enabled": False}
 
         if cache.has_data:
             compare_result = cache.compare(active_features)
@@ -210,6 +250,14 @@ def trace_completion_with_cache_validation(
                 f"        [library_cache] hit={library_cache.hit_count} "
                 f"miss={library_cache.miss_count} "
                 f"cached_prefix_len={library_cache.cached_prefix_len}",
+                flush=True,
+            )
+        if decoder_chunk_session is not None:
+            print(
+                f"        [decoder_chunk_session] "
+                f"bytes_resident={decoder_chunk_session.bytes_resident} "
+                f"entries={len(decoder_chunk_session._entries)} "
+                f"max_bytes={decoder_chunk_session.max_bytes}",
                 flush=True,
             )
 
@@ -329,6 +377,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "cross_batch_decoder_cache_bytes": args.cross_batch_decoder_cache_bytes,
         "output_dir": str(output_dir),
         "use_library_prefix_cache": bool(args.use_library_prefix_cache),
+        "use_decoder_chunk_session": bool(args.use_decoder_chunk_session),
     }
     (output_dir / "run_config.json").write_text(json.dumps(run_config, indent=2))
 
@@ -383,6 +432,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 fixture_name=prompt_meta.get("fixture_name"),
                 fixture_kind=prompt_meta.get("fixture_kind"),
                 use_library_prefix_cache=args.use_library_prefix_cache,
+                use_decoder_chunk_session=args.use_decoder_chunk_session,
             )
 
     print(f"\nPipeline complete! {done} completions traced to {output_dir}")
@@ -511,6 +561,17 @@ if __name__ == "__main__":
             "step and emits phase0.setup.prefix_cache_{lookup,store} trace "
             "events.  This infrastructure run does not yet skip forward-pass "
             "compute; it records diagnostic evidence of reuse potential."
+        ),
+    )
+    parser.add_argument(
+        "--use-decoder-chunk-session", action="store_true",
+        help=(
+            "Strategy D: build one DecoderChunkCache per completion and "
+            "pass it into every attribute() call so the 12 GiB chunk "
+            "budget persists across consecutive tracing steps instead of "
+            "being rebuilt.  Decoder chunks depend only on frozen model "
+            "weights, so this is safe by construction and targets the "
+            "dominant Phase-4 cost."
         ),
     )
     args = parser.parse_args()

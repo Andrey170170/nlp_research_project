@@ -38,6 +38,7 @@ def extract_compact_chunked_attribution(
     diagnostic_feature_cap: int | None = None,
     sparsification: Any | None = None,
     prefix_cache: Any | None = None,
+    decoder_chunk_cache: Any | None = None,
 ) -> dict[str, Any]:
     gc.collect()
     if torch.cuda.is_available():
@@ -67,6 +68,7 @@ def extract_compact_chunked_attribution(
         sparsification=sparsification,
         compact_output=True,
         prefix_cache=prefix_cache,
+        decoder_chunk_cache=decoder_chunk_cache,
     )
 
 
