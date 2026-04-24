@@ -113,6 +113,11 @@ def _load_completion_manifests(artifact_dir: Path) -> list[dict[str, Any]]:
     return manifests
 
 
+def _load_first_completion_manifest(artifact_dir: Path) -> dict[str, Any]:
+    manifests = _load_completion_manifests(artifact_dir)
+    return manifests[0] if manifests else {}
+
+
 def _load_run_config(artifact_dir: Path) -> dict[str, Any]:
     run_config_path = artifact_dir / "run_config.json"
     if not run_config_path.exists():
@@ -1786,6 +1791,7 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
     scenario = read_json(scenario_path) if scenario_path.exists() else {}
     artifact_dir = Path(result.get("output_dir") or scenario_root / "artifacts")
     run_config = _load_run_config(artifact_dir)
+    completion_manifest = _load_first_completion_manifest(artifact_dir)
     summary_run_metadata = _load_summary_run_metadata(scenario_root)
     scenario_run_metadata_raw = scenario.get("run_metadata")
     scenario_run_metadata = (
@@ -2034,10 +2040,13 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
         ),
         "phase4_row_executor_requested": run_config.get(
             "phase4_row_executor_requested",
-            run_config.get(
-                "phase4_row_executor_mode_requested",
+            completion_manifest.get(
+                "phase4_row_executor_requested",
                 run_config.get(
-                    "phase4_row_executor", scenario.get("phase4_row_executor")
+                    "phase4_row_executor_mode_requested",
+                    run_config.get(
+                        "phase4_row_executor", scenario.get("phase4_row_executor")
+                    ),
                 ),
             ),
         ),
@@ -2050,41 +2059,71 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
                 ),
             ),
         ),
-        "phase4_row_executor_effective": run_config.get(
-            "phase4_row_executor_effective",
-            run_config.get(
-                "phase4_row_executor_mode_effective",
-                run_config.get(
-                    "phase4_row_executor", scenario.get("phase4_row_executor")
-                ),
-            ),
-        ),
-        "phase4_row_executor_mode_effective": run_config.get(
+        "phase4_row_executor_effective": completion_manifest.get(
             "phase4_row_executor_mode_effective",
-            run_config.get(
+            completion_manifest.get(
                 "phase4_row_executor_effective",
                 run_config.get(
-                    "phase4_row_executor", scenario.get("phase4_row_executor")
+                    "phase4_row_executor_effective",
+                    run_config.get(
+                        "phase4_row_executor_mode_effective",
+                        run_config.get(
+                            "phase4_row_executor", scenario.get("phase4_row_executor")
+                        ),
+                    ),
                 ),
             ),
         ),
-        "phase4_row_executor_version": run_config.get("phase4_row_executor_version"),
-        "phase4_row_executor_version_requested": run_config.get(
-            "phase4_row_executor_version_requested",
+        "phase4_row_executor_mode_effective": completion_manifest.get(
+            "phase4_row_executor_mode_effective",
+            completion_manifest.get(
+                "phase4_row_executor_effective",
+                run_config.get(
+                    "phase4_row_executor_mode_effective",
+                    run_config.get(
+                        "phase4_row_executor_effective",
+                        run_config.get(
+                            "phase4_row_executor", scenario.get("phase4_row_executor")
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        "phase4_row_executor_version": completion_manifest.get(
+            "phase4_row_executor_version",
             run_config.get("phase4_row_executor_version"),
         ),
-        "phase4_row_executor_version_effective": run_config.get(
-            "phase4_row_executor_version_effective",
-            run_config.get(
-                "phase4_row_executor_effective_version",
+        "phase4_row_executor_version_requested": run_config.get(
+            "phase4_row_executor_version_requested",
+            completion_manifest.get(
+                "phase4_row_executor_version_requested",
                 run_config.get("phase4_row_executor_version"),
             ),
         ),
-        "phase4_row_executor_effective_version": run_config.get(
+        "phase4_row_executor_version_effective": completion_manifest.get(
+            "phase4_row_executor_version_effective",
+            completion_manifest.get(
+                "phase4_row_executor_effective_version",
+                run_config.get(
+                    "phase4_row_executor_version_effective",
+                    run_config.get(
+                        "phase4_row_executor_effective_version",
+                        run_config.get("phase4_row_executor_version"),
+                    ),
+                ),
+            ),
+        ),
+        "phase4_row_executor_effective_version": completion_manifest.get(
             "phase4_row_executor_effective_version",
-            run_config.get(
+            completion_manifest.get(
                 "phase4_row_executor_version_effective",
-                run_config.get("phase4_row_executor_version"),
+                run_config.get(
+                    "phase4_row_executor_effective_version",
+                    run_config.get(
+                        "phase4_row_executor_version_effective",
+                        run_config.get("phase4_row_executor_version"),
+                    ),
+                ),
             ),
         ),
         "cross_cluster_debug": run_config.get(

@@ -282,11 +282,12 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
             "phase4_row_executor": "streaming_v1",
             "phase4_row_executor_requested": "streaming_v1",
             "phase4_row_executor_mode_requested": "streaming_v1",
-            "phase4_row_executor_effective": "batched",
-            "phase4_row_executor_mode_effective": "batched",
-            "phase4_row_executor_version": "batched_v1",
+            "phase4_row_executor_effective": "streaming_v1",
+            "phase4_row_executor_mode_effective": "streaming_v1",
+            "phase4_row_executor_version": "streaming_v1",
             "phase4_row_executor_version_requested": "streaming_v1",
-            "phase4_row_executor_version_effective": "batched_v1",
+            "phase4_row_executor_version_effective": "streaming_v1",
+            "phase4_executor_microbatch_count": 3,
             "steps": [],
         }
         (completion_dir / "completion.json").write_text(
@@ -327,11 +328,13 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         assert benchmark_row["phase4_refresh_optimization_mode_effective"] == "v1"
         assert benchmark_row["phase4_refresh_optimization_version"] == "v1"
         assert benchmark_row["phase4_refresh_optimization_version_requested"] == "v1"
-        assert benchmark_row["phase4_row_executor"] == "batched"
+        assert benchmark_row["phase4_row_executor"] == "streaming_v1"
         assert benchmark_row["phase4_row_executor_requested"] == "streaming_v1"
-        assert benchmark_row["phase4_row_executor_mode_effective"] == "batched"
-        assert benchmark_row["phase4_row_executor_version"] == "batched_v1"
+        assert benchmark_row["phase4_row_executor_mode_effective"] == "streaming_v1"
+        assert benchmark_row["phase4_row_executor_version"] == "streaming_v1"
         assert benchmark_row["phase4_row_executor_version_requested"] == "streaming_v1"
+        assert benchmark_row["phase4_row_executor_effective"] == "streaming_v1"
+        assert benchmark_row["phase4_row_executor_effective_version"] == "streaming_v1"
 
         assert legacy_row["exact_trace_internal_dtype"] == "fp32"
         assert legacy_row["exact_trace_internal_dtype_contract_supported"] is False
@@ -362,10 +365,12 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         assert legacy_row["phase4_refresh_optimization_mode_effective"] == "v1"
         assert legacy_row["phase4_refresh_optimization_version"] == "v1"
         assert legacy_row["phase4_refresh_optimization_version_requested"] == "v1"
-        assert legacy_row["phase4_row_executor"] == "batched"
+        assert legacy_row["phase4_row_executor_effective"] == "streaming_v1"
+        assert legacy_row["phase4_row_executor_effective_version"] == "streaming_v1"
+        assert legacy_row["phase4_row_executor"] == "streaming_v1"
         assert legacy_row["phase4_row_executor_requested"] == "streaming_v1"
-        assert legacy_row["phase4_row_executor_mode_effective"] == "batched"
-        assert legacy_row["phase4_row_executor_version"] == "batched_v1"
+        assert legacy_row["phase4_row_executor_mode_effective"] == "streaming_v1"
+        assert legacy_row["phase4_row_executor_version"] == "streaming_v1"
         assert legacy_row["phase4_row_executor_version_requested"] == "streaming_v1"
 
 

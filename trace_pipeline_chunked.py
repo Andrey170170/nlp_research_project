@@ -1169,6 +1169,9 @@ def trace_completion_compact_chunked(
             ),
             "phase4_refresh_count": int(compact_result.get("phase4_refresh_count", 0)),
             "phase4_batch_count": int(compact_result.get("phase4_batch_count", 0)),
+            "phase4_executor_microbatch_count": int(
+                compact_result.get("phase4_executor_microbatch_count", 0)
+            ),
             "phase4_refresh_elapsed_seconds_total": compact_result.get(
                 "phase4_refresh_elapsed_seconds_total"
             ),
