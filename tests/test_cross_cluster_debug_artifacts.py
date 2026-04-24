@@ -28,6 +28,8 @@ def run_checks() -> None:
         build_cross_cluster_debug_records,
         extract_compact_chunked_attribution,
         normalize_cross_cluster_debug_records,
+        parse_phase4_refresh_optimization,
+        parse_phase4_row_executor,
         parse_phase4_scheduler_mode,
         parse_phase4_scheduler_telemetry_detail,
         trace_completion_compact_chunked,
@@ -67,6 +69,8 @@ def run_checks() -> None:
         extract_signature.parameters["phase4_scheduler_telemetry_detail"].default
         == "normal"
     )
+    assert extract_signature.parameters["phase4_refresh_optimization"].default == "off"
+    assert extract_signature.parameters["phase4_row_executor"].default == "batched"
     assert trace_signature.parameters["exact_trace_internal_dtype"].default == "fp32"
     assert trace_signature.parameters["phase4_scheduler_mode"].default == "locality"
     assert trace_signature.parameters["phase4_scheduler_debug"].default is False
@@ -74,6 +78,8 @@ def run_checks() -> None:
         trace_signature.parameters["phase4_scheduler_telemetry_detail"].default
         == "normal"
     )
+    assert trace_signature.parameters["phase4_refresh_optimization"].default == "off"
+    assert trace_signature.parameters["phase4_row_executor"].default == "batched"
     assert (
         full_graph_extract_signature.parameters["exact_trace_internal_dtype"].default
         == "fp32"
@@ -93,6 +99,10 @@ def run_checks() -> None:
     assert parse_phase4_scheduler_telemetry_detail("debug") == "debug"
     assert parse_phase4_scheduler_telemetry_detail("compact") == "summary"
     assert parse_phase4_scheduler_telemetry_detail("full") == "debug"
+    assert parse_phase4_refresh_optimization("off") == "off"
+    assert parse_phase4_refresh_optimization("v1") == "v1"
+    assert parse_phase4_row_executor("batched") == "batched"
+    assert parse_phase4_row_executor("streaming_v1") == "streaming_v1"
 
     try:
         parse_phase4_scheduler_mode("unknown")
@@ -109,6 +119,22 @@ def run_checks() -> None:
         raise AssertionError(
             "Expected scheduler telemetry detail parser to reject unknown value"
         )
+
+    try:
+        parse_phase4_refresh_optimization("v2")
+    except argparse.ArgumentTypeError:
+        pass
+    else:
+        raise AssertionError(
+            "Expected refresh optimization parser to reject unknown value"
+        )
+
+    try:
+        parse_phase4_row_executor("streaming_v2")
+    except argparse.ArgumentTypeError:
+        pass
+    else:
+        raise AssertionError("Expected row executor parser to reject unknown value")
 
 
 def run_launcher_and_extractor_roundtrip_checks() -> None:
@@ -138,6 +164,8 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         "phase4_scheduler_mode": "planner_v2",
         "phase4_scheduler_debug": True,
         "phase4_scheduler_telemetry_detail": "debug",
+        "phase4_refresh_optimization": "v1",
+        "phase4_row_executor": "streaming_v1",
     }
 
     command = build_command(Path("/tmp/out"), scenario)
@@ -151,6 +179,10 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
     assert "--phase4-scheduler-debug" in command
     assert "--phase4-scheduler-telemetry-detail" in command
     assert "debug" in command
+    assert "--phase4-refresh-optimization" in command
+    assert "v1" in command
+    assert "--phase4-row-executor" in command
+    assert "streaming_v1" in command
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         scenario_root = Path(tmp_dir) / "scenario"
@@ -179,6 +211,22 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
             "phase4_scheduler_effective_policy": "bounded_membership_selection",
             "phase4_scheduler_debug": True,
             "phase4_scheduler_telemetry_detail": "debug",
+            "phase4_refresh_optimization": "v1",
+            "phase4_refresh_optimization_requested": "v1",
+            "phase4_refresh_optimization_mode_requested": "v1",
+            "phase4_refresh_optimization_effective": "off",
+            "phase4_refresh_optimization_mode_effective": "off",
+            "phase4_refresh_optimization_version": "off_v1",
+            "phase4_refresh_optimization_version_requested": "v1",
+            "phase4_refresh_optimization_version_effective": "off_v1",
+            "phase4_row_executor": "streaming_v1",
+            "phase4_row_executor_requested": "streaming_v1",
+            "phase4_row_executor_mode_requested": "streaming_v1",
+            "phase4_row_executor_effective": "batched",
+            "phase4_row_executor_mode_effective": "batched",
+            "phase4_row_executor_version": "batched_v1",
+            "phase4_row_executor_version_requested": "streaming_v1",
+            "phase4_row_executor_version_effective": "batched_v1",
             "attribution_batch_size": 128,
             "decoder_chunk_size": 2048,
             "max_feature_nodes": 8192,
@@ -219,6 +267,22 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
             "phase4_scheduler_policy_effective": "bounded_membership_selection",
             "phase4_scheduler_debug_effective": True,
             "phase4_scheduler_telemetry_detail_effective": "debug",
+            "phase4_refresh_optimization": "v1",
+            "phase4_refresh_optimization_requested": "v1",
+            "phase4_refresh_optimization_mode_requested": "v1",
+            "phase4_refresh_optimization_effective": "off",
+            "phase4_refresh_optimization_mode_effective": "off",
+            "phase4_refresh_optimization_version": "off_v1",
+            "phase4_refresh_optimization_version_requested": "v1",
+            "phase4_refresh_optimization_version_effective": "off_v1",
+            "phase4_row_executor": "streaming_v1",
+            "phase4_row_executor_requested": "streaming_v1",
+            "phase4_row_executor_mode_requested": "streaming_v1",
+            "phase4_row_executor_effective": "batched",
+            "phase4_row_executor_mode_effective": "batched",
+            "phase4_row_executor_version": "batched_v1",
+            "phase4_row_executor_version_requested": "streaming_v1",
+            "phase4_row_executor_version_effective": "batched_v1",
             "steps": [],
         }
         (completion_dir / "completion.json").write_text(
@@ -254,6 +318,16 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         )
         assert benchmark_row["phase4_scheduler_debug"] is True
         assert benchmark_row["phase4_scheduler_telemetry_detail"] == "debug"
+        assert benchmark_row["phase4_refresh_optimization"] == "off"
+        assert benchmark_row["phase4_refresh_optimization_requested"] == "v1"
+        assert benchmark_row["phase4_refresh_optimization_mode_effective"] == "off"
+        assert benchmark_row["phase4_refresh_optimization_version"] == "off_v1"
+        assert benchmark_row["phase4_refresh_optimization_version_requested"] == "v1"
+        assert benchmark_row["phase4_row_executor"] == "batched"
+        assert benchmark_row["phase4_row_executor_requested"] == "streaming_v1"
+        assert benchmark_row["phase4_row_executor_mode_effective"] == "batched"
+        assert benchmark_row["phase4_row_executor_version"] == "batched_v1"
+        assert benchmark_row["phase4_row_executor_version_requested"] == "streaming_v1"
 
         assert legacy_row["exact_trace_internal_dtype"] == "fp32"
         assert legacy_row["exact_trace_internal_dtype_contract_supported"] is False
@@ -279,6 +353,16 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         )
         assert legacy_row["phase4_scheduler_debug"] is True
         assert legacy_row["phase4_scheduler_telemetry_detail"] == "debug"
+        assert legacy_row["phase4_refresh_optimization"] == "off"
+        assert legacy_row["phase4_refresh_optimization_requested"] == "v1"
+        assert legacy_row["phase4_refresh_optimization_mode_effective"] == "off"
+        assert legacy_row["phase4_refresh_optimization_version"] == "off_v1"
+        assert legacy_row["phase4_refresh_optimization_version_requested"] == "v1"
+        assert legacy_row["phase4_row_executor"] == "batched"
+        assert legacy_row["phase4_row_executor_requested"] == "streaming_v1"
+        assert legacy_row["phase4_row_executor_mode_effective"] == "batched"
+        assert legacy_row["phase4_row_executor_version"] == "batched_v1"
+        assert legacy_row["phase4_row_executor_version_requested"] == "streaming_v1"
 
 
 def main() -> None:

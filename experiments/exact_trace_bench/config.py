@@ -51,6 +51,8 @@ def base_trace_defaults() -> dict[str, Any]:
         "phase4_scheduler_mode": "locality",
         "phase4_scheduler_debug": False,
         "phase4_scheduler_telemetry_detail": "normal",
+        "phase4_refresh_optimization": "off",
+        "phase4_row_executor": "batched",
         "cross_cluster_debug": False,
         "telemetry_max_events": None,
         "max_steps": 1,

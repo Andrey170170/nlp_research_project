@@ -442,6 +442,20 @@ def build_command(
                     str(scenario["phase4_scheduler_telemetry_detail"]),
                 ]
             )
+        if scenario.get("phase4_refresh_optimization") is not None:
+            cmd.extend(
+                [
+                    "--phase4-refresh-optimization",
+                    str(scenario["phase4_refresh_optimization"]),
+                ]
+            )
+        if scenario.get("phase4_row_executor") is not None:
+            cmd.extend(
+                [
+                    "--phase4-row-executor",
+                    str(scenario["phase4_row_executor"]),
+                ]
+            )
         if scenario.get("cross_cluster_debug", False):
             cmd.append("--cross-cluster-debug")
         if scenario.get("telemetry_max_events") is not None:

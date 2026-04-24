@@ -41,6 +41,26 @@ _PHASE4_SCHEDULER_POLICY_BY_MODE: dict[str, str] = {
     "planner_v2": "bounded_membership_selection",
 }
 
+_PHASE4_REFRESH_OPTIMIZATION_VERSION_BY_MODE: dict[str, str] = {
+    "off": "off_v1",
+    "v1": "v1",
+}
+
+_PHASE4_REFRESH_OPTIMIZATION_EFFECTIVE_BY_MODE: dict[str, str] = {
+    "off": "off",
+    "v1": "off",
+}
+
+_PHASE4_ROW_EXECUTOR_VERSION_BY_MODE: dict[str, str] = {
+    "batched": "batched_v1",
+    "streaming_v1": "streaming_v1",
+}
+
+_PHASE4_ROW_EXECUTOR_EFFECTIVE_BY_MODE: dict[str, str] = {
+    "batched": "batched",
+    "streaming_v1": "batched",
+}
+
 
 def parse_optional_bool(value: str) -> bool:
     lowered = value.strip().lower()
@@ -98,6 +118,68 @@ def parse_phase4_scheduler_telemetry_detail(value: str) -> str:
             f"Expected one of {{summary, normal, debug, compact, full}}, got: {value!r}"
         )
     return normalized
+
+
+def _normalize_phase4_refresh_optimization(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _PHASE4_REFRESH_OPTIMIZATION_VERSION_BY_MODE:
+        return None
+    return normalized
+
+
+def parse_phase4_refresh_optimization(value: str) -> str:
+    normalized = _normalize_phase4_refresh_optimization(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(f"Expected one of {{off, v1}}, got: {value!r}")
+    return normalized
+
+
+def resolve_phase4_refresh_optimization_version(mode: Any) -> str | None:
+    normalized = _normalize_phase4_refresh_optimization(mode)
+    if normalized is None:
+        return None
+    return _PHASE4_REFRESH_OPTIMIZATION_VERSION_BY_MODE.get(normalized)
+
+
+def resolve_phase4_refresh_optimization_effective(mode: Any) -> str | None:
+    normalized = _normalize_phase4_refresh_optimization(mode)
+    if normalized is None:
+        return None
+    return _PHASE4_REFRESH_OPTIMIZATION_EFFECTIVE_BY_MODE.get(normalized)
+
+
+def _normalize_phase4_row_executor(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _PHASE4_ROW_EXECUTOR_VERSION_BY_MODE:
+        return None
+    return normalized
+
+
+def parse_phase4_row_executor(value: str) -> str:
+    normalized = _normalize_phase4_row_executor(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{batched, streaming_v1}}, got: {value!r}"
+        )
+    return normalized
+
+
+def resolve_phase4_row_executor_version(mode: Any) -> str | None:
+    normalized = _normalize_phase4_row_executor(mode)
+    if normalized is None:
+        return None
+    return _PHASE4_ROW_EXECUTOR_VERSION_BY_MODE.get(normalized)
+
+
+def resolve_phase4_row_executor_effective(mode: Any) -> str | None:
+    normalized = _normalize_phase4_row_executor(mode)
+    if normalized is None:
+        return None
+    return _PHASE4_ROW_EXECUTOR_EFFECTIVE_BY_MODE.get(normalized)
 
 
 def resolve_phase4_scheduler_version(phase4_scheduler_mode: Any) -> str | None:
@@ -160,6 +242,8 @@ def extract_compact_chunked_attribution(
     phase4_scheduler_mode: str = "locality",
     phase4_scheduler_debug: bool = False,
     phase4_scheduler_telemetry_detail: str = "normal",
+    phase4_refresh_optimization: str = "off",
+    phase4_row_executor: str = "batched",
 ) -> dict[str, Any]:
     gc.collect()
     if torch.cuda.is_available():
@@ -206,6 +290,8 @@ def extract_compact_chunked_attribution(
         phase4_scheduler_mode=phase4_scheduler_mode,
         phase4_scheduler_debug=phase4_scheduler_debug,
         phase4_scheduler_telemetry_detail=phase4_scheduler_telemetry_detail,
+        phase4_refresh_optimization=phase4_refresh_optimization,
+        phase4_row_executor=phase4_row_executor,
         compact_output=True,
     )
 
@@ -319,6 +405,14 @@ def build_step_telemetry_records(
     phase4_scheduler_policy_effective: str | None,
     phase4_scheduler_debug: bool,
     phase4_scheduler_telemetry_detail: str,
+    phase4_refresh_optimization_requested: str,
+    phase4_refresh_optimization_effective: str,
+    phase4_refresh_optimization_version_requested: str | None,
+    phase4_refresh_optimization_version_effective: str | None,
+    phase4_row_executor_requested: str,
+    phase4_row_executor_effective: str,
+    phase4_row_executor_version_requested: str | None,
+    phase4_row_executor_version_effective: str | None,
     events: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
@@ -345,6 +439,22 @@ def build_step_telemetry_records(
             "phase4_scheduler_effective_policy": phase4_scheduler_policy_effective,
             "phase4_scheduler_debug": phase4_scheduler_debug,
             "phase4_scheduler_telemetry_detail": phase4_scheduler_telemetry_detail,
+            "phase4_refresh_optimization": phase4_refresh_optimization_effective,
+            "phase4_refresh_optimization_requested": phase4_refresh_optimization_requested,
+            "phase4_refresh_optimization_mode_requested": phase4_refresh_optimization_requested,
+            "phase4_refresh_optimization_effective": phase4_refresh_optimization_effective,
+            "phase4_refresh_optimization_mode_effective": phase4_refresh_optimization_effective,
+            "phase4_refresh_optimization_version": phase4_refresh_optimization_version_effective,
+            "phase4_refresh_optimization_version_requested": phase4_refresh_optimization_version_requested,
+            "phase4_refresh_optimization_version_effective": phase4_refresh_optimization_version_effective,
+            "phase4_row_executor": phase4_row_executor_effective,
+            "phase4_row_executor_requested": phase4_row_executor_requested,
+            "phase4_row_executor_mode_requested": phase4_row_executor_requested,
+            "phase4_row_executor_effective": phase4_row_executor_effective,
+            "phase4_row_executor_mode_effective": phase4_row_executor_effective,
+            "phase4_row_executor_version": phase4_row_executor_version_effective,
+            "phase4_row_executor_version_requested": phase4_row_executor_version_requested,
+            "phase4_row_executor_version_effective": phase4_row_executor_version_effective,
         }
         record.update(event)
         records.append(record)
@@ -425,6 +535,8 @@ def trace_completion_compact_chunked(
     phase4_scheduler_mode: str = "locality",
     phase4_scheduler_debug: bool = False,
     phase4_scheduler_telemetry_detail: str = "normal",
+    phase4_refresh_optimization: str = "off",
+    phase4_row_executor: str = "batched",
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
     fixture_name: str | None = None,
@@ -464,6 +576,14 @@ def trace_completion_compact_chunked(
     observed_phase4_scheduler_policies_effective: list[str] = []
     observed_phase4_scheduler_debug_values: list[bool] = []
     observed_phase4_scheduler_telemetry_details: list[str] = []
+    observed_phase4_refresh_optimization_requested: list[str] = []
+    observed_phase4_refresh_optimization_effective: list[str] = []
+    observed_phase4_refresh_optimization_versions_requested: list[str] = []
+    observed_phase4_refresh_optimization_versions_effective: list[str] = []
+    observed_phase4_row_executor_requested: list[str] = []
+    observed_phase4_row_executor_effective: list[str] = []
+    observed_phase4_row_executor_versions_requested: list[str] = []
+    observed_phase4_row_executor_versions_effective: list[str] = []
     telemetry_jsonl_path = completion_dir / "telemetry.jsonl"
     telemetry_jsonl_path.write_text("")
     telemetry_events_written = 0
@@ -532,6 +652,8 @@ def trace_completion_compact_chunked(
             phase4_scheduler_mode=phase4_scheduler_mode,
             phase4_scheduler_debug=phase4_scheduler_debug,
             phase4_scheduler_telemetry_detail=phase4_scheduler_telemetry_detail,
+            phase4_refresh_optimization=phase4_refresh_optimization,
+            phase4_row_executor=phase4_row_executor,
         )
         attribution_seconds = time.perf_counter() - attribution_start
 
@@ -671,6 +793,144 @@ def trace_completion_compact_chunked(
             resolved_phase4_scheduler_telemetry_detail
         )
 
+        resolved_phase4_refresh_optimization_requested = (
+            _normalize_phase4_refresh_optimization(
+                compact_result.get("phase4_refresh_optimization_mode_requested")
+            )
+            or _normalize_phase4_refresh_optimization(
+                compact_result.get("phase4_refresh_optimization_requested")
+            )
+            or _normalize_phase4_refresh_optimization(
+                compact_result.get("phase4_refresh_optimization")
+            )
+            or phase4_refresh_optimization
+        )
+        observed_phase4_refresh_optimization_requested.append(
+            resolved_phase4_refresh_optimization_requested
+        )
+        resolved_phase4_refresh_optimization_effective = (
+            _normalize_phase4_refresh_optimization(
+                compact_result.get("phase4_refresh_optimization_mode_effective")
+            )
+            or _normalize_phase4_refresh_optimization(
+                compact_result.get("phase4_refresh_optimization_effective")
+            )
+            or resolve_phase4_refresh_optimization_effective(
+                resolved_phase4_refresh_optimization_requested
+            )
+            or resolved_phase4_refresh_optimization_requested
+        )
+        observed_phase4_refresh_optimization_effective.append(
+            resolved_phase4_refresh_optimization_effective
+        )
+        resolved_phase4_refresh_optimization_version_requested = compact_result.get(
+            "phase4_refresh_optimization_version_requested"
+        )
+        if not isinstance(resolved_phase4_refresh_optimization_version_requested, str):
+            resolved_phase4_refresh_optimization_version_requested = compact_result.get(
+                "phase4_refresh_optimization_version"
+            )
+        if not isinstance(resolved_phase4_refresh_optimization_version_requested, str):
+            resolved_phase4_refresh_optimization_version_requested = (
+                resolve_phase4_refresh_optimization_version(
+                    resolved_phase4_refresh_optimization_requested
+                )
+            )
+        if isinstance(resolved_phase4_refresh_optimization_version_requested, str):
+            observed_phase4_refresh_optimization_versions_requested.append(
+                resolved_phase4_refresh_optimization_version_requested
+            )
+
+        resolved_phase4_refresh_optimization_version_effective = compact_result.get(
+            "phase4_refresh_optimization_version_effective"
+        )
+        if not isinstance(resolved_phase4_refresh_optimization_version_effective, str):
+            resolved_phase4_refresh_optimization_version_effective = compact_result.get(
+                "phase4_refresh_optimization_effective_version"
+            )
+        if not isinstance(resolved_phase4_refresh_optimization_version_effective, str):
+            resolved_phase4_refresh_optimization_version_effective = compact_result.get(
+                "phase4_refresh_optimization_version"
+            )
+        if not isinstance(resolved_phase4_refresh_optimization_version_effective, str):
+            resolved_phase4_refresh_optimization_version_effective = (
+                resolve_phase4_refresh_optimization_version(
+                    resolved_phase4_refresh_optimization_effective
+                )
+            )
+        if isinstance(resolved_phase4_refresh_optimization_version_effective, str):
+            observed_phase4_refresh_optimization_versions_effective.append(
+                resolved_phase4_refresh_optimization_version_effective
+            )
+
+        resolved_phase4_row_executor_requested = (
+            _normalize_phase4_row_executor(
+                compact_result.get("phase4_row_executor_mode_requested")
+            )
+            or _normalize_phase4_row_executor(
+                compact_result.get("phase4_row_executor_requested")
+            )
+            or _normalize_phase4_row_executor(compact_result.get("phase4_row_executor"))
+            or phase4_row_executor
+        )
+        observed_phase4_row_executor_requested.append(
+            resolved_phase4_row_executor_requested
+        )
+        resolved_phase4_row_executor_effective = (
+            _normalize_phase4_row_executor(
+                compact_result.get("phase4_row_executor_mode_effective")
+            )
+            or _normalize_phase4_row_executor(
+                compact_result.get("phase4_row_executor_effective")
+            )
+            or resolve_phase4_row_executor_effective(
+                resolved_phase4_row_executor_requested
+            )
+            or resolved_phase4_row_executor_requested
+        )
+        observed_phase4_row_executor_effective.append(
+            resolved_phase4_row_executor_effective
+        )
+        resolved_phase4_row_executor_version_requested = compact_result.get(
+            "phase4_row_executor_version_requested"
+        )
+        if not isinstance(resolved_phase4_row_executor_version_requested, str):
+            resolved_phase4_row_executor_version_requested = compact_result.get(
+                "phase4_row_executor_version"
+            )
+        if not isinstance(resolved_phase4_row_executor_version_requested, str):
+            resolved_phase4_row_executor_version_requested = (
+                resolve_phase4_row_executor_version(
+                    resolved_phase4_row_executor_requested
+                )
+            )
+        if isinstance(resolved_phase4_row_executor_version_requested, str):
+            observed_phase4_row_executor_versions_requested.append(
+                resolved_phase4_row_executor_version_requested
+            )
+
+        resolved_phase4_row_executor_version_effective = compact_result.get(
+            "phase4_row_executor_version_effective"
+        )
+        if not isinstance(resolved_phase4_row_executor_version_effective, str):
+            resolved_phase4_row_executor_version_effective = compact_result.get(
+                "phase4_row_executor_effective_version"
+            )
+        if not isinstance(resolved_phase4_row_executor_version_effective, str):
+            resolved_phase4_row_executor_version_effective = compact_result.get(
+                "phase4_row_executor_version"
+            )
+        if not isinstance(resolved_phase4_row_executor_version_effective, str):
+            resolved_phase4_row_executor_version_effective = (
+                resolve_phase4_row_executor_version(
+                    resolved_phase4_row_executor_effective
+                )
+            )
+        if isinstance(resolved_phase4_row_executor_version_effective, str):
+            observed_phase4_row_executor_versions_effective.append(
+                resolved_phase4_row_executor_version_effective
+            )
+
         attribution_telemetry_summary = base.summarize_attribution_telemetry(
             compact_result.get("telemetry_summary")
         )
@@ -706,6 +966,14 @@ def trace_completion_compact_chunked(
             phase4_scheduler_policy_effective=resolved_phase4_scheduler_policy_effective,
             phase4_scheduler_debug=resolved_phase4_scheduler_debug,
             phase4_scheduler_telemetry_detail=resolved_phase4_scheduler_telemetry_detail,
+            phase4_refresh_optimization_requested=resolved_phase4_refresh_optimization_requested,
+            phase4_refresh_optimization_effective=resolved_phase4_refresh_optimization_effective,
+            phase4_refresh_optimization_version_requested=resolved_phase4_refresh_optimization_version_requested,
+            phase4_refresh_optimization_version_effective=resolved_phase4_refresh_optimization_version_effective,
+            phase4_row_executor_requested=resolved_phase4_row_executor_requested,
+            phase4_row_executor_effective=resolved_phase4_row_executor_effective,
+            phase4_row_executor_version_requested=resolved_phase4_row_executor_version_requested,
+            phase4_row_executor_version_effective=resolved_phase4_row_executor_version_effective,
             events=telemetry_events,
         )
         telemetry_events_written += base.append_jsonl_records(
@@ -880,6 +1148,22 @@ def trace_completion_compact_chunked(
             "phase4_scheduler_effective_policy": resolved_phase4_scheduler_policy_effective,
             "phase4_scheduler_debug": resolved_phase4_scheduler_debug,
             "phase4_scheduler_telemetry_detail": resolved_phase4_scheduler_telemetry_detail,
+            "phase4_refresh_optimization": resolved_phase4_refresh_optimization_effective,
+            "phase4_refresh_optimization_requested": resolved_phase4_refresh_optimization_requested,
+            "phase4_refresh_optimization_mode_requested": resolved_phase4_refresh_optimization_requested,
+            "phase4_refresh_optimization_effective": resolved_phase4_refresh_optimization_effective,
+            "phase4_refresh_optimization_mode_effective": resolved_phase4_refresh_optimization_effective,
+            "phase4_refresh_optimization_version": resolved_phase4_refresh_optimization_version_effective,
+            "phase4_refresh_optimization_version_requested": resolved_phase4_refresh_optimization_version_requested,
+            "phase4_refresh_optimization_version_effective": resolved_phase4_refresh_optimization_version_effective,
+            "phase4_row_executor": resolved_phase4_row_executor_effective,
+            "phase4_row_executor_requested": resolved_phase4_row_executor_requested,
+            "phase4_row_executor_mode_requested": resolved_phase4_row_executor_requested,
+            "phase4_row_executor_effective": resolved_phase4_row_executor_effective,
+            "phase4_row_executor_mode_effective": resolved_phase4_row_executor_effective,
+            "phase4_row_executor_version": resolved_phase4_row_executor_version_effective,
+            "phase4_row_executor_version_requested": resolved_phase4_row_executor_version_requested,
+            "phase4_row_executor_version_effective": resolved_phase4_row_executor_version_effective,
             "phase4_anomaly_debug_enabled": bool(
                 compact_result.get("phase4_anomaly_debug_enabled", phase4_anomaly_debug)
             ),
@@ -942,6 +1226,30 @@ def trace_completion_compact_chunked(
     )
     unique_phase4_scheduler_telemetry_details = sorted(
         set(observed_phase4_scheduler_telemetry_details)
+    )
+    unique_phase4_refresh_optimization_requested = sorted(
+        set(observed_phase4_refresh_optimization_requested)
+    )
+    unique_phase4_refresh_optimization_effective = sorted(
+        set(observed_phase4_refresh_optimization_effective)
+    )
+    unique_phase4_refresh_optimization_versions_requested = sorted(
+        set(observed_phase4_refresh_optimization_versions_requested)
+    )
+    unique_phase4_refresh_optimization_versions_effective = sorted(
+        set(observed_phase4_refresh_optimization_versions_effective)
+    )
+    unique_phase4_row_executor_requested = sorted(
+        set(observed_phase4_row_executor_requested)
+    )
+    unique_phase4_row_executor_effective = sorted(
+        set(observed_phase4_row_executor_effective)
+    )
+    unique_phase4_row_executor_versions_requested = sorted(
+        set(observed_phase4_row_executor_versions_requested)
+    )
+    unique_phase4_row_executor_versions_effective = sorted(
+        set(observed_phase4_row_executor_versions_effective)
     )
     completion_end_to_end_seconds = time.perf_counter() - trace_start_perf
     if cross_cluster_debug and not cross_cluster_debug_artifacts_captured:
@@ -1125,6 +1433,156 @@ def trace_completion_compact_chunked(
         "phase4_scheduler_telemetry_details_observed": (
             unique_phase4_scheduler_telemetry_details
         ),
+        "phase4_refresh_optimization": phase4_refresh_optimization,
+        "phase4_refresh_optimization_requested": (
+            observed_phase4_refresh_optimization_requested[-1]
+            if observed_phase4_refresh_optimization_requested
+            else phase4_refresh_optimization
+        ),
+        "phase4_refresh_optimization_mode_requested": (
+            observed_phase4_refresh_optimization_requested[-1]
+            if observed_phase4_refresh_optimization_requested
+            else phase4_refresh_optimization
+        ),
+        "phase4_refresh_optimization_effective": (
+            observed_phase4_refresh_optimization_effective[-1]
+            if observed_phase4_refresh_optimization_effective
+            else resolve_phase4_refresh_optimization_effective(
+                phase4_refresh_optimization
+            )
+            or phase4_refresh_optimization
+        ),
+        "phase4_refresh_optimization_mode_effective": (
+            observed_phase4_refresh_optimization_effective[-1]
+            if observed_phase4_refresh_optimization_effective
+            else resolve_phase4_refresh_optimization_effective(
+                phase4_refresh_optimization
+            )
+            or phase4_refresh_optimization
+        ),
+        "phase4_refresh_optimization_version": (
+            observed_phase4_refresh_optimization_versions_effective[-1]
+            if observed_phase4_refresh_optimization_versions_effective
+            else resolve_phase4_refresh_optimization_version(
+                resolve_phase4_refresh_optimization_effective(
+                    phase4_refresh_optimization
+                )
+                or phase4_refresh_optimization
+            )
+        ),
+        "phase4_refresh_optimization_version_requested": (
+            observed_phase4_refresh_optimization_versions_requested[-1]
+            if observed_phase4_refresh_optimization_versions_requested
+            else resolve_phase4_refresh_optimization_version(
+                phase4_refresh_optimization
+            )
+        ),
+        "phase4_refresh_optimization_version_effective": (
+            observed_phase4_refresh_optimization_versions_effective[-1]
+            if observed_phase4_refresh_optimization_versions_effective
+            else resolve_phase4_refresh_optimization_version(
+                resolve_phase4_refresh_optimization_effective(
+                    phase4_refresh_optimization
+                )
+                or phase4_refresh_optimization
+            )
+        ),
+        "phase4_refresh_optimization_effective_version": (
+            observed_phase4_refresh_optimization_versions_effective[-1]
+            if observed_phase4_refresh_optimization_versions_effective
+            else resolve_phase4_refresh_optimization_version(
+                resolve_phase4_refresh_optimization_effective(
+                    phase4_refresh_optimization
+                )
+                or phase4_refresh_optimization
+            )
+        ),
+        "phase4_refresh_optimization_modes_observed": (
+            unique_phase4_refresh_optimization_effective
+        ),
+        "phase4_refresh_optimization_modes_requested_observed": (
+            unique_phase4_refresh_optimization_requested
+        ),
+        "phase4_refresh_optimization_modes_effective_observed": (
+            unique_phase4_refresh_optimization_effective
+        ),
+        "phase4_refresh_optimization_versions_observed": (
+            unique_phase4_refresh_optimization_versions_effective
+        ),
+        "phase4_refresh_optimization_versions_requested_observed": (
+            unique_phase4_refresh_optimization_versions_requested
+        ),
+        "phase4_refresh_optimization_versions_effective_observed": (
+            unique_phase4_refresh_optimization_versions_effective
+        ),
+        "phase4_row_executor": phase4_row_executor,
+        "phase4_row_executor_requested": (
+            observed_phase4_row_executor_requested[-1]
+            if observed_phase4_row_executor_requested
+            else phase4_row_executor
+        ),
+        "phase4_row_executor_mode_requested": (
+            observed_phase4_row_executor_requested[-1]
+            if observed_phase4_row_executor_requested
+            else phase4_row_executor
+        ),
+        "phase4_row_executor_effective": (
+            observed_phase4_row_executor_effective[-1]
+            if observed_phase4_row_executor_effective
+            else resolve_phase4_row_executor_effective(phase4_row_executor)
+            or phase4_row_executor
+        ),
+        "phase4_row_executor_mode_effective": (
+            observed_phase4_row_executor_effective[-1]
+            if observed_phase4_row_executor_effective
+            else resolve_phase4_row_executor_effective(phase4_row_executor)
+            or phase4_row_executor
+        ),
+        "phase4_row_executor_version": (
+            observed_phase4_row_executor_versions_effective[-1]
+            if observed_phase4_row_executor_versions_effective
+            else resolve_phase4_row_executor_version(
+                resolve_phase4_row_executor_effective(phase4_row_executor)
+                or phase4_row_executor
+            )
+        ),
+        "phase4_row_executor_version_requested": (
+            observed_phase4_row_executor_versions_requested[-1]
+            if observed_phase4_row_executor_versions_requested
+            else resolve_phase4_row_executor_version(phase4_row_executor)
+        ),
+        "phase4_row_executor_version_effective": (
+            observed_phase4_row_executor_versions_effective[-1]
+            if observed_phase4_row_executor_versions_effective
+            else resolve_phase4_row_executor_version(
+                resolve_phase4_row_executor_effective(phase4_row_executor)
+                or phase4_row_executor
+            )
+        ),
+        "phase4_row_executor_effective_version": (
+            observed_phase4_row_executor_versions_effective[-1]
+            if observed_phase4_row_executor_versions_effective
+            else resolve_phase4_row_executor_version(
+                resolve_phase4_row_executor_effective(phase4_row_executor)
+                or phase4_row_executor
+            )
+        ),
+        "phase4_row_executor_modes_observed": unique_phase4_row_executor_effective,
+        "phase4_row_executor_modes_requested_observed": (
+            unique_phase4_row_executor_requested
+        ),
+        "phase4_row_executor_modes_effective_observed": (
+            unique_phase4_row_executor_effective
+        ),
+        "phase4_row_executor_versions_observed": (
+            unique_phase4_row_executor_versions_effective
+        ),
+        "phase4_row_executor_versions_requested_observed": (
+            unique_phase4_row_executor_versions_requested
+        ),
+        "phase4_row_executor_versions_effective_observed": (
+            unique_phase4_row_executor_versions_effective
+        ),
         "sparsification": (
             {
                 "per_layer_position_topk": sparsification.per_layer_position_topk,
@@ -1246,10 +1704,12 @@ def run_pipeline(args: argparse.Namespace) -> None:
         args.phase4_scheduler_mode != "locality"
         or args.phase4_scheduler_debug
         or args.phase4_scheduler_telemetry_detail != "normal"
+        or args.phase4_refresh_optimization != "off"
+        or args.phase4_row_executor != "batched"
     ):
         raise ValueError(
-            "Phase-4 scheduler controls currently support only compact exact-chunked output. "
-            "--save-raw/full-graph output is unsupported with non-default scheduler flags."
+            "Phase-4 execution controls currently support only compact exact-chunked output. "
+            "--save-raw/full-graph output is unsupported with non-default Phase-4 flags."
         )
     if planner_enabled and args.save_raw:
         raise ValueError(
@@ -1370,6 +1830,68 @@ def run_pipeline(args: argparse.Namespace) -> None:
         ),
         "phase4_scheduler_debug": args.phase4_scheduler_debug,
         "phase4_scheduler_telemetry_detail": args.phase4_scheduler_telemetry_detail,
+        "phase4_refresh_optimization": args.phase4_refresh_optimization,
+        "phase4_refresh_optimization_requested": args.phase4_refresh_optimization,
+        "phase4_refresh_optimization_mode_requested": args.phase4_refresh_optimization,
+        "phase4_refresh_optimization_effective": (
+            resolve_phase4_refresh_optimization_effective(
+                args.phase4_refresh_optimization
+            )
+            or args.phase4_refresh_optimization
+        ),
+        "phase4_refresh_optimization_mode_effective": (
+            resolve_phase4_refresh_optimization_effective(
+                args.phase4_refresh_optimization
+            )
+            or args.phase4_refresh_optimization
+        ),
+        "phase4_refresh_optimization_version": resolve_phase4_refresh_optimization_version(
+            resolve_phase4_refresh_optimization_effective(
+                args.phase4_refresh_optimization
+            )
+            or args.phase4_refresh_optimization
+        ),
+        "phase4_refresh_optimization_version_requested": resolve_phase4_refresh_optimization_version(
+            args.phase4_refresh_optimization
+        ),
+        "phase4_refresh_optimization_version_effective": resolve_phase4_refresh_optimization_version(
+            resolve_phase4_refresh_optimization_effective(
+                args.phase4_refresh_optimization
+            )
+            or args.phase4_refresh_optimization
+        ),
+        "phase4_refresh_optimization_effective_version": resolve_phase4_refresh_optimization_version(
+            resolve_phase4_refresh_optimization_effective(
+                args.phase4_refresh_optimization
+            )
+            or args.phase4_refresh_optimization
+        ),
+        "phase4_row_executor": args.phase4_row_executor,
+        "phase4_row_executor_requested": args.phase4_row_executor,
+        "phase4_row_executor_mode_requested": args.phase4_row_executor,
+        "phase4_row_executor_effective": (
+            resolve_phase4_row_executor_effective(args.phase4_row_executor)
+            or args.phase4_row_executor
+        ),
+        "phase4_row_executor_mode_effective": (
+            resolve_phase4_row_executor_effective(args.phase4_row_executor)
+            or args.phase4_row_executor
+        ),
+        "phase4_row_executor_version": resolve_phase4_row_executor_version(
+            resolve_phase4_row_executor_effective(args.phase4_row_executor)
+            or args.phase4_row_executor
+        ),
+        "phase4_row_executor_version_requested": resolve_phase4_row_executor_version(
+            args.phase4_row_executor
+        ),
+        "phase4_row_executor_version_effective": resolve_phase4_row_executor_version(
+            resolve_phase4_row_executor_effective(args.phase4_row_executor)
+            or args.phase4_row_executor
+        ),
+        "phase4_row_executor_effective_version": resolve_phase4_row_executor_version(
+            resolve_phase4_row_executor_effective(args.phase4_row_executor)
+            or args.phase4_row_executor
+        ),
         "prepared_prompt_file": args.prepared_prompt_file,
         "prepared_prompt_meta_file": args.prepared_prompt_meta_file,
         "graph_packaging_mode": (
@@ -1460,6 +1982,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
                         "phase4_scheduler_mode": args.phase4_scheduler_mode,
                         "phase4_scheduler_debug": args.phase4_scheduler_debug,
                         "phase4_scheduler_telemetry_detail": args.phase4_scheduler_telemetry_detail,
+                        "phase4_refresh_optimization": args.phase4_refresh_optimization,
+                        "phase4_row_executor": args.phase4_row_executor,
                     }
                     if not args.save_raw
                     else {}
@@ -1720,6 +2244,18 @@ if __name__ == "__main__":
             "Phase-4 scheduler telemetry detail "
             "(summary, normal, debug; compact/full accepted as aliases)"
         ),
+    )
+    parser.add_argument(
+        "--phase4-refresh-optimization",
+        type=parse_phase4_refresh_optimization,
+        default="off",
+        help="Phase-4 refresh optimization mode (off, v1)",
+    )
+    parser.add_argument(
+        "--phase4-row-executor",
+        type=parse_phase4_row_executor,
+        default="batched",
+        help="Phase-4 row execution mode (batched, streaming_v1)",
     )
     parser.add_argument(
         "--cross-cluster-debug",
