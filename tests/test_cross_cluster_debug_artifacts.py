@@ -269,9 +269,45 @@ def run_feature_semantic_descriptor_save_checks() -> None:
         assert bool(loaded["seed_influence_available"].item()) is True
 
 
+def run_phase3_seed_bundle_save_checks() -> None:
+    import torch
+
+    from trace_pipeline_chunked import save_phase3_seed_bundle
+
+    payload = {
+        "status": "captured",
+        "active_features": torch.tensor([[0, 0, 7], [1, 2, 3]], dtype=torch.int64),
+        # Runtime activation_matrix.values() can be bfloat16, which NumPy cannot
+        # convert directly from a torch tensor.
+        "activation_values": torch.tensor([0.25, 1.5], dtype=torch.bfloat16),
+        "seed_feature_influences": torch.tensor([0.9, 0.1], dtype=torch.float64),
+        "frontier_pre_locality": torch.tensor([1, 0], dtype=torch.int64),
+        "frontier_post_locality": torch.tensor([0, 1], dtype=torch.int64),
+        "queue_size": 2,
+        "actual_max_feature_nodes": 4,
+        "total_active_features": 2,
+        "planner_compute_dtype": "float64",
+        "influence_compute_dtype": "float64",
+    }
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        path = Path(tmp_dir) / "step_000_phase3_seed_bundle.npz"
+        save_phase3_seed_bundle(payload, path)
+        loaded = np.load(path, allow_pickle=False)
+
+        assert loaded["active_features"].shape == (2, 3)
+        assert loaded["activation_values"].dtype == np.float32
+        assert loaded["seed_feature_influences"].dtype == np.float64
+        assert loaded["frontier_pre_locality"].tolist() == [1, 0]
+        assert loaded["frontier_post_locality"].tolist() == [0, 1]
+        assert loaded["status"].item() == "captured"
+        assert loaded["planner_compute_dtype"].item() == "float64"
+
+
 def main() -> None:
     run_checks()
     run_launcher_and_extractor_roundtrip_checks()
+    run_phase3_seed_bundle_save_checks()
     run_feature_semantic_descriptor_save_checks()
     print("OK: cross-cluster debug helper and round-trip checks passed")
 

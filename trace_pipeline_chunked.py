@@ -73,7 +73,19 @@ def normalize_requested_exact_trace_internal_dtype(value: Any) -> str | None:
 
 def _to_numpy_seed_bundle_array(value: Any) -> base.np.ndarray:
     if isinstance(value, torch.Tensor):
-        return value.detach().cpu().numpy()
+        tensor = value.detach().cpu()
+        numpy_unsupported_float_dtypes = {
+            dtype
+            for dtype in (
+                torch.bfloat16,
+                getattr(torch, "float8_e4m3fn", None),
+                getattr(torch, "float8_e5m2", None),
+            )
+            if dtype is not None
+        }
+        if tensor.dtype in numpy_unsupported_float_dtypes:
+            tensor = tensor.to(dtype=torch.float32)
+        return tensor.numpy()
     if isinstance(value, base.np.ndarray):
         return value
     if isinstance(value, (list, tuple)):
@@ -745,6 +757,7 @@ def trace_completion_compact_chunked(
 
         phase3_seed_bundle_path: Path | None = None
         phase3_seed_bundle_status = "disabled"
+        phase3_seed_bundle_error: str | None = None
         if capture_phase3_seed_bundle:
             phase3_seed_bundle_path = (
                 completion_dir / f"step_{step_idx:03d}_phase3_seed_bundle.npz"
@@ -765,8 +778,9 @@ def trace_completion_compact_chunked(
                         else f"captured_{payload_status}"
                     )
                     phase3_seed_bundle_captured_count += 1
-                except Exception:
+                except Exception as exc:
                     phase3_seed_bundle_status = "save_failed"
+                    phase3_seed_bundle_error = f"{type(exc).__name__}: {exc}"
             else:
                 phase3_seed_bundle_status = "missing_payload"
         phase3_seed_bundle_statuses.append(phase3_seed_bundle_status)
@@ -881,6 +895,7 @@ def trace_completion_compact_chunked(
                 else None
             ),
             "phase3_seed_bundle_status": phase3_seed_bundle_status,
+            "phase3_seed_bundle_error": phase3_seed_bundle_error,
             "feature_semantic_descriptor_capture_enabled": bool(
                 capture_feature_semantic_descriptors
             ),

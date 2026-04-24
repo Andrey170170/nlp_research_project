@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import types
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -15,7 +16,10 @@ EXPERIMENTS_DIR = PROJECT_ROOT / "experiments"
 if str(EXPERIMENTS_DIR) not in sys.path:
     sys.path.insert(0, str(EXPERIMENTS_DIR))
 
-from experiments.exact_trace_bench.graph_compare import compare_step_pair  # noqa: E402
+from experiments.exact_trace_bench.graph_compare import (  # noqa: E402
+    compare_artifact_dirs,
+    compare_step_pair,
+)
 
 
 @dataclass
@@ -80,3 +84,43 @@ def test_compare_step_pair_reports_shared_unique_edge_decomposition() -> None:
     assert shared_edge_stability["topk_overlap"]["64"]["shared_count"] == 1
 
     assert result["all_edge_weighted_jaccard"] < 1.0
+
+
+def _write_npz(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(str(path), payload=np.asarray([1], dtype=np.int32))
+
+
+def test_compare_artifact_dirs_ignores_auxiliary_step_npz(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    left_completion = tmp_path / "left" / "prompt_000" / "completion_000"
+    right_completion = tmp_path / "right" / "prompt_000" / "completion_000"
+    _write_npz(left_completion / "step_000.npz")
+    _write_npz(right_completion / "step_000.npz")
+    _write_npz(left_completion / "step_000_feature_semantic_descriptors.npz")
+    _write_npz(right_completion / "step_000_phase3_seed_bundle.npz")
+
+    loaded_names: list[str] = []
+
+    def load_compact(path: Path) -> SimpleStep:
+        loaded_names.append(path.name)
+        return _step(
+            feature_ids=[(0, 0, 1)],
+            rows=[0],
+            cols=[0],
+            weights=[1.0],
+        )
+
+    monkeypatch.setitem(
+        sys.modules,
+        "circuit_utils",
+        types.SimpleNamespace(load_compact=load_compact),
+    )
+
+    result = compare_artifact_dirs(tmp_path / "left", tmp_path / "right")
+
+    assert loaded_names == ["step_000.npz", "step_000.npz"]
+    assert result["shared_completion_count"] == 1
+    assert len(result["step_comparisons"]) == 1
+    assert result["step_comparisons"][0]["feature_jaccard"] == 1.0
