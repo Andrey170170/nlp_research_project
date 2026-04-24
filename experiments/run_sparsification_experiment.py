@@ -23,11 +23,12 @@ PHASE4_BATCH_RE = re.compile(
     r"Phase 4 batch (?P<batch_idx>\d+)/(?P<total_batches>\d+) in (?P<seconds>\d+(?:\.\d+)?)s"
 )
 MEMORY_RE = re.compile(
-    r"rss=(?P<rss>n/a|\d+(?:\.\d+)?) GiB, "
-    r"cuda_alloc=(?P<cuda_alloc>n/a|\d+(?:\.\d+)?) GiB, "
-    r"cuda_reserved=(?P<cuda_reserved>n/a|\d+(?:\.\d+)?) GiB, "
-    r"cuda_peak_alloc=(?P<cuda_peak_alloc>n/a|\d+(?:\.\d+)?) GiB, "
-    r"cuda_peak_reserved=(?P<cuda_peak_reserved>n/a|\d+(?:\.\d+)?) GiB"
+    r"rss=(?P<rss>n/a|\d+(?:\.\d+)?(?: GiB)?), "
+    r"(?:rss_current=(?P<rss_current>n/a|\d+(?:\.\d+)?(?: GiB)?), )?"
+    r"cuda_alloc=(?P<cuda_alloc>n/a|\d+(?:\.\d+)?(?: GiB)?), "
+    r"cuda_reserved=(?P<cuda_reserved>n/a|\d+(?:\.\d+)?(?: GiB)?), "
+    r"cuda_peak_alloc=(?P<cuda_peak_alloc>n/a|\d+(?:\.\d+)?(?: GiB)?), "
+    r"cuda_peak_reserved=(?P<cuda_peak_reserved>n/a|\d+(?:\.\d+)?(?: GiB)?)"
 )
 
 
@@ -100,7 +101,8 @@ def _build_prompt_source_args(scenario: dict[str, Any]) -> list[str]:
 def _parse_optional_gib(value: str) -> float | None:
     if value == "n/a":
         return None
-    return float(value)
+    normalized = value.removesuffix(" GiB")
+    return float(normalized)
 
 
 def _format_optional_bool_arg(value: Any) -> str:

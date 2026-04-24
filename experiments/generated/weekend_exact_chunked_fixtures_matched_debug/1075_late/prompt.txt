@@ -1,0 +1,11 @@
+<bos><start_of_turn>user
+Question: Jenny goes to the florist to buy some flowers. Roses cost $2 each and $15 for a dozen. If she bought 15 roses and arrived with five 5 dollar bills and they only have quarters for change, how many quarters does she leave with?
+Please solve this step by step and end with 'Final answer: <number>'.<end_of_turn>
+<start_of_turn>model
+Here's how to solve the problem step-by-step:
+
+1. **Cost of roses:** Jenny bought 15 roses at $2 each, so the total cost is 15 * $2 = $30.
+
+2. **Cost of a dozen roses:** A dozen roses costs $15.
+
+3. **Total cost of roses:** The total cost of the roses is

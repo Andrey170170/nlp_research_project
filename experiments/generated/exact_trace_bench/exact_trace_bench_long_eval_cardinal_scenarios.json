@@ -1,0 +1,125 @@
+{
+  "defaults": {
+    "completions": 1,
+    "temperature": 0.0,
+    "max_feature_nodes": 8192,
+    "max_edges": 20000,
+    "max_n_logits": 3,
+    "desired_logit_prob": 0.8,
+    "verbose_attribution": true,
+    "profile_attribution": true,
+    "profile_log_interval": 1,
+    "attribution_update_interval": 4,
+    "save_raw": false,
+    "no_offload": false,
+    "no_lazy_encoder": false,
+    "no_lazy_decoder": false,
+    "chunked_feature_replay_window": null,
+    "error_vector_prefetch_lookahead": null,
+    "stage_encoder_vecs_on_cpu": null,
+    "stage_error_vectors_on_cpu": null,
+    "row_subchunk_size": null,
+    "plan_feature_batch_size": false,
+    "auto_scale_feature_batch_size": false,
+    "feature_batch_size_max": null,
+    "feature_batch_target_reserved_fraction": 0.9,
+    "feature_batch_min_free_fraction": 0.05,
+    "feature_batch_probe_batches": 1,
+    "phase4_anomaly_debug": false,
+    "max_steps": 1,
+    "method": "exact"
+  },
+  "metadata": {
+    "cluster": "cardinal",
+    "stage": "exact_trace_bench_long_eval",
+    "tier": "long_eval",
+    "resource_profile": "long_eval_high_mem",
+    "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/long_eval",
+    "notes": [
+      "Late-prefix long-eval tier only.",
+      "These runs are too expensive for the fast inner loop and are intended for periodic stress validation."
+    ]
+  },
+  "scenarios": [
+    {
+      "name": "cardinal_long_eval_no_cache_361_late_b256_c4096_cache0g",
+      "stage": "exact_trace_bench_long_eval",
+      "cluster": "cardinal",
+      "long_eval_group": "no_cache",
+      "resource_profile": "long_eval_high_mem",
+      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/long_eval",
+      "fixture_name": "361_late",
+      "fixture_kind": "late_prefix",
+      "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/361_late/prompt.txt",
+      "prepared_prompt_meta_file": "experiments/generated/weekend_exact_chunked_fixtures/361_late/fixture_meta.json",
+      "gsm8k_indices": [
+        361
+      ],
+      "attribution_batch_size": 256,
+      "feature_batch_size": 256,
+      "logit_batch_size": 256,
+      "decoder_chunk_size": 4096,
+      "cross_batch_decoder_cache_bytes": 0
+    },
+    {
+      "name": "cardinal_long_eval_no_cache_828_late_b256_c4096_cache0g",
+      "stage": "exact_trace_bench_long_eval",
+      "cluster": "cardinal",
+      "long_eval_group": "no_cache",
+      "resource_profile": "long_eval_high_mem",
+      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/long_eval",
+      "fixture_name": "828_late",
+      "fixture_kind": "late_prefix",
+      "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/828_late/prompt.txt",
+      "prepared_prompt_meta_file": "experiments/generated/weekend_exact_chunked_fixtures/828_late/fixture_meta.json",
+      "gsm8k_indices": [
+        828
+      ],
+      "attribution_batch_size": 256,
+      "feature_batch_size": 256,
+      "logit_batch_size": 256,
+      "decoder_chunk_size": 4096,
+      "cross_batch_decoder_cache_bytes": 0
+    },
+    {
+      "name": "cardinal_long_eval_no_cache_94_late_b256_c4096_cache0g",
+      "stage": "exact_trace_bench_long_eval",
+      "cluster": "cardinal",
+      "long_eval_group": "no_cache",
+      "resource_profile": "long_eval_high_mem",
+      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/long_eval",
+      "fixture_name": "94_late",
+      "fixture_kind": "late_prefix",
+      "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/94_late/prompt.txt",
+      "prepared_prompt_meta_file": "experiments/generated/weekend_exact_chunked_fixtures/94_late/fixture_meta.json",
+      "gsm8k_indices": [
+        94
+      ],
+      "attribution_batch_size": 256,
+      "feature_batch_size": 256,
+      "logit_batch_size": 256,
+      "decoder_chunk_size": 4096,
+      "cross_batch_decoder_cache_bytes": 0
+    },
+    {
+      "name": "cardinal_long_eval_cache_probe_361_late_b256_c4096_cache8g",
+      "stage": "exact_trace_bench_long_eval",
+      "cluster": "cardinal",
+      "long_eval_group": "cache_probe",
+      "resource_profile": "long_eval_high_mem",
+      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/long_eval",
+      "fixture_name": "361_late",
+      "fixture_kind": "late_prefix",
+      "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/361_late/prompt.txt",
+      "prepared_prompt_meta_file": "experiments/generated/weekend_exact_chunked_fixtures/361_late/fixture_meta.json",
+      "gsm8k_indices": [
+        361
+      ],
+      "attribution_batch_size": 256,
+      "feature_batch_size": 256,
+      "logit_batch_size": 256,
+      "decoder_chunk_size": 4096,
+      "cross_batch_decoder_cache_bytes": 8589934592
+    }
+  ]
+}
