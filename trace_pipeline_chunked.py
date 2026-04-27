@@ -60,6 +60,24 @@ def parse_phase0_activation_threshold_compare_mode(value: str) -> str:
     return resolved
 
 
+def parse_phase0_replay_mode(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized in {"disabled", "donor_phase0"}:
+        return normalized
+    raise argparse.ArgumentTypeError(
+        f"Expected one of {{disabled, donor_phase0}}, got: {value!r}"
+    )
+
+
+def parse_phase0_donor_context_policy(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized in {"strict", "warn"}:
+        return normalized
+    raise argparse.ArgumentTypeError(
+        f"Expected one of {{strict, warn}}, got: {value!r}"
+    )
+
+
 def resolve_internal_precision(exact_trace_internal_dtype: str) -> str:
     normalized = parse_exact_trace_internal_dtype(exact_trace_internal_dtype)
     return "float32" if normalized == "fp32" else "float64"
@@ -265,6 +283,8 @@ def save_phase0_donor_bundle(
     status = payload.get("status")
     schema_version = payload.get("schema_version", 0)
     replay_kind = payload.get("replay_kind")
+    replayed_effective_state = bool(payload.get("replayed_effective_state", False))
+    replay_mode = payload.get("phase0_replay_mode")
     activation_values, activation_values_dtype, activation_values_raw_uint16 = (
         _resolve_activation_values_with_bf16_sidecar(payload)
     )
@@ -336,6 +356,10 @@ def save_phase0_donor_bundle(
         ),
         schema_version=base.np.array(int(schema_version), dtype=base.np.int64),
         replay_kind=base.np.array("" if replay_kind is None else str(replay_kind)),
+        replayed_effective_state=base.np.array(replayed_effective_state),
+        phase0_replay_mode=base.np.array(
+            "" if replay_mode is None else str(replay_mode)
+        ),
         status=base.np.array("" if status is None else str(status)),
     )
 
@@ -373,6 +397,9 @@ def extract_compact_chunked_attribution(
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
     capture_phase0_donor_bundle: bool = False,
+    phase0_donor_bundle: str | None = None,
+    phase0_replay_mode: str = "disabled",
+    phase0_donor_context_policy: str = "strict",
     capture_phase3_seed_bundle: bool = False,
     capture_feature_semantic_descriptors: bool = False,
     semantic_descriptor_top_k: int = 2048,
@@ -426,6 +453,9 @@ def extract_compact_chunked_attribution(
         semantic_descriptor_top_k=semantic_descriptor_top_k,
         semantic_descriptor_dim=semantic_descriptor_dim,
         telemetry_max_events=telemetry_max_events,
+        phase0_donor_bundle=phase0_donor_bundle,
+        phase0_replay_mode=phase0_replay_mode,
+        phase0_donor_context_policy=phase0_donor_context_policy,
         compact_output=True,
         phase0_activation_threshold_compare_mode=phase0_activation_threshold_compare_mode,
     )
@@ -621,6 +651,9 @@ def trace_completion_compact_chunked(
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
     capture_phase0_donor_bundle: bool = False,
+    phase0_donor_bundle: str | None = None,
+    phase0_replay_mode: str = "disabled",
+    phase0_donor_context_policy: str = "strict",
     capture_phase3_seed_bundle: bool = False,
     capture_feature_semantic_descriptors: bool = False,
     semantic_descriptor_top_k: int = 2048,
@@ -679,6 +712,9 @@ def trace_completion_compact_chunked(
     resolved_exact_trace_internal_dtype_requested: str | None = None
     phase0_donor_bundle_statuses: list[str] = []
     phase0_donor_bundle_captured_count = 0
+    phase0_replay_statuses: list[str] = []
+    phase0_replay_validation_warning_counts: list[int] = []
+    phase0_replay_dtype_roundtrip_losses: list[bool] = []
     phase3_seed_bundle_statuses: list[str] = []
     phase3_seed_bundle_captured_count = 0
     feature_semantic_descriptor_statuses: list[str] = []
@@ -729,6 +765,9 @@ def trace_completion_compact_chunked(
             phase4_anomaly_debug=phase4_anomaly_debug,
             cross_cluster_debug=cross_cluster_debug,
             capture_phase0_donor_bundle=capture_phase0_donor_bundle,
+            phase0_donor_bundle=phase0_donor_bundle,
+            phase0_replay_mode=phase0_replay_mode,
+            phase0_donor_context_policy=phase0_donor_context_policy,
             capture_phase3_seed_bundle=capture_phase3_seed_bundle,
             capture_feature_semantic_descriptors=capture_feature_semantic_descriptors,
             semantic_descriptor_top_k=semantic_descriptor_top_k,
@@ -881,6 +920,92 @@ def trace_completion_compact_chunked(
                     compact_result.get("internal_precision_requested")
                 )
             )
+
+        phase0_replay_metadata_payload = compact_result.get("phase0_replay_metadata")
+        if isinstance(phase0_replay_metadata_payload, dict):
+            replay_dtype_metadata = phase0_replay_metadata_payload.get("dtype_metadata")
+            replay_warnings_payload = phase0_replay_metadata_payload.get(
+                "validation_warnings"
+            )
+            replay_warning_list = (
+                [str(item) for item in replay_warnings_payload]
+                if isinstance(replay_warnings_payload, list)
+                else []
+            )
+            phase0_replay_mode_effective = str(
+                phase0_replay_metadata_payload.get("mode", phase0_replay_mode)
+            )
+            phase0_replay_status = str(
+                phase0_replay_metadata_payload.get("status", "unknown")
+            )
+            phase0_replay_donor_bundle_path_effective = (
+                phase0_replay_metadata_payload.get("donor_bundle_path")
+                or phase0_donor_bundle
+            )
+            phase0_replay_context_policy_effective = str(
+                phase0_replay_metadata_payload.get(
+                    "context_policy", phase0_donor_context_policy
+                )
+            )
+            phase0_replay_validation_warning_count = int(
+                phase0_replay_metadata_payload.get(
+                    "validation_warning_count",
+                    len(replay_warning_list),
+                )
+            )
+            phase0_replay_dtype_roundtrip_loss = bool(
+                replay_dtype_metadata.get("dtype_roundtrip_loss", False)
+                if isinstance(replay_dtype_metadata, dict)
+                else False
+            )
+        else:
+            replay_warnings_payload = compact_result.get(
+                "phase0_replay_validation_warnings"
+            )
+            replay_warning_list = (
+                [str(item) for item in replay_warnings_payload]
+                if isinstance(replay_warnings_payload, list)
+                else []
+            )
+            phase0_replay_mode_effective = str(
+                compact_result.get("phase0_replay_mode", phase0_replay_mode)
+            )
+            phase0_replay_status = str(
+                compact_result.get(
+                    "phase0_replay_status",
+                    "disabled" if phase0_replay_mode == "disabled" else "unknown",
+                )
+            )
+            phase0_replay_donor_bundle_path_effective = compact_result.get(
+                "phase0_replay_donor_bundle_path",
+                phase0_donor_bundle,
+            )
+            phase0_replay_context_policy_effective = str(
+                compact_result.get(
+                    "phase0_replay_context_policy",
+                    phase0_donor_context_policy,
+                )
+            )
+            phase0_replay_validation_warning_count = int(
+                compact_result.get(
+                    "phase0_replay_validation_warning_count",
+                    len(replay_warning_list),
+                )
+            )
+            phase0_replay_dtype_roundtrip_loss = bool(
+                compact_result.get("phase0_replay_dtype_roundtrip_loss", False)
+            )
+
+        if phase0_replay_donor_bundle_path_effective is not None:
+            phase0_replay_donor_bundle_path_effective = str(
+                phase0_replay_donor_bundle_path_effective
+            )
+
+        phase0_replay_statuses.append(phase0_replay_status)
+        phase0_replay_validation_warning_counts.append(
+            phase0_replay_validation_warning_count
+        )
+        phase0_replay_dtype_roundtrip_losses.append(phase0_replay_dtype_roundtrip_loss)
 
         token_generation_start = time.perf_counter()
         token_result = base.generate_next_token(
@@ -1063,6 +1188,21 @@ def trace_completion_compact_chunked(
             "cross_cluster_debug_enabled": bool(
                 compact_result.get("cross_cluster_debug_enabled", cross_cluster_debug)
             ),
+            "phase0_replay_mode": phase0_replay_mode_effective,
+            "phase0_replay_status": phase0_replay_status,
+            "phase0_replay_donor_bundle_path": phase0_replay_donor_bundle_path_effective,
+            "phase0_replay_donor_context_policy": phase0_replay_context_policy_effective,
+            "phase0_replay_validation_warning_count": phase0_replay_validation_warning_count,
+            "phase0_replay_validation_warnings": replay_warning_list,
+            "phase0_replay_dtype_roundtrip_loss": phase0_replay_dtype_roundtrip_loss,
+            "phase0_replay_single_step_intended": bool(
+                phase0_replay_mode != "disabled"
+            ),
+            "phase0_replay_step_path_strategy": (
+                "single_fixed_donor_path_all_steps"
+                if phase0_replay_mode != "disabled"
+                else None
+            ),
             "phase0_donor_bundle_capture_enabled": bool(capture_phase0_donor_bundle),
             "phase0_donor_bundle_path": (
                 phase0_donor_bundle_path.name
@@ -1156,6 +1296,20 @@ def trace_completion_compact_chunked(
         ),
         "phase0_activation_threshold_compare_mode": (
             phase0_activation_threshold_compare_mode
+        ),
+        "phase0_replay_mode": phase0_replay_mode,
+        "phase0_donor_bundle": phase0_donor_bundle,
+        "phase0_donor_context_policy": phase0_donor_context_policy,
+        "phase0_replay_single_step_intended": bool(phase0_replay_mode != "disabled"),
+        "phase0_replay_step_path_strategy": (
+            "single_fixed_donor_path_all_steps"
+            if phase0_replay_mode != "disabled"
+            else None
+        ),
+        "phase0_replay_multi_step_note": (
+            "single-step intended mode: donor bundle path is reused for each generated step"
+            if phase0_replay_mode != "disabled" and max_steps > 1
+            else None
         ),
         "resolved_dtype_map": resolved_dtype_map_artifact,
         "phase4_anomaly_debug": phase4_anomaly_debug,
@@ -1256,6 +1410,28 @@ def trace_completion_compact_chunked(
         ),
         "cross_cluster_debug_batches_status": cross_cluster_debug_batches_status,
         "cross_cluster_debug_batches_count": int(cross_cluster_debug_batches_written),
+        "phase0_replay_status": (
+            phase0_replay_statuses[-1] if phase0_replay_statuses else None
+        ),
+        "phase0_replay_statuses_observed": sorted(set(phase0_replay_statuses)),
+        "phase0_replay_validation_warning_count": int(
+            phase0_replay_validation_warning_counts[-1]
+            if phase0_replay_validation_warning_counts
+            else 0
+        ),
+        "phase0_replay_validation_warning_count_max": int(
+            max(phase0_replay_validation_warning_counts)
+            if phase0_replay_validation_warning_counts
+            else 0
+        ),
+        "phase0_replay_dtype_roundtrip_loss": (
+            bool(phase0_replay_dtype_roundtrip_losses[-1])
+            if phase0_replay_dtype_roundtrip_losses
+            else False
+        ),
+        "phase0_replay_any_dtype_roundtrip_loss": bool(
+            any(phase0_replay_dtype_roundtrip_losses)
+        ),
         "phase0_donor_bundle_capture_enabled": bool(capture_phase0_donor_bundle),
         "phase0_donor_bundle_captured_count": int(phase0_donor_bundle_captured_count),
         "phase0_donor_bundle_status": (
@@ -1372,6 +1548,18 @@ def run_pipeline(args: argparse.Namespace) -> None:
             "Feature semantic descriptor capture supports only compact exact-chunked output. "
             "--save-raw is unsupported with --capture-feature-semantic-descriptors."
         )
+    if args.phase0_replay_mode != "disabled" and args.save_raw:
+        raise ValueError(
+            "Phase-0 donor replay supports only compact exact-chunked output. "
+            "--save-raw is unsupported when --phase0-replay-mode is enabled."
+        )
+    if args.phase0_replay_mode != "disabled" and not args.phase0_donor_bundle:
+        raise ValueError("--phase0-replay-mode requires --phase0-donor-bundle PATH")
+    if args.phase0_replay_mode == "disabled" and args.phase0_donor_bundle:
+        raise ValueError(
+            "--phase0-donor-bundle was provided while --phase0-replay-mode=disabled; "
+            "set --phase0-replay-mode donor_phase0 to enable replay"
+        )
     if args.save_raw and args.exact_trace_internal_dtype != "fp64":
         raise ValueError(
             "The explicit internal precision contract is currently supported only for "
@@ -1469,6 +1657,22 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "exact_trace_internal_dtype_requested": args.exact_trace_internal_dtype,
         "phase0_activation_threshold_compare_mode": (
             args.phase0_activation_threshold_compare_mode
+        ),
+        "phase0_replay_mode": args.phase0_replay_mode,
+        "phase0_donor_bundle": args.phase0_donor_bundle,
+        "phase0_donor_context_policy": args.phase0_donor_context_policy,
+        "phase0_replay_single_step_intended": bool(
+            args.phase0_replay_mode != "disabled"
+        ),
+        "phase0_replay_step_path_strategy": (
+            "single_fixed_donor_path_all_steps"
+            if args.phase0_replay_mode != "disabled"
+            else None
+        ),
+        "phase0_replay_multi_step_note": (
+            "single-step intended mode: donor bundle path is reused for each generated step"
+            if args.phase0_replay_mode != "disabled" and args.max_steps > 1
+            else None
         ),
         "exact_trace_internal_dtype_contract_supported": not args.save_raw,
         "exact_trace_internal_dtype_contract_status": (
@@ -1575,6 +1779,11 @@ def run_pipeline(args: argparse.Namespace) -> None:
                         ),
                         "cross_cluster_debug": args.cross_cluster_debug,
                         "capture_phase0_donor_bundle": args.capture_phase0_donor_bundle,
+                        "phase0_donor_bundle": args.phase0_donor_bundle,
+                        "phase0_replay_mode": args.phase0_replay_mode,
+                        "phase0_donor_context_policy": (
+                            args.phase0_donor_context_policy
+                        ),
                         "capture_phase3_seed_bundle": args.capture_phase3_seed_bundle,
                         "capture_feature_semantic_descriptors": (
                             args.capture_feature_semantic_descriptors
@@ -1845,6 +2054,23 @@ if __name__ == "__main__":
             "Save per-step Phase-0 donor bundle artifacts (compact exact-chunked "
             "path only)"
         ),
+    )
+    parser.add_argument(
+        "--phase0-donor-bundle",
+        default=None,
+        help="Path to a Phase-0 donor bundle .npz for replay",
+    )
+    parser.add_argument(
+        "--phase0-replay-mode",
+        type=parse_phase0_replay_mode,
+        default="disabled",
+        help="Phase-0 replay mode: disabled or donor_phase0",
+    )
+    parser.add_argument(
+        "--phase0-donor-context-policy",
+        type=parse_phase0_donor_context_policy,
+        default="strict",
+        help="Donor/host context validation policy: strict or warn",
     )
     parser.add_argument(
         "--capture-feature-semantic-descriptors",

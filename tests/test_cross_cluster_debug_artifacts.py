@@ -317,6 +317,8 @@ def run_phase0_donor_bundle_save_checks() -> None:
         "status": "captured",
         "schema_version": 1,
         "replay_kind": "phase0_active_features_v1",
+        "replayed_effective_state": True,
+        "phase0_replay_mode": "donor_phase0",
         "active_features": torch.tensor([[0, 0, 7], [1, 2, 3]], dtype=torch.int64),
         "activation_values": activation_values,
         "activation_values_dtype": "bfloat16",
@@ -362,6 +364,8 @@ def run_phase0_donor_bundle_save_checks() -> None:
         assert loaded["target_token_ids"].tolist() == [9, 10]
         assert loaded["schema_version"].item() == 1
         assert loaded["replay_kind"].item() == "phase0_active_features_v1"
+        assert bool(loaded["replayed_effective_state"].item()) is True
+        assert loaded["phase0_replay_mode"].item() == "donor_phase0"
         assert loaded["status"].item() == "captured"
 
 
