@@ -16,6 +16,7 @@ from .fixtures import describe_fixture_tiers
 from .graph_compare import compare_artifact_dirs
 from .io_utils import ensure_dir
 from .jobs import render_launch_plan
+from .phase0_replay_matrix_compare import compare_phase0_replay_matrix_to_json
 from .phase3_seed_bundle_compare import compare_phase3_seed_bundles_to_json
 from .presets import preset_names, run_preset
 from .scenarios import SCENARIO_TIERS, build_tier_config, write_tier_config
@@ -102,6 +103,21 @@ def _cmd_compare_semantic_features(args: argparse.Namespace) -> None:
     )
     if args.output_json is not None:
         print(f"Wrote semantic feature comparison to {args.output_json}")
+    print(json.dumps(summary, indent=2))
+
+
+def _cmd_compare_phase0_replay_matrix(args: argparse.Namespace) -> None:
+    summary = compare_phase0_replay_matrix_to_json(
+        ascend_baseline=args.ascend_baseline,
+        cardinal_baseline=args.cardinal_baseline,
+        ascend_self_replay=args.ascend_self_replay,
+        cardinal_self_replay=args.cardinal_self_replay,
+        ascend_with_cardinal=args.ascend_with_cardinal,
+        cardinal_with_ascend=args.cardinal_with_ascend,
+        output_json=args.output_json,
+    )
+    if args.output_json is not None:
+        print(f"Wrote phase-0 replay matrix comparison to {args.output_json}")
     print(json.dumps(summary, indent=2))
 
 
@@ -314,6 +330,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional output path for comparison JSON",
     )
     compare_semantic.set_defaults(func=_cmd_compare_semantic_features)
+
+    compare_phase0_replay = subparsers.add_parser(
+        "compare-phase0-replay-matrix",
+        help=(
+            "Compare baseline/self-replay/cross-swap artifact roots and report "
+            "self-replay gates + donor movement scores"
+        ),
+    )
+    compare_phase0_replay.add_argument("ascend_baseline", type=Path)
+    compare_phase0_replay.add_argument("cardinal_baseline", type=Path)
+    compare_phase0_replay.add_argument("ascend_self_replay", type=Path)
+    compare_phase0_replay.add_argument("cardinal_self_replay", type=Path)
+    compare_phase0_replay.add_argument("ascend_with_cardinal", type=Path)
+    compare_phase0_replay.add_argument("cardinal_with_ascend", type=Path)
+    compare_phase0_replay.add_argument(
+        "--output-json",
+        type=Path,
+        default=None,
+        help="Optional output path for matrix comparison JSON",
+    )
+    compare_phase0_replay.set_defaults(func=_cmd_compare_phase0_replay_matrix)
 
     snapshot = subparsers.add_parser(
         "snapshot-workspace",
