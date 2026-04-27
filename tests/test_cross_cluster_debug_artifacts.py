@@ -69,9 +69,24 @@ def run_checks() -> None:
 
 
 def run_launcher_and_extractor_roundtrip_checks() -> None:
+    from experiments.exact_trace_bench.scenarios import _select_exact_mode_knobs
     from experiments.exact_trace_bench.extract import build_benchmark_index_row
     from experiments.extract_benchmark_index import build_row
     from experiments.run_sparsification_experiment import build_command
+
+    selected_knobs = _select_exact_mode_knobs(
+        {
+            "capture_phase0_donor_bundle": True,
+            "phase0_donor_bundle": "/tmp/donor_bundle.npz",
+            "phase0_replay_mode": "donor_phase0",
+            "phase0_donor_context_policy": "warn",
+            "capture_phase3_seed_bundle": True,
+        }
+    )
+    assert selected_knobs["capture_phase0_donor_bundle"] is True
+    assert selected_knobs["phase0_donor_bundle"] == "/tmp/donor_bundle.npz"
+    assert selected_knobs["phase0_replay_mode"] == "donor_phase0"
+    assert selected_knobs["phase0_donor_context_policy"] == "warn"
 
     scenario = {
         "method": "exact",
@@ -92,6 +107,9 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         "phase0_activation_threshold_compare_mode": "fp32",
         "cross_cluster_debug": True,
         "capture_phase0_donor_bundle": True,
+        "phase0_donor_bundle": "/tmp/donor_bundle.npz",
+        "phase0_replay_mode": "donor_phase0",
+        "phase0_donor_context_policy": "warn",
         "capture_phase3_seed_bundle": True,
         "telemetry_max_events": 17,
         "phase4_anomaly_debug": False,
@@ -103,6 +121,12 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
     assert "--cross-cluster-debug" in command
     assert "--telemetry-max-events" in command
     assert "17" in command
+    assert "--phase0-donor-bundle" in command
+    assert "/tmp/donor_bundle.npz" in command
+    assert "--phase0-replay-mode" in command
+    assert "donor_phase0" in command
+    assert "--phase0-donor-context-policy" in command
+    assert "warn" in command
     assert "--phase0-activation-threshold-compare-mode" in command
     assert "fp32" in command
     assert "--capture-phase0-donor-bundle" in command
@@ -118,6 +142,9 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
     assert "trace_pipeline.py" in old_patch_command[1]
     assert "--phase0-activation-threshold-compare-mode" not in old_patch_command
     assert "--capture-phase0-donor-bundle" not in old_patch_command
+    assert "--phase0-donor-bundle" not in old_patch_command
+    assert "--phase0-replay-mode" not in old_patch_command
+    assert "--phase0-donor-context-policy" not in old_patch_command
     assert "--capture-phase3-seed-bundle" not in old_patch_command
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -176,7 +203,9 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
             )
         )
         seed_bundle_name = "step_000_phase3_seed_bundle.npz"
+        donor_bundle_name = "step_000_phase0_donor_bundle.npz"
         (completion_dir / seed_bundle_name).write_bytes(b"placeholder")
+        (completion_dir / donor_bundle_name).write_bytes(b"placeholder")
         (completion_dir / "completion.json").write_text(
             json.dumps(
                 {
@@ -185,11 +214,32 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
                     "initial_input_token_count": 12,
                     "generated_token_count": 1,
                     "n_steps_traced": 1,
+                    "phase0_donor_bundle_capture_enabled": True,
+                    "phase0_donor_bundle_status": "captured",
+                    "phase0_donor_bundle_statuses_observed": ["captured"],
+                    "phase0_replay_mode": "donor_phase0",
+                    "phase0_replay_status": "replayed",
+                    "phase0_replay_statuses_observed": ["replayed"],
+                    "phase0_donor_context_policy": "warn",
+                    "phase0_donor_bundle": "/tmp/donor_bundle.npz",
+                    "phase0_replay_validation_warning_count": 2,
+                    "phase0_replay_validation_warning_count_max": 2,
+                    "phase0_replay_dtype_roundtrip_loss": True,
+                    "phase0_replay_any_dtype_roundtrip_loss": True,
                     "phase3_seed_bundle_capture_enabled": True,
                     "phase3_seed_bundle_status": "captured",
                     "phase3_seed_bundle_statuses_observed": ["captured"],
                     "steps": [
                         {
+                            "phase0_donor_bundle_capture_enabled": True,
+                            "phase0_donor_bundle_path": donor_bundle_name,
+                            "phase0_donor_bundle_status": "captured",
+                            "phase0_replay_mode": "donor_phase0",
+                            "phase0_replay_status": "replayed",
+                            "phase0_replay_donor_context_policy": "warn",
+                            "phase0_replay_donor_bundle_path": "/tmp/donor_bundle.npz",
+                            "phase0_replay_validation_warning_count": 2,
+                            "phase0_replay_dtype_roundtrip_loss": True,
                             "phase3_seed_bundle_capture_enabled": True,
                             "phase3_seed_bundle_path": seed_bundle_name,
                             "phase3_seed_bundle_status": "captured",
@@ -216,10 +266,34 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         assert benchmark_row["phase3_seed_bundle_present"] is True
         assert benchmark_row["phase3_seed_bundle_file_count"] == 1
         assert benchmark_row["phase3_seed_bundle_status"] == "captured"
+        assert benchmark_row["phase0_donor_bundle_present"] is True
+        assert benchmark_row["phase0_donor_bundle_file_count"] == 1
+        assert benchmark_row["phase0_donor_bundle_status"] == "captured"
+        assert benchmark_row["phase0_replay_mode"] == "donor_phase0"
+        assert benchmark_row["phase0_replay_status"] == "replayed"
+        assert benchmark_row["phase0_replay_donor_context_policy"] == "warn"
+        assert (
+            benchmark_row["phase0_replay_donor_bundle_path"] == "/tmp/donor_bundle.npz"
+        )
+        assert benchmark_row["phase0_replay_validation_warning_count"] == 2
+        assert benchmark_row["phase0_replay_validation_warning_count_max"] == 2
+        assert benchmark_row["phase0_replay_dtype_roundtrip_loss"] is True
+        assert benchmark_row["phase0_replay_any_dtype_roundtrip_loss"] is True
 
         assert legacy_row["phase3_seed_bundle_present"] is True
         assert legacy_row["phase3_seed_bundle_file_count"] == 1
         assert legacy_row["phase3_seed_bundle_status"] == "captured"
+        assert legacy_row["phase0_donor_bundle_present"] is True
+        assert legacy_row["phase0_donor_bundle_file_count"] == 1
+        assert legacy_row["phase0_donor_bundle_status"] == "captured"
+        assert legacy_row["phase0_replay_mode"] == "donor_phase0"
+        assert legacy_row["phase0_replay_status"] == "replayed"
+        assert legacy_row["phase0_replay_donor_context_policy"] == "warn"
+        assert legacy_row["phase0_replay_donor_bundle_path"] == "/tmp/donor_bundle.npz"
+        assert legacy_row["phase0_replay_validation_warning_count"] == 2
+        assert legacy_row["phase0_replay_validation_warning_count_max"] == 2
+        assert legacy_row["phase0_replay_dtype_roundtrip_loss"] is True
+        assert legacy_row["phase0_replay_any_dtype_roundtrip_loss"] is True
 
 
 def run_feature_semantic_descriptor_save_checks() -> None:

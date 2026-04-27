@@ -266,6 +266,19 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     cross_cluster_debug_batches_missing_paths: set[str] = set()
     cross_cluster_debug_batches_statuses: list[str] = []
     cross_cluster_debug_batches_manifest_counts: list[int] = []
+    phase0_donor_bundle_declared_paths: set[str] = set()
+    phase0_donor_bundle_existing_paths: set[str] = set()
+    phase0_donor_bundle_missing_paths: set[str] = set()
+    phase0_donor_bundle_statuses: list[str] = []
+    phase0_donor_bundle_capture_enabled_values: list[int] = []
+    phase0_replay_modes: list[str] = []
+    phase0_replay_statuses: list[str] = []
+    phase0_replay_donor_context_policies: list[str] = []
+    phase0_replay_donor_bundle_paths: list[str] = []
+    phase0_replay_validation_warning_counts_latest: list[int] = []
+    phase0_replay_validation_warning_counts_max: list[int] = []
+    phase0_replay_dtype_roundtrip_losses_latest: list[bool] = []
+    phase0_replay_dtype_roundtrip_losses_any: list[bool] = []
     phase3_seed_bundle_declared_paths: set[str] = set()
     phase3_seed_bundle_existing_paths: set[str] = set()
     phase3_seed_bundle_missing_paths: set[str] = set()
@@ -596,6 +609,79 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
         if batches_count is not None:
             cross_cluster_debug_batches_manifest_counts.append(batches_count)
 
+        phase0_donor_bundle_capture_enabled = manifest.get(
+            "phase0_donor_bundle_capture_enabled"
+        )
+        if isinstance(phase0_donor_bundle_capture_enabled, bool):
+            phase0_donor_bundle_capture_enabled_values.append(
+                int(phase0_donor_bundle_capture_enabled)
+            )
+        manifest_phase0_donor_bundle_status = manifest.get("phase0_donor_bundle_status")
+        if isinstance(manifest_phase0_donor_bundle_status, str):
+            phase0_donor_bundle_statuses.append(manifest_phase0_donor_bundle_status)
+        manifest_phase0_donor_bundle_statuses = manifest.get(
+            "phase0_donor_bundle_statuses_observed"
+        )
+        if isinstance(manifest_phase0_donor_bundle_statuses, list):
+            phase0_donor_bundle_statuses.extend(
+                status
+                for status in manifest_phase0_donor_bundle_statuses
+                if isinstance(status, str)
+            )
+
+        manifest_phase0_replay_mode = manifest.get("phase0_replay_mode")
+        if isinstance(manifest_phase0_replay_mode, str):
+            phase0_replay_modes.append(manifest_phase0_replay_mode)
+        manifest_phase0_replay_status = manifest.get("phase0_replay_status")
+        if isinstance(manifest_phase0_replay_status, str):
+            phase0_replay_statuses.append(manifest_phase0_replay_status)
+        manifest_phase0_replay_statuses = manifest.get(
+            "phase0_replay_statuses_observed"
+        )
+        if isinstance(manifest_phase0_replay_statuses, list):
+            phase0_replay_statuses.extend(
+                status
+                for status in manifest_phase0_replay_statuses
+                if isinstance(status, str)
+            )
+        manifest_phase0_replay_context_policy = manifest.get(
+            "phase0_donor_context_policy"
+        )
+        if isinstance(manifest_phase0_replay_context_policy, str):
+            phase0_replay_donor_context_policies.append(
+                manifest_phase0_replay_context_policy
+            )
+        manifest_phase0_replay_donor_bundle_path = manifest.get("phase0_donor_bundle")
+        if (
+            isinstance(manifest_phase0_replay_donor_bundle_path, str)
+            and manifest_phase0_replay_donor_bundle_path.strip()
+        ):
+            phase0_replay_donor_bundle_paths.append(
+                manifest_phase0_replay_donor_bundle_path.strip()
+            )
+        replay_warning_count = _to_int(
+            manifest.get("phase0_replay_validation_warning_count")
+        )
+        if replay_warning_count is not None:
+            phase0_replay_validation_warning_counts_latest.append(replay_warning_count)
+        replay_warning_count_max = _to_int(
+            manifest.get("phase0_replay_validation_warning_count_max")
+        )
+        if replay_warning_count_max is not None:
+            phase0_replay_validation_warning_counts_max.append(replay_warning_count_max)
+        replay_dtype_roundtrip_loss = manifest.get("phase0_replay_dtype_roundtrip_loss")
+        if isinstance(replay_dtype_roundtrip_loss, bool):
+            phase0_replay_dtype_roundtrip_losses_latest.append(
+                replay_dtype_roundtrip_loss
+            )
+        replay_any_dtype_roundtrip_loss = manifest.get(
+            "phase0_replay_any_dtype_roundtrip_loss"
+        )
+        if isinstance(replay_any_dtype_roundtrip_loss, bool):
+            phase0_replay_dtype_roundtrip_losses_any.append(
+                replay_any_dtype_roundtrip_loss
+            )
+
         phase3_seed_bundle_capture_enabled = manifest.get(
             "phase3_seed_bundle_capture_enabled"
         )
@@ -644,6 +730,70 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
             for step in manifest_steps:
                 if not isinstance(step, dict):
                     continue
+                phase0_donor_bundle_ref = step.get("phase0_donor_bundle_path")
+                if (
+                    isinstance(phase0_donor_bundle_ref, str)
+                    and phase0_donor_bundle_ref.strip()
+                ):
+                    declared_phase0_donor_bundle_path = (
+                        completion_dir / phase0_donor_bundle_ref.strip()
+                    )
+                    relative_path = _relative_to_or_str(
+                        declared_phase0_donor_bundle_path,
+                        artifact_dir,
+                    )
+                    phase0_donor_bundle_declared_paths.add(relative_path)
+                    if declared_phase0_donor_bundle_path.exists():
+                        phase0_donor_bundle_existing_paths.add(relative_path)
+                    else:
+                        phase0_donor_bundle_missing_paths.add(relative_path)
+                step_phase0_donor_bundle_status = step.get("phase0_donor_bundle_status")
+                if isinstance(step_phase0_donor_bundle_status, str):
+                    phase0_donor_bundle_statuses.append(step_phase0_donor_bundle_status)
+                step_phase0_donor_bundle_enabled = step.get(
+                    "phase0_donor_bundle_capture_enabled"
+                )
+                if isinstance(step_phase0_donor_bundle_enabled, bool):
+                    phase0_donor_bundle_capture_enabled_values.append(
+                        int(step_phase0_donor_bundle_enabled)
+                    )
+                step_phase0_replay_mode = step.get("phase0_replay_mode")
+                if isinstance(step_phase0_replay_mode, str):
+                    phase0_replay_modes.append(step_phase0_replay_mode)
+                step_phase0_replay_status = step.get("phase0_replay_status")
+                if isinstance(step_phase0_replay_status, str):
+                    phase0_replay_statuses.append(step_phase0_replay_status)
+                step_phase0_replay_context_policy = step.get(
+                    "phase0_replay_donor_context_policy"
+                )
+                if isinstance(step_phase0_replay_context_policy, str):
+                    phase0_replay_donor_context_policies.append(
+                        step_phase0_replay_context_policy
+                    )
+                step_phase0_replay_donor_bundle_path = step.get(
+                    "phase0_replay_donor_bundle_path"
+                )
+                if (
+                    isinstance(step_phase0_replay_donor_bundle_path, str)
+                    and step_phase0_replay_donor_bundle_path.strip()
+                ):
+                    phase0_replay_donor_bundle_paths.append(
+                        step_phase0_replay_donor_bundle_path.strip()
+                    )
+                step_replay_warning_count = _to_int(
+                    step.get("phase0_replay_validation_warning_count")
+                )
+                if step_replay_warning_count is not None:
+                    phase0_replay_validation_warning_counts_latest.append(
+                        step_replay_warning_count
+                    )
+                step_replay_dtype_roundtrip_loss = step.get(
+                    "phase0_replay_dtype_roundtrip_loss"
+                )
+                if isinstance(step_replay_dtype_roundtrip_loss, bool):
+                    phase0_replay_dtype_roundtrip_losses_latest.append(
+                        step_replay_dtype_roundtrip_loss
+                    )
                 phase3_seed_bundle_ref = step.get("phase3_seed_bundle_path")
                 if (
                     isinstance(phase3_seed_bundle_ref, str)
@@ -982,6 +1132,13 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     cross_cluster_debug_batches_missing_paths_sorted = sorted(
         cross_cluster_debug_batches_missing_paths
     )
+    phase0_donor_bundle_existing_paths_sorted = sorted(
+        phase0_donor_bundle_existing_paths
+    )
+    phase0_donor_bundle_declared_paths_sorted = sorted(
+        phase0_donor_bundle_declared_paths
+    )
+    phase0_donor_bundle_missing_paths_sorted = sorted(phase0_donor_bundle_missing_paths)
     phase3_seed_bundle_existing_paths_sorted = sorted(phase3_seed_bundle_existing_paths)
     phase3_seed_bundle_declared_paths_sorted = sorted(phase3_seed_bundle_declared_paths)
     phase3_seed_bundle_missing_paths_sorted = sorted(phase3_seed_bundle_missing_paths)
@@ -1035,6 +1192,16 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     )
     all_phase4_planner_statuses = sorted(
         set(step_phase4_planner_statuses + manifest_phase4_planner_statuses)
+    )
+    phase0_replay_validation_warning_count_max_source = (
+        phase0_replay_validation_warning_counts_max
+        if phase0_replay_validation_warning_counts_max
+        else phase0_replay_validation_warning_counts_latest
+    )
+    phase0_replay_dtype_roundtrip_loss_any_source = (
+        phase0_replay_dtype_roundtrip_losses_any
+        if phase0_replay_dtype_roundtrip_losses_any
+        else phase0_replay_dtype_roundtrip_losses_latest
     )
 
     return {
@@ -1283,6 +1450,83 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
         "cross_cluster_debug_batches_count": (
             cross_cluster_debug_batches_manifest_counts[-1]
             if cross_cluster_debug_batches_manifest_counts
+            else None
+        ),
+        "phase0_donor_bundle_capture_enabled_fraction": (
+            round(
+                mean(
+                    [
+                        float(value)
+                        for value in phase0_donor_bundle_capture_enabled_values
+                    ]
+                ),
+                6,
+            )
+            if phase0_donor_bundle_capture_enabled_values
+            else None
+        ),
+        "phase0_donor_bundle_present": bool(phase0_donor_bundle_existing_paths_sorted),
+        "phase0_donor_bundle_manifest_declared_count": len(
+            phase0_donor_bundle_declared_paths_sorted
+        ),
+        "phase0_donor_bundle_file_count": len(
+            phase0_donor_bundle_existing_paths_sorted
+        ),
+        "phase0_donor_bundle_missing_file_count": len(
+            phase0_donor_bundle_missing_paths_sorted
+        ),
+        "phase0_donor_bundle_path_example": (
+            phase0_donor_bundle_existing_paths_sorted[0]
+            if phase0_donor_bundle_existing_paths_sorted
+            else phase0_donor_bundle_declared_paths_sorted[0]
+            if phase0_donor_bundle_declared_paths_sorted
+            else None
+        ),
+        "phase0_donor_bundle_status": (
+            phase0_donor_bundle_statuses[-1] if phase0_donor_bundle_statuses else None
+        ),
+        "phase0_donor_bundle_statuses_observed": sorted(
+            set(phase0_donor_bundle_statuses)
+        ),
+        "phase0_replay_mode": (
+            phase0_replay_modes[-1] if phase0_replay_modes else None
+        ),
+        "phase0_replay_modes_observed": sorted(set(phase0_replay_modes)),
+        "phase0_replay_status": (
+            phase0_replay_statuses[-1] if phase0_replay_statuses else None
+        ),
+        "phase0_replay_statuses_observed": sorted(set(phase0_replay_statuses)),
+        "phase0_replay_donor_context_policy": (
+            phase0_replay_donor_context_policies[-1]
+            if phase0_replay_donor_context_policies
+            else None
+        ),
+        "phase0_replay_donor_context_policies_observed": sorted(
+            set(phase0_replay_donor_context_policies)
+        ),
+        "phase0_replay_donor_bundle_path": (
+            phase0_replay_donor_bundle_paths[-1]
+            if phase0_replay_donor_bundle_paths
+            else None
+        ),
+        "phase0_replay_validation_warning_count": (
+            phase0_replay_validation_warning_counts_latest[-1]
+            if phase0_replay_validation_warning_counts_latest
+            else None
+        ),
+        "phase0_replay_validation_warning_count_max": (
+            max(phase0_replay_validation_warning_count_max_source)
+            if phase0_replay_validation_warning_count_max_source
+            else None
+        ),
+        "phase0_replay_dtype_roundtrip_loss": (
+            phase0_replay_dtype_roundtrip_losses_latest[-1]
+            if phase0_replay_dtype_roundtrip_losses_latest
+            else None
+        ),
+        "phase0_replay_any_dtype_roundtrip_loss": (
+            bool(any(phase0_replay_dtype_roundtrip_loss_any_source))
+            if phase0_replay_dtype_roundtrip_loss_any_source
             else None
         ),
         "phase3_seed_bundle_capture_enabled_fraction": (

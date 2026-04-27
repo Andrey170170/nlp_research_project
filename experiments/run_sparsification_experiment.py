@@ -458,6 +458,17 @@ def build_command(
             cmd.append("--cross-cluster-debug")
         if scenario.get("capture_phase0_donor_bundle", False):
             cmd.append("--capture-phase0-donor-bundle")
+        if scenario.get("phase0_donor_bundle") is not None:
+            cmd.extend(["--phase0-donor-bundle", str(scenario["phase0_donor_bundle"])])
+        if scenario.get("phase0_replay_mode") is not None:
+            cmd.extend(["--phase0-replay-mode", str(scenario["phase0_replay_mode"])])
+        if scenario.get("phase0_donor_context_policy") is not None:
+            cmd.extend(
+                [
+                    "--phase0-donor-context-policy",
+                    str(scenario["phase0_donor_context_policy"]),
+                ]
+            )
         if scenario.get("capture_phase3_seed_bundle", False):
             cmd.append("--capture-phase3-seed-bundle")
         if scenario.get("capture_feature_semantic_descriptors", False):
