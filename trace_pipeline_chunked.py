@@ -202,6 +202,144 @@ def save_feature_semantic_descriptors(
     )
 
 
+def _normalize_dtype_name(value: Any) -> str:
+    if isinstance(value, torch.dtype):
+        return str(value).replace("torch.", "")
+    if value is None:
+        return ""
+    return str(value).replace("torch.", "").strip()
+
+
+def _to_optional_json_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list, tuple)):
+        return base.json.dumps(value, sort_keys=True, default=str)
+    return str(value)
+
+
+def _resolve_activation_values_with_bf16_sidecar(
+    payload: dict[str, Any],
+) -> tuple[base.np.ndarray, str, base.np.ndarray]:
+    activation_values_payload = payload.get("activation_values", [])
+    activation_values_dtype = _normalize_dtype_name(
+        payload.get("activation_values_dtype")
+    )
+    raw_uint16_payload = payload.get("activation_values_raw_uint16")
+
+    if isinstance(activation_values_payload, torch.Tensor):
+        activation_tensor = activation_values_payload.detach().cpu().contiguous()
+        resolved_dtype = activation_values_dtype or _normalize_dtype_name(
+            activation_tensor.dtype
+        )
+        if activation_tensor.dtype == torch.bfloat16:
+            raw_uint16 = activation_tensor.view(torch.uint16).numpy()
+            activation_values = activation_tensor.to(dtype=torch.float32).numpy()
+            return (
+                activation_values,
+                resolved_dtype or "bfloat16",
+                raw_uint16.astype(base.np.uint16, copy=False),
+            )
+        return (
+            _to_numpy_seed_bundle_array(activation_tensor),
+            resolved_dtype,
+            base.np.empty(0, dtype=base.np.uint16),
+        )
+
+    activation_values = _to_numpy_seed_bundle_array(activation_values_payload)
+    resolved_dtype = activation_values_dtype or str(activation_values.dtype)
+    if raw_uint16_payload is None:
+        return activation_values, resolved_dtype, base.np.empty(0, dtype=base.np.uint16)
+
+    raw_uint16_array = _to_numpy_seed_bundle_array(raw_uint16_payload).astype(
+        base.np.uint16,
+        copy=False,
+    )
+    return activation_values, resolved_dtype, raw_uint16_array
+
+
+def save_phase0_donor_bundle(
+    payload: dict[str, Any],
+    path: Path,
+) -> None:
+    status = payload.get("status")
+    schema_version = payload.get("schema_version", 0)
+    replay_kind = payload.get("replay_kind")
+    activation_values, activation_values_dtype, activation_values_raw_uint16 = (
+        _resolve_activation_values_with_bf16_sidecar(payload)
+    )
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    base.np.savez_compressed(
+        str(path),
+        active_features=_to_numpy_seed_bundle_array(payload.get("active_features", [])),
+        activation_values=activation_values,
+        activation_values_dtype=base.np.array(activation_values_dtype),
+        activation_values_raw_uint16=activation_values_raw_uint16,
+        activation_matrix_shape=_to_numpy_seed_bundle_array(
+            payload.get("activation_matrix_shape", [])
+        ),
+        active_feature_count=base.np.array(
+            payload.get("active_feature_count", 0),
+            dtype=base.np.int64,
+        ),
+        active_feature_membership_hash_raw_order=base.np.array(
+            _to_optional_json_text(
+                payload.get("active_feature_membership_hash_raw_order")
+            )
+        ),
+        active_feature_membership_hash_canonical=base.np.array(
+            _to_optional_json_text(
+                payload.get("active_feature_membership_hash_canonical")
+            )
+        ),
+        active_feature_values_hash=base.np.array(
+            _to_optional_json_text(payload.get("active_feature_values_hash"))
+        ),
+        active_feature_layer_counts=_to_numpy_seed_bundle_array(
+            payload.get("active_feature_layer_counts", [])
+        ),
+        input_tokens=_to_numpy_seed_bundle_array(payload.get("input_tokens", [])),
+        input_token_count=base.np.array(
+            payload.get("input_token_count", 0),
+            dtype=base.np.int64,
+        ),
+        input_tokens_hash=base.np.array(
+            _to_optional_json_text(payload.get("input_tokens_hash"))
+        ),
+        target_token_ids=_to_numpy_seed_bundle_array(
+            payload.get("target_token_ids", [])
+        ),
+        target_count=base.np.array(payload.get("target_count", 0), dtype=base.np.int64),
+        target_token_ids_hash=base.np.array(
+            _to_optional_json_text(payload.get("target_token_ids_hash"))
+        ),
+        target_probabilities=_to_numpy_seed_bundle_array(
+            payload.get("target_probabilities", [])
+        ),
+        target_probability_hash=base.np.array(
+            _to_optional_json_text(payload.get("target_probability_hash"))
+        ),
+        target_logits=_to_numpy_seed_bundle_array(payload.get("target_logits", [])),
+        target_logit_hash=base.np.array(
+            _to_optional_json_text(payload.get("target_logit_hash"))
+        ),
+        clt_constants_hash=base.np.array(
+            _to_optional_json_text(payload.get("clt_constants_hash"))
+        ),
+        provenance=base.np.array(_to_optional_json_text(payload.get("provenance"))),
+        prompt_metadata=base.np.array(
+            _to_optional_json_text(payload.get("prompt_metadata"))
+        ),
+        target_metadata=base.np.array(
+            _to_optional_json_text(payload.get("target_metadata"))
+        ),
+        schema_version=base.np.array(int(schema_version), dtype=base.np.int64),
+        replay_kind=base.np.array("" if replay_kind is None else str(replay_kind)),
+        status=base.np.array("" if status is None else str(status)),
+    )
+
+
 def extract_compact_chunked_attribution(
     model,
     prompt: str | torch.Tensor | list[int],
@@ -234,6 +372,7 @@ def extract_compact_chunked_attribution(
     phase0_activation_threshold_compare_mode: str = "baseline",
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
+    capture_phase0_donor_bundle: bool = False,
     capture_phase3_seed_bundle: bool = False,
     capture_feature_semantic_descriptors: bool = False,
     semantic_descriptor_top_k: int = 2048,
@@ -281,6 +420,7 @@ def extract_compact_chunked_attribution(
         internal_precision=internal_precision,
         phase4_anomaly_debug=phase4_anomaly_debug,
         cross_cluster_debug=cross_cluster_debug,
+        capture_phase0_donor_bundle=capture_phase0_donor_bundle,
         capture_phase3_seed_bundle=capture_phase3_seed_bundle,
         capture_feature_semantic_descriptors=capture_feature_semantic_descriptors,
         semantic_descriptor_top_k=semantic_descriptor_top_k,
@@ -480,6 +620,7 @@ def trace_completion_compact_chunked(
     phase0_activation_threshold_compare_mode: str = "baseline",
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
+    capture_phase0_donor_bundle: bool = False,
     capture_phase3_seed_bundle: bool = False,
     capture_feature_semantic_descriptors: bool = False,
     semantic_descriptor_top_k: int = 2048,
@@ -536,6 +677,8 @@ def trace_completion_compact_chunked(
     cross_cluster_debug_artifacts_captured = False
     resolved_dtype_map_artifact: dict[str, Any] | None = None
     resolved_exact_trace_internal_dtype_requested: str | None = None
+    phase0_donor_bundle_statuses: list[str] = []
+    phase0_donor_bundle_captured_count = 0
     phase3_seed_bundle_statuses: list[str] = []
     phase3_seed_bundle_captured_count = 0
     feature_semantic_descriptor_statuses: list[str] = []
@@ -585,6 +728,7 @@ def trace_completion_compact_chunked(
             phase0_activation_threshold_compare_mode=phase0_activation_threshold_compare_mode,
             phase4_anomaly_debug=phase4_anomaly_debug,
             cross_cluster_debug=cross_cluster_debug,
+            capture_phase0_donor_bundle=capture_phase0_donor_bundle,
             capture_phase3_seed_bundle=capture_phase3_seed_bundle,
             capture_feature_semantic_descriptors=capture_feature_semantic_descriptors,
             semantic_descriptor_top_k=semantic_descriptor_top_k,
@@ -758,6 +902,37 @@ def trace_completion_compact_chunked(
         phase3_seed_bundle_path: Path | None = None
         phase3_seed_bundle_status = "disabled"
         phase3_seed_bundle_error: str | None = None
+
+        phase0_donor_bundle_path: Path | None = None
+        phase0_donor_bundle_status = "disabled"
+        phase0_donor_bundle_error: str | None = None
+        if capture_phase0_donor_bundle:
+            phase0_donor_bundle_path = (
+                completion_dir / f"step_{step_idx:03d}_phase0_donor_bundle.npz"
+            )
+            phase0_donor_bundle_payload = compact_result.get("phase0_donor_bundle")
+            if isinstance(phase0_donor_bundle_payload, dict):
+                payload_status = str(
+                    phase0_donor_bundle_payload.get("status", "captured")
+                )
+                try:
+                    save_phase0_donor_bundle(
+                        phase0_donor_bundle_payload,
+                        phase0_donor_bundle_path,
+                    )
+                    phase0_donor_bundle_status = (
+                        "captured"
+                        if payload_status == "captured"
+                        else f"captured_{payload_status}"
+                    )
+                    phase0_donor_bundle_captured_count += 1
+                except Exception as exc:
+                    phase0_donor_bundle_status = "save_failed"
+                    phase0_donor_bundle_error = f"{type(exc).__name__}: {exc}"
+            else:
+                phase0_donor_bundle_status = "missing_payload"
+        phase0_donor_bundle_statuses.append(phase0_donor_bundle_status)
+
         if capture_phase3_seed_bundle:
             phase3_seed_bundle_path = (
                 completion_dir / f"step_{step_idx:03d}_phase3_seed_bundle.npz"
@@ -888,6 +1063,14 @@ def trace_completion_compact_chunked(
             "cross_cluster_debug_enabled": bool(
                 compact_result.get("cross_cluster_debug_enabled", cross_cluster_debug)
             ),
+            "phase0_donor_bundle_capture_enabled": bool(capture_phase0_donor_bundle),
+            "phase0_donor_bundle_path": (
+                phase0_donor_bundle_path.name
+                if phase0_donor_bundle_path is not None
+                else None
+            ),
+            "phase0_donor_bundle_status": phase0_donor_bundle_status,
+            "phase0_donor_bundle_error": phase0_donor_bundle_error,
             "phase3_seed_bundle_capture_enabled": bool(capture_phase3_seed_bundle),
             "phase3_seed_bundle_path": (
                 phase3_seed_bundle_path.name
@@ -977,6 +1160,7 @@ def trace_completion_compact_chunked(
         "resolved_dtype_map": resolved_dtype_map_artifact,
         "phase4_anomaly_debug": phase4_anomaly_debug,
         "cross_cluster_debug": cross_cluster_debug,
+        "capture_phase0_donor_bundle": capture_phase0_donor_bundle,
         "capture_phase3_seed_bundle": capture_phase3_seed_bundle,
         "capture_feature_semantic_descriptors": capture_feature_semantic_descriptors,
         "semantic_descriptor_top_k": semantic_descriptor_top_k,
@@ -1072,6 +1256,19 @@ def trace_completion_compact_chunked(
         ),
         "cross_cluster_debug_batches_status": cross_cluster_debug_batches_status,
         "cross_cluster_debug_batches_count": int(cross_cluster_debug_batches_written),
+        "phase0_donor_bundle_capture_enabled": bool(capture_phase0_donor_bundle),
+        "phase0_donor_bundle_captured_count": int(phase0_donor_bundle_captured_count),
+        "phase0_donor_bundle_status": (
+            phase0_donor_bundle_statuses[-1] if phase0_donor_bundle_statuses else None
+        ),
+        "phase0_donor_bundle_statuses_observed": sorted(
+            set(phase0_donor_bundle_statuses)
+        ),
+        "phase0_donor_bundle_path_template": (
+            "step_<idx>_phase0_donor_bundle.npz"
+            if capture_phase0_donor_bundle
+            else None
+        ),
         "phase3_seed_bundle_capture_enabled": bool(capture_phase3_seed_bundle),
         "phase3_seed_bundle_captured_count": int(phase3_seed_bundle_captured_count),
         "phase3_seed_bundle_status": (
@@ -1164,6 +1361,11 @@ def run_pipeline(args: argparse.Namespace) -> None:
         raise ValueError(
             "Phase-3 seed bundle capture supports only compact exact-chunked output. "
             "--save-raw is unsupported with --capture-phase3-seed-bundle."
+        )
+    if args.capture_phase0_donor_bundle and args.save_raw:
+        raise ValueError(
+            "Phase-0 donor bundle capture supports only compact exact-chunked output. "
+            "--save-raw is unsupported with --capture-phase0-donor-bundle."
         )
     if args.capture_feature_semantic_descriptors and args.save_raw:
         raise ValueError(
@@ -1276,6 +1478,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         ),
         "phase4_anomaly_debug": args.phase4_anomaly_debug,
         "cross_cluster_debug": args.cross_cluster_debug,
+        "capture_phase0_donor_bundle": args.capture_phase0_donor_bundle,
         "capture_phase3_seed_bundle": args.capture_phase3_seed_bundle,
         "capture_feature_semantic_descriptors": args.capture_feature_semantic_descriptors,
         "semantic_descriptor_top_k": args.semantic_descriptor_top_k,
@@ -1371,6 +1574,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
                             args.phase0_activation_threshold_compare_mode
                         ),
                         "cross_cluster_debug": args.cross_cluster_debug,
+                        "capture_phase0_donor_bundle": args.capture_phase0_donor_bundle,
                         "capture_phase3_seed_bundle": args.capture_phase3_seed_bundle,
                         "capture_feature_semantic_descriptors": (
                             args.capture_feature_semantic_descriptors
@@ -1633,6 +1837,14 @@ if __name__ == "__main__":
         "--capture-phase3-seed-bundle",
         action="store_true",
         help="Save per-step Phase-3 seed bundle artifacts (compact exact-chunked path only)",
+    )
+    parser.add_argument(
+        "--capture-phase0-donor-bundle",
+        action="store_true",
+        help=(
+            "Save per-step Phase-0 donor bundle artifacts (compact exact-chunked "
+            "path only)"
+        ),
     )
     parser.add_argument(
         "--capture-feature-semantic-descriptors",

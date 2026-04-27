@@ -91,6 +91,7 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         "exact_trace_internal_dtype": "fp32",
         "phase0_activation_threshold_compare_mode": "fp32",
         "cross_cluster_debug": True,
+        "capture_phase0_donor_bundle": True,
         "capture_phase3_seed_bundle": True,
         "telemetry_max_events": 17,
         "phase4_anomaly_debug": False,
@@ -104,6 +105,7 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
     assert "17" in command
     assert "--phase0-activation-threshold-compare-mode" in command
     assert "fp32" in command
+    assert "--capture-phase0-donor-bundle" in command
     assert "--capture-phase3-seed-bundle" in command
 
     old_patch_command = build_command(
@@ -115,6 +117,7 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
     )
     assert "trace_pipeline.py" in old_patch_command[1]
     assert "--phase0-activation-threshold-compare-mode" not in old_patch_command
+    assert "--capture-phase0-donor-bundle" not in old_patch_command
     assert "--capture-phase3-seed-bundle" not in old_patch_command
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -304,9 +307,68 @@ def run_phase3_seed_bundle_save_checks() -> None:
         assert loaded["planner_compute_dtype"].item() == "float64"
 
 
+def run_phase0_donor_bundle_save_checks() -> None:
+    import torch
+
+    from trace_pipeline_chunked import save_phase0_donor_bundle
+
+    activation_values = torch.tensor([0.25, -1.5], dtype=torch.bfloat16)
+    payload = {
+        "status": "captured",
+        "schema_version": 1,
+        "replay_kind": "phase0_active_features_v1",
+        "active_features": torch.tensor([[0, 0, 7], [1, 2, 3]], dtype=torch.int64),
+        "activation_values": activation_values,
+        "activation_values_dtype": "bfloat16",
+        "activation_matrix_shape": [2, 3, 16],
+        "active_feature_count": 2,
+        "active_feature_membership_hash_raw_order": "rawhash",
+        "active_feature_membership_hash_canonical": "canonicalhash",
+        "active_feature_values_hash": "valuehash",
+        "active_feature_layer_counts": torch.tensor([1, 1], dtype=torch.int64),
+        "input_tokens": torch.tensor([11, 22, 33], dtype=torch.int64),
+        "input_token_count": 3,
+        "input_tokens_hash": "inputhash",
+        "target_token_ids": torch.tensor([9, 10], dtype=torch.int64),
+        "target_count": 2,
+        "target_token_ids_hash": "targethash",
+        "target_probabilities": torch.tensor([0.7, 0.2], dtype=torch.float32),
+        "target_probability_hash": "probhash",
+        "target_logits": torch.tensor([3.5, -1.2], dtype=torch.float32),
+        "target_logit_hash": "logithash",
+        "clt_constants_hash": "clthash",
+        "provenance": {"source": "unit-test"},
+        "prompt_metadata": {"prompt_source": "fixture"},
+        "target_metadata": {"target_selection": "salient"},
+    }
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        path = Path(tmp_dir) / "step_000_phase0_donor_bundle.npz"
+        save_phase0_donor_bundle(payload, path)
+        loaded = np.load(path, allow_pickle=False)
+
+        expected_raw = activation_values.view(torch.uint16).cpu().numpy()
+
+        assert loaded["active_features"].shape == (2, 3)
+        assert loaded["activation_values"].dtype == np.float32
+        assert loaded["activation_values_dtype"].item() == "bfloat16"
+        assert loaded["activation_values_raw_uint16"].dtype == np.uint16
+        assert loaded["activation_values_raw_uint16"].tolist() == expected_raw.tolist()
+        assert loaded["active_feature_membership_hash_raw_order"].item() == "rawhash"
+        assert (
+            loaded["active_feature_membership_hash_canonical"].item() == "canonicalhash"
+        )
+        assert loaded["active_feature_values_hash"].item() == "valuehash"
+        assert loaded["target_token_ids"].tolist() == [9, 10]
+        assert loaded["schema_version"].item() == 1
+        assert loaded["replay_kind"].item() == "phase0_active_features_v1"
+        assert loaded["status"].item() == "captured"
+
+
 def main() -> None:
     run_checks()
     run_launcher_and_extractor_roundtrip_checks()
+    run_phase0_donor_bundle_save_checks()
     run_phase3_seed_bundle_save_checks()
     run_feature_semantic_descriptor_save_checks()
     print("OK: cross-cluster debug helper and round-trip checks passed")

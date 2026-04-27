@@ -456,6 +456,8 @@ def build_command(
             cmd.append("--phase4-anomaly-debug")
         if scenario.get("cross_cluster_debug", False):
             cmd.append("--cross-cluster-debug")
+        if scenario.get("capture_phase0_donor_bundle", False):
+            cmd.append("--capture-phase0-donor-bundle")
         if scenario.get("capture_phase3_seed_bundle", False):
             cmd.append("--capture-phase3-seed-bundle")
         if scenario.get("capture_feature_semantic_descriptors", False):
