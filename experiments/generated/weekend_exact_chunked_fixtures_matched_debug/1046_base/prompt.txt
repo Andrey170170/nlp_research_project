@@ -1,0 +1,4 @@
+<bos><start_of_turn>user
+Question: A team of 4 painters worked on a mansion for 3/8ths of a day every day for 3 weeks. How many hours of work did each painter put in?
+Please solve this step by step and end with 'Final answer: <number>'.<end_of_turn>
+<start_of_turn>model

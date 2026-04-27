@@ -166,12 +166,215 @@ Semantic comparison should report:
 - If high-mass unmatched features lack semantic substitutes, treat the drift as a
   candidate genuine graph instability requiring mitigation or replay analysis.
 
-## Extra follow-up (deferred)
+## Phase-0 donor swap/replay design (deferred stronger causal check)
 
-If the passive bundle-capture experiment remains ambiguous, implement a stronger
-intervention mode that consumes a saved donor early-state bundle and reruns
-downstream ranking/frontier logic. This is the closest thing to a direct causal
-counterfactual, but it should be a separate follow-up task.
+### Problem statement
+
+The passive `94_base` rerun with fixed Phase-3 seed bundles supports the current
+interpretation that Ascend/Cardinal drift starts upstream of CLT encode, while
+the important downstream circuit remains mostly stable. It does not by itself
+prove a direct causal link from Phase-0 state to the observed Phase-3 frontier
+and compact-graph exact-ID churn.
+
+The next stronger test is a counterfactual replay:
+
+> Keep the host cluster's prompt/model/logit context, replace only the Phase-0
+> active feature state with a saved donor cluster Phase-0 bundle, then rerun
+> Phase-3/frontier/graph extraction. If the downstream artifacts move toward the
+> donor cluster, Phase-0 state is causally carrying the later split.
+
+### Scope / non-goals
+
+Scope:
+
+- Start with matched single-step `94_base` only.
+- Run a four-condition matrix:
+  - Ascend normal baseline,
+  - Cardinal normal baseline,
+  - Ascend host with Cardinal Phase-0 donor bundle,
+  - Cardinal host with Ascend Phase-0 donor bundle.
+- Include self-replay sanity checks before trusting cross-swaps:
+  - Ascend host with Ascend Phase-0 bundle,
+  - Cardinal host with Cardinal Phase-0 bundle.
+- Compare Phase-3 seed bundles, Phase-4 frontier/compact graph artifacts, and
+  semantic descriptor artifacts using the existing offline comparators.
+
+Non-goals:
+
+- Do not replay or swap full dense model activations.
+- Do not try to make the whole model forward deterministic across hardware.
+- Do not change generation policy or sample additional tokens in the first
+  implementation.
+- Do not treat fallback semantic descriptors as strong semantic proof.
+- Do not run replay/model code outside SLURM.
+
+### Required Phase-0 donor bundle
+
+Add an opt-in artifact, for example:
+
+- `step_000_phase0_donor_bundle.npz`
+
+The bundle must be **order preserving** because downstream row indices depend on
+Phase-0 feature order.
+
+Minimum fields:
+
+- `schema_version`
+- `active_features`: `(N, 3)` int64 `[layer, position, feature_idx]`
+- `activation_values`: replay-ready activation values aligned to
+  `active_features`
+- `activation_values_float32`: analysis copy when replay dtype is not NumPy
+  native
+- `activation_values_original_dtype`
+- optional exact dtype sidecar for unsupported NumPy dtypes, e.g.
+  `activation_values_bf16_bits` when source activations are `bfloat16`
+- `active_feature_count`
+- `active_feature_indices_hash`
+- `active_feature_membership_hash_canonical`
+- `activation_value_hash`
+- compact activation stats
+- `phase0_activation_threshold_compare_mode`
+- `exact_trace_internal_dtype_requested`
+- `resolved_dtype_map`
+- `phase0_pre_clt_input_global_hash`
+- `transcoder_constants_global_hash`
+- prompt/context identity:
+  - `fixture_name`, `gsm8k_index`, `prompt_token_count`, prefix/token hash
+  - target-token ids hash / Phase-1 target-logit state hash when available
+- provenance:
+  - cluster, run id, scenario name,
+  - project commit, library commit,
+  - snapshot roots or live workspace paths.
+
+The existing `step_000_phase3_seed_bundle.npz` already contains
+`active_features` and `activation_values`, but the donor-swap mode should use a
+dedicated Phase-0 bundle so replay prerequisites and hashes are explicit and not
+coupled to successful Phase-3 completion.
+
+### Proposed replay approach
+
+Add a controlled exact-trace mode with flags similar to:
+
+- `--capture-phase0-donor-bundle`
+- `--phase0-donor-bundle PATH`
+- `--phase0-replay-mode donor-active-features`
+- `--phase0-donor-context-policy strict|warn`
+
+Primary replay behavior:
+
+1. Run the host model/prompt normally far enough to construct the attribution
+   context and Phase-1 target logits/logit probabilities.
+2. Load the donor Phase-0 bundle.
+3. Validate strict context compatibility:
+   - same fixture/prompt hash,
+   - same token prefix length,
+   - same CLT constants hash,
+   - same target token ids hash,
+   - target-logit state hash either matches or the run explicitly records a
+     `warn` policy deviation.
+4. Replace the runtime `activation_matrix` and all derived Phase-0 row metadata
+   with the donor bundle:
+   - `total_active_feats`,
+   - `feat_layers`, `feat_pos`, `feat_ids`,
+   - `row_to_node_index` / row ordering,
+   - chunked decoder state source layers / positions / feature ids,
+   - activation values in the intended replay dtype.
+5. Rerun Phase-3 seed ranking, Phase-4 frontier expansion, and compact graph
+   packaging exactly as in a normal run.
+6. Emit normal artifacts plus replay metadata:
+   - `phase0_replay_enabled`,
+   - donor bundle path/hash,
+   - donor cluster/run id,
+   - host cluster/run id,
+   - context validation status,
+   - any dtype reconstruction status.
+
+Keep host target logits/logit probabilities for the primary test. This isolates
+the intervention to Phase-0 feature support/activations. If a later prompt shows
+target-logit mismatch, add a separate donor-logit replay variant rather than
+mixing both interventions in the first causal test.
+
+### Comparison plan
+
+For each swapped run, compute similarity to both the host baseline and donor
+baseline:
+
+- Phase-3 seed bundle:
+  - support Jaccard,
+  - shared influence Pearson/Spearman,
+  - top-k seed overlap,
+  - frontier pre/post Jaccard,
+  - frontier rank drift.
+- Compact graph:
+  - feature Jaccard,
+  - edge Jaccard and weighted edge Jaccard,
+  - common-edge weight Pearson,
+  - top-k edge overlap,
+  - shared/unique endpoint mass decomposition.
+- Semantic descriptor artifact:
+  - top candidate exact-ID overlap,
+  - shared candidate influence/activation stability,
+  - unmatched high-mass candidate summary.
+
+Report a simple donor-movement score for each metric where larger means more
+similar:
+
+```text
+movement_to_donor = sim(swapped, donor_baseline) - sim(swapped, host_baseline)
+```
+
+Positive movement on Phase-3 frontier and compact graph metrics indicates that
+the donor Phase-0 state causally pulls downstream artifacts toward the donor
+cluster.
+
+### Expected interpretation logic
+
+- **Self-replay sanity passes and cross-swap becomes donor-like:** strong causal
+  evidence that Phase-0 support/activation state carries the downstream Phase-3
+  and graph exact-ID split.
+- **Self-replay sanity passes and cross-swap remains host-like:** Phase-3/Phase-4
+  computations or host target-logit context contribute additional independent
+  cluster drift beyond Phase-0 state.
+- **Self-replay sanity passes and cross-swap is intermediate:** both Phase-0
+  state and later host computations matter.
+- **Self-replay sanity fails:** do not interpret cross-swap results; first fix
+  replay serialization, row ordering, dtype reconstruction, or context rebuild.
+
+### Acceptance criteria
+
+- Capture mode emits a Phase-0 donor bundle without changing normal attribution
+  outputs when replay is disabled.
+- Bundle load validates shape, dtype metadata, row ordering, prompt identity, CLT
+  constants hash, and target token ids.
+- Self-replay on each cluster reproduces its normal baseline within tight
+  tolerances:
+  - feature support Jaccard `1.0`,
+  - Phase-3 seed influence Pearson at least `0.9999`,
+  - Phase-3 top-1024 overlap at least `0.999`,
+  - compact graph weighted edge Jaccard at least `0.999` unless explicitly
+    explained by dtype round-trip loss.
+- Cross-swap outputs include enough metadata to identify host vs donor provenance
+  in `EXPERIMENTS.md` without reading SLURM logs.
+- Offline comparison script produces host-vs-donor movement summaries for the
+  four-condition matrix.
+- CPU-only tests cover:
+  - donor bundle save/load round trip, including `bfloat16` reconstruction,
+  - strict context validation failure modes,
+  - movement-score calculation on synthetic summaries.
+
+### Risks and open questions
+
+- `bfloat16` exact replay may require storing raw bf16 bits, not just float32
+  analysis values.
+- Rebuilding all derived row metadata from donor state is fragile; row order must
+  remain identical to the original Phase-0 order.
+- Host target logits are currently matched for `94_base`, but other prompts may
+  have target-logit or probability differences; those need separate treatment.
+- A donor Phase-0 activation matrix may be numerically inconsistent with the
+  host model's hidden states. This is intentional for the counterfactual, but the
+  run metadata must make the intervention clear.
+- Replay may require changes in the sibling `circuit-tracer_chunked` library, not
+  just project-side artifact plumbing.
 
 ## Validation
 

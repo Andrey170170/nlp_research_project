@@ -34,8 +34,9 @@ on login nodes.
 - `AGENTS.md` = durable repo operating instructions and workflow conventions.
 - `PLAN.md` = current scratch/working plan for the active task; do not treat it
   as the durable source of project policy.
-- `EXPERIMENTS.md` = living experiment inventory, findings, run-family meaning,
-  and current interpretation notes.
+- `EXPERIMENTS.md` = living experiment inventory **and investigation log** for
+  experiment decisions, launches, findings, run-family meaning, and current
+  interpretation notes.
 - `docs/phase4_refresh_optimization_spec.md` = durable design/spec document for
   normalization stability and refresh-path optimization work.
 
@@ -46,6 +47,16 @@ When updating project guidance:
 - put observed results and run interpretation in `EXPERIMENTS.md`,
 - put chosen implementation strategy/tradeoffs in the relevant spec under
   `docs/`.
+
+When updating `EXPERIMENTS.md`:
+
+- add dated entries for important investigations, baseline decisions, and result
+  reinterpretations,
+- record the relevant **project + sibling library provenance** when possible
+  (workspace, branch, commit, and whether the run came from a live workspace or
+  immutable snapshot),
+- keep enough context that we can later reconstruct what happened and why a
+  baseline or interpretation changed.
 
 ## Worktree strategy
 

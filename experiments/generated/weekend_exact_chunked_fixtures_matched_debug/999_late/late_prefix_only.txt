@@ -1,0 +1,3 @@
+Let $A$ be the size of a slice each adult gets, and let $K$ be the size of a slice each kid gets.
+We are given that each adult gets a slice that is twice as big as that of each kid, so $A = 2K$.
+There are 2 adults and 4 kids. The total number of slices is

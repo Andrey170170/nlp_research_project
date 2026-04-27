@@ -1,0 +1,9 @@
+<bos><start_of_turn>user
+Question: Mulan has $40. Her father gave her $100. She buys two pairs of jeans at $30 each and a bag for $20. How much money does Mulan have left?
+Please solve this step by step and end with 'Final answer: <number>'.<end_of_turn>
+<start_of_turn>model
+Here's how to solve the problem step-by-step:
+
+1. **Calculate the total cost of the jeans:** 2 pairs * $30/pair = $60
+2. **Calculate the total cost of the bag:** $20
+3. **Calculate the total amount spent:** $60 + $20 = $

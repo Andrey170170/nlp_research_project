@@ -1,0 +1,4 @@
+<bos><start_of_turn>user
+Question: A Reddit group has 1000 members. If each member posts an average of 3 posts per day, what's the total number of posts that the group will have in March?
+Please solve this step by step and end with 'Final answer: <number>'.<end_of_turn>
+<start_of_turn>model

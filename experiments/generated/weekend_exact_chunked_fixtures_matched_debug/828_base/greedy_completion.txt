@@ -1,0 +1,14 @@
+Here's how to solve the problem step-by-step:
+
+1. **Calculate the total cost of the jeans:** 2 pairs * $30/pair = $60
+2. **Calculate the total cost of the bag:** $20
+3. **Calculate the total amount spent:** $60 + $20 = $80
+4. **Calculate the amount Mulan has left:** $40 (initial amount) - $80 (total spent) = -$40
+Since the amount left is negative, Mulan is short $40. However, the question asks how much money she has left, so we need to calculate the remaining amount.
+
+5. **Calculate the remaining money:** $40 - $80 = -$40
+
+Since the amount left is negative, it means Mulan is $40 short. However, the question asks how much money she has left. We need to interpret this as the amount she has after making the purchases.
+
+Let's re-read the problem. Mulan starts with $40. Her father gives her $100. So she has $40 + $100 = $140.
+She buys two

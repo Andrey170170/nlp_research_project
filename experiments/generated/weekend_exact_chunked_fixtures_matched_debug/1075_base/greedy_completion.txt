@@ -1,0 +1,17 @@
+Here's how to solve the problem step-by-step:
+
+1. **Cost of roses:** Jenny bought 15 roses at $2 each, so the total cost is 15 * $2 = $30.
+
+2. **Cost of a dozen roses:** A dozen roses costs $15.
+
+3. **Total cost of roses:** The total cost of the roses is $30 + $15 = $45.
+
+4. **Change from five 5 dollar bills:** She has five 5 dollar bills, which is 5 * $5 = $25.
+
+5. **Remaining change:** After paying for the roses, she has $25 left.
+
+6. **Value of quarters:** Each quarter is worth $0.25.
+
+7. **Total quarters:** She has $25 / $0.25 = 100 quarters.
+
+Final answer: 100

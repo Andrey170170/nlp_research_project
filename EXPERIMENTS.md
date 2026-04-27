@@ -28,6 +28,211 @@ For important updates, include:
 
 ## Recent investigation updates
 
+### 2026-04-24 — Phase-3 seed-bundle rerun supports normal upstream numerical drift interpretation
+
+Purpose:
+
+- close the missing Phase-3 evidence gap from the first semantic-capture rerun,
+  where both jobs completed but `step_000_phase3_seed_bundle.npz` saving failed,
+- determine whether the `94_base` cross-cluster graph differences are carried by
+  cluster-unique Phase-0 features or mostly by ranking/frontier churn within a
+  shared high-mass feature universe.
+
+Implementation/launch provenance:
+
+- project repo:
+  - workspace used for launch prep:
+    `/users/PAS2119/andreykopanev/worktrees_phase3_seed_fix/nlp_research_project`
+  - branch/source before clean worktree: `exact-trace-bench-harness`
+  - commit: `e6636edafbfc62848981c5b77b25646319e92e06`
+    (`Fix diagnostic artifact serialization`)
+  - relevant fix: convert NumPy-unsupported torch float dtypes such as
+    `bfloat16` activation values to `float32` before saving Phase-3 seed-bundle
+    `.npz` artifacts; record `phase3_seed_bundle_error` on future save failures.
+- sibling library repo:
+  - workspace used for launch prep:
+    `/users/PAS2119/andreykopanev/worktrees_phase3_seed_fix/circuit-tracer_chunked`
+  - branch/source before clean worktree: `exact-trace-hidden-knobs`
+  - commit: `fc22162ba75aca736ae1a088a83e64d0fac20f93`
+    (`Capture semantic feature descriptors`)
+- immutable snapshot container:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260423_200451_matched_cross_cluster_94_phase3_seed_fix`
+- snapshot project root:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260423_200451_matched_cross_cluster_94_phase3_seed_fix/nlp_research_project`
+- snapshot library root:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260423_200451_matched_cross_cluster_94_phase3_seed_fix/circuit-tracer_chunked`
+
+Submitted jobs and outputs:
+
+- Ascend:
+  - SLURM job `5066410`
+  - run id `20260423_200451_matched-cross-cluster-94-phase3-seed-fix-ascend`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260423_200451_matched-cross-cluster-94-phase3-seed-fix-ascend`
+  - completed `2026-04-23T20:32:26`, state `COMPLETED`, exit `0:0`
+- Cardinal:
+  - SLURM job `8757353`
+  - run id `20260423_200451_matched-cross-cluster-94-phase3-seed-fix-cardinal`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260423_200451_matched-cross-cluster-94-phase3-seed-fix-cardinal`
+  - completed `2026-04-24T05:28:24`, state `COMPLETED`, exit `0:0`
+
+Shared config:
+
+- fixture: `94_base`
+- tier: `anomaly`
+- `max_steps=1`, `temperature=0.0`, `completions=1`
+- `cross_cluster_debug=true`
+- `exact_trace_internal_dtype=fp64`
+- `phase0_activation_threshold_compare_mode=baseline`
+- `capture_phase3_seed_bundle=true`
+- `capture_feature_semantic_descriptors=true`
+- `semantic_descriptor_top_k=2048`, `semantic_descriptor_dim=64`
+- `decoder_chunk_size=2048`, `cross_batch_decoder_cache_bytes=0`
+- batch sizes `128`
+
+Artifact status:
+
+- both jobs succeeded (`status=success`, `returncode=0`),
+- both generated token id `6481`, text `"Let"`,
+- both captured:
+  - `cross_cluster_debug_summary.json`,
+  - `cross_cluster_debug_checkpoints.jsonl`,
+  - `cross_cluster_debug_batches.jsonl`,
+  - `step_000.npz`,
+  - `step_000_phase3_seed_bundle.npz`,
+  - `step_000_feature_semantic_descriptors.npz`.
+- Phase-3 seed bundle status is now `captured` on both sides.
+
+Analysis outputs written:
+
+- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260423_200451_matched-cross-cluster-94-phase3-seed-fix-ascend/compact_compare_vs_cardinal.json`
+- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260423_200451_matched-cross-cluster-94-phase3-seed-fix-ascend/phase3_seed_compare_vs_cardinal.json`
+- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260423_200451_matched-cross-cluster-94-phase3-seed-fix-ascend/semantic_compare_vs_cardinal.json`
+
+Key debug hashes:
+
+- CLT/transcoder constants match:
+  - `transcoder_constants_global_hash = 31c83df182f3f365`
+- pre-CLT input hashes differ:
+  - Ascend `b2e3040ca6df7a43`
+  - Cardinal `3da7761e872c6f45`
+- Phase-0 active membership hashes differ:
+  - Ascend `2042e3cf71dc07b7`
+  - Cardinal `ba1ab906c0c08e5e`
+- Phase-1 target logit state matches:
+  - `437d56a13df41ec1`
+- Phase-3 seed ranking hashes differ, as expected after the upstream activation
+  split:
+  - Ascend feature influence hash `c39f2e379488507f`
+  - Cardinal feature influence hash `de8bf95e9ef1701c`
+
+Compact graph comparison:
+
+- active feature support:
+  - Ascend active features: `3,371,343`
+  - Cardinal active features: `3,370,036`
+  - shared features: `3,359,910`
+  - feature Jaccard: `0.9936243685806376`
+  - Ascend-only: `11,433`
+  - Cardinal-only: `10,126`
+- retained feature-edge comparison:
+  - edge Jaccard: `0.5709439233685891`
+  - weighted edge Jaccard: `0.6128084788664958`
+  - common edges: `8,583 / 11,808`
+  - common-edge weight Pearson: `0.9834548009895984`
+  - top-edge overlap:
+    - top-64: `0.8125`
+    - top-128: `0.84375`
+    - top-1024: `0.818359375`
+- edge-class decomposition:
+  - retained feature-to-feature mass is effectively all `shared_to_shared`,
+  - no retained edge mass is carried by unique-feature endpoints.
+
+Phase-3 seed-bundle comparison:
+
+- support is the same as compact active-feature support:
+  - feature Jaccard `0.9936243685806376`,
+  - shared features `3,359,910`.
+- Phase-3 absolute influence mass is overwhelmingly on shared support:
+  - Ascend total abs influence mass: `0.8957302851643294`
+  - Ascend shared mass fraction: `0.9999483349442382`
+  - Ascend unique mass fraction: `0.000051665055761584634`
+  - Cardinal total abs influence mass: `0.895414351781944`
+  - Cardinal shared mass fraction: `0.9999551620772623`
+  - Cardinal unique mass fraction: `0.00004483792273787384`
+- shared-support score stability:
+  - seed influence Pearson: `0.9843850642912244`
+  - seed influence Spearman: `0.9986320355329672`
+  - seed influence sign agreement: `1.0`
+  - activation Pearson: `0.9998822818760333`
+  - activation Spearman: `0.9993906288285449`
+  - activation sign agreement: `1.0`
+- Phase-3 seed top-k overlap:
+  - top-64: `0.734375`
+  - top-128: `0.765625`
+  - top-256: `0.7890625`
+  - top-512: `0.82421875`
+  - top-1024: `0.828125`
+- Phase-3 frontier overlap:
+  - pre-locality Jaccard: `0.7009966777408638`
+  - post-locality Jaccard: `0.7009966777408638`
+  - post-locality shared frontier rank drift:
+    - median abs rank delta: `8`
+    - q90 abs rank delta: `17`
+    - max abs rank delta: `22`
+- comparator interpretation:
+  - `phase3_mismatch_persists_on_shared_support`
+  - important nuance: this means exact frontier membership/ranking still churns
+    on shared support; it does **not** mean unique Phase-0 support carries much
+    influence mass. Unique-feature influence mass is only about `0.005%` per side.
+
+Semantic descriptor comparison:
+
+- descriptor kind is still the bounded fallback descriptor:
+  - `fallback_identity_metadata_v1`
+  - not a true decoder-vector semantic descriptor.
+- top-2048 candidate support:
+  - shared candidates: `1748 / 2048`
+  - feature Jaccard: `0.7444633730834753`
+  - left-only: `300`
+  - right-only: `300`
+- shared candidate scores:
+  - seed influence Pearson: `0.9295630779229779`
+  - activation Pearson: `0.9999988975796839`
+- unmatched top-2048 candidate mass:
+  - Ascend-only: `0.012183350530644847`
+  - Cardinal-only: `0.011181063223906407`
+- comparator interpretation remains:
+  - `unique_features_semantically_unmatched`
+  - caveat: because descriptors are fallback identity metadata, do not overread
+    this as semantic evidence.
+
+Current interpretation:
+
+- This rerun substantially strengthens the conclusion that the `94_base`
+  Ascend/Cardinal difference is ordinary upstream numerical/model-forward drift,
+  not mismatched model/CLT assets.
+- The drift appears before CLT encode, then perturbs Phase-0 active membership
+  and downstream Phase-3/frontier/edge exact IDs.
+- The important circuit structure is nevertheless largely stable for this prompt:
+  - same generated token,
+  - matched target-logit state,
+  - nearly identical active feature universe,
+  - >`99.994%` of Phase-3 influence mass on shared features,
+  - highly correlated shared Phase-3 influence scores,
+  - stable common-edge weights,
+  - strong top-edge overlap.
+- Treat exact top-k/frontier/edge membership near thresholds as hardware-sensitive,
+  but the extracted graph remains credible at the high-importance circuit level
+  for this single diagnostic prompt.
+
+Remaining evidence gap:
+
+- This is still one deep diagnostic prompt (`94_base`). To claim this generally
+  across the project, rerun a larger matched sample with Phase-3 seed bundles and
+  compare distributions of same-token rate, feature Jaccard, shared influence
+  mass fraction, seed top-k overlap, compact graph weighted Jaccard, top-edge
+  overlap, and common-edge weight Pearson.
+
 ### 2026-04-23 — implemented full passive downstream/semantic stability capture before rerun
 
 Purpose:
