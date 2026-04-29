@@ -2171,6 +2171,78 @@ Preceding sanity run:
   `phase4_scheduler_mode=locality` rather than Planner V1, so it is only a
   default-safety/completion check.
 
+## Recent launch update — next combo Phase 1/cache matrix
+
+Purpose: validate additive exact wins from `active_encoder_cpu` and
+`rowstore_fadvise`, re-test the corrected Phase-1-only trace-batch cap on top of
+the combo, and run one bounded decoder-cache probe on Ascend/A100.
+
+Code state used at launch:
+
+- project repo commit: `5e7f0d5` — `add next combo phase1 cache scenarios`
+  - project worktree also had untracked `.tmp_exact_trace_extract_hybrid/` files;
+    those are extraction scratch files and were not part of the launch scenario
+    definition,
+- library repo commit: `493760d` — `decouple phase1 trace batch cap`
+  - library worktree was clean and ahead of origin by seven local commits.
+
+Scenario file:
+
+- `experiments/generated/exact_trace_bench/exact_trace_next_combo_phase1_cache_ascend_scenarios.json`
+
+Launch metadata:
+
+- SLURM array job: `5146780` on cluster `ascend`, array indices `0-11`
+- initial scheduler status after submit: pending (`PD`)
+- run id / launch id: `20260429_191737_716512_next-combo-phase1-cache-matrix`
+- run name: `next combo phase1 cache matrix`
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260429_191737_716512_next-combo-phase1-cache-matrix`
+- immutable project snapshot:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_191737/nlp_research_project`
+- immutable library snapshot:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_191737/circuit-tracer_chunked`
+
+Scenarios:
+
+- Group A: baseline, `active_encoder_cpu`, `rowstore_fadvise`, and
+  `active_encoder_cpu + rowstore_fadvise` for `828_base` and `361_base`
+- Group B: corrected Phase-1-only `phase1_cap64` on top of the combo for
+  `828_base` and `361_base`
+- Group C: `cross_batch_decoder_cache_bytes=8589934592` on top of the combo for
+  `828_base` and `361_base`
+
+Key settings:
+
+- `phase4_scheduler_mode=planner_v1`
+- `attribution_batch_size=128`
+- `feature_batch_size=128`
+- `logit_batch_size=128`
+- `decoder_chunk_size=2048`
+- default/cache-control scenarios use `cross_batch_decoder_cache_bytes=0`
+- decoder-cache probe scenarios use `cross_batch_decoder_cache_bytes=8589934592`
+- `exact_trace_internal_dtype=fp32`
+- all optimization knobs remain explicit; no global defaults were changed.
+
+Pre-submit validation:
+
+- library: `uv run ruff check circuit_tracer/attribution/attribute_nnsight.py tests/test_chunked_decoder_optimizations.py`
+- library: `uv run pytest tests/test_chunked_decoder_optimizations.py -k 'phase1_trace_batch'` (`4 passed`)
+- project: `uv run ruff check trace_pipeline_chunked.py experiments/exact_trace_bench/scenarios.py experiments/run_sparsification_experiment.py`
+- project: scenario list loaded all 12 scenarios from the generated scenario JSON.
+
+Post-completion analysis checklist:
+
+- compare combo vs in-matrix baseline,
+- compare corrected Phase-1-only cap vs combo,
+- compare cache8g vs combo,
+- verify compact parity / active features / retained edges,
+- inspect Phase 4 refresh count and elapsed time,
+- inspect Phase 1 requested/effective metadata,
+- inspect decoder cache hits/misses/evictions/resident bytes and decoder load
+  count/time,
+- inspect CUDA peak reserved and sacct MaxRSS.
+
 ## Status of this note
 
 This file is descriptive, not normative.

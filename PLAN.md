@@ -20,10 +20,24 @@ Working rule: no global defaults until a variant is validated. All runs must kee
 4. Implement that candidate together with Phase 1 decoupling.
 5. Run the full combined Ascend array once the implementation is ready, because cluster pressure is high.
 
-## Implementation needed
+## Implementation status
 
-Status: Phase 1 decoupling and next-array scenario generation are implemented
-locally but not yet committed or launched.
+Status: Phase 1 decoupling and next-array scenario generation are implemented,
+committed, validated with lightweight checks, and launched on Ascend as array job
+`5146780`.
+
+Launch:
+
+- run id: `20260429_191737_716512_next-combo-phase1-cache-matrix`
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260429_191737_716512_next-combo-phase1-cache-matrix`
+- immutable project snapshot:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_191737/nlp_research_project`
+- immutable library snapshot:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_191737/circuit-tracer_chunked`
+
+Next action: monitor job `5146780`; after completion, extract results and compare
+combo vs baseline, Phase-1-only cap vs combo, and cache8g vs combo.
 
 ### Phase 1 decoupling
 
