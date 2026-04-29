@@ -385,3 +385,108 @@ cluster.
 - Add bundle-capture, descriptor-capture, graph-decomposition, and semantic
   comparison CPU-only checks.
 - Only run safe local validation (`uv run ...`), no GPU workloads outside SLURM.
+
+## Phase-3 gradient / row boundary follow-up
+
+### Problem statement
+
+The completed `94_base` Phase-0 replay matrix changed the interpretation of the
+causal boundary. Same-cluster self-replay controls passed, and both cross-swaps
+copied donor Phase-0 support exactly, but Phase-3 influence scores, frontiers,
+and compact edge weights remained host-like.
+
+Therefore Phase-0 active feature support/activation replacement is insufficient
+to transfer the downstream graph. The next suspected boundary is Phase-3
+direct-effect scoring: host backward gradients, error/token vectors, row
+construction, row normalization, and influence ranking.
+
+### Scope / non-goals
+
+Scope:
+
+- add passive capture for Phase-3 gradient/direct-row state on `94_base`,
+- compare baseline/self-replay/cross-swap gradients and rows offline,
+- decide whether to implement Phase-3 row replay or gradient replay next.
+
+Non-goals:
+
+- do not rename this as a richer Phase-0 bundle; gradients are Phase-3 state,
+- do not make generation or forward pass deterministic across clusters in this
+  step,
+- do not emit dense tensors into JSON artifacts,
+- do not replay gradients before the passive capture tells us whether row replay
+  is the cleaner causal boundary.
+
+### Proposed capture artifacts
+
+Add opt-in artifacts, for example:
+
+- `step_000_phase3_gradient_bundle.npz`
+- `step_000_phase3_row_bundle.npz`
+
+Gradient bundle minimum fields:
+
+- `schema_version`
+- target token ids/probabilities and hashes,
+- prompt/context hashes,
+- active feature support/value hashes for the runtime state,
+- per-layer gradient hashes and summary stats,
+- compact gradient tensor when feasible, shaped like
+  `[n_layers, n_targets, n_pos, d_model]`,
+- missing-layer mask / layer ids,
+- provenance: host cluster/run/scenario, project/library commit, snapshot roots.
+
+Row bundle minimum fields:
+
+- Phase-3 logit feature rows or bounded row slices if full rows are too large,
+- row-L1 totals used by the influence solver,
+- row-L1 splits by column family when available: feature/error/token/total,
+- row hashes/stats per target,
+- seed influence hash and frontier hashes derived from these rows.
+
+Both artifacts must be passive: enabling capture must not alter Phase-3 ranking,
+Phase-4 frontier expansion, or compact graph packaging.
+
+### Comparison plan
+
+Run the same matrix shape as the Phase-0 replay test, with richer capture enabled:
+
+1. Ascend self-replay with Ascend Phase-0 donor.
+2. Ascend host with Cardinal Phase-0 donor.
+3. Cardinal self-replay with Cardinal Phase-0 donor.
+4. Cardinal host with Ascend Phase-0 donor.
+
+Compare each cross-swap to both host and donor baselines for:
+
+- gradient hash/stats similarity,
+- raw Phase-3 row similarity,
+- row-L1 split similarity,
+- seed influence vector similarity,
+- frontier pre/post locality overlap,
+- compact graph similarity.
+
+Expected if the current hypothesis is right:
+
+- donor Phase-0 support/activation hashes remain donor-like,
+- gradients and Phase-3 rows remain host-like,
+- influence/frontier/edge metrics remain host-like.
+
+### Causal replay preference after capture
+
+Prefer Phase-3 row replay as the next causal intervention:
+
+- row replay directly tests whether fixed Phase-3 rows make the influence solver
+  and frontier construction donor-like,
+- gradient replay is a second-order follow-up if row replay localizes the drift
+  to row construction but we still need to distinguish gradients from
+  decoder/activation contraction.
+
+Interpretation:
+
+- **Donor row replay moves frontier/graph donor-like:** drift is before or inside
+  Phase-3 row construction, likely host gradients/direct effects.
+- **Donor row replay remains host-like:** investigate row mapping,
+  normalization, influence solver, or ranking/frontier logic.
+- **Gradient replay moves rows donor-like but row replay was already sufficient:**
+  gradients are a plausible root cause, but row replay remains the cleaner
+  operational mitigation/checkpoint.

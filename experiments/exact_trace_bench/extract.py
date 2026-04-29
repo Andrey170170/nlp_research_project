@@ -284,6 +284,16 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     phase3_seed_bundle_missing_paths: set[str] = set()
     phase3_seed_bundle_statuses: list[str] = []
     phase3_seed_bundle_capture_enabled_values: list[int] = []
+    phase3_gradient_bundle_declared_paths: set[str] = set()
+    phase3_gradient_bundle_existing_paths: set[str] = set()
+    phase3_gradient_bundle_missing_paths: set[str] = set()
+    phase3_gradient_bundle_statuses: list[str] = []
+    phase3_gradient_bundle_capture_enabled_values: list[int] = []
+    phase3_row_bundle_declared_paths: set[str] = set()
+    phase3_row_bundle_existing_paths: set[str] = set()
+    phase3_row_bundle_missing_paths: set[str] = set()
+    phase3_row_bundle_statuses: list[str] = []
+    phase3_row_bundle_capture_enabled_values: list[int] = []
     feature_semantic_descriptor_declared_paths: set[str] = set()
     feature_semantic_descriptor_existing_paths: set[str] = set()
     feature_semantic_descriptor_missing_paths: set[str] = set()
@@ -701,6 +711,31 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
                 for status in manifest_phase3_seed_bundle_statuses
                 if isinstance(status, str)
             )
+
+        for bundle_name, statuses, enabled_values in (
+            (
+                "phase3_gradient_bundle",
+                phase3_gradient_bundle_statuses,
+                phase3_gradient_bundle_capture_enabled_values,
+            ),
+            (
+                "phase3_row_bundle",
+                phase3_row_bundle_statuses,
+                phase3_row_bundle_capture_enabled_values,
+            ),
+        ):
+            capture_enabled = manifest.get(f"{bundle_name}_capture_enabled")
+            if isinstance(capture_enabled, bool):
+                enabled_values.append(int(capture_enabled))
+            manifest_status = manifest.get(f"{bundle_name}_status")
+            if isinstance(manifest_status, str):
+                statuses.append(manifest_status)
+            manifest_statuses = manifest.get(f"{bundle_name}_statuses_observed")
+            if isinstance(manifest_statuses, list):
+                statuses.extend(
+                    status for status in manifest_statuses if isinstance(status, str)
+                )
+
         feature_semantic_descriptor_capture_enabled = manifest.get(
             "feature_semantic_descriptor_capture_enabled"
         )
@@ -821,6 +856,48 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
                     phase3_seed_bundle_capture_enabled_values.append(
                         int(step_phase3_seed_bundle_enabled)
                     )
+
+                for (
+                    bundle_name,
+                    declared_paths,
+                    existing_paths,
+                    missing_paths,
+                    statuses,
+                    enabled_values,
+                ) in (
+                    (
+                        "phase3_gradient_bundle",
+                        phase3_gradient_bundle_declared_paths,
+                        phase3_gradient_bundle_existing_paths,
+                        phase3_gradient_bundle_missing_paths,
+                        phase3_gradient_bundle_statuses,
+                        phase3_gradient_bundle_capture_enabled_values,
+                    ),
+                    (
+                        "phase3_row_bundle",
+                        phase3_row_bundle_declared_paths,
+                        phase3_row_bundle_existing_paths,
+                        phase3_row_bundle_missing_paths,
+                        phase3_row_bundle_statuses,
+                        phase3_row_bundle_capture_enabled_values,
+                    ),
+                ):
+                    bundle_ref = step.get(f"{bundle_name}_path")
+                    if isinstance(bundle_ref, str) and bundle_ref.strip():
+                        declared_path = completion_dir / bundle_ref.strip()
+                        relative_path = _relative_to_or_str(declared_path, artifact_dir)
+                        declared_paths.add(relative_path)
+                        if declared_path.exists():
+                            existing_paths.add(relative_path)
+                        else:
+                            missing_paths.add(relative_path)
+                    step_status = step.get(f"{bundle_name}_status")
+                    if isinstance(step_status, str):
+                        statuses.append(step_status)
+                    step_enabled = step.get(f"{bundle_name}_capture_enabled")
+                    if isinstance(step_enabled, bool):
+                        enabled_values.append(int(step_enabled))
+
                 feature_semantic_descriptor_ref = step.get(
                     "feature_semantic_descriptor_path"
                 )
@@ -1142,6 +1219,16 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     phase3_seed_bundle_existing_paths_sorted = sorted(phase3_seed_bundle_existing_paths)
     phase3_seed_bundle_declared_paths_sorted = sorted(phase3_seed_bundle_declared_paths)
     phase3_seed_bundle_missing_paths_sorted = sorted(phase3_seed_bundle_missing_paths)
+    phase3_gradient_bundle_existing_paths_sorted = sorted(
+        phase3_gradient_bundle_existing_paths
+    )
+    phase3_gradient_bundle_declared_paths_sorted = sorted(
+        phase3_gradient_bundle_declared_paths
+    )
+    phase3_gradient_bundle_missing_paths_sorted = sorted(phase3_gradient_bundle_missing_paths)
+    phase3_row_bundle_existing_paths_sorted = sorted(phase3_row_bundle_existing_paths)
+    phase3_row_bundle_declared_paths_sorted = sorted(phase3_row_bundle_declared_paths)
+    phase3_row_bundle_missing_paths_sorted = sorted(phase3_row_bundle_missing_paths)
     feature_semantic_descriptor_existing_paths_sorted = sorted(
         feature_semantic_descriptor_existing_paths
     )
@@ -1563,6 +1650,65 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
         "phase3_seed_bundle_statuses_observed": sorted(
             set(phase3_seed_bundle_statuses)
         ),
+        "phase3_gradient_bundle_capture_enabled_fraction": (
+            round(
+                mean([float(value) for value in phase3_gradient_bundle_capture_enabled_values]),
+                6,
+            )
+            if phase3_gradient_bundle_capture_enabled_values
+            else None
+        ),
+        "phase3_gradient_bundle_present": bool(
+            phase3_gradient_bundle_existing_paths_sorted
+        ),
+        "phase3_gradient_bundle_manifest_declared_count": len(
+            phase3_gradient_bundle_declared_paths_sorted
+        ),
+        "phase3_gradient_bundle_file_count": len(
+            phase3_gradient_bundle_existing_paths_sorted
+        ),
+        "phase3_gradient_bundle_missing_file_count": len(
+            phase3_gradient_bundle_missing_paths_sorted
+        ),
+        "phase3_gradient_bundle_path_example": (
+            phase3_gradient_bundle_existing_paths_sorted[0]
+            if phase3_gradient_bundle_existing_paths_sorted
+            else phase3_gradient_bundle_declared_paths_sorted[0]
+            if phase3_gradient_bundle_declared_paths_sorted
+            else None
+        ),
+        "phase3_gradient_bundle_status": (
+            phase3_gradient_bundle_statuses[-1]
+            if phase3_gradient_bundle_statuses
+            else None
+        ),
+        "phase3_gradient_bundle_statuses_observed": sorted(
+            set(phase3_gradient_bundle_statuses)
+        ),
+        "phase3_row_bundle_capture_enabled_fraction": (
+            round(mean([float(value) for value in phase3_row_bundle_capture_enabled_values]), 6)
+            if phase3_row_bundle_capture_enabled_values
+            else None
+        ),
+        "phase3_row_bundle_present": bool(phase3_row_bundle_existing_paths_sorted),
+        "phase3_row_bundle_manifest_declared_count": len(
+            phase3_row_bundle_declared_paths_sorted
+        ),
+        "phase3_row_bundle_file_count": len(phase3_row_bundle_existing_paths_sorted),
+        "phase3_row_bundle_missing_file_count": len(
+            phase3_row_bundle_missing_paths_sorted
+        ),
+        "phase3_row_bundle_path_example": (
+            phase3_row_bundle_existing_paths_sorted[0]
+            if phase3_row_bundle_existing_paths_sorted
+            else phase3_row_bundle_declared_paths_sorted[0]
+            if phase3_row_bundle_declared_paths_sorted
+            else None
+        ),
+        "phase3_row_bundle_status": (
+            phase3_row_bundle_statuses[-1] if phase3_row_bundle_statuses else None
+        ),
+        "phase3_row_bundle_statuses_observed": sorted(set(phase3_row_bundle_statuses)),
         "feature_semantic_descriptor_capture_enabled_fraction": (
             round(
                 mean(

@@ -81,6 +81,8 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
             "phase0_replay_mode": "donor_phase0",
             "phase0_donor_context_policy": "warn",
             "capture_phase3_seed_bundle": True,
+            "capture_phase3_gradient_bundle": True,
+            "capture_phase3_row_bundle": True,
         }
     )
     assert selected_knobs["capture_phase0_donor_bundle"] is True
@@ -111,6 +113,8 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         "phase0_replay_mode": "donor_phase0",
         "phase0_donor_context_policy": "warn",
         "capture_phase3_seed_bundle": True,
+        "capture_phase3_gradient_bundle": True,
+        "capture_phase3_row_bundle": True,
         "telemetry_max_events": 17,
         "phase4_anomaly_debug": False,
     }
@@ -131,6 +135,8 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
     assert "fp32" in command
     assert "--capture-phase0-donor-bundle" in command
     assert "--capture-phase3-seed-bundle" in command
+    assert "--capture-phase3-gradient-bundle" in command
+    assert "--capture-phase3-row-bundle" in command
 
     old_patch_command = build_command(
         Path("/tmp/out"),
@@ -203,8 +209,12 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
             )
         )
         seed_bundle_name = "step_000_phase3_seed_bundle.npz"
+        gradient_bundle_name = "step_000_phase3_gradient_bundle.npz"
+        row_bundle_name = "step_000_phase3_row_bundle.npz"
         donor_bundle_name = "step_000_phase0_donor_bundle.npz"
         (completion_dir / seed_bundle_name).write_bytes(b"placeholder")
+        (completion_dir / gradient_bundle_name).write_bytes(b"placeholder")
+        (completion_dir / row_bundle_name).write_bytes(b"placeholder")
         (completion_dir / donor_bundle_name).write_bytes(b"placeholder")
         (completion_dir / "completion.json").write_text(
             json.dumps(
@@ -229,6 +239,12 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
                     "phase3_seed_bundle_capture_enabled": True,
                     "phase3_seed_bundle_status": "captured",
                     "phase3_seed_bundle_statuses_observed": ["captured"],
+                    "phase3_gradient_bundle_capture_enabled": True,
+                    "phase3_gradient_bundle_status": "captured",
+                    "phase3_gradient_bundle_statuses_observed": ["captured"],
+                    "phase3_row_bundle_capture_enabled": True,
+                    "phase3_row_bundle_status": "captured",
+                    "phase3_row_bundle_statuses_observed": ["captured"],
                     "steps": [
                         {
                             "phase0_donor_bundle_capture_enabled": True,
@@ -243,6 +259,12 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
                             "phase3_seed_bundle_capture_enabled": True,
                             "phase3_seed_bundle_path": seed_bundle_name,
                             "phase3_seed_bundle_status": "captured",
+                            "phase3_gradient_bundle_capture_enabled": True,
+                            "phase3_gradient_bundle_path": gradient_bundle_name,
+                            "phase3_gradient_bundle_status": "captured",
+                            "phase3_row_bundle_capture_enabled": True,
+                            "phase3_row_bundle_path": row_bundle_name,
+                            "phase3_row_bundle_status": "captured",
                         }
                     ],
                 },
@@ -266,6 +288,12 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         assert benchmark_row["phase3_seed_bundle_present"] is True
         assert benchmark_row["phase3_seed_bundle_file_count"] == 1
         assert benchmark_row["phase3_seed_bundle_status"] == "captured"
+        assert benchmark_row["phase3_gradient_bundle_present"] is True
+        assert benchmark_row["phase3_gradient_bundle_file_count"] == 1
+        assert benchmark_row["phase3_gradient_bundle_status"] == "captured"
+        assert benchmark_row["phase3_row_bundle_present"] is True
+        assert benchmark_row["phase3_row_bundle_file_count"] == 1
+        assert benchmark_row["phase3_row_bundle_status"] == "captured"
         assert benchmark_row["phase0_donor_bundle_present"] is True
         assert benchmark_row["phase0_donor_bundle_file_count"] == 1
         assert benchmark_row["phase0_donor_bundle_status"] == "captured"
@@ -283,6 +311,12 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         assert legacy_row["phase3_seed_bundle_present"] is True
         assert legacy_row["phase3_seed_bundle_file_count"] == 1
         assert legacy_row["phase3_seed_bundle_status"] == "captured"
+        assert legacy_row["phase3_gradient_bundle_present"] is True
+        assert legacy_row["phase3_gradient_bundle_file_count"] == 1
+        assert legacy_row["phase3_gradient_bundle_status"] == "captured"
+        assert legacy_row["phase3_row_bundle_present"] is True
+        assert legacy_row["phase3_row_bundle_file_count"] == 1
+        assert legacy_row["phase3_row_bundle_status"] == "captured"
         assert legacy_row["phase0_donor_bundle_present"] is True
         assert legacy_row["phase0_donor_bundle_file_count"] == 1
         assert legacy_row["phase0_donor_bundle_status"] == "captured"
@@ -381,6 +415,74 @@ def run_phase3_seed_bundle_save_checks() -> None:
         assert loaded["planner_compute_dtype"].item() == "float64"
 
 
+def run_phase3_gradient_and_row_bundle_save_checks() -> None:
+    import torch
+
+    from trace_pipeline_chunked import (
+        save_phase3_gradient_bundle,
+        save_phase3_row_bundle,
+    )
+
+    gradient_payload = {
+        "schema_version": 1,
+        "status": "captured",
+        "capture_kind": "phase3_gradient_bundle_v1",
+        "target_token_ids": torch.tensor([9, 10], dtype=torch.int64),
+        "target_probabilities": torch.tensor([0.7, 0.2], dtype=torch.float32),
+        "target_token_ids_hash": "targethash",
+        "target_probability_hash": "probhash",
+        "active_feature_count": 3,
+        "active_features_hash": "featurehash",
+        "activation_values_hash": "activationhash",
+        "gradients": torch.ones((2, 2, 3, 4), dtype=torch.float32),
+        "layer_mask": torch.tensor([True, False], dtype=torch.bool),
+        "batch_call_indices": torch.tensor([4], dtype=torch.int64),
+        "per_layer_abs_sum": torch.tensor([24.0, 0.0], dtype=torch.float64),
+        "per_layer_max_abs": torch.tensor([1.0, 0.0], dtype=torch.float64),
+        "per_layer_nonfinite_count": torch.tensor([0, 0], dtype=torch.int64),
+        "per_layer_hashes": ["a", "b"],
+        "gradient_hash": "gradhash",
+    }
+    row_payload = {
+        "schema_version": 1,
+        "status": "captured",
+        "capture_kind": "phase3_row_bundle_v1",
+        "target_token_ids": torch.tensor([9, 10], dtype=torch.int64),
+        "target_probabilities": torch.tensor([0.7, 0.2], dtype=torch.float32),
+        "target_token_ids_hash": "targethash",
+        "target_probability_hash": "probhash",
+        "active_feature_count": 3,
+        "active_features_hash": "featurehash",
+        "activation_values_hash": "activationhash",
+        "phase3_feature_rows": torch.ones((2, 3), dtype=torch.float32),
+        "row_abs_sums": torch.tensor([10.0, 11.0], dtype=torch.float64),
+        "feature_abs_sums": torch.tensor([3.0, 3.0], dtype=torch.float64),
+        "error_abs_sums": torch.tensor([5.0, 6.0], dtype=torch.float64),
+        "token_abs_sums": torch.tensor([2.0, 2.0], dtype=torch.float64),
+        "total_active_features": 3,
+        "error_column_count": 8,
+        "token_column_count": 4,
+        "row_hash": "rowhash",
+        "row_abs_sum_hash": "rowl1hash",
+    }
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        gradient_path = Path(tmp_dir) / "step_000_phase3_gradient_bundle.npz"
+        row_path = Path(tmp_dir) / "step_000_phase3_row_bundle.npz"
+        save_phase3_gradient_bundle(gradient_payload, gradient_path)
+        save_phase3_row_bundle(row_payload, row_path)
+        gradient_loaded = np.load(gradient_path, allow_pickle=False)
+        row_loaded = np.load(row_path, allow_pickle=False)
+
+        assert gradient_loaded["gradients"].shape == (2, 2, 3, 4)
+        assert gradient_loaded["layer_mask"].tolist() == [True, False]
+        assert gradient_loaded["per_layer_hashes"].tolist() == ["a", "b"]
+        assert gradient_loaded["gradient_hash"].item() == "gradhash"
+        assert row_loaded["phase3_feature_rows"].shape == (2, 3)
+        assert row_loaded["row_abs_sums"].tolist() == [10.0, 11.0]
+        assert row_loaded["row_hash"].item() == "rowhash"
+
+
 def run_phase0_donor_bundle_save_checks() -> None:
     import torch
 
@@ -448,6 +550,7 @@ def main() -> None:
     run_launcher_and_extractor_roundtrip_checks()
     run_phase0_donor_bundle_save_checks()
     run_phase3_seed_bundle_save_checks()
+    run_phase3_gradient_and_row_bundle_save_checks()
     run_feature_semantic_descriptor_save_checks()
     print("OK: cross-cluster debug helper and round-trip checks passed")
 

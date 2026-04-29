@@ -41,6 +41,8 @@ EXACT_MODE_KNOB_KEYS = (
     "phase0_replay_mode",
     "phase0_donor_context_policy",
     "capture_phase3_seed_bundle",
+    "capture_phase3_gradient_bundle",
+    "capture_phase3_row_bundle",
     "capture_feature_semantic_descriptors",
     "semantic_descriptor_top_k",
     "semantic_descriptor_dim",

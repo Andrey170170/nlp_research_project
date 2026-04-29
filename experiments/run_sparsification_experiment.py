@@ -471,6 +471,10 @@ def build_command(
             )
         if scenario.get("capture_phase3_seed_bundle", False):
             cmd.append("--capture-phase3-seed-bundle")
+        if scenario.get("capture_phase3_gradient_bundle", False):
+            cmd.append("--capture-phase3-gradient-bundle")
+        if scenario.get("capture_phase3_row_bundle", False):
+            cmd.append("--capture-phase3-row-bundle")
         if scenario.get("capture_feature_semantic_descriptors", False):
             cmd.append("--capture-feature-semantic-descriptors")
         if scenario.get("semantic_descriptor_top_k") is not None:

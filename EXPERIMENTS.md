@@ -28,6 +28,292 @@ For important updates, include:
 
 ## Recent investigation updates
 
+### 2026-04-27 — Launched Phase-0 donor-bundle capture pair for replay matrix
+
+Purpose:
+
+- capture matched `94_base` Phase-0 donor bundles on Ascend and Cardinal as the
+  baseline inputs for the self-replay and cross-swap causality checks,
+- keep the same single-step anomaly/debug configuration while adding
+  `step_000_phase0_donor_bundle.npz` capture.
+
+Implementation/launch provenance:
+
+- project repo:
+  - live workspace: `/users/PAS2119/andreykopanev/nlp_research_project`
+  - branch: `exact-trace-bench-harness`
+  - commit: `16ca5a2f6bce7218ac9ee0724c212c7d845b89c9`
+    (`Plumb Phase-0 replay run metadata`)
+  - untracked launch/local files were present in the live workspace, including
+    presentation/report drafts and the generated donor-capture scenario JSONs.
+- sibling library repo:
+  - live workspace: `/users/PAS2119/andreykopanev/circuit-tracer_chunked`
+  - branch: `exact-trace-hidden-knobs`
+  - commit: `a6946fa7875d6e510845b38e44d66db88098a8f1`
+    (`Add Phase-0 donor replay plumbing`)
+- immutable snapshot container:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_143848_phase0_donor_capture_94_base`
+- snapshot project root:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_143848_phase0_donor_capture_94_base/nlp_research_project`
+- snapshot library root:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_143848_phase0_donor_capture_94_base/circuit-tracer_chunked`
+
+Submitted jobs and intended outputs:
+
+- Ascend:
+  - SLURM job `5098340` (`5098340_0` array task)
+  - run id `20260427_143849_028151_phase0-donor-capture-94-base-ascend`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260427_143849_028151_phase0-donor-capture-94-base-ascend`
+  - completed `2026-04-27T15:19:17`, state `COMPLETED`, exit `0:0`,
+    elapsed `00:29:30`
+- Cardinal:
+  - SLURM job `8887574` (`8887574_0` array task)
+  - run id `20260427_143849_120767_phase0-donor-capture-94-base-cardinal`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260427_143849_120767_phase0-donor-capture-94-base-cardinal`
+  - completed `2026-04-27T15:14:07`, state `COMPLETED`, exit `0:0`,
+    elapsed `00:16:38`
+
+Shared config:
+
+- fixture: `94_base`
+- tier: `anomaly`
+- `max_steps=1`, `temperature=0.0`, `completions=1`
+- `cross_cluster_debug=true`
+- `exact_trace_internal_dtype=fp64`
+- `phase0_activation_threshold_compare_mode=baseline`
+- `capture_phase0_donor_bundle=true`
+- `capture_phase3_seed_bundle=true`
+- `capture_feature_semantic_descriptors=true`
+- `semantic_descriptor_top_k=2048`, `semantic_descriptor_dim=64`
+- `decoder_chunk_size=2048`, `cross_batch_decoder_cache_bytes=0`
+- batch sizes `128`
+
+Artifact status:
+
+- both jobs succeeded (`status=success`, `returncode=0`),
+- both generated token id `6481`, text `"Let"`,
+- both captured:
+  - `cross_cluster_debug_summary.json`,
+  - `step_000.npz`,
+  - `step_000_phase0_donor_bundle.npz`,
+  - `step_000_phase3_seed_bundle.npz`,
+  - `step_000_feature_semantic_descriptors.npz`.
+- donor bundle status is `captured` on both sides.
+- active feature counts:
+  - Ascend: `3371343`,
+  - Cardinal: `3370036`.
+- donor bundle artifact sizes:
+  - Ascend: `18407266` bytes,
+  - Cardinal: `18399886` bytes.
+- Phase-3 seed bundle and semantic descriptor artifacts also saved successfully
+  on both sides.
+
+Follow-up:
+
+- superseded by the replay-matrix launch below: same-cluster self-replay and
+  cross-cluster donor-swap tasks were launched together to reduce queue wait,
+  with cross-swap interpretation gated on self-replay passing.
+
+### 2026-04-27 — Launched Phase-0 self/cross replay matrix for `94_base`
+
+Purpose:
+
+- test whether replacing the host Phase-0 activation state with a captured donor
+  bundle is sufficient to move the downstream Phase-3 seed set and compact graph
+  toward the donor cluster,
+- run same-cluster self-replay controls in parallel with cross-cluster donor
+  swaps,
+- treat cross-swap interpretation as provisional until self-replay controls pass.
+
+Implementation/launch provenance:
+
+- project repo:
+  - live workspace: `/users/PAS2119/andreykopanev/nlp_research_project`
+  - branch: `exact-trace-bench-harness`
+  - commit: `16ca5a2f6bce7218ac9ee0724c212c7d845b89c9`
+    (`Plumb Phase-0 replay run metadata`)
+- sibling library repo:
+  - live workspace: `/users/PAS2119/andreykopanev/circuit-tracer_chunked`
+  - branch: `exact-trace-hidden-knobs`
+  - commit: `a6946fa7875d6e510845b38e44d66db88098a8f1`
+    (`Add Phase-0 donor replay plumbing`)
+- immutable snapshot container:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_164501_phase0_replay_matrix_94_base`
+- snapshot project root:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_164501_phase0_replay_matrix_94_base/nlp_research_project`
+- snapshot library root:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_164501_phase0_replay_matrix_94_base/circuit-tracer_chunked`
+
+Scenario files:
+
+- Ascend:
+  `/users/PAS2119/andreykopanev/nlp_research_project/experiments/generated/exact_trace_bench/phase0_replay_matrix_94_base_ascend.json`
+- Cardinal:
+  `/users/PAS2119/andreykopanev/nlp_research_project/experiments/generated/exact_trace_bench/phase0_replay_matrix_94_base_cardinal.json`
+- each contains two tasks:
+  - task `0`: same-cluster self-replay using that cluster's donor bundle,
+  - task `1`: host cluster with the other cluster's donor bundle.
+
+Donor bundles used:
+
+- Ascend donor:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260427_143849_028151_phase0-donor-capture-94-base-ascend/ascend_phase0_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000/step_000_phase0_donor_bundle.npz`
+- Cardinal donor:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260427_143849_120767_phase0-donor-capture-94-base-cardinal/cardinal_phase0_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000/step_000_phase0_donor_bundle.npz`
+
+Submitted jobs and intended outputs:
+
+- Ascend:
+  - SLURM job `5101354` (`5101354_[0-1]` array)
+  - run id `20260427_164504_282386_phase0-replay-matrix-94-base-ascend`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260427_164504_282386_phase0-replay-matrix-94-base-ascend`
+  - queue check after submission: `PENDING` on `nextgen` with reason
+    `Priority`
+- Cardinal:
+  - SLURM job `8888658` (`8888658_[0-1]` array)
+  - run id `20260427_164504_455131_phase0-replay-matrix-94-base-cardinal`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260427_164504_455131_phase0-replay-matrix-94-base-cardinal`
+  - queue check after submission: `PENDING` on `gpu` with reason `Priority`
+
+Shared replay config:
+
+- fixture: `94_base`
+- tier: `anomaly`
+- `max_steps=1`, `temperature=0.0`, `completions=1`
+- `cross_cluster_debug=true`
+- `exact_trace_internal_dtype=fp64`
+- `phase0_activation_threshold_compare_mode=baseline`
+- `phase0_replay_mode=donor_phase0`
+- `phase0_donor_context_policy=strict`
+- `capture_phase0_donor_bundle=true`
+- `capture_phase3_seed_bundle=true`
+- `capture_feature_semantic_descriptors=true`
+- `semantic_descriptor_top_k=2048`, `semantic_descriptor_dim=64`
+- `decoder_chunk_size=2048`, `cross_batch_decoder_cache_bytes=0`
+- batch sizes `128`
+- requested walltime: `01:00:00`
+
+Analysis gates after completion:
+
+- first verify self-replay controls before interpreting cross-swaps,
+- expected self-replay pass thresholds:
+  - feature support Jaccard `1.0`,
+  - Phase-3 seed influence Pearson `>= 0.9999`,
+  - Phase-3 top-1024 overlap `>= 0.999`,
+  - compact weighted edge Jaccard `>= 0.999`,
+- then run `compare-phase0-replay-matrix` over the donor-capture baselines,
+  self-replay outputs, and cross-swap outputs.
+
+Completion / analysis update:
+
+- job states checked after launch:
+  - Ascend task `5101354_0` completed, exit `0:0`, elapsed `00:28:57`;
+    this is `ascend_phase0_self_replay_94_base_anomaly_b128_c2048_cache0g`.
+  - Ascend task `5101354_1` completed, exit `0:0`, elapsed `00:31:15`;
+    this is `ascend_phase0_with_cardinal_donor_94_base...`. It had previously
+    remained `PENDING` with reason `Priority` and no dependency.
+  - Cardinal tasks `8888658_0` and `8888658_1` both completed, exit `0:0`,
+    elapsed `00:21:00` and `00:20:31` respectively.
+- completed replay artifacts all captured `step_000.npz`,
+  `step_000_phase0_donor_bundle.npz`, `step_000_phase3_seed_bundle.npz`, and
+  `step_000_feature_semantic_descriptors.npz`.
+- replay metadata for all completed replay runs reported
+  `phase0_replay_mode=donor_phase0`, `phase0_replay_status=applied`, strict
+  donor context, and no dtype roundtrip loss.
+- self-replay gates passed exactly enough to trust cross-swap diagnostics:
+  - Ascend self-replay vs Ascend baseline:
+    - compact feature Jaccard `1.0`, weighted edge Jaccard `1.0`,
+    - Phase-3 support Jaccard `1.0`, seed influence Pearson
+      `0.999999999999988`, top-1024 overlap `1.0`, frontier post Jaccard `1.0`.
+  - Cardinal self-replay vs Cardinal baseline:
+    - compact feature Jaccard `1.0`, weighted edge Jaccard `1.0`,
+    - Phase-3 support Jaccard `1.0`, seed influence Pearson
+      `0.9999999999999999`, top-1024 overlap `1.0`, frontier post Jaccard `1.0`.
+- full comparison written to:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/analysis/phase0_replay_matrix_94_base_compare_no_semantic.json`
+  (`include_semantic=false`; semantic descriptors in this run are still the
+  fallback identity-metadata descriptors, so the main interpretation uses compact
+  graph and Phase-3 seed-bundle metrics).
+- baseline and cross-swap similarities:
+  - baseline Ascend-vs-Cardinal similarity remains the earlier reference:
+    compact feature Jaccard / Phase-3 support Jaccard `0.9936243685806376`,
+    weighted edge Jaccard `0.6128084788664958`, Phase-3 seed influence Pearson
+    `0.9843850642912175`, top-1024 overlap `0.828125`, frontier post Jaccard
+    `0.7009966777408638`.
+  - `Ascend host + Cardinal donor` vs Ascend host baseline:
+    compact feature Jaccard / Phase-3 support Jaccard `0.9936243685806376`,
+    weighted edge Jaccard `0.9995229242169169`, Phase-3 seed influence Pearson
+    `0.9999974420907568`, top-1024 overlap `1.0`, frontier post Jaccard `1.0`.
+  - `Ascend host + Cardinal donor` vs Cardinal donor baseline:
+    compact feature Jaccard / Phase-3 support Jaccard `1.0`, weighted edge
+    Jaccard `0.6127990686429539`, Phase-3 seed influence Pearson
+    `0.984378196700129`, top-1024 overlap `0.828125`, frontier post Jaccard
+    `0.7009966777408638`.
+  - `Cardinal host + Ascend donor` vs Cardinal host baseline:
+    compact feature Jaccard / Phase-3 support Jaccard `0.9936243685806376`,
+    weighted edge Jaccard `0.9991256837503769`, Phase-3 seed influence Pearson
+    `0.9999971844045109`, top-1024 overlap `0.9990234375`, frontier post
+    Jaccard `1.0`.
+  - `Cardinal host + Ascend donor` vs Ascend donor baseline:
+    compact feature Jaccard / Phase-3 support Jaccard `1.0`, weighted edge
+    Jaccard `0.612793730082947`, Phase-3 seed influence Pearson
+    `0.9843768836438769`, top-1024 overlap `0.8271484375`, frontier post
+    Jaccard `0.7009966777408638`.
+- final replay-matrix interpretation:
+  - both cross-swaps copy the donor Phase-0 support set exactly (`donor`
+    feature/support Jaccard `1.0`),
+  - but downstream edge weights, Phase-3 influence scores, top-k ranking, and
+    frontier locality remain overwhelmingly host-like,
+  - therefore the dominant cross-cluster drift is not explained by Phase-0 active
+    feature support identity. The current suspect is host-cluster-dependent
+    processing after Phase-0, especially Phase-3 scoring/ranking/frontier
+    construction and/or later edge-weight construction from those host-side
+    quantities.
+
+### 2026-04-29 — Chosen next diagnostic: Phase-3 gradient / row capture
+
+Decision:
+
+- Do not expand the Phase-0 donor bundle to include gradients. The Phase-0 replay
+  bundle is intentionally limited to active feature support/activation state.
+- Treat gradients and direct-effect rows as Phase-3 state, because they are
+  produced during `phase3_logits` backward attribution from the host forward
+  graph.
+- Add a new passive capture layer for Phase-3 gradient and direct-row bundles,
+  then rerun the `94_base` self/cross matrix with richer capture.
+
+Rationale:
+
+- The completed Phase-0 replay matrix created a mixed counterfactual:
+  `donor feature support/activation values × host Phase-3 gradient field`.
+- Both directions stayed host-like in Phase-3 influence/frontier/edge metrics, so
+  the next hypothesis is that host-side gradients/direct-effect row construction
+  dominate downstream drift.
+- Existing debug summaries already show host-like Phase-3 row-L1 scale under
+  cross-swap, reinforcing the need to capture the gradient/row boundary directly.
+
+Planned implementation/run sequence:
+
+1. Implement opt-in `step_000_phase3_gradient_bundle.npz` capture.
+2. Implement opt-in `step_000_phase3_row_bundle.npz` capture if feasible in the
+   same pass; otherwise start with gradient bundle plus row-family scalar stats.
+3. Wire flags through exact tracing, scenario configs, manifests, extraction, and
+   CPU-only tests.
+4. Launch matched Ascend/Cardinal `94_base` donor-capture baselines with Phase-3
+   gradient/row capture enabled.
+5. Launch the four-condition replay matrix again with strict Phase-0 donor replay
+   plus Phase-3 gradient/row capture.
+6. Compare whether cross-swap gradients/rows are host-like or donor-like.
+7. Prefer Phase-3 row replay as the next causal intervention if passive capture
+   confirms the drift is already present in direct-effect rows.
+
+Current working plan:
+
+- root `PLAN.md` now tracks the Phase-3 gradient boundary probe.
+- durable design update is in
+  `docs/phase0_boundary_fingerprinting_spec.md` under
+  “Phase-3 gradient / row boundary follow-up”.
+
 ### 2026-04-24 — Phase-3 seed-bundle rerun supports normal upstream numerical drift interpretation
 
 Purpose:
