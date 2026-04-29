@@ -61,6 +61,32 @@ _PHASE4_ROW_EXECUTOR_EFFECTIVE_BY_MODE: dict[str, str] = {
     "streaming_v1": "batched",
 }
 
+_PHASE1_TRACE_BATCH_POLICIES = {
+    "legacy",
+    "cap_effective_batches",
+}
+
+_PHASE4_REFRESH_POLICIES = {
+    "standard",
+    "deferred_v1",
+}
+
+_PHASE4_RANKERS = {
+    "argsort",
+    "topk_v1",
+}
+
+_ROW_STORE_CACHE_CONTROLS = {
+    "off",
+    "fadvise_dontneed_after_append_v1",
+}
+
+_EXACT_ENCODER_RESIDENCY_MODES = {
+    "lazy",
+    "active_cpu",
+    "active_pinned_cpu",
+}
+
 
 def parse_optional_bool(value: str) -> bool:
     lowered = value.strip().lower()
@@ -80,6 +106,152 @@ def parse_exact_trace_internal_dtype(value: str) -> str:
     raise argparse.ArgumentTypeError(
         f"Expected one of {{fp32, fp64, float32, float64}}, got: {value!r}"
     )
+
+
+def _normalize_phase1_trace_batch_policy(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _PHASE1_TRACE_BATCH_POLICIES:
+        return None
+    return normalized
+
+
+def parse_phase1_trace_batch_policy(value: str) -> str:
+    normalized = _normalize_phase1_trace_batch_policy(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{legacy, cap_effective_batches}}, got: {value!r}"
+        )
+    return normalized
+
+
+def _normalize_phase1_trace_batch_size_max(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"", "none", "null"}:
+            return None
+        try:
+            parsed = int(normalized)
+        except ValueError:
+            return None
+        return parsed if parsed > 0 else None
+    return None
+
+
+def parse_phase1_trace_batch_size_max(value: str) -> int | None:
+    normalized = value.strip().lower()
+    if normalized in {"none", "null"}:
+        return None
+    try:
+        parsed = int(normalized)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"Expected a positive integer or one of {{none, null}}, got: {value!r}"
+        ) from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError(
+            f"Expected a positive integer for phase1_trace_batch_size_max, got: {value!r}"
+        )
+    return parsed
+
+
+def _normalize_phase4_refresh_policy(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _PHASE4_REFRESH_POLICIES:
+        return None
+    return normalized
+
+
+def parse_phase4_refresh_policy(value: str) -> str:
+    normalized = _normalize_phase4_refresh_policy(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{standard, deferred_v1}}, got: {value!r}"
+        )
+    return normalized
+
+
+def _normalize_phase4_refresh_interval_multiplier(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        try:
+            parsed = int(normalized)
+        except ValueError:
+            return None
+        return parsed if parsed > 0 else None
+    return None
+
+
+def parse_phase4_refresh_interval_multiplier(value: str) -> int:
+    normalized = _normalize_phase4_refresh_interval_multiplier(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(f"Expected a positive integer, got: {value!r}")
+    return normalized
+
+
+def _normalize_phase4_ranker(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _PHASE4_RANKERS:
+        return None
+    return normalized
+
+
+def parse_phase4_ranker(value: str) -> str:
+    normalized = _normalize_phase4_ranker(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{argsort, topk_v1}}, got: {value!r}"
+        )
+    return normalized
+
+
+def _normalize_row_store_cache_control(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _ROW_STORE_CACHE_CONTROLS:
+        return None
+    return normalized
+
+
+def parse_row_store_cache_control(value: str) -> str:
+    normalized = _normalize_row_store_cache_control(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{off, fadvise_dontneed_after_append_v1}}, got: {value!r}"
+        )
+    return normalized
+
+
+def _normalize_exact_encoder_residency(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _EXACT_ENCODER_RESIDENCY_MODES:
+        return None
+    return normalized
+
+
+def parse_exact_encoder_residency(value: str) -> str:
+    normalized = _normalize_exact_encoder_residency(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{lazy, active_cpu, active_pinned_cpu}}, got: {value!r}"
+        )
+    return normalized
 
 
 def _normalize_phase4_scheduler_mode(value: Any) -> str | None:
@@ -236,9 +408,16 @@ def extract_compact_chunked_attribution(
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
     exact_trace_internal_dtype: str = "fp32",
+    phase1_trace_batch_policy: str = "legacy",
+    phase1_trace_batch_size_max: int | None = None,
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
     telemetry_max_events: int | None = None,
+    phase4_refresh_policy: str = "standard",
+    phase4_refresh_interval_multiplier: int = 1,
+    phase4_ranker: str = "argsort",
+    row_store_cache_control: str = "off",
+    exact_encoder_residency: str = "lazy",
     phase4_scheduler_mode: str = "locality",
     phase4_scheduler_debug: bool = False,
     phase4_scheduler_telemetry_detail: str = "normal",
@@ -284,9 +463,16 @@ def extract_compact_chunked_attribution(
         feature_batch_min_free_fraction=feature_batch_min_free_fraction,
         feature_batch_probe_batches=feature_batch_probe_batches,
         internal_precision=internal_precision,
+        phase1_trace_batch_policy=phase1_trace_batch_policy,
+        phase1_trace_batch_size_max=phase1_trace_batch_size_max,
         phase4_anomaly_debug=phase4_anomaly_debug,
         cross_cluster_debug=cross_cluster_debug,
         telemetry_max_events=telemetry_max_events,
+        phase4_refresh_policy=phase4_refresh_policy,
+        phase4_refresh_interval_multiplier=phase4_refresh_interval_multiplier,
+        phase4_ranker=phase4_ranker,
+        row_store_cache_control=row_store_cache_control,
+        exact_encoder_residency=exact_encoder_residency,
         phase4_scheduler_mode=phase4_scheduler_mode,
         phase4_scheduler_debug=phase4_scheduler_debug,
         phase4_scheduler_telemetry_detail=phase4_scheduler_telemetry_detail,
@@ -529,9 +715,16 @@ def trace_completion_compact_chunked(
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
     exact_trace_internal_dtype: str = "fp32",
+    phase1_trace_batch_policy: str = "legacy",
+    phase1_trace_batch_size_max: int | None = None,
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
     telemetry_max_events: int | None = None,
+    phase4_refresh_policy: str = "standard",
+    phase4_refresh_interval_multiplier: int = 1,
+    phase4_ranker: str = "argsort",
+    row_store_cache_control: str = "off",
+    exact_encoder_residency: str = "lazy",
     phase4_scheduler_mode: str = "locality",
     phase4_scheduler_debug: bool = False,
     phase4_scheduler_telemetry_detail: str = "normal",
@@ -584,6 +777,20 @@ def trace_completion_compact_chunked(
     observed_phase4_row_executor_effective: list[str] = []
     observed_phase4_row_executor_versions_requested: list[str] = []
     observed_phase4_row_executor_versions_effective: list[str] = []
+    observed_phase1_trace_batch_policies_requested: list[str] = []
+    observed_phase1_trace_batch_policies_effective: list[str] = []
+    observed_phase1_trace_batch_size_max_requested: list[int | None] = []
+    observed_phase1_trace_batch_size_max_effective: list[int | None] = []
+    observed_phase4_refresh_policies_requested: list[str] = []
+    observed_phase4_refresh_policies_effective: list[str] = []
+    observed_phase4_refresh_interval_multipliers_requested: list[int] = []
+    observed_phase4_refresh_interval_multipliers_effective: list[int] = []
+    observed_phase4_rankers_requested: list[str] = []
+    observed_phase4_rankers_effective: list[str] = []
+    observed_row_store_cache_controls_requested: list[str] = []
+    observed_row_store_cache_controls_effective: list[str] = []
+    observed_exact_encoder_residency_requested: list[str] = []
+    observed_exact_encoder_residency_effective: list[str] = []
     telemetry_jsonl_path = completion_dir / "telemetry.jsonl"
     telemetry_jsonl_path.write_text("")
     telemetry_events_written = 0
@@ -646,9 +853,16 @@ def trace_completion_compact_chunked(
             feature_batch_min_free_fraction=feature_batch_min_free_fraction,
             feature_batch_probe_batches=feature_batch_probe_batches,
             exact_trace_internal_dtype=exact_trace_internal_dtype,
+            phase1_trace_batch_policy=phase1_trace_batch_policy,
+            phase1_trace_batch_size_max=phase1_trace_batch_size_max,
             phase4_anomaly_debug=phase4_anomaly_debug,
             cross_cluster_debug=cross_cluster_debug,
             telemetry_max_events=telemetry_max_events,
+            phase4_refresh_policy=phase4_refresh_policy,
+            phase4_refresh_interval_multiplier=phase4_refresh_interval_multiplier,
+            phase4_ranker=phase4_ranker,
+            row_store_cache_control=row_store_cache_control,
+            exact_encoder_residency=exact_encoder_residency,
             phase4_scheduler_mode=phase4_scheduler_mode,
             phase4_scheduler_debug=phase4_scheduler_debug,
             phase4_scheduler_telemetry_detail=phase4_scheduler_telemetry_detail,
@@ -679,6 +893,181 @@ def trace_completion_compact_chunked(
             observed_phase4_planner_skip_reasons.append(
                 resolved_phase4_planner_skip_reason
             )
+
+        resolved_phase1_trace_batch_policy_requested = (
+            _normalize_phase1_trace_batch_policy(
+                compact_result.get("phase1_trace_batch_policy_requested")
+            )
+            or _normalize_phase1_trace_batch_policy(
+                compact_result.get("phase1_trace_batch_policy")
+            )
+            or phase1_trace_batch_policy
+        )
+        observed_phase1_trace_batch_policies_requested.append(
+            resolved_phase1_trace_batch_policy_requested
+        )
+        resolved_phase1_trace_batch_policy_effective = (
+            _normalize_phase1_trace_batch_policy(
+                compact_result.get("phase1_trace_batch_policy_effective")
+            )
+            or _normalize_phase1_trace_batch_policy(
+                compact_result.get("phase1_trace_batch_policy")
+            )
+            or resolved_phase1_trace_batch_policy_requested
+        )
+        observed_phase1_trace_batch_policies_effective.append(
+            resolved_phase1_trace_batch_policy_effective
+        )
+
+        resolved_phase1_trace_batch_size_max_requested = (
+            _normalize_phase1_trace_batch_size_max(
+                compact_result.get("phase1_trace_batch_size_max_requested")
+            )
+            if compact_result.get("phase1_trace_batch_size_max_requested") is not None
+            else None
+        )
+        if resolved_phase1_trace_batch_size_max_requested is None:
+            resolved_phase1_trace_batch_size_max_requested = (
+                _normalize_phase1_trace_batch_size_max(
+                    compact_result.get("phase1_trace_batch_size_max")
+                )
+                if compact_result.get("phase1_trace_batch_size_max") is not None
+                else phase1_trace_batch_size_max
+            )
+        observed_phase1_trace_batch_size_max_requested.append(
+            resolved_phase1_trace_batch_size_max_requested
+        )
+        resolved_phase1_trace_batch_size_max_effective = (
+            _normalize_phase1_trace_batch_size_max(
+                compact_result.get("phase1_trace_batch_size_max_effective")
+            )
+            if compact_result.get("phase1_trace_batch_size_max_effective") is not None
+            else None
+        )
+        if resolved_phase1_trace_batch_size_max_effective is None:
+            resolved_phase1_trace_batch_size_max_effective = (
+                _normalize_phase1_trace_batch_size_max(
+                    compact_result.get("phase1_trace_batch_size_max")
+                )
+                if compact_result.get("phase1_trace_batch_size_max") is not None
+                else resolved_phase1_trace_batch_size_max_requested
+            )
+        observed_phase1_trace_batch_size_max_effective.append(
+            resolved_phase1_trace_batch_size_max_effective
+        )
+
+        resolved_phase4_refresh_policy_requested = (
+            _normalize_phase4_refresh_policy(
+                compact_result.get("phase4_refresh_policy_requested")
+            )
+            or _normalize_phase4_refresh_policy(
+                compact_result.get("phase4_refresh_policy")
+            )
+            or phase4_refresh_policy
+        )
+        observed_phase4_refresh_policies_requested.append(
+            resolved_phase4_refresh_policy_requested
+        )
+        resolved_phase4_refresh_policy_effective = (
+            _normalize_phase4_refresh_policy(
+                compact_result.get("phase4_refresh_policy_effective")
+            )
+            or _normalize_phase4_refresh_policy(
+                compact_result.get("phase4_refresh_policy")
+            )
+            or resolved_phase4_refresh_policy_requested
+        )
+        observed_phase4_refresh_policies_effective.append(
+            resolved_phase4_refresh_policy_effective
+        )
+
+        resolved_phase4_refresh_interval_multiplier_requested = (
+            _normalize_phase4_refresh_interval_multiplier(
+                compact_result.get("phase4_refresh_interval_multiplier_requested")
+            )
+            or _normalize_phase4_refresh_interval_multiplier(
+                compact_result.get("phase4_refresh_interval_multiplier")
+            )
+            or phase4_refresh_interval_multiplier
+        )
+        observed_phase4_refresh_interval_multipliers_requested.append(
+            resolved_phase4_refresh_interval_multiplier_requested
+        )
+        resolved_phase4_refresh_interval_multiplier_effective = (
+            _normalize_phase4_refresh_interval_multiplier(
+                compact_result.get("phase4_refresh_interval_multiplier_effective")
+            )
+            or _normalize_phase4_refresh_interval_multiplier(
+                compact_result.get("phase4_refresh_interval_multiplier")
+            )
+            or resolved_phase4_refresh_interval_multiplier_requested
+        )
+        observed_phase4_refresh_interval_multipliers_effective.append(
+            resolved_phase4_refresh_interval_multiplier_effective
+        )
+
+        resolved_phase4_ranker_requested = (
+            _normalize_phase4_ranker(compact_result.get("phase4_ranker_requested"))
+            or _normalize_phase4_ranker(compact_result.get("phase4_ranker"))
+            or phase4_ranker
+        )
+        observed_phase4_rankers_requested.append(resolved_phase4_ranker_requested)
+        resolved_phase4_ranker_effective = (
+            _normalize_phase4_ranker(compact_result.get("phase4_ranker_effective"))
+            or _normalize_phase4_ranker(compact_result.get("phase4_ranker"))
+            or resolved_phase4_ranker_requested
+        )
+        observed_phase4_rankers_effective.append(resolved_phase4_ranker_effective)
+
+        resolved_row_store_cache_control_requested = (
+            _normalize_row_store_cache_control(
+                compact_result.get("row_store_cache_control_requested")
+            )
+            or _normalize_row_store_cache_control(
+                compact_result.get("row_store_cache_control")
+            )
+            or row_store_cache_control
+        )
+        observed_row_store_cache_controls_requested.append(
+            resolved_row_store_cache_control_requested
+        )
+        resolved_row_store_cache_control_effective = (
+            _normalize_row_store_cache_control(
+                compact_result.get("row_store_cache_control_effective")
+            )
+            or _normalize_row_store_cache_control(
+                compact_result.get("row_store_cache_control")
+            )
+            or resolved_row_store_cache_control_requested
+        )
+        observed_row_store_cache_controls_effective.append(
+            resolved_row_store_cache_control_effective
+        )
+
+        resolved_exact_encoder_residency_requested = (
+            _normalize_exact_encoder_residency(
+                compact_result.get("exact_encoder_residency_requested")
+            )
+            or _normalize_exact_encoder_residency(
+                compact_result.get("exact_encoder_residency")
+            )
+            or exact_encoder_residency
+        )
+        observed_exact_encoder_residency_requested.append(
+            resolved_exact_encoder_residency_requested
+        )
+        resolved_exact_encoder_residency_effective = (
+            _normalize_exact_encoder_residency(
+                compact_result.get("exact_encoder_residency_effective")
+            )
+            or _normalize_exact_encoder_residency(
+                compact_result.get("exact_encoder_residency")
+            )
+            or resolved_exact_encoder_residency_requested
+        )
+        observed_exact_encoder_residency_effective.append(
+            resolved_exact_encoder_residency_effective
+        )
 
         resolved_phase4_scheduler_mode_requested = (
             _normalize_phase4_scheduler_mode(
@@ -1133,6 +1522,27 @@ def trace_completion_compact_chunked(
             ),
             "phase4_feature_batch_planner_status": resolved_phase4_planner_status,
             "phase4_feature_batch_planner_skip_reason": resolved_phase4_planner_skip_reason,
+            "phase1_trace_batch_policy": resolved_phase1_trace_batch_policy_effective,
+            "phase1_trace_batch_policy_requested": resolved_phase1_trace_batch_policy_requested,
+            "phase1_trace_batch_policy_effective": resolved_phase1_trace_batch_policy_effective,
+            "phase1_trace_batch_size_max": resolved_phase1_trace_batch_size_max_effective,
+            "phase1_trace_batch_size_max_requested": resolved_phase1_trace_batch_size_max_requested,
+            "phase1_trace_batch_size_max_effective": resolved_phase1_trace_batch_size_max_effective,
+            "phase4_refresh_policy": resolved_phase4_refresh_policy_effective,
+            "phase4_refresh_policy_requested": resolved_phase4_refresh_policy_requested,
+            "phase4_refresh_policy_effective": resolved_phase4_refresh_policy_effective,
+            "phase4_refresh_interval_multiplier": resolved_phase4_refresh_interval_multiplier_effective,
+            "phase4_refresh_interval_multiplier_requested": resolved_phase4_refresh_interval_multiplier_requested,
+            "phase4_refresh_interval_multiplier_effective": resolved_phase4_refresh_interval_multiplier_effective,
+            "phase4_ranker": resolved_phase4_ranker_effective,
+            "phase4_ranker_requested": resolved_phase4_ranker_requested,
+            "phase4_ranker_effective": resolved_phase4_ranker_effective,
+            "row_store_cache_control": resolved_row_store_cache_control_effective,
+            "row_store_cache_control_requested": resolved_row_store_cache_control_requested,
+            "row_store_cache_control_effective": resolved_row_store_cache_control_effective,
+            "exact_encoder_residency": resolved_exact_encoder_residency_effective,
+            "exact_encoder_residency_requested": resolved_exact_encoder_residency_requested,
+            "exact_encoder_residency_effective": resolved_exact_encoder_residency_effective,
             "phase4_scheduler_requested_mode": resolved_phase4_scheduler_mode_requested,
             "phase4_scheduler_mode": resolved_phase4_scheduler_mode_effective,
             "phase4_scheduler_mode_requested": resolved_phase4_scheduler_mode_requested,
@@ -1212,6 +1622,44 @@ def trace_completion_compact_chunked(
     completion_text = tokenizer.decode(generated_token_ids, skip_special_tokens=True)
     unique_phase4_feature_batch_sizes = sorted(set(observed_phase4_feature_batch_sizes))
     unique_phase4_planner_statuses = sorted(set(observed_phase4_planner_statuses))
+    unique_phase1_trace_batch_policies_requested = sorted(
+        set(observed_phase1_trace_batch_policies_requested)
+    )
+    unique_phase1_trace_batch_policies_effective = sorted(
+        set(observed_phase1_trace_batch_policies_effective)
+    )
+    unique_phase1_trace_batch_size_max_requested = list(
+        dict.fromkeys(observed_phase1_trace_batch_size_max_requested)
+    )
+    unique_phase1_trace_batch_size_max_effective = list(
+        dict.fromkeys(observed_phase1_trace_batch_size_max_effective)
+    )
+    unique_phase4_refresh_policies_requested = sorted(
+        set(observed_phase4_refresh_policies_requested)
+    )
+    unique_phase4_refresh_policies_effective = sorted(
+        set(observed_phase4_refresh_policies_effective)
+    )
+    unique_phase4_refresh_interval_multipliers_requested = sorted(
+        set(observed_phase4_refresh_interval_multipliers_requested)
+    )
+    unique_phase4_refresh_interval_multipliers_effective = sorted(
+        set(observed_phase4_refresh_interval_multipliers_effective)
+    )
+    unique_phase4_rankers_requested = sorted(set(observed_phase4_rankers_requested))
+    unique_phase4_rankers_effective = sorted(set(observed_phase4_rankers_effective))
+    unique_row_store_cache_controls_requested = sorted(
+        set(observed_row_store_cache_controls_requested)
+    )
+    unique_row_store_cache_controls_effective = sorted(
+        set(observed_row_store_cache_controls_effective)
+    )
+    unique_exact_encoder_residency_requested = sorted(
+        set(observed_exact_encoder_residency_requested)
+    )
+    unique_exact_encoder_residency_effective = sorted(
+        set(observed_exact_encoder_residency_effective)
+    )
     unique_phase4_scheduler_modes_requested = sorted(
         set(observed_phase4_scheduler_modes_requested)
     )
@@ -1341,6 +1789,121 @@ def trace_completion_compact_chunked(
             observed_phase4_planner_skip_reasons[-1]
             if observed_phase4_planner_skip_reasons
             else None
+        ),
+        "phase1_trace_batch_policy": phase1_trace_batch_policy,
+        "phase1_trace_batch_policy_requested": (
+            observed_phase1_trace_batch_policies_requested[-1]
+            if observed_phase1_trace_batch_policies_requested
+            else phase1_trace_batch_policy
+        ),
+        "phase1_trace_batch_policy_effective": (
+            observed_phase1_trace_batch_policies_effective[-1]
+            if observed_phase1_trace_batch_policies_effective
+            else phase1_trace_batch_policy
+        ),
+        "phase1_trace_batch_policies_requested_observed": (
+            unique_phase1_trace_batch_policies_requested
+        ),
+        "phase1_trace_batch_policies_effective_observed": (
+            unique_phase1_trace_batch_policies_effective
+        ),
+        "phase1_trace_batch_size_max": phase1_trace_batch_size_max,
+        "phase1_trace_batch_size_max_requested": (
+            observed_phase1_trace_batch_size_max_requested[-1]
+            if observed_phase1_trace_batch_size_max_requested
+            else phase1_trace_batch_size_max
+        ),
+        "phase1_trace_batch_size_max_effective": (
+            observed_phase1_trace_batch_size_max_effective[-1]
+            if observed_phase1_trace_batch_size_max_effective
+            else phase1_trace_batch_size_max
+        ),
+        "phase1_trace_batch_size_max_requested_observed": (
+            unique_phase1_trace_batch_size_max_requested
+        ),
+        "phase1_trace_batch_size_max_effective_observed": (
+            unique_phase1_trace_batch_size_max_effective
+        ),
+        "phase4_refresh_policy": phase4_refresh_policy,
+        "phase4_refresh_policy_requested": (
+            observed_phase4_refresh_policies_requested[-1]
+            if observed_phase4_refresh_policies_requested
+            else phase4_refresh_policy
+        ),
+        "phase4_refresh_policy_effective": (
+            observed_phase4_refresh_policies_effective[-1]
+            if observed_phase4_refresh_policies_effective
+            else phase4_refresh_policy
+        ),
+        "phase4_refresh_policies_requested_observed": (
+            unique_phase4_refresh_policies_requested
+        ),
+        "phase4_refresh_policies_effective_observed": (
+            unique_phase4_refresh_policies_effective
+        ),
+        "phase4_refresh_interval_multiplier": phase4_refresh_interval_multiplier,
+        "phase4_refresh_interval_multiplier_requested": (
+            observed_phase4_refresh_interval_multipliers_requested[-1]
+            if observed_phase4_refresh_interval_multipliers_requested
+            else phase4_refresh_interval_multiplier
+        ),
+        "phase4_refresh_interval_multiplier_effective": (
+            observed_phase4_refresh_interval_multipliers_effective[-1]
+            if observed_phase4_refresh_interval_multipliers_effective
+            else phase4_refresh_interval_multiplier
+        ),
+        "phase4_refresh_interval_multipliers_requested_observed": (
+            unique_phase4_refresh_interval_multipliers_requested
+        ),
+        "phase4_refresh_interval_multipliers_effective_observed": (
+            unique_phase4_refresh_interval_multipliers_effective
+        ),
+        "phase4_ranker": phase4_ranker,
+        "phase4_ranker_requested": (
+            observed_phase4_rankers_requested[-1]
+            if observed_phase4_rankers_requested
+            else phase4_ranker
+        ),
+        "phase4_ranker_effective": (
+            observed_phase4_rankers_effective[-1]
+            if observed_phase4_rankers_effective
+            else phase4_ranker
+        ),
+        "phase4_rankers_requested_observed": unique_phase4_rankers_requested,
+        "phase4_rankers_effective_observed": unique_phase4_rankers_effective,
+        "row_store_cache_control": row_store_cache_control,
+        "row_store_cache_control_requested": (
+            observed_row_store_cache_controls_requested[-1]
+            if observed_row_store_cache_controls_requested
+            else row_store_cache_control
+        ),
+        "row_store_cache_control_effective": (
+            observed_row_store_cache_controls_effective[-1]
+            if observed_row_store_cache_controls_effective
+            else row_store_cache_control
+        ),
+        "row_store_cache_controls_requested_observed": (
+            unique_row_store_cache_controls_requested
+        ),
+        "row_store_cache_controls_effective_observed": (
+            unique_row_store_cache_controls_effective
+        ),
+        "exact_encoder_residency": exact_encoder_residency,
+        "exact_encoder_residency_requested": (
+            observed_exact_encoder_residency_requested[-1]
+            if observed_exact_encoder_residency_requested
+            else exact_encoder_residency
+        ),
+        "exact_encoder_residency_effective": (
+            observed_exact_encoder_residency_effective[-1]
+            if observed_exact_encoder_residency_effective
+            else exact_encoder_residency
+        ),
+        "exact_encoder_residency_requested_observed": (
+            unique_exact_encoder_residency_requested
+        ),
+        "exact_encoder_residency_effective_observed": (
+            unique_exact_encoder_residency_effective
         ),
         "phase4_scheduler_mode": phase4_scheduler_mode,
         "phase4_scheduler_requested_mode": (
@@ -1707,15 +2270,22 @@ def run_pipeline(args: argparse.Namespace) -> None:
             "--exact-trace-internal-dtype values other than the default-compatible fp32 mode."
         )
     if args.save_raw and (
-        args.phase4_scheduler_mode != "locality"
+        args.phase1_trace_batch_policy != "legacy"
+        or args.phase1_trace_batch_size_max is not None
+        or args.phase4_refresh_policy != "standard"
+        or args.phase4_refresh_interval_multiplier != 1
+        or args.phase4_ranker != "argsort"
+        or args.row_store_cache_control != "off"
+        or args.exact_encoder_residency != "lazy"
+        or args.phase4_scheduler_mode != "locality"
         or args.phase4_scheduler_debug
         or args.phase4_scheduler_telemetry_detail != "normal"
         or args.phase4_refresh_optimization != "off"
         or args.phase4_row_executor != "batched"
     ):
         raise ValueError(
-            "Phase-4 execution controls currently support only compact exact-chunked output. "
-            "--save-raw/full-graph output is unsupported with non-default Phase-4 flags."
+            "Exact-mode execution controls currently support only compact exact-chunked output. "
+            "--save-raw/full-graph output is unsupported with non-default exact-path flags."
         )
     if planner_enabled and args.save_raw:
         raise ValueError(
@@ -1736,6 +2306,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
         raise ValueError("feature_batch_min_free_fraction must be in [0, 1)")
     if args.feature_batch_probe_batches <= 0:
         raise ValueError("feature_batch_probe_batches must be > 0")
+    if args.phase4_refresh_interval_multiplier <= 0:
+        raise ValueError("phase4_refresh_interval_multiplier must be > 0")
     sparsification = build_sparsification_config(args)
     model = base.load_model(
         lazy_encoder=not args.no_lazy_encoder,
@@ -1796,6 +2368,27 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "feature_batch_probe_batches": args.feature_batch_probe_batches,
         "exact_trace_internal_dtype": args.exact_trace_internal_dtype,
         "exact_trace_internal_dtype_requested": args.exact_trace_internal_dtype,
+        "phase1_trace_batch_policy": args.phase1_trace_batch_policy,
+        "phase1_trace_batch_policy_requested": args.phase1_trace_batch_policy,
+        "phase1_trace_batch_policy_effective": args.phase1_trace_batch_policy,
+        "phase1_trace_batch_size_max": args.phase1_trace_batch_size_max,
+        "phase1_trace_batch_size_max_requested": args.phase1_trace_batch_size_max,
+        "phase1_trace_batch_size_max_effective": args.phase1_trace_batch_size_max,
+        "phase4_refresh_policy": args.phase4_refresh_policy,
+        "phase4_refresh_policy_requested": args.phase4_refresh_policy,
+        "phase4_refresh_policy_effective": args.phase4_refresh_policy,
+        "phase4_refresh_interval_multiplier": args.phase4_refresh_interval_multiplier,
+        "phase4_refresh_interval_multiplier_requested": args.phase4_refresh_interval_multiplier,
+        "phase4_refresh_interval_multiplier_effective": args.phase4_refresh_interval_multiplier,
+        "phase4_ranker": args.phase4_ranker,
+        "phase4_ranker_requested": args.phase4_ranker,
+        "phase4_ranker_effective": args.phase4_ranker,
+        "row_store_cache_control": args.row_store_cache_control,
+        "row_store_cache_control_requested": args.row_store_cache_control,
+        "row_store_cache_control_effective": args.row_store_cache_control,
+        "exact_encoder_residency": args.exact_encoder_residency,
+        "exact_encoder_residency_requested": args.exact_encoder_residency,
+        "exact_encoder_residency_effective": args.exact_encoder_residency,
         "exact_trace_internal_dtype_contract_supported": not args.save_raw,
         "exact_trace_internal_dtype_contract_status": (
             "compact_exact_chunked"
@@ -1984,7 +2577,14 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 **(
                     {
                         "exact_trace_internal_dtype": args.exact_trace_internal_dtype,
+                        "phase1_trace_batch_policy": args.phase1_trace_batch_policy,
+                        "phase1_trace_batch_size_max": args.phase1_trace_batch_size_max,
                         "cross_cluster_debug": args.cross_cluster_debug,
+                        "phase4_refresh_policy": args.phase4_refresh_policy,
+                        "phase4_refresh_interval_multiplier": args.phase4_refresh_interval_multiplier,
+                        "phase4_ranker": args.phase4_ranker,
+                        "row_store_cache_control": args.row_store_cache_control,
+                        "exact_encoder_residency": args.exact_encoder_residency,
                         "phase4_scheduler_mode": args.phase4_scheduler_mode,
                         "phase4_scheduler_debug": args.phase4_scheduler_debug,
                         "phase4_scheduler_telemetry_detail": args.phase4_scheduler_telemetry_detail,
@@ -2221,6 +2821,53 @@ if __name__ == "__main__":
         default="fp32",
         help=(
             "Internal dtype for exact-trace normalization/ranking path (fp32 or fp64)"
+        ),
+    )
+    parser.add_argument(
+        "--phase1-trace-batch-policy",
+        type=parse_phase1_trace_batch_policy,
+        default="legacy",
+        help=("Phase-1 trace microbatch policy (legacy or cap_effective_batches)"),
+    )
+    parser.add_argument(
+        "--phase1-trace-batch-size-max",
+        type=parse_phase1_trace_batch_size_max,
+        default=None,
+        help=(
+            "Optional cap for effective Phase-1 trace batch size "
+            "(positive integer or none)"
+        ),
+    )
+    parser.add_argument(
+        "--phase4-refresh-policy",
+        type=parse_phase4_refresh_policy,
+        default="standard",
+        help="Phase-4 refresh policy (standard or deferred_v1)",
+    )
+    parser.add_argument(
+        "--phase4-refresh-interval-multiplier",
+        type=parse_phase4_refresh_interval_multiplier,
+        default=1,
+        help="Positive integer multiplier for Phase-4 refresh interval",
+    )
+    parser.add_argument(
+        "--phase4-ranker",
+        type=parse_phase4_ranker,
+        default="argsort",
+        help="Phase-4 ranker implementation (argsort or topk_v1)",
+    )
+    parser.add_argument(
+        "--row-store-cache-control",
+        type=parse_row_store_cache_control,
+        default="off",
+        help=("Row-store cache-control mode (off or fadvise_dontneed_after_append_v1)"),
+    )
+    parser.add_argument(
+        "--exact-encoder-residency",
+        type=parse_exact_encoder_residency,
+        default="lazy",
+        help=(
+            "Exact-path encoder residency mode (lazy, active_cpu, active_pinned_cpu)"
         ),
     )
     parser.add_argument(

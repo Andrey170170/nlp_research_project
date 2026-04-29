@@ -1816,6 +1816,361 @@ Interpretation:
   - abandon membership-changing selection for now and use Planner V1 plus a
     lower-risk optimization such as adaptive refresh or guided decoder-cache tuning.
 
+## Recent launch update — Phase 4 Execution V1 validation
+
+Purpose: validate the first execution-side optimization tracks under the Planner
+V1 scheduler baseline:
+
+1. refresh optimization V1 only,
+2. streaming row executor V1 only,
+3. combined refresh optimization V1 + streaming row executor V1.
+
+Code state used:
+
+- project repo commit: `d2c9514` — `add phase4 execution validation scenarios`
+- library repo commit: `7554b35` — `add phase4 streaming row executor v1`
+
+Scenario files:
+
+- `experiments/generated/exact_trace_phase4_refresh_opt_v1_fast_ascend_scenarios.json`
+- `experiments/generated/exact_trace_phase4_streaming_executor_v1_fast_ascend_scenarios.json`
+- `experiments/generated/exact_trace_phase4_refresh_streaming_v1_fast_ascend_scenarios.json`
+
+Launch metadata:
+
+- refresh-only array job: `5068122`
+  - run id: `20260424_phase4-refresh-opt-v1-fast-ascend`
+  - run name: `phase4_refresh_opt_v1`
+- streaming-only array job: `5068134`
+  - run id: `20260424_phase4-streaming-executor-v1-fast-ascend`
+  - run name: `phase4_streaming_executor_v1`
+- combined array job: `5068136`
+  - run id: `20260424_phase4-refresh-streaming-v1-fast-ascend`
+  - run name: `phase4_refresh_streaming_v1`
+- output root: `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast`
+
+Scenarios:
+
+- refresh-only:
+  - `ascend_fast_828_base_phase4_refresh_opt_v1_fp32_b256_c4096_cache0`
+  - `ascend_fast_361_base_phase4_refresh_opt_v1_fp32_b256_c4096_cache0`
+- streaming-only:
+  - `ascend_fast_828_base_phase4_streaming_executor_v1_fp32_b256_c4096_cache0`
+  - `ascend_fast_361_base_phase4_streaming_executor_v1_fp32_b256_c4096_cache0`
+- combined:
+  - `ascend_fast_828_base_phase4_refresh_streaming_v1_fp32_b256_c4096_cache0`
+  - `ascend_fast_361_base_phase4_refresh_streaming_v1_fp32_b256_c4096_cache0`
+
+Key settings:
+
+- `phase4_scheduler_mode=planner_v1`
+- `phase4_scheduler_debug=true`
+- `phase4_scheduler_telemetry_detail=debug`
+- `exact_trace_internal_dtype=fp32`
+- `feature_batch_size=256`
+- `decoder_chunk_size=4096`
+- `cross_batch_decoder_cache_bytes=0`
+
+Variant settings:
+
+| Variant | `phase4_refresh_optimization` | `phase4_row_executor` |
+|---|---|---|
+| Planner V1 baseline | `off` | `batched` |
+| refresh-only | `v1` | `batched` |
+| streaming-only | `off` | `streaming_v1` |
+| combined | `v1` | `streaming_v1` |
+
+Status:
+
+- all six array tasks completed successfully,
+- analyzed against the Planner V1 baseline runs:
+  - `ascend_fast_828_base_phase4_planner_v1_fp32_b256_c4096_cache0`,
+  - `ascend_fast_361_base_phase4_planner_v1_fp32_b256_c4096_cache0`.
+
+Correctness / artifact summary:
+
+- completion text unchanged relative to Planner V1:
+  - `828_base`: `Here`,
+  - `361_base`: `Let`,
+- active feature counts unchanged:
+  - `828_base`: `2993540`,
+  - `361_base`: `5223267`,
+- retained edges unchanged: `20000` in all runs,
+- compact outputs matched Planner V1 exactly for all six variant/prompt runs:
+  - feature arrays equal,
+  - edge arrays exact,
+  - feature Jaccard: `1.0`,
+  - edge Jaccard: `1.0`,
+  - weighted edge Jaccard: `1.0`,
+  - max common retained-edge weight difference: `0.0`.
+
+Performance summary vs Planner V1:
+
+### `828_base`
+
+| Variant | Phase 4 wall-clock | Refresh elapsed | Feature-batch / executor elapsed | Attribution | Completion / end-to-end | RSS snapshot |
+|---|---:|---:|---:|---:|---:|---:|
+| Planner V1 | `314.78 s` | `173.89 s` | inferred `140.90 s` | `562.51 s` | `563.91 s` | `142.05 GiB` |
+| refresh-only | `420.51 s` | `233.23 s` | `187.07 s` | `675.23 s` | `676.73 s` | `227.94 GiB` |
+| streaming-only | `532.00 s` | `176.87 s` | `354.40 s` | `770.50 s` | `771.92 s` | `139.91 GiB` |
+| combined | `587.88 s` | `237.26 s` | `349.87 s` | `785.34 s` | `786.78 s` | `225.84 GiB` |
+
+Changes vs Planner V1:
+
+- refresh-only:
+  - Phase 4 `+105.73 s` (`+33.6%`),
+  - refresh `+59.34 s` (`+34.1%`),
+  - completion/end-to-end `+112.82 s` (`+20.0%`),
+  - RSS snapshot `+85.90 GiB` (`+60.5%`).
+- streaming-only:
+  - Phase 4 `+217.22 s` (`+69.0%`),
+  - refresh `+2.99 s` (`+1.7%`),
+  - feature-batch/executor `140.90 s -> 354.40 s`,
+  - completion/end-to-end `+208.01 s` (`+36.9%`),
+  - RSS snapshot `-2.14 GiB` (`-1.5%`).
+- combined:
+  - Phase 4 `+273.10 s` (`+86.8%`),
+  - refresh `+63.38 s` (`+36.4%`),
+  - feature-batch/executor `140.90 s -> 349.87 s`,
+  - completion/end-to-end `+222.87 s` (`+39.5%`),
+  - RSS snapshot `+83.79 GiB` (`+59.0%`).
+
+### `361_base`
+
+| Variant | Phase 4 wall-clock | Refresh elapsed | Feature-batch / executor elapsed | Attribution | Completion / end-to-end | RSS snapshot |
+|---|---:|---:|---:|---:|---:|---:|
+| Planner V1 | `580.01 s` | `266.20 s` | inferred `313.81 s` | `956.02 s` | `957.78 s` | `241.59 GiB` |
+| refresh-only | `766.20 s` | `424.62 s` | `341.33 s` | `1126.38 s` | `1128.52 s` | `333.47 GiB` |
+| streaming-only | `551.50 s` | `272.66 s` | `278.11 s` | `912.48 s` | `914.42 s` | `237.88 GiB` |
+| combined | `777.41 s` | `399.43 s` | `377.26 s` | `1093.60 s` | `1095.36 s` | `334.12 GiB` |
+
+Changes vs Planner V1:
+
+- refresh-only:
+  - Phase 4 `+186.19 s` (`+32.1%`),
+  - refresh `+158.41 s` (`+59.5%`),
+  - completion/end-to-end `+170.74 s` (`+17.8%`),
+  - RSS snapshot `+91.89 GiB` (`+38.0%`).
+- streaming-only:
+  - Phase 4 `-28.51 s` (`-4.9%`),
+  - refresh `+6.45 s` (`+2.4%`),
+  - feature-batch/executor `313.81 s -> 278.11 s`,
+  - completion/end-to-end `-43.36 s` (`-4.5%`),
+  - RSS snapshot `-3.70 GiB` (`-1.5%`).
+- combined:
+  - Phase 4 `+197.40 s` (`+34.0%`),
+  - refresh `+133.23 s` (`+50.0%`),
+  - feature-batch/executor `313.81 s -> 377.26 s`,
+  - completion/end-to-end `+137.58 s` (`+14.4%`),
+  - RSS snapshot `+92.53 GiB` (`+38.3%`).
+
+Telemetry / substage notes:
+
+- Refresh-only V1 did reduce row-reader over-read to zero, but row-store read time
+  was tiny relative to the full refresh cost:
+  - `828_base`: row-store read `3.62 s` inside `233.23 s` refresh total,
+  - `361_base`: row-store read `7.09 s` inside `424.62 s` refresh total.
+- Refresh-only V1 made the partial-influence loop much slower:
+  - `828_base`: partial influence `229.26 s`; matmul `113.50 s`; remaining
+    loop/zero/scatter overhead about `110.53 s`,
+  - `361_base`: partial influence `418.44 s`; matmul `160.71 s`; remaining
+    loop/zero/scatter overhead about `249.10 s`.
+- The active-row refresh strategy therefore saved little I/O while adding large
+  zero-fill/scatter and RSS cost.
+- Streaming-only changed executor granularity from scheduler/reference batches to
+  microbatches:
+  - `828_base`: `33` scheduler batches -> `132` executor microbatches,
+  - `361_base`: `34` scheduler batches -> `131` executor microbatches.
+- On `828_base`, streaming-only regressed primarily through denominator work:
+  - executor denominator elapsed `266.50 s`,
+  - total executor elapsed `354.40 s`.
+- On `361_base`, streaming-only improved feature-batch/executor elapsed:
+  - inferred Planner V1 executor `313.81 s`,
+  - streaming-only executor `278.11 s`,
+  - but refresh was still slightly slower (`+6.45 s`).
+
+Interpretation:
+
+- **Do not promote refresh optimization V1.** It is exact, but it is a clear
+  performance and RSS regression on both canonical fast prompts.
+- The active-row refresh approach targeted the wrong bottleneck: row-store read
+  time is only a few seconds, while fixed-shape zero-fill/scatter and matmul work
+  dominate the refresh loop.
+- **Do not run the combined variant further** until refresh V1 is replaced or
+  disabled; the refresh penalty dominates the combined behavior.
+- Streaming row executor V1 is **experimental only**, not a default:
+  - it is a severe regression on `828_base`,
+  - it is a modest win on `361_base`,
+  - the hard-coded `64` microbatch cap is likely too small for easier/smaller
+    prompts and should be made adaptive before further promotion.
+- Candidate next actions:
+  - leave refresh V1 feature-gated and mark it rejected/not promoted,
+  - keep streaming V1 feature-gated,
+  - test a larger/adaptive streaming microbatch cap, e.g. `128` or “use 64 only
+    for very large active-feature cases,” before considering another validation
+    matrix.
+
+## Recent launch update — Planner V1 hidden optimization knobs matrix
+
+Purpose: compare the current Planner V1 baseline against a set of newly added,
+explicitly opt-in exact/chunked hidden optimization knobs on Ascend/A100. This
+matrix is intended to isolate each new knob before any combination runs.
+
+Code state used at launch:
+
+- project repo commit: `d2c9514` — `add phase4 execution validation scenarios`
+  - project worktree had uncommitted plumbing/scenario/doc changes that were
+    included in the immutable launch snapshot,
+- library repo commit: `f7f7318` — `stage active encoders on cpu`
+  - library worktree was clean and ahead of origin by six local commits.
+
+Scenario file:
+
+- `experiments/generated/exact_trace_bench/exact_trace_hidden_knobs_planner_v1_ascend_scenarios.json`
+
+Launch metadata:
+
+- SLURM array job: `5101442` on cluster `ascend`, array indices `0-13`
+- run id / launch id: `20260427_165337_015086_planner-v1-hidden-knobs-matrix`
+- run name: `planner-v1 hidden knobs matrix`
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260427_165337_015086_planner-v1-hidden-knobs-matrix`
+- immutable project snapshot:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_165337/nlp_research_project`
+- immutable library snapshot:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_165337/circuit-tracer_chunked`
+
+Scenarios:
+
+- Planner V1 baseline for `828_base` and `361_base`
+- `phase1_cap64` for `828_base` and `361_base`
+- `deferred_refresh_x2` for `828_base` and `361_base`
+- `topk_ranker` for `828_base` and `361_base`
+- `rowstore_fadvise` for `828_base` and `361_base`
+- `active_encoder_cpu` for `828_base` and `361_base`
+- `active_encoder_pinned_cpu` for `828_base` and `361_base`
+
+Key settings:
+
+- `phase4_scheduler_mode=planner_v1`
+- `attribution_batch_size=128`
+- `feature_batch_size=128`
+- `logit_batch_size=128`
+- `decoder_chunk_size=2048`
+- `cross_batch_decoder_cache_bytes=0`
+- `exact_trace_internal_dtype=fp32`
+- `phase4_refresh_optimization=off`
+- `phase4_row_executor=batched`
+- `phase4_scheduler_telemetry_detail=normal`
+
+Variant settings under test:
+
+| Variant | Isolated setting |
+|---|---|
+| baseline | hidden knobs left at default / legacy behavior |
+| `phase1_cap64` | `phase1_trace_batch_policy=cap_effective_batches`, `phase1_trace_batch_size_max=64` |
+| `deferred_refresh_x2` | `phase4_refresh_policy=deferred_v1`, `phase4_refresh_interval_multiplier=2` |
+| `topk_ranker` | `phase4_ranker=topk_v1` |
+| `rowstore_fadvise` | `row_store_cache_control=fadvise_dontneed_after_append_v1` |
+| `active_encoder_cpu` | `exact_encoder_residency=active_cpu` |
+| `active_encoder_pinned_cpu` | `exact_encoder_residency=active_pinned_cpu` |
+
+Pre-submit validation:
+
+- project lint passed for the touched launcher/scenario plumbing,
+- scenario list loaded all 14 scenarios,
+- dry-run for one deferred-refresh scenario confirmed the expected Planner V1 and
+  hidden-knob CLI flags were emitted,
+- launch-plan created immutable project + sibling library snapshots before
+  submission.
+
+Status / interpretation notes:
+
+- all 14 array tasks completed successfully,
+- extraction / comparison outputs:
+  - `experiments/extracted/exact_trace_bench/planner_v1_hidden_knobs_matrix/benchmark_enriched.csv`,
+  - `experiments/extracted/exact_trace_bench/planner_v1_hidden_knobs_matrix/analysis_summary.csv`,
+  - `experiments/extracted/exact_trace_bench/planner_v1_hidden_knobs_matrix/compact_comparisons.csv`,
+  - per-variant `compare_<prompt>_<variant>_vs_baseline.json` files,
+- use this run, not the earlier locality/default sanity job, as the main hidden
+  knobs comparison matrix,
+- treat `deferred_refresh_x2` as deliberately non-exact-equivalent: record drift
+  rather than requiring strict compact equality.
+
+Performance summary vs in-matrix Planner V1 baseline:
+
+### `828_base`
+
+| Variant | Duration | Δ duration | Phase 4 | Δ Phase 4 | Refresh count | Refresh elapsed | Feature-batch elapsed | sacct MaxRSS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| baseline | `960.77 s` | — | `574.39 s` | — | `18` | `333.94 s` | `240.03 s` | `173.64 GiB` |
+| `phase1_cap64` | `1236.84 s` | `+28.7%` | `974.43 s` | `+69.7%` | `35` | `724.63 s` | `248.96 s` | `174.22 GiB` |
+| `deferred_refresh_x2` | `1310.68 s` | `+36.4%` | `1026.60 s` | `+78.7%` | `9` | `171.17 s` | `855.02 s` | `172.53 GiB` |
+| `topk_ranker` | `889.19 s` | `-7.5%` | `622.92 s` | `+8.5%` | `18` | `311.41 s` | `311.08 s` | `173.08 GiB` |
+| `rowstore_fadvise` | `871.86 s` | `-9.2%` | `607.12 s` | `+5.7%` | `18` | `323.48 s` | `283.22 s` | `173.13 GiB` |
+| `active_encoder_cpu` | `694.82 s` | `-27.7%` | `498.51 s` | `-13.2%` | `18` | `319.55 s` | `178.55 s` | `148.01 GiB` |
+| `active_encoder_pinned_cpu` | `790.34 s` | `-17.7%` | `574.92 s` | `+0.1%` | `18` | `327.25 s` | `247.24 s` | `150.58 GiB` |
+
+### `361_base`
+
+| Variant | Duration | Δ duration | Phase 4 | Δ Phase 4 | Refresh count | Refresh elapsed | Feature-batch elapsed | sacct MaxRSS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| baseline | `1404.36 s` | — | `1004.43 s` | — | `18` | `614.22 s` | `389.80 s` | `265.74 GiB` |
+| `phase1_cap64` | `1723.88 s` | `+22.8%` | `1384.11 s` | `+37.8%` | `36` | `1015.65 s` | `367.65 s` | `276.89 GiB` |
+| `deferred_refresh_x2` | `987.72 s` | `-29.7%` | `609.79 s` | `-39.3%` | `9` | `280.82 s` | `328.57 s` | `273.72 GiB` |
+| `topk_ranker` | `1392.67 s` | `-0.8%` | `1101.06 s` | `+9.6%` | `18` | `554.98 s` | `545.62 s` | `240.40 GiB` |
+| `rowstore_fadvise` | `1223.19 s` | `-12.9%` | `848.12 s` | `-15.6%` | `18` | `512.64 s` | `335.07 s` | `273.43 GiB` |
+| `active_encoder_cpu` | `1329.42 s` | `-5.3%` | `975.60 s` | `-2.9%` | `18` | `610.63 s` | `364.54 s` | `263.76 GiB` |
+| `active_encoder_pinned_cpu` | `1281.57 s` | `-8.7%` | `950.49 s` | `-5.4%` | `18` | `585.31 s` | `364.75 s` | `256.87 GiB` |
+
+Compact comparison vs in-matrix baseline:
+
+- active feature sets matched exactly for every variant/prompt pair
+  (`feature_jaccard=1.0`, active features `2993540` for `828_base` and
+  `5223267` for `361_base`),
+- exact compact match by edge set / weighted edge Jaccard for:
+  - `topk_ranker`,
+  - `rowstore_fadvise`,
+  - `active_encoder_cpu`,
+  - `active_encoder_pinned_cpu`,
+- `deferred_refresh_x2` drifted slightly, as expected:
+  - `828_base`: edge Jaccard `0.998815`, weighted edge Jaccard `0.998569`,
+  - `361_base`: edge Jaccard `0.997632`, weighted edge Jaccard `0.997697`,
+- `phase1_cap64` unexpectedly drifted in retained edge weights/membership:
+  - `828_base`: edge Jaccard `1.0`, weighted edge Jaccard `0.999991`,
+  - `361_base`: edge Jaccard `0.994426`, weighted edge Jaccard `0.994663`.
+
+Interpretation:
+
+- **Do not promote `phase1_cap64`.** It regressed runtime and also introduced
+  compact-output drift, especially on `361_base`.
+- **Do not combine or promote `deferred_refresh_x2` yet.** It is promising for
+  `361_base` but a severe `828_base` regression and deliberately changes retained
+  edge outputs.
+- **`topk_ranker` is exact in this matrix but not a clear speed win.** Keep it
+  feature-gated; useful mostly as a low-risk implementation cleanup / tie-behavior
+  experiment.
+- **`rowstore_fadvise` is exact and improved wall time in both prompts**
+  (`-9.2%` / `-12.9%`), but did not reduce sacct MaxRSS here; keep as a good
+  candidate for combination because it is simple and output-preserving.
+- **`active_encoder_cpu` is the strongest isolated result for `828_base`**:
+  `-27.7%` duration and `173.64 -> 148.01 GiB` sacct MaxRSS, with exact compact
+  output.
+- **`active_encoder_pinned_cpu` is also exact and reduces memory**, but plain CPU
+  was better on `828_base`; pinned CPU was modestly better than plain CPU on
+  `361_base` duration / MaxRSS.
+- Best next combination candidates are `rowstore_fadvise` plus one active encoder
+  residency mode. Prefer testing both `active_encoder_cpu` and
+  `active_encoder_pinned_cpu` in combination because their prompt-wise behavior
+  differs.
+
+Preceding sanity run:
+
+- job `5100027` completed successfully on Ascend and verified the new hidden knobs
+  defaulted to legacy/off behavior, but it accidentally used
+  `phase4_scheduler_mode=locality` rather than Planner V1, so it is only a
+  default-safety/completion check.
+
 ## Status of this note
 
 This file is descriptive, not normative.

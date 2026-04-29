@@ -211,6 +211,25 @@ row-denominator handling around appended row blocks.
 **Why here:** likely useful, but still more of an additive cleanup than a primary
 speed lever.
 
+Follow-up emphasis after the hidden-knobs matrix:
+
+- A more ambitious version of this path is **GPU-side denominator / row-summary
+  computation**:
+  - compute scaled row-L1 denominators while rows are still on GPU,
+  - optionally compute small exact row summaries needed for diagnostics or future
+    refresh planning,
+  - copy rows plus denominator summaries to CPU once.
+- This is attractive because Phase 3/4 currently produce rows on GPU, copy them to
+  CPU, and then scan very wide row slices for denominator statistics.
+- Correctness risk is not approximation, but **floating-point reduction order**:
+  GPU reductions can perturb refresh scores enough to change frontier ties or
+  retained edges. First implementation should therefore support a shadow/parity
+  mode that computes both CPU and GPU denominators and records max/mean absolute
+  differences, frontier overlap, and compact-output equality before any promotion.
+- This path is explicitly desired for a later optimization pass; it is not the
+  selected candidate for the immediate combined array because the next array
+  should minimize live-path correctness risk.
+
 #### Path 6 — Decoder-cache tuning
 
 **Problem:** replay repeatedly loads decoder chunks via
@@ -227,6 +246,23 @@ often intentionally ran with `cross_batch_decoder_cache_bytes=0`.
 **Why later:** it is a low-risk, code-supported optimization path, but the sweep is
 resource-expensive and better used for fine-tuning after implementation-first
 changes land.
+
+Current update:
+
+- The immediate next combined array will include a **single bounded re-test** of
+  this path on top of `active_encoder_cpu + rowstore_fadvise`.
+- Historical context: earlier cross-batch decoder-cache experiments suggested
+  `361_base` may require a large budget (`~8-12 GiB`) and did not obviously help
+  enough. Those results predated the current post-overflow-fix fp32 path and the
+  active-encoder/rowstore improvements, so a limited retest is justified.
+- Keep the retest explicit and conservative:
+  - use `cross_batch_decoder_cache_bytes=<fixed budget>`, not a global default,
+  - prefer one budget in the next shared array rather than a sweep,
+  - treat high eviction churn, OOM, or <~5% wall-clock gain as falsification for
+    this path as the next default-combo candidate.
+- Required telemetry remains decoder cache hits/misses/evictions/skips/resident
+  bytes, decoder load count/time, CUDA peak reserved, sacct MaxRSS, and compact
+  parity vs the combo baseline.
 
 #### Path 7 — Exact hidden-knob sweep, then fixed policy
 
@@ -284,6 +320,47 @@ These ideas may eventually matter, but they are still too correctness-sensitive,
 too invasive, or too approximation-heavy for the near-term exact path.
 
 ## 5. Recommended execution order
+
+### 5.0 Current execution addendum — Ascend-first algorithmic path
+
+The earlier ordering below is still useful as a map of plausible exact
+optimization tracks, but the current execution focus should be narrower:
+
+- prioritize **Ascend/A100** work first; defer Cardinal/H100 capacity pushing
+  until the algorithmic and Phase 0/handoff work has landed, because Cardinal job
+  availability is currently a bottleneck,
+- use `361_base` as the hard normal prompt and `828_base` as the nicer normal
+  prompt,
+- treat late fixtures as feasibility/stress tests, not the fast inner-loop:
+  - `828_late` completes but is near RAM limit,
+  - `361_late` currently CUDA-OOMs in Phase 1,
+- remember that `361_base` Phase 3/4 already sits near the 40 GB A100 VRAM limit
+  (about `38 GB`), while `828_base` has more headroom (about `32 GB`),
+- avoid persistent large GPU caches through Phase 3/4 on A100 unless they replace
+  existing allocations,
+- row-store memmap/page-cache growth can hammer the RAM/cgroup limit and cause
+  large slowdowns, so stability against cache pressure is part of performance.
+
+Current preferred execution order:
+
+1. **Phase 1 trace-batch decoupling** for late feasibility.
+   - Investigate whether Phase 1 unnecessarily expands to the attribution batch
+     size during the forward/cache pass.
+   - Goal: make `361_late` pass Phase 1 without changing exact graph semantics.
+2. **Incremental refresh shadow mode** for algorithmic Phase 4 reduction.
+   - This is the highest-upside Ascend-relevant algorithmic path, but must start
+     as shadow comparison against Planner V1 refresh outputs/frontiers.
+3. **Row-store/page-cache pressure controls** for late-profile stability.
+   - Add telemetry and bounded/advisory controls without repeating the rejected
+     broad row-store read/write rewrite.
+4. **Phase 0 / handoff aggressive temporary or pinned residency.**
+   - Phase 0 appears memory-light, so spend memory there where it is freed before
+     Phase 3/4, or use pinned CPU residency to avoid repeated safetensor reads.
+5. **Only after those:** denominator/GPU row-summary work, layer-depth planner
+   refinements, and then Cardinal/H100 capacity tuning.
+
+This addendum does not remove the older paths; it defines the current ordering for
+the next execution cycle.
 
 Recommended order for the next optimization cycle:
 

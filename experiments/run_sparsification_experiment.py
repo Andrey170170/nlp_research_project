@@ -343,6 +343,20 @@ def build_command(
         )
 
     if method != "old_patch":
+        if scenario.get("phase1_trace_batch_policy") is not None:
+            cmd.extend(
+                [
+                    "--phase1-trace-batch-policy",
+                    str(scenario["phase1_trace_batch_policy"]),
+                ]
+            )
+        if scenario.get("phase1_trace_batch_size_max") is not None:
+            cmd.extend(
+                [
+                    "--phase1-trace-batch-size-max",
+                    str(scenario["phase1_trace_batch_size_max"]),
+                ]
+            )
         cmd.extend(["--decoder-chunk-size", str(scenario["decoder_chunk_size"])])
         cross_batch_decoder_cache_bytes = (
             cross_batch_decoder_cache_bytes_override
@@ -426,6 +440,36 @@ def build_command(
             )
         if scenario.get("phase4_anomaly_debug", False):
             cmd.append("--phase4-anomaly-debug")
+        if scenario.get("phase4_refresh_policy") is not None:
+            cmd.extend(
+                [
+                    "--phase4-refresh-policy",
+                    str(scenario["phase4_refresh_policy"]),
+                ]
+            )
+        if scenario.get("phase4_refresh_interval_multiplier") is not None:
+            cmd.extend(
+                [
+                    "--phase4-refresh-interval-multiplier",
+                    str(scenario["phase4_refresh_interval_multiplier"]),
+                ]
+            )
+        if scenario.get("phase4_ranker") is not None:
+            cmd.extend(["--phase4-ranker", str(scenario["phase4_ranker"])])
+        if scenario.get("row_store_cache_control") is not None:
+            cmd.extend(
+                [
+                    "--row-store-cache-control",
+                    str(scenario["row_store_cache_control"]),
+                ]
+            )
+        if scenario.get("exact_encoder_residency") is not None:
+            cmd.extend(
+                [
+                    "--exact-encoder-residency",
+                    str(scenario["exact_encoder_residency"]),
+                ]
+            )
         if scenario.get("phase4_scheduler_mode") is not None:
             cmd.extend(
                 [
