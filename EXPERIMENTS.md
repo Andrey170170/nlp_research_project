@@ -28,6 +28,97 @@ For important updates, include:
 
 ## Recent investigation updates
 
+### 2026-04-29 — Launched Phase-3 enhanced replay matrix for `94_base`
+
+Purpose:
+
+- test whether donor Phase-3 gradients, donor Phase-3 row normalizers/feature
+  rows, or both move the downstream compact graph/frontier toward the donor
+  cluster after Phase-0 donor replay,
+- run same-cluster self controls before interpreting cross-cluster swaps.
+
+Implementation/launch provenance:
+
+- project repo:
+  - live workspace: `/users/PAS2119/andreykopanev/nlp_research_project`
+  - branch: `exact-trace-bench-harness`
+  - commit: `bea89a1d37549e414beb2febd661c8483c4cb854`
+    (`Plumb Phase-3 donor replay matrix`)
+  - generated matrix scenario JSONs were untracked at snapshot time.
+- sibling library repo:
+  - live workspace: `/users/PAS2119/andreykopanev/circuit-tracer_chunked`
+  - branch: `exact-trace-hidden-knobs`
+  - commit: `cee7e4c52140994ebda9d970963a421c37506491`
+    (`Replay Phase-3 donor gradients and rows`)
+- immutable snapshot container:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_230804_phase3_replay_matrix_94_base`
+- snapshot project root:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_230804_phase3_replay_matrix_94_base/nlp_research_project`
+- snapshot library root:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_230804_phase3_replay_matrix_94_base/circuit-tracer_chunked`
+
+Scenario files:
+
+- Ascend:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_230804_phase3_replay_matrix_94_base/nlp_research_project/experiments/generated/exact_trace_bench/phase3_replay_matrix_94_base_ascend.json`
+- Cardinal:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_230804_phase3_replay_matrix_94_base/nlp_research_project/experiments/generated/exact_trace_bench/phase3_replay_matrix_94_base_cardinal.json`
+- each contains eight tasks:
+  - tasks `0-3`: same-cluster donor self controls,
+  - tasks `4-7`: opposite-cluster donor cross-swaps,
+  - mode order per donor: `baseline`, `row_donor`, `gradient_donor`,
+    `gradient_row_donor`.
+
+Donor roots:
+
+- Ascend donor:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260429_184917_527785_phase3-gradient-donor-capture-94-base-ascend/ascend_phase3_gradient_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000`
+- Cardinal donor:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260429_184917_613970_phase3-gradient-donor-capture-94-base-cardinal/cardinal_phase3_gradient_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000`
+- each mode uses the donor's `step_000_phase0_donor_bundle.npz`; donor-gradient
+  modes also use `step_000_phase3_gradient_bundle.npz`; donor-row modes also use
+  `step_000_phase3_row_bundle.npz`.
+
+Submitted jobs and intended outputs:
+
+- Ascend:
+  - SLURM job `5147972` (`5147972_[0-7]` array)
+  - run id `phase3_replay_matrix_94_base_ascend`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/phase3_replay_matrix_94_base_ascend`
+- Cardinal:
+  - SLURM job `8978498` (`8978498_[0-7]` array)
+  - run id `phase3_replay_matrix_94_base_cardinal`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/phase3_replay_matrix_94_base_cardinal`
+
+Shared replay config:
+
+- fixture: `94_base`
+- tier: `anomaly`
+- `max_steps=1`, `temperature=0.0`, `completions=1`
+- `cross_cluster_debug=true`
+- `exact_trace_internal_dtype=fp64`
+- `phase0_activation_threshold_compare_mode=baseline`
+- `phase0_replay_mode=donor_phase0`
+- `phase0_donor_context_policy=strict`
+- `phase3_replay_validation_policy=strict`
+- `capture_phase0_donor_bundle=true`
+- `capture_phase3_seed_bundle=true`
+- `capture_phase3_gradient_bundle=true`
+- `capture_phase3_row_bundle=true`
+- `capture_feature_semantic_descriptors=true`
+- `semantic_descriptor_top_k=2048`, `semantic_descriptor_dim=64`
+- `decoder_chunk_size=2048`, `cross_batch_decoder_cache_bytes=0`
+- batch sizes `128`
+- requested walltime: `01:00:00`
+
+Analysis gates after completion:
+
+- first check all same-cluster self controls complete with strict replay status
+  and no validation failures,
+- then compare cross-swaps against both host and donor baselines,
+- specifically interpret `row_donor`, `gradient_donor`, and
+  `gradient_row_donor` movement separately.
+
 ### 2026-04-27 — Launched Phase-0 donor-bundle capture pair for replay matrix
 
 Purpose:
