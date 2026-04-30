@@ -119,6 +119,62 @@ Analysis gates after completion:
 - specifically interpret `row_donor`, `gradient_donor`, and
   `gradient_row_donor` movement separately.
 
+Update 2026-04-30:
+
+- Ascend array `5147972_[0-7]` completed with SLURM state `COMPLETED`, exit
+  `0:0` for all tasks, but scenario-level results split by replay mode:
+  - succeeded: baseline and `row_donor` modes for both Ascend and Cardinal donors,
+  - failed: all `gradient_donor` and `gradient_row_donor` modes.
+- Failure cause was a strict validation bug, not a SLURM/GPU failure:
+  `step_000_phase3_gradient_bundle.npz` stores gradients with the full trace
+  batch width (`128`), while validation incorrectly expected the target-token
+  count (`1`):
+  `gradients shape mismatch (expected layers=26, batch=1, positions=80, d_model=1152; got=(26, 128, 80, 1152))`.
+- Library fix committed:
+  - sibling library branch: `exact-trace-hidden-knobs`
+  - commit: `f3add59fa352b2c503a575e10f0040a257cc6dfc`
+    (`Validate Phase-3 gradients by trace batch width`)
+  - validation now checks the runtime trace batch width and keeps the target-count
+    lower-bound guard.
+- CPU-only validation after the fix:
+  - `uv run ruff check circuit_tracer/attribution/attribute_nnsight.py tests/test_phase3_replay_validation.py`
+  - `uv run pytest tests/test_phase3_replay_validation.py -q` (`9 passed`)
+- The original Cardinal array `8978498_[0-7]` was still pending and was canceled
+  before it consumed allocation time with the known-bad snapshot.
+
+Relaunch provenance after the trace-batch validation fix:
+
+- project repo for relaunch snapshot:
+  - branch: `exact-trace-bench-harness`
+  - commit: `8206e5cc2ae0091bad651db4c9b9730c6a05190d`
+    (`Record Phase-3 replay matrix launch`)
+- sibling library repo for relaunch snapshot:
+  - branch: `exact-trace-hidden-knobs`
+  - commit: `f3add59fa352b2c503a575e10f0040a257cc6dfc`
+    (`Validate Phase-3 gradients by trace batch width`)
+- immutable snapshot container:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260430_010643_phase3_replay_matrix_tracebatchfix_94_base`
+- snapshot project root:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260430_010643_phase3_replay_matrix_tracebatchfix_94_base/nlp_research_project`
+- snapshot library root:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260430_010643_phase3_replay_matrix_tracebatchfix_94_base/circuit-tracer_chunked`
+
+Relaunched jobs:
+
+- Ascend gradient-only rerun:
+  - SLURM job `5148766` (`5148766_[2-3,6-7]` array)
+  - scenario file: same Ascend matrix JSON from the fixed snapshot
+  - run id `phase3_replay_matrix_94_base_ascend_gradient_fix`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/phase3_replay_matrix_94_base_ascend_gradient_fix`
+  - task ids: `2`, `3`, `6`, `7` only (`gradient_donor` and
+    `gradient_row_donor` for both donors)
+- Cardinal full rerun:
+  - SLURM job `8980846` (`8980846_[0-7]` array)
+  - scenario file: same Cardinal matrix JSON from the fixed snapshot
+  - run id `phase3_replay_matrix_94_base_cardinal_tracebatchfix`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/phase3_replay_matrix_94_base_cardinal_tracebatchfix`
+  - task ids: `0-7`
+
 ### 2026-04-27 — Launched Phase-0 donor-bundle capture pair for replay matrix
 
 Purpose:
