@@ -314,6 +314,132 @@ Current working plan:
   `docs/phase0_boundary_fingerprinting_spec.md` under
   “Phase-3 gradient / row boundary follow-up”.
 
+### 2026-04-29 — Launched Phase-3 gradient/row donor-capture pair for `94_base`
+
+Purpose:
+
+- produce matched Ascend/Cardinal baseline donor artifacts with the new Phase-3
+  gradient and direct-row bundle capture enabled,
+- verify artifact schema/size/runtime before launching the richer self/cross
+  replay matrix.
+
+Implementation/launch provenance:
+
+- project repo:
+  - live workspace: `/users/PAS2119/andreykopanev/nlp_research_project`
+  - branch: `exact-trace-bench-harness`
+  - commit: `3eb5103` (`Wire Phase-3 gradient row capture`)
+- sibling library repo:
+  - live workspace: `/users/PAS2119/andreykopanev/circuit-tracer_chunked`
+  - branch: `exact-trace-hidden-knobs`
+  - commit: `050c877` (`Capture Phase-3 gradients and rows`)
+- immutable snapshot container:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_184917_phase3_gradient_capture_94_base`
+- snapshot project root:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_184917_phase3_gradient_capture_94_base/nlp_research_project`
+- snapshot library root:
+  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_184917_phase3_gradient_capture_94_base/circuit-tracer_chunked`
+
+Scenario files:
+
+- Ascend:
+  `/users/PAS2119/andreykopanev/nlp_research_project/experiments/generated/exact_trace_bench/phase3_gradient_donor_capture_94_base_ascend.json`
+- Cardinal:
+  `/users/PAS2119/andreykopanev/nlp_research_project/experiments/generated/exact_trace_bench/phase3_gradient_donor_capture_94_base_cardinal.json`
+
+Submitted jobs and intended outputs:
+
+- Ascend:
+  - SLURM job `5146702` (`5146702_[0]` array)
+  - run id `20260429_184917_527785_phase3-gradient-donor-capture-94-base-ascend`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260429_184917_527785_phase3-gradient-donor-capture-94-base-ascend`
+  - SLURM state: `COMPLETED`, exit code `0:0`, elapsed `00:32:34`
+    (`2026-04-29T20:44:30`–`2026-04-29T21:17:04`)
+- Cardinal:
+  - SLURM job `8975505` (`8975505_[0]` array)
+  - run id `20260429_184917_613970_phase3-gradient-donor-capture-94-base-cardinal`
+  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260429_184917_613970_phase3-gradient-donor-capture-94-base-cardinal`
+  - SLURM state: `COMPLETED`, exit code `0:0`, elapsed `00:18:40`
+    (`2026-04-29T20:16:37`–`2026-04-29T20:35:17`)
+
+Shared config:
+
+- fixture: `94_base`
+- tier: `anomaly`
+- `max_steps=1`, `temperature=0.0`, `completions=1`
+- `cross_cluster_debug=true`
+- `exact_trace_internal_dtype=fp64`
+- `phase0_activation_threshold_compare_mode=baseline`
+- `capture_phase0_donor_bundle=true`
+- `capture_phase3_seed_bundle=true`
+- `capture_phase3_gradient_bundle=true`
+- `capture_phase3_row_bundle=true`
+- `capture_feature_semantic_descriptors=true`
+- `semantic_descriptor_top_k=2048`, `semantic_descriptor_dim=64`
+- `decoder_chunk_size=2048`, `cross_batch_decoder_cache_bytes=0`
+- batch sizes `128`
+- requested walltime: `01:00:00`
+
+Completion/artifact check:
+
+- both `result.json` files report `status=success`, `returncode=0`;
+  `completion.json` reports first generated token `Let` and `n_steps_traced=1`.
+- both artifact directories contain:
+  - `completion.json`
+  - `cross_cluster_debug_summary.json`
+  - `cross_cluster_debug_batches.jsonl`
+  - `cross_cluster_debug_checkpoints.jsonl`
+  - `telemetry.jsonl`
+  - `step_000.npz`
+  - `step_000_phase0_donor_bundle.npz`
+  - `step_000_phase3_seed_bundle.npz`
+  - `step_000_phase3_gradient_bundle.npz`
+  - `step_000_phase3_row_bundle.npz`
+  - `step_000_feature_semantic_descriptors.npz`
+- manifest statuses are `captured` for Phase-0 donor, Phase-3 seed,
+  Phase-3 gradient, Phase-3 row, and feature semantic descriptor bundles.
+- active feature counts:
+  - Ascend: `3,371,343`
+  - Cardinal: `3,370,036`
+- common fixed-input/target checks:
+  - input token hash `d081924d7fcce7ec`
+  - target token id `[6481]` (`Let`)
+  - target-token hash `1dea56c43da95d32`
+  - target-probability hash `437d56a13df41ec1`
+  - CLT constants hash `31c83df182f3f365`
+- divergent captured state hashes:
+  - Phase-0 canonical membership: Ascend `2042e3cf71dc07b7`, Cardinal
+    `ba1ab906c0c08e5e`
+  - Phase-0 values: Ascend `456ae070fe38a548`, Cardinal
+    `13a754ff3967d1b4`
+  - Phase-3 gradient hash: Ascend `9439db929b7bd065`, Cardinal
+    `201828f60d3cf292`
+  - Phase-3 row hash: Ascend `fed34f11c8491988`, Cardinal
+    `74cebf03c3fa4ed5`
+- notable row-abs sums:
+  - Ascend row abs sum `3.306366250278821e38` with feature split
+    `2.9732265315158493e38`
+  - Cardinal row abs sum `3.707134498858746e38` with feature split
+    `3.332438773222376e38`
+  - Cardinal exceeds float32 max (`~3.4028235e38`), reinforcing that row-sum
+    overflow remains a plausible boundary for permanent normalization work even
+    though this diagnostic capture itself completed.
+- artifact sizes were bounded:
+  - Phase-3 gradient bundle: about `5.44 MiB` each, with stored dense gradient
+    member shape `(26, 128, 80, 1152)` compressed from about `1170 MiB`.
+  - Phase-3 row bundle: about `11.36 MiB` each, with row shape
+    `(1, active_feature_count)`.
+  - Phase-0 donor bundle: about `17.55 MiB` each.
+  - Phase-3 seed bundle: about `31.16 MiB` each.
+- log scan found only expected/benign matches such as `error` in phase labels and
+  the cuBLAS first-context `UserWarning`; no failed manifest status, traceback,
+  OOM, or nonzero SLURM exit was observed.
+
+Next action:
+
+- build and dry-run the richer self/cross replay matrix using these new donor
+  captures, then launch from a fresh immutable snapshot if dry-run checks pass.
+
 ### 2026-04-24 — Phase-3 seed-bundle rerun supports normal upstream numerical drift interpretation
 
 Purpose:

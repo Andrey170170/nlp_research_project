@@ -279,6 +279,14 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     phase0_replay_validation_warning_counts_max: list[int] = []
     phase0_replay_dtype_roundtrip_losses_latest: list[bool] = []
     phase0_replay_dtype_roundtrip_losses_any: list[bool] = []
+    phase3_gradient_replay_modes: list[str] = []
+    phase3_gradient_replay_statuses: list[str] = []
+    phase3_gradient_replay_statuses_observed: list[str] = []
+    phase3_gradient_replay_donor_bundle_paths: list[str] = []
+    phase3_row_replay_modes: list[str] = []
+    phase3_row_replay_statuses: list[str] = []
+    phase3_row_replay_statuses_observed: list[str] = []
+    phase3_row_replay_donor_bundle_paths: list[str] = []
     phase3_seed_bundle_declared_paths: set[str] = set()
     phase3_seed_bundle_existing_paths: set[str] = set()
     phase3_seed_bundle_missing_paths: set[str] = set()
@@ -691,6 +699,44 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
             phase0_replay_dtype_roundtrip_losses_any.append(
                 replay_any_dtype_roundtrip_loss
             )
+
+        for key, sink in (
+            ("phase3_gradient_replay_mode", phase3_gradient_replay_modes),
+            ("phase3_gradient_replay_status", phase3_gradient_replay_statuses),
+            ("phase3_row_replay_mode", phase3_row_replay_modes),
+            ("phase3_row_replay_status", phase3_row_replay_statuses),
+        ):
+            value = manifest.get(key)
+            if isinstance(value, str):
+                sink.append(value)
+        for key, sink in (
+            (
+                "phase3_gradient_replay_statuses_observed",
+                phase3_gradient_replay_statuses_observed,
+            ),
+            (
+                "phase3_row_replay_statuses_observed",
+                phase3_row_replay_statuses_observed,
+            ),
+        ):
+            value = manifest.get(key)
+            if isinstance(value, list):
+                sink.extend(item for item in value if isinstance(item, str))
+        gradient_replay_path = manifest.get("phase3_gradient_replay_donor_bundle_path")
+        if (
+            not isinstance(gradient_replay_path, str)
+            or not gradient_replay_path.strip()
+        ):
+            gradient_replay_path = manifest.get("phase3_gradient_donor_bundle")
+        if isinstance(gradient_replay_path, str) and gradient_replay_path.strip():
+            phase3_gradient_replay_donor_bundle_paths.append(
+                gradient_replay_path.strip()
+            )
+        row_replay_path = manifest.get("phase3_row_replay_donor_bundle_path")
+        if not isinstance(row_replay_path, str) or not row_replay_path.strip():
+            row_replay_path = manifest.get("phase3_row_donor_bundle")
+        if isinstance(row_replay_path, str) and row_replay_path.strip():
+            phase3_row_replay_donor_bundle_paths.append(row_replay_path.strip())
 
         phase3_seed_bundle_capture_enabled = manifest.get(
             "phase3_seed_bundle_capture_enabled"
@@ -1225,7 +1271,9 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     phase3_gradient_bundle_declared_paths_sorted = sorted(
         phase3_gradient_bundle_declared_paths
     )
-    phase3_gradient_bundle_missing_paths_sorted = sorted(phase3_gradient_bundle_missing_paths)
+    phase3_gradient_bundle_missing_paths_sorted = sorted(
+        phase3_gradient_bundle_missing_paths
+    )
     phase3_row_bundle_existing_paths_sorted = sorted(phase3_row_bundle_existing_paths)
     phase3_row_bundle_declared_paths_sorted = sorted(phase3_row_bundle_declared_paths)
     phase3_row_bundle_missing_paths_sorted = sorted(phase3_row_bundle_missing_paths)
@@ -1616,6 +1664,43 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
             if phase0_replay_dtype_roundtrip_loss_any_source
             else None
         ),
+        "phase3_gradient_replay_mode": (
+            phase3_gradient_replay_modes[-1] if phase3_gradient_replay_modes else None
+        ),
+        "phase3_gradient_replay_modes_observed": sorted(
+            set(phase3_gradient_replay_modes)
+        ),
+        "phase3_gradient_replay_status": (
+            phase3_gradient_replay_statuses[-1]
+            if phase3_gradient_replay_statuses
+            else None
+        ),
+        "phase3_gradient_replay_statuses_observed": sorted(
+            set(
+                phase3_gradient_replay_statuses_observed
+                or phase3_gradient_replay_statuses
+            )
+        ),
+        "phase3_gradient_replay_donor_bundle_path": (
+            phase3_gradient_replay_donor_bundle_paths[-1]
+            if phase3_gradient_replay_donor_bundle_paths
+            else None
+        ),
+        "phase3_row_replay_mode": (
+            phase3_row_replay_modes[-1] if phase3_row_replay_modes else None
+        ),
+        "phase3_row_replay_modes_observed": sorted(set(phase3_row_replay_modes)),
+        "phase3_row_replay_status": (
+            phase3_row_replay_statuses[-1] if phase3_row_replay_statuses else None
+        ),
+        "phase3_row_replay_statuses_observed": sorted(
+            set(phase3_row_replay_statuses_observed or phase3_row_replay_statuses)
+        ),
+        "phase3_row_replay_donor_bundle_path": (
+            phase3_row_replay_donor_bundle_paths[-1]
+            if phase3_row_replay_donor_bundle_paths
+            else None
+        ),
         "phase3_seed_bundle_capture_enabled_fraction": (
             round(
                 mean(
@@ -1652,7 +1737,12 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
         ),
         "phase3_gradient_bundle_capture_enabled_fraction": (
             round(
-                mean([float(value) for value in phase3_gradient_bundle_capture_enabled_values]),
+                mean(
+                    [
+                        float(value)
+                        for value in phase3_gradient_bundle_capture_enabled_values
+                    ]
+                ),
                 6,
             )
             if phase3_gradient_bundle_capture_enabled_values
@@ -1686,7 +1776,12 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
             set(phase3_gradient_bundle_statuses)
         ),
         "phase3_row_bundle_capture_enabled_fraction": (
-            round(mean([float(value) for value in phase3_row_bundle_capture_enabled_values]), 6)
+            round(
+                mean(
+                    [float(value) for value in phase3_row_bundle_capture_enabled_values]
+                ),
+                6,
+            )
             if phase3_row_bundle_capture_enabled_values
             else None
         ),

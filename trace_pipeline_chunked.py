@@ -78,6 +78,22 @@ def parse_phase0_donor_context_policy(value: str) -> str:
     )
 
 
+def parse_phase3_replay_mode(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized in {"disabled", "donor"}:
+        return normalized
+    raise argparse.ArgumentTypeError(
+        f"Expected one of {{disabled, donor}}, got: {value!r}"
+    )
+
+
+def parse_phase3_replay_validation_policy(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized == "strict":
+        return normalized
+    raise argparse.ArgumentTypeError(f"Expected 'strict', got: {value!r}")
+
+
 def resolve_internal_precision(exact_trace_internal_dtype: str) -> str:
     normalized = parse_exact_trace_internal_dtype(exact_trace_internal_dtype)
     return "float32" if normalized == "fp32" else "float64"
@@ -508,6 +524,11 @@ def extract_compact_chunked_attribution(
     phase0_donor_bundle: str | None = None,
     phase0_replay_mode: str = "disabled",
     phase0_donor_context_policy: str = "strict",
+    phase3_gradient_donor_bundle: str | None = None,
+    phase3_gradient_replay_mode: str = "disabled",
+    phase3_row_donor_bundle: str | None = None,
+    phase3_row_replay_mode: str = "disabled",
+    phase3_replay_validation_policy: str = "strict",
     capture_phase3_seed_bundle: bool = False,
     capture_phase3_gradient_bundle: bool = False,
     capture_phase3_row_bundle: bool = False,
@@ -568,6 +589,11 @@ def extract_compact_chunked_attribution(
         phase0_donor_bundle=phase0_donor_bundle,
         phase0_replay_mode=phase0_replay_mode,
         phase0_donor_context_policy=phase0_donor_context_policy,
+        phase3_gradient_donor_bundle=phase3_gradient_donor_bundle,
+        phase3_gradient_replay_mode=phase3_gradient_replay_mode,
+        phase3_row_donor_bundle=phase3_row_donor_bundle,
+        phase3_row_replay_mode=phase3_row_replay_mode,
+        phase3_replay_validation_policy=phase3_replay_validation_policy,
         compact_output=True,
         exact_trace_internal_dtype=exact_trace_internal_dtype,
         phase0_activation_threshold_compare_mode=phase0_activation_threshold_compare_mode,
@@ -767,6 +793,11 @@ def trace_completion_compact_chunked(
     phase0_donor_bundle: str | None = None,
     phase0_replay_mode: str = "disabled",
     phase0_donor_context_policy: str = "strict",
+    phase3_gradient_donor_bundle: str | None = None,
+    phase3_gradient_replay_mode: str = "disabled",
+    phase3_row_donor_bundle: str | None = None,
+    phase3_row_replay_mode: str = "disabled",
+    phase3_replay_validation_policy: str = "strict",
     capture_phase3_seed_bundle: bool = False,
     capture_phase3_gradient_bundle: bool = False,
     capture_phase3_row_bundle: bool = False,
@@ -830,6 +861,8 @@ def trace_completion_compact_chunked(
     phase0_replay_statuses: list[str] = []
     phase0_replay_validation_warning_counts: list[int] = []
     phase0_replay_dtype_roundtrip_losses: list[bool] = []
+    phase3_gradient_replay_statuses: list[str] = []
+    phase3_row_replay_statuses: list[str] = []
     phase3_seed_bundle_statuses: list[str] = []
     phase3_seed_bundle_captured_count = 0
     phase3_gradient_bundle_statuses: list[str] = []
@@ -887,6 +920,11 @@ def trace_completion_compact_chunked(
             phase0_donor_bundle=phase0_donor_bundle,
             phase0_replay_mode=phase0_replay_mode,
             phase0_donor_context_policy=phase0_donor_context_policy,
+            phase3_gradient_donor_bundle=phase3_gradient_donor_bundle,
+            phase3_gradient_replay_mode=phase3_gradient_replay_mode,
+            phase3_row_donor_bundle=phase3_row_donor_bundle,
+            phase3_row_replay_mode=phase3_row_replay_mode,
+            phase3_replay_validation_policy=phase3_replay_validation_policy,
             capture_phase3_seed_bundle=capture_phase3_seed_bundle,
             capture_phase3_gradient_bundle=capture_phase3_gradient_bundle,
             capture_phase3_row_bundle=capture_phase3_row_bundle,
@@ -1127,6 +1165,97 @@ def trace_completion_compact_chunked(
             phase0_replay_validation_warning_count
         )
         phase0_replay_dtype_roundtrip_losses.append(phase0_replay_dtype_roundtrip_loss)
+
+        phase3_gradient_replay_metadata = compact_result.get(
+            "phase3_gradient_replay_metadata"
+        )
+        if isinstance(phase3_gradient_replay_metadata, dict):
+            phase3_gradient_replay_mode_effective = str(
+                phase3_gradient_replay_metadata.get("mode", phase3_gradient_replay_mode)
+            )
+            phase3_gradient_replay_status = str(
+                phase3_gradient_replay_metadata.get("status", "unknown")
+            )
+            phase3_gradient_replay_donor_bundle_path_effective = (
+                phase3_gradient_replay_metadata.get("donor_bundle_path")
+                or phase3_gradient_donor_bundle
+            )
+            phase3_gradient_replay_error = phase3_gradient_replay_metadata.get("error")
+            phase3_gradient_replay_source = phase3_gradient_replay_metadata.get(
+                "source"
+            )
+            phase3_gradient_replay_note = phase3_gradient_replay_metadata.get("note")
+        else:
+            phase3_gradient_replay_mode_effective = str(
+                compact_result.get(
+                    "phase3_gradient_replay_mode", phase3_gradient_replay_mode
+                )
+            )
+            phase3_gradient_replay_status = str(
+                compact_result.get(
+                    "phase3_gradient_replay_status",
+                    "disabled"
+                    if phase3_gradient_replay_mode == "disabled"
+                    else "unknown",
+                )
+            )
+            phase3_gradient_replay_donor_bundle_path_effective = compact_result.get(
+                "phase3_gradient_replay_donor_bundle_path",
+                phase3_gradient_donor_bundle,
+            )
+            phase3_gradient_replay_error = compact_result.get(
+                "phase3_gradient_replay_error"
+            )
+            phase3_gradient_replay_source = compact_result.get(
+                "phase3_gradient_replay_source"
+            )
+            phase3_gradient_replay_note = compact_result.get(
+                "phase3_gradient_replay_note"
+            )
+        if phase3_gradient_replay_donor_bundle_path_effective is not None:
+            phase3_gradient_replay_donor_bundle_path_effective = str(
+                phase3_gradient_replay_donor_bundle_path_effective
+            )
+
+        phase3_row_replay_metadata = compact_result.get("phase3_row_replay_metadata")
+        if isinstance(phase3_row_replay_metadata, dict):
+            phase3_row_replay_mode_effective = str(
+                phase3_row_replay_metadata.get("mode", phase3_row_replay_mode)
+            )
+            phase3_row_replay_status = str(
+                phase3_row_replay_metadata.get("status", "unknown")
+            )
+            phase3_row_replay_donor_bundle_path_effective = (
+                phase3_row_replay_metadata.get("donor_bundle_path")
+                or phase3_row_donor_bundle
+            )
+            phase3_row_replay_error = phase3_row_replay_metadata.get("error")
+            phase3_row_replay_source = phase3_row_replay_metadata.get("source")
+            phase3_row_replay_note = phase3_row_replay_metadata.get("note")
+        else:
+            phase3_row_replay_mode_effective = str(
+                compact_result.get("phase3_row_replay_mode", phase3_row_replay_mode)
+            )
+            phase3_row_replay_status = str(
+                compact_result.get(
+                    "phase3_row_replay_status",
+                    "disabled" if phase3_row_replay_mode == "disabled" else "unknown",
+                )
+            )
+            phase3_row_replay_donor_bundle_path_effective = compact_result.get(
+                "phase3_row_replay_donor_bundle_path",
+                phase3_row_donor_bundle,
+            )
+            phase3_row_replay_error = compact_result.get("phase3_row_replay_error")
+            phase3_row_replay_source = compact_result.get("phase3_row_replay_source")
+            phase3_row_replay_note = compact_result.get("phase3_row_replay_note")
+        if phase3_row_replay_donor_bundle_path_effective is not None:
+            phase3_row_replay_donor_bundle_path_effective = str(
+                phase3_row_replay_donor_bundle_path_effective
+            )
+
+        phase3_gradient_replay_statuses.append(phase3_gradient_replay_status)
+        phase3_row_replay_statuses.append(phase3_row_replay_status)
 
         token_generation_start = time.perf_counter()
         token_result = base.generate_next_token(
@@ -1386,6 +1515,22 @@ def trace_completion_compact_chunked(
                 if phase0_replay_mode != "disabled"
                 else None
             ),
+            "phase3_gradient_replay_mode": phase3_gradient_replay_mode_effective,
+            "phase3_gradient_replay_status": phase3_gradient_replay_status,
+            "phase3_gradient_replay_donor_bundle_path": (
+                phase3_gradient_replay_donor_bundle_path_effective
+            ),
+            "phase3_gradient_replay_error": phase3_gradient_replay_error,
+            "phase3_gradient_replay_source": phase3_gradient_replay_source,
+            "phase3_gradient_replay_note": phase3_gradient_replay_note,
+            "phase3_row_replay_mode": phase3_row_replay_mode_effective,
+            "phase3_row_replay_status": phase3_row_replay_status,
+            "phase3_row_replay_donor_bundle_path": (
+                phase3_row_replay_donor_bundle_path_effective
+            ),
+            "phase3_row_replay_error": phase3_row_replay_error,
+            "phase3_row_replay_source": phase3_row_replay_source,
+            "phase3_row_replay_note": phase3_row_replay_note,
             "phase0_donor_bundle_capture_enabled": bool(capture_phase0_donor_bundle),
             "phase0_donor_bundle_path": (
                 phase0_donor_bundle_path.name
@@ -1512,11 +1657,18 @@ def trace_completion_compact_chunked(
             if phase0_replay_mode != "disabled" and max_steps > 1
             else None
         ),
+        "phase3_gradient_replay_mode": phase3_gradient_replay_mode,
+        "phase3_gradient_donor_bundle": phase3_gradient_donor_bundle,
+        "phase3_row_replay_mode": phase3_row_replay_mode,
+        "phase3_row_donor_bundle": phase3_row_donor_bundle,
+        "phase3_replay_validation_policy": phase3_replay_validation_policy,
         "resolved_dtype_map": resolved_dtype_map_artifact,
         "phase4_anomaly_debug": phase4_anomaly_debug,
         "cross_cluster_debug": cross_cluster_debug,
         "capture_phase0_donor_bundle": capture_phase0_donor_bundle,
         "capture_phase3_seed_bundle": capture_phase3_seed_bundle,
+        "capture_phase3_gradient_bundle": capture_phase3_gradient_bundle,
+        "capture_phase3_row_bundle": capture_phase3_row_bundle,
         "capture_feature_semantic_descriptors": capture_feature_semantic_descriptors,
         "semantic_descriptor_top_k": semantic_descriptor_top_k,
         "semantic_descriptor_dim": semantic_descriptor_dim,
@@ -1633,6 +1785,18 @@ def trace_completion_compact_chunked(
         "phase0_replay_any_dtype_roundtrip_loss": bool(
             any(phase0_replay_dtype_roundtrip_losses)
         ),
+        "phase3_gradient_replay_status": (
+            phase3_gradient_replay_statuses[-1]
+            if phase3_gradient_replay_statuses
+            else None
+        ),
+        "phase3_gradient_replay_statuses_observed": sorted(
+            set(phase3_gradient_replay_statuses)
+        ),
+        "phase3_row_replay_status": (
+            phase3_row_replay_statuses[-1] if phase3_row_replay_statuses else None
+        ),
+        "phase3_row_replay_statuses_observed": sorted(set(phase3_row_replay_statuses)),
         "phase0_donor_bundle_capture_enabled": bool(capture_phase0_donor_bundle),
         "phase0_donor_bundle_captured_count": int(phase0_donor_bundle_captured_count),
         "phase0_donor_bundle_status": (
@@ -1797,6 +1961,39 @@ def run_pipeline(args: argparse.Namespace) -> None:
             "--phase0-donor-bundle was provided while --phase0-replay-mode=disabled; "
             "set --phase0-replay-mode donor_phase0 to enable replay"
         )
+    if args.phase3_gradient_replay_mode != "disabled" and args.save_raw:
+        raise ValueError(
+            "Phase-3 gradient replay supports only compact exact-chunked output. "
+            "--save-raw is unsupported when --phase3-gradient-replay-mode is enabled."
+        )
+    if args.phase3_row_replay_mode != "disabled" and args.save_raw:
+        raise ValueError(
+            "Phase-3 row replay supports only compact exact-chunked output. "
+            "--save-raw is unsupported when --phase3-row-replay-mode is enabled."
+        )
+    if (
+        args.phase3_gradient_replay_mode != "disabled"
+        and not args.phase3_gradient_donor_bundle
+    ):
+        raise ValueError(
+            "--phase3-gradient-replay-mode requires --phase3-gradient-donor-bundle PATH"
+        )
+    if (
+        args.phase3_gradient_replay_mode == "disabled"
+        and args.phase3_gradient_donor_bundle
+    ):
+        raise ValueError(
+            "--phase3-gradient-donor-bundle was provided while "
+            "--phase3-gradient-replay-mode=disabled"
+        )
+    if args.phase3_row_replay_mode != "disabled" and not args.phase3_row_donor_bundle:
+        raise ValueError(
+            "--phase3-row-replay-mode requires --phase3-row-donor-bundle PATH"
+        )
+    if args.phase3_row_replay_mode == "disabled" and args.phase3_row_donor_bundle:
+        raise ValueError(
+            "--phase3-row-donor-bundle was provided while --phase3-row-replay-mode=disabled"
+        )
     if args.save_raw and args.exact_trace_internal_dtype != "fp64":
         raise ValueError(
             "The explicit internal precision contract is currently supported only for "
@@ -1898,6 +2095,11 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "phase0_replay_mode": args.phase0_replay_mode,
         "phase0_donor_bundle": args.phase0_donor_bundle,
         "phase0_donor_context_policy": args.phase0_donor_context_policy,
+        "phase3_gradient_replay_mode": args.phase3_gradient_replay_mode,
+        "phase3_gradient_donor_bundle": args.phase3_gradient_donor_bundle,
+        "phase3_row_replay_mode": args.phase3_row_replay_mode,
+        "phase3_row_donor_bundle": args.phase3_row_donor_bundle,
+        "phase3_replay_validation_policy": args.phase3_replay_validation_policy,
         "phase0_replay_single_step_intended": bool(
             args.phase0_replay_mode != "disabled"
         ),
@@ -2022,6 +2224,17 @@ def run_pipeline(args: argparse.Namespace) -> None:
                         "phase0_replay_mode": args.phase0_replay_mode,
                         "phase0_donor_context_policy": (
                             args.phase0_donor_context_policy
+                        ),
+                        "phase3_gradient_donor_bundle": (
+                            args.phase3_gradient_donor_bundle
+                        ),
+                        "phase3_gradient_replay_mode": (
+                            args.phase3_gradient_replay_mode
+                        ),
+                        "phase3_row_donor_bundle": args.phase3_row_donor_bundle,
+                        "phase3_row_replay_mode": args.phase3_row_replay_mode,
+                        "phase3_replay_validation_policy": (
+                            args.phase3_replay_validation_policy
                         ),
                         "capture_phase3_seed_bundle": args.capture_phase3_seed_bundle,
                         "capture_phase3_gradient_bundle": (
@@ -2324,6 +2537,34 @@ if __name__ == "__main__":
         type=parse_phase0_donor_context_policy,
         default="strict",
         help="Donor/host context validation policy: strict or warn",
+    )
+    parser.add_argument(
+        "--phase3-gradient-donor-bundle",
+        default=None,
+        help="Path to a Phase-3 gradient donor bundle .npz for replay",
+    )
+    parser.add_argument(
+        "--phase3-gradient-replay-mode",
+        type=parse_phase3_replay_mode,
+        default="disabled",
+        help="Phase-3 gradient replay mode: disabled or donor",
+    )
+    parser.add_argument(
+        "--phase3-row-donor-bundle",
+        default=None,
+        help="Path to a Phase-3 row donor bundle .npz for replay",
+    )
+    parser.add_argument(
+        "--phase3-row-replay-mode",
+        type=parse_phase3_replay_mode,
+        default="disabled",
+        help="Phase-3 row replay mode: disabled or donor",
+    )
+    parser.add_argument(
+        "--phase3-replay-validation-policy",
+        type=parse_phase3_replay_validation_policy,
+        default="strict",
+        help="Phase-3 replay validation policy (currently strict only)",
     )
     parser.add_argument(
         "--capture-feature-semantic-descriptors",

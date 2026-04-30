@@ -80,6 +80,11 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
             "phase0_donor_bundle": "/tmp/donor_bundle.npz",
             "phase0_replay_mode": "donor_phase0",
             "phase0_donor_context_policy": "warn",
+            "phase3_gradient_donor_bundle": "/tmp/gradient_bundle.npz",
+            "phase3_gradient_replay_mode": "donor",
+            "phase3_row_donor_bundle": "/tmp/row_bundle.npz",
+            "phase3_row_replay_mode": "donor",
+            "phase3_replay_validation_policy": "strict",
             "capture_phase3_seed_bundle": True,
             "capture_phase3_gradient_bundle": True,
             "capture_phase3_row_bundle": True,
@@ -89,6 +94,11 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
     assert selected_knobs["phase0_donor_bundle"] == "/tmp/donor_bundle.npz"
     assert selected_knobs["phase0_replay_mode"] == "donor_phase0"
     assert selected_knobs["phase0_donor_context_policy"] == "warn"
+    assert selected_knobs["phase3_gradient_replay_mode"] == "donor"
+    assert selected_knobs["phase3_gradient_donor_bundle"] == "/tmp/gradient_bundle.npz"
+    assert selected_knobs["phase3_row_replay_mode"] == "donor"
+    assert selected_knobs["phase3_row_donor_bundle"] == "/tmp/row_bundle.npz"
+    assert selected_knobs["phase3_replay_validation_policy"] == "strict"
 
     scenario = {
         "method": "exact",
@@ -112,6 +122,11 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         "phase0_donor_bundle": "/tmp/donor_bundle.npz",
         "phase0_replay_mode": "donor_phase0",
         "phase0_donor_context_policy": "warn",
+        "phase3_gradient_donor_bundle": "/tmp/gradient_bundle.npz",
+        "phase3_gradient_replay_mode": "donor",
+        "phase3_row_donor_bundle": "/tmp/row_bundle.npz",
+        "phase3_row_replay_mode": "donor",
+        "phase3_replay_validation_policy": "strict",
         "capture_phase3_seed_bundle": True,
         "capture_phase3_gradient_bundle": True,
         "capture_phase3_row_bundle": True,
@@ -131,6 +146,13 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
     assert "donor_phase0" in command
     assert "--phase0-donor-context-policy" in command
     assert "warn" in command
+    assert "--phase3-gradient-donor-bundle" in command
+    assert "/tmp/gradient_bundle.npz" in command
+    assert "--phase3-gradient-replay-mode" in command
+    assert "--phase3-row-donor-bundle" in command
+    assert "/tmp/row_bundle.npz" in command
+    assert "--phase3-row-replay-mode" in command
+    assert "--phase3-replay-validation-policy" in command
     assert "--phase0-activation-threshold-compare-mode" in command
     assert "fp32" in command
     assert "--capture-phase0-donor-bundle" in command
@@ -236,6 +258,14 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
                     "phase0_replay_validation_warning_count_max": 2,
                     "phase0_replay_dtype_roundtrip_loss": True,
                     "phase0_replay_any_dtype_roundtrip_loss": True,
+                    "phase3_gradient_replay_mode": "donor",
+                    "phase3_gradient_donor_bundle": "/tmp/gradient_bundle.npz",
+                    "phase3_gradient_replay_status": "applied",
+                    "phase3_gradient_replay_statuses_observed": ["applied"],
+                    "phase3_row_replay_mode": "donor",
+                    "phase3_row_donor_bundle": "/tmp/row_bundle.npz",
+                    "phase3_row_replay_status": "applied",
+                    "phase3_row_replay_statuses_observed": ["applied"],
                     "phase3_seed_bundle_capture_enabled": True,
                     "phase3_seed_bundle_status": "captured",
                     "phase3_seed_bundle_statuses_observed": ["captured"],
@@ -307,6 +337,18 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         assert benchmark_row["phase0_replay_validation_warning_count_max"] == 2
         assert benchmark_row["phase0_replay_dtype_roundtrip_loss"] is True
         assert benchmark_row["phase0_replay_any_dtype_roundtrip_loss"] is True
+        assert benchmark_row["phase3_gradient_replay_mode"] == "donor"
+        assert benchmark_row["phase3_gradient_replay_status"] == "applied"
+        assert (
+            benchmark_row["phase3_gradient_replay_donor_bundle_path"]
+            == "/tmp/gradient_bundle.npz"
+        )
+        assert benchmark_row["phase3_row_replay_mode"] == "donor"
+        assert benchmark_row["phase3_row_replay_status"] == "applied"
+        assert (
+            benchmark_row["phase3_row_replay_donor_bundle_path"]
+            == "/tmp/row_bundle.npz"
+        )
 
         assert legacy_row["phase3_seed_bundle_present"] is True
         assert legacy_row["phase3_seed_bundle_file_count"] == 1
@@ -328,6 +370,10 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         assert legacy_row["phase0_replay_validation_warning_count_max"] == 2
         assert legacy_row["phase0_replay_dtype_roundtrip_loss"] is True
         assert legacy_row["phase0_replay_any_dtype_roundtrip_loss"] is True
+        assert legacy_row["phase3_gradient_replay_mode"] == "donor"
+        assert legacy_row["phase3_gradient_replay_status"] == "applied"
+        assert legacy_row["phase3_row_replay_mode"] == "donor"
+        assert legacy_row["phase3_row_replay_status"] == "applied"
 
 
 def run_feature_semantic_descriptor_save_checks() -> None:

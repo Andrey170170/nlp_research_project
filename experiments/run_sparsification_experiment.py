@@ -469,6 +469,35 @@ def build_command(
                     str(scenario["phase0_donor_context_policy"]),
                 ]
             )
+        if scenario.get("phase3_gradient_donor_bundle") is not None:
+            cmd.extend(
+                [
+                    "--phase3-gradient-donor-bundle",
+                    str(scenario["phase3_gradient_donor_bundle"]),
+                ]
+            )
+        if scenario.get("phase3_gradient_replay_mode") is not None:
+            cmd.extend(
+                [
+                    "--phase3-gradient-replay-mode",
+                    str(scenario["phase3_gradient_replay_mode"]),
+                ]
+            )
+        if scenario.get("phase3_row_donor_bundle") is not None:
+            cmd.extend(
+                ["--phase3-row-donor-bundle", str(scenario["phase3_row_donor_bundle"])]
+            )
+        if scenario.get("phase3_row_replay_mode") is not None:
+            cmd.extend(
+                ["--phase3-row-replay-mode", str(scenario["phase3_row_replay_mode"])]
+            )
+        if scenario.get("phase3_replay_validation_policy") is not None:
+            cmd.extend(
+                [
+                    "--phase3-replay-validation-policy",
+                    str(scenario["phase3_replay_validation_policy"]),
+                ]
+            )
         if scenario.get("capture_phase3_seed_bundle", False):
             cmd.append("--capture-phase3-seed-bundle")
         if scenario.get("capture_phase3_gradient_bundle", False):

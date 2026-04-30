@@ -1,4 +1,4 @@
-# Current Execution Plan — Phase-3 Gradient Boundary Probe
+# Current Execution Plan — Phase-3 Enhanced Donor Replay Matrix
 
 ## Problem statement
 
@@ -6,26 +6,32 @@ The completed `94_base` Phase-0 replay matrix showed that replacing only the
 Phase-0 active feature support/activation values copies donor support exactly,
 but Phase-3 scores/frontiers and compact edge weights remain host-like.
 
-That means the next causal boundary is not richer Phase-0 support alone. We need
-to capture the Phase-3 gradient/direct-effect inputs that score those features,
-then test whether gradient or row replay moves the graph toward the donor.
+The matched Phase-3 donor-capture pair has now completed successfully on both
+Ascend and Cardinal. It produced Phase-0 donor bundles, Phase-3 seed bundles,
+Phase-3 gradient bundles, and Phase-3 row bundles for `94_base`.
+
+Next goal: implement **Phase-3 enhanced donor replay** and run an enlarged matrix
+that separately tests donor gradients, donor rows, and both together.
 
 ## Working hypothesis
 
 Cross-cluster drift is dominated by host-side Phase-3 scoring state:
 
 - backward gradients through the host cached forward graph,
-- error/token vectors and direct-effect row construction,
+- direct-effect row construction from gradients and decoder/error/token vectors,
 - row-L1 normalization and influence ranking from those rows.
 
 Phase-0 donor replay currently creates a mixed counterfactual:
 
 ```text
-donor feature support/activation values × host Phase-3 gradient field
+donor feature support/activation values × host Phase-3 gradient/row field
 ```
 
-The observed host-like downstream result is expected if the gradient/direct-row
-field dominates the ranking.
+Enhanced replay should let us test the causal boundary:
+
+```text
+donor Phase-0 state × host/donor gradient field × host/donor row field
+```
 
 ## Status checklist
 
@@ -33,165 +39,296 @@ field dominates the ranking.
 - [x] `94_base` Phase-0 replay matrix completed on Ascend/Cardinal.
 - [x] Self-replay controls passed on both clusters.
 - [x] Cross-swaps stayed host-like in Phase-3/edge metrics despite donor support.
-- [ ] Implement passive Phase-3 gradient/direct-row capture.
-- [ ] Launch matched gradient donor-capture pair.
-- [ ] Launch Phase-0 + Phase-3-gradient capture matrix.
-- [ ] Compare gradients/rows host-vs-donor and decide replay boundary.
-- [ ] Implement Phase-3 row replay or gradient replay if capture confirms the
-      drift is in row construction.
+- [x] Passive Phase-3 gradient/direct-row capture implemented.
+- [x] Matched `94_base` Phase-3 donor-capture pair completed.
+- [x] Donor captures verified: gradient/row/seed/Phase-0 artifacts all present.
+- [x] Implement Phase-3 row donor replay.
+- [x] Implement Phase-3 gradient donor replay.
+- [x] Add project plumbing and lightweight tests.
+- [x] Reviewer follow-up complete: strict donor provenance validation, batched
+  gradient slicing, row split consistency checks, and extractor provenance fixes.
+- [ ] Generate and dry-run enlarged matrix scenarios.
+- [ ] Launch enlarged matrix from a fresh immutable snapshot.
+- [ ] Compare self controls first, then interpret cross-swaps.
 
-## Implementation phase
+## Implementation plan
 
-### 1. Add passive Phase-3 gradient bundle capture
+### 1. Add explicit Phase-3 replay controls
 
-Suggested flag:
+Add independent controls for gradient and row replay:
 
-- `--capture-phase3-gradient-bundle`
+```text
+--phase3-gradient-replay-mode {disabled,donor}
+--phase3-gradient-donor-bundle PATH
 
-Suggested artifact:
+--phase3-row-replay-mode {disabled,donor}
+--phase3-row-donor-bundle PATH
 
-- `step_000_phase3_gradient_bundle.npz`
+--phase3-replay-validation-policy strict
+```
 
-Capture gradients from `phase3_logits` attribution only. Minimum contents:
+All enhanced-replay matrix scenarios should also keep:
 
-- `schema_version`
-- `target_token_ids`, `target_probabilities`, target hashes
-- prompt/context hashes already used by Phase-0 validation
-- active-feature support/value hashes for the runtime state
-- per-layer gradient hashes and stats
-- compact full gradient tensor if feasible:
-  - shape `[n_layers, n_targets, n_pos, d_model]`
-  - dtype `float32` initially, optionally `float16/bfloat16` only for analysis
-    copies if storage pressure requires it
-- missing-layer mask / layer ids
-- provenance: host cluster/run/scenario, project/library commit, snapshot roots
+```text
+phase0_replay_mode=donor_phase0
+phase0_donor_context_policy=strict
+```
 
-Keep this capture passive: it must not alter Phase-3 rows or frontier selection.
+Reason: row replay is indexed by the active feature list, so it is only
+meaningful after Phase-0 donor replay has imposed donor feature support/order.
+Gradient replay is indexed by layer/target/position/d_model, but it is most
+interpretable when paired with the donor Phase-0 active-feature state.
 
-### 2. Add optional Phase-3 row forensic bundle capture
+### 2. Define replay modes
 
-Suggested flag:
+For each host/donor pair, run four modes:
 
-- `--capture-phase3-row-bundle`
+| Mode | Phase-0 state | Gradient field | Direct rows |
+|---|---|---|---|
+| `baseline` | donor | host-computed | host-computed |
+| `row_donor` | donor | host-computed | donor row bundle |
+| `gradient_donor` | donor | donor gradient bundle | recomputed from donor gradient |
+| `gradient_row_donor` | donor | donor gradient bundle | donor row bundle override |
 
-Suggested artifact:
+Apply order:
 
-- `step_000_phase3_row_bundle.npz`
+1. Phase-0 donor replay.
+2. Optional Phase-3 gradient replay.
+3. Host recomputes rows from the active state and current gradient field.
+4. Optional Phase-3 row replay overrides recomputed rows.
 
-Minimum contents:
+If both gradient and row donor bundles are supplied, the donor row bundle is the
+final row source. Manifest metadata must make that override explicit.
 
-- raw Phase-3 logit feature rows or bounded row slices if full rows are too large
-- row-L1 total used by the influence solver
-- row-L1 split by column family when available:
-  - feature columns,
-  - error columns,
-  - token columns,
-  - total row abs sum
-- row hashes/stats per target
-- seed influence hash/frontier hashes derived from these rows
+### 3. Library implementation touchpoints
 
-This is the cleanest causal boundary for later replay: if donor rows replayed
-into the host produce donor-like frontiers, the drift is before/in row
-construction.
+In `../circuit-tracer_chunked`:
 
-### 3. Project-side plumbing
+- Load and validate `step_000_phase3_gradient_bundle.npz`.
+- Load and validate `step_000_phase3_row_bundle.npz`.
+- Add replay state/status fields to attribution context/output payloads.
+- Replace Phase-3 gradients before row construction when gradient replay is
+  enabled.
+- Replace final Phase-3 feature rows before influence/frontier ranking when row
+  replay is enabled.
+- Current gradient replay uses the captured per-layer feature/error gradients;
+  token-gradient columns remain host-computed because the current gradient bundle
+  schema does not store a separate token-embedding gradient. The row-donor modes
+  remain the direct test for fully fixed Phase-3 row normalization.
 
-Wire new capture flags through:
+Strict validation for gradient replay:
+
+- target token ids/hash match runtime targets,
+- target count exactly matches gradient columns,
+- active feature count/hash and activation-value hash match the current
+  post-Phase-0-replay runtime state,
+- layer count compatible,
+- prefix/position count compatible,
+- `d_model` compatible,
+- finite values only,
+- expected dtype conversion is explicit and recorded.
+
+Strict validation for row replay:
+
+- target token ids/hash match runtime targets,
+- active feature count matches current post-Phase-0-replay active features,
+- active feature hash/order matches current active features,
+- activation-value hash matches current active-feature values,
+- row shape is `[target_count, active_feature_count]`,
+- row abs sums are finite in fp64 representation,
+- feature split sums match the stored feature rows,
+- row source/override status is recorded.
+
+### 4. Project implementation touchpoints
+
+In this repo:
 
 - `trace_pipeline_chunked.py`
+  - add CLI args for Phase-3 gradient/row replay modes and donor paths,
+  - pass settings into the circuit-tracer attribution call,
+  - write manifest statuses/errors and per-step replay metadata.
 - `experiments/run_sparsification_experiment.py`
-- scenario config schema/generation helpers
-- manifest/result metadata
-- extraction/index summaries
+  - pass new scenario JSON knobs through to the CLI.
+- `experiments/exact_trace_bench/scenarios.py`
+  - allow the new exact-mode knobs.
+- `experiments/exact_trace_bench/extract.py`
+  - index replay mode/status/path fields.
+- `experiments/extract_benchmark_index.py`
+  - mirror extractor fields for standalone indexing.
+- Tests
+  - add CPU-only synthetic tests for CLI plumbing, validation failures, and
+    manifest status behavior.
 
-Add CPU-only tests for:
+## Test plan
 
-- gradient bundle payload shape/schema,
-- metadata propagation through manifests,
-- row-bundle stats/hash extraction if implemented,
-- comparator behavior on synthetic gradient/row bundles.
+### CPU-only tests before any SLURM launch
 
-## Run phase
+Do not load models or run GPU code on login nodes.
 
-### A. Matched donor-capture rerun
+Add or update lightweight tests for:
 
-Run matched `94_base` baseline captures on Ascend and Cardinal with:
+1. Scenario/CLI plumbing:
+   - dry-run includes `--phase3-gradient-replay-mode donor`,
+   - dry-run includes `--phase3-gradient-donor-bundle ...`,
+   - dry-run includes `--phase3-row-replay-mode donor`,
+   - dry-run includes `--phase3-row-donor-bundle ...`.
+2. Gradient validation:
+   - valid synthetic bundle passes,
+   - target token mismatch fails,
+   - target count mismatch fails,
+   - gradient shape mismatch fails,
+   - nonfinite gradients fail strict validation.
+3. Row validation:
+   - valid synthetic bundle passes,
+   - active feature count/hash mismatch fails,
+   - target token mismatch fails,
+   - row shape mismatch fails,
+   - nonfinite rows or row sums fail strict validation.
+4. Manifest/status behavior:
+   - baseline: gradient and row replay disabled,
+   - row donor: row replayed, gradient disabled,
+   - gradient donor: gradient replayed, row host/recomputed,
+   - both: gradient replayed, row replayed with donor-row override.
 
-- `cross_cluster_debug=true`
-- `exact_trace_internal_dtype=fp64`
-- `capture_phase0_donor_bundle=true`
-- `capture_phase3_seed_bundle=true`
-- `capture_phase3_gradient_bundle=true`
-- `capture_phase3_row_bundle=true` if implemented in the first pass
-- `max_steps=1`, `temperature=0.0`, `completions=1`
+Safe validation commands should use `uv run`, for example:
 
-Purpose:
+```bash
+uv run ruff check <changed project files>
+uv run python tests/test_cross_cluster_debug_artifacts.py
+```
 
-- create baseline gradient/row donors for each cluster,
-- verify artifact sizes and schema before launching the full matrix.
+For the sibling library, use its own uv environment and only lightweight tests.
 
-### B. Repeat replay matrix with richer capture
+## Enlarged matrix run configuration
 
-Use the same four replay conditions as the completed Phase-0 matrix:
+### Donor artifact roots
 
-1. Ascend self-replay with Ascend Phase-0 donor.
-2. Ascend host with Cardinal Phase-0 donor.
-3. Cardinal self-replay with Cardinal Phase-0 donor.
-4. Cardinal host with Ascend Phase-0 donor.
+Ascend donor capture root:
 
-Keep `phase0_replay_mode=donor_phase0` and strict donor validation. Add
-Phase-3 gradient/row capture to every task.
+```text
+/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260429_184917_527785_phase3-gradient-donor-capture-94-base-ascend/ascend_phase3_gradient_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000
+```
 
-Primary readout:
+Cardinal donor capture root:
 
-- Do cross-swap Phase-3 gradients match host or donor?
-- Do raw Phase-3 rows and row-L1 splits match host or donor?
-- Do self-replay gradient/row bundles reproduce baseline exactly enough?
+```text
+/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260429_184917_613970_phase3-gradient-donor-capture-94-base-cardinal/cardinal_phase3_gradient_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000
+```
 
-Expected result if current hypothesis is right:
+Each root provides:
 
-- cross-swap support remains donor-like,
-- Phase-3 gradients and rows remain host-like,
-- influence/frontier/edge metrics remain host-like.
+```text
+step_000_phase0_donor_bundle.npz
+step_000_phase3_gradient_bundle.npz
+step_000_phase3_row_bundle.npz
+```
 
-## Replay phase after capture
+### Host/donor pairs
 
-Prefer **Phase-3 row replay** as the first causal intervention after capture:
+Run four host/donor pairs:
 
-- `--phase3-row-bundle PATH`
-- `--phase3-row-replay-mode donor_phase3_rows`
+| Host | Donor | Purpose |
+|---|---|---|
+| Ascend | Ascend | Ascend self-control |
+| Ascend | Cardinal | Cardinal donor on Ascend host |
+| Cardinal | Cardinal | Cardinal self-control |
+| Cardinal | Ascend | Ascend donor on Cardinal host |
 
-Reason: row replay bypasses gradient contraction and directly tests whether the
-influence solver/frontier logic is deterministic once Phase-3 rows are fixed.
+For each pair, run the four replay modes listed above. Total: **16 scenarios**.
 
-If row replay makes the frontier donor-like:
+### Shared scenario defaults
 
-- drift is before or inside Phase-3 row construction, likely gradients/direct
-  effects.
+Use:
 
-If row replay still stays host-like:
+```text
+fixture_name=94_base
+tier=anomaly
+max_steps=1
+completions=1
+cross_cluster_debug=true
+exact_trace_internal_dtype=fp64
+phase0_activation_threshold_compare_mode=baseline
+phase0_replay_mode=donor_phase0
+phase0_donor_context_policy=strict
+capture_phase0_donor_bundle=true
+capture_phase3_seed_bundle=true
+capture_phase3_gradient_bundle=true
+capture_phase3_row_bundle=true
+capture_feature_semantic_descriptors=true
+semantic_descriptor_top_k=2048
+semantic_descriptor_dim=64
+attribution_batch_size=128
+feature_batch_size=128
+logit_batch_size=128
+decoder_chunk_size=2048
+cross_batch_decoder_cache_bytes=0
+```
 
-- investigate row mapping, normalization, influence solver, or ranking/frontier
-  logic.
+### Scenario naming convention
 
-Only implement gradient replay after row replay if we need to distinguish
-gradient tensors from decoder/activation contraction.
+Use explicit names that include host, donor, and Phase-3 replay mode, for example:
 
-## Acceptance criteria
+```text
+ascend_phase3_baseline_with_ascend_donor_94_base_anomaly_b128_c2048_cache0g
+ascend_phase3_row_donor_with_cardinal_donor_94_base_anomaly_b128_c2048_cache0g
+ascend_phase3_gradient_donor_with_cardinal_donor_94_base_anomaly_b128_c2048_cache0g
+ascend_phase3_gradient_row_donor_with_cardinal_donor_94_base_anomaly_b128_c2048_cache0g
+```
 
-- Capture flags are opt-in and do not affect normal outputs when disabled.
-- Completed capture runs produce declared gradient/row artifacts and manifest
-  paths/statuses.
-- Self-replay controls pass both existing graph gates and new gradient/row gates.
-- Cross-swap analysis can state whether gradients/rows are host-like or
-  donor-like using explicit similarity metrics.
-- `EXPERIMENTS.md` records run provenance and interpretation.
+Mirror names for Cardinal host runs.
+
+## Success gates before interpretation
+
+Self controls must pass before interpreting cross-swaps:
+
+- Ascend host + Ascend donor:
+  - `baseline`, `row_donor`, `gradient_donor`, `gradient_row_donor`
+- Cardinal host + Cardinal donor:
+  - `baseline`, `row_donor`, `gradient_donor`, `gradient_row_donor`
+
+Required gates:
+
+- jobs complete with SLURM exit `0:0`,
+- no strict validation warnings/errors,
+- replay statuses match scenario mode,
+- row donor self-run row hash matches donor row hash,
+- gradient donor self-run gradient hash matches donor gradient hash,
+- generated token remains `Let`,
+- compact graph/frontier metrics are exact or any drift is explicitly explained.
+
+Only after self gates pass should cross-swap movement be interpreted.
+
+## Primary readouts
+
+For each cross-swap, compare against both host baseline and donor baseline:
+
+- compact feature Jaccard,
+- weighted edge Jaccard,
+- Phase-3 seed influence Pearson/Spearman,
+- frontier pre/post Jaccard,
+- Phase-3 gradient hash/stats similarity,
+- Phase-3 row hash/stats similarity,
+- row abs sums and feature/error/token splits.
+
+Interpretation guide:
+
+- row donor moves graph donor-like: drift is at/before row construction and the
+  influence solver is mostly deterministic once rows are fixed.
+- gradient donor moves graph donor-like but row donor also works: gradients are a
+  sufficient upstream carrier of the row drift.
+- gradient donor does not move graph but row donor does: row construction has
+  additional host-side dependence beyond captured gradients.
+- neither row nor gradient donor moves graph: investigate row mapping,
+  normalization, influence ranking/frontier logic, or incomplete replay wiring.
 
 ## Guardrails
 
-- Do not run GPU/model-loading jobs outside SLURM allocations.
+- Do not run GPU/model-loading code outside SLURM allocations.
 - Keep run placement under `{cluster}/{fast|anomaly|long_eval}` only.
-- Keep gradient/row artifacts bounded; avoid dense JSON dumps.
-- Treat gradients as Phase-3 state, not Phase-0 donor state, in naming/docs.
+- Keep gradient/row artifacts in `.npz`; avoid dense JSON dumps.
+- Keep Phase-3 replay explicitly named as Phase-3 state, not Phase-0 donor state.
+- Treat the sibling `circuit-tracer_chunked` checkout as part of experiment
+  provenance.
+- Before serious launches, snapshot both project and sibling library together.
 - Record durable design changes in `docs/phase0_boundary_fingerprinting_spec.md`
   and run decisions/results in `EXPERIMENTS.md`.
