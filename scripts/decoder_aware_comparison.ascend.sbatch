@@ -4,9 +4,9 @@
 #SBATCH --cluster=ascend
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=32
 #SBATCH --gpus-per-task=1
-#SBATCH --mem-per-cpu=4027
+#SBATCH --mem-per-cpu=10724
 #SBATCH --time=01:30:00
 #SBATCH --array=0-1
 #SBATCH --output=logs/slurm-%x-%A_%a.out
