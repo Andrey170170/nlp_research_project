@@ -38,7 +38,7 @@ branch `jay/prefix-caching`):**
 - `prefix_caching/reconstruct_diagnostics.py` — stand-alone rebuilder
   for `cache_validation.json` from surviving artifacts when SLURM kills
   a run before it can flush its own diagnostics.
-- `prefix_caching/BACKWARD_REUSE_STUDY.md` — written study covering D3.
+- `prefix_caching/docs/BACKWARD_REUSE_STUDY.md` — written study covering D3.
 - `scripts/trace_prefix_cache_bench.jay.ascend.sbatch` — uncached
   baseline sbatch.
 - `scripts/trace_prefix_cache_run.jay.ascend.sbatch` — cached sbatch
@@ -87,7 +87,7 @@ compute requires either:
 ## 3. Is backward pass reuse trustworthy?
 
 **No — not under the current sparsification rule.** Full analysis in
-[`BACKWARD_REUSE_STUDY.md`](BACKWARD_REUSE_STUDY.md).
+[`BACKWARD_REUSE_STUDY.md`](docs/BACKWARD_REUSE_STUDY.md).
 
 **Key finding:** Phase 4 (feature attribution) accounts for ~90 % of
 per-step time (~2100 s out of ~2400 s on prompt 94). That is where any
