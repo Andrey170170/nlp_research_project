@@ -7,7 +7,9 @@ Usage::
 
 from __future__ import annotations
 
+import argparse
 import json
+import inspect
 import sys
 import tempfile
 from pathlib import Path
@@ -23,9 +25,18 @@ if str(EXPERIMENTS_DIR) not in sys.path:
 
 
 def run_checks() -> None:
+    from trace_pipeline import extract_graph, trace_completion
     from trace_pipeline_chunked import (
         build_cross_cluster_debug_records,
+        extract_compact_chunked_attribution,
         normalize_cross_cluster_debug_records,
+        parse_phase4_refresh_optimization,
+        parse_phase4_row_executor,
+        parse_phase4_scheduler_mode,
+        parse_phase4_scheduler_telemetry_detail,
+        resolve_phase4_refresh_optimization_effective,
+        resolve_phase4_row_executor_effective,
+        trace_completion_compact_chunked,
     )
 
     payload = [
@@ -66,6 +77,86 @@ def run_checks() -> None:
     )
     assert records[1]["record_index"] == 1
     assert records[1]["checkpoint_name"] == "phase1_target_logits"
+
+    extract_signature = inspect.signature(extract_compact_chunked_attribution)
+    trace_signature = inspect.signature(trace_completion_compact_chunked)
+    full_graph_extract_signature = inspect.signature(extract_graph)
+    full_graph_trace_signature = inspect.signature(trace_completion)
+    assert extract_signature.parameters["exact_trace_internal_dtype"].default == "fp32"
+    assert extract_signature.parameters["phase4_scheduler_mode"].default == "locality"
+    assert extract_signature.parameters["phase4_scheduler_debug"].default is False
+    assert (
+        extract_signature.parameters["phase4_scheduler_telemetry_detail"].default
+        == "normal"
+    )
+    assert extract_signature.parameters["phase4_refresh_optimization"].default == "off"
+    assert extract_signature.parameters["phase4_row_executor"].default == "batched"
+    assert trace_signature.parameters["exact_trace_internal_dtype"].default == "fp32"
+    assert trace_signature.parameters["phase4_scheduler_mode"].default == "locality"
+    assert trace_signature.parameters["phase4_scheduler_debug"].default is False
+    assert (
+        trace_signature.parameters["phase4_scheduler_telemetry_detail"].default
+        == "normal"
+    )
+    assert trace_signature.parameters["phase4_refresh_optimization"].default == "off"
+    assert trace_signature.parameters["phase4_row_executor"].default == "batched"
+    assert (
+        full_graph_extract_signature.parameters["exact_trace_internal_dtype"].default
+        == "fp32"
+    )
+    assert (
+        full_graph_trace_signature.parameters["exact_trace_internal_dtype"].default
+        == "fp32"
+    )
+
+    assert parse_phase4_scheduler_mode("locality") == "locality"
+    assert parse_phase4_scheduler_mode("planner_v1") == "planner_v1"
+    assert parse_phase4_scheduler_mode("planner_v2") == "planner_v2"
+    assert parse_phase4_scheduler_mode("legacy") == "locality"
+
+    assert parse_phase4_scheduler_telemetry_detail("summary") == "summary"
+    assert parse_phase4_scheduler_telemetry_detail("normal") == "normal"
+    assert parse_phase4_scheduler_telemetry_detail("debug") == "debug"
+    assert parse_phase4_scheduler_telemetry_detail("compact") == "summary"
+    assert parse_phase4_scheduler_telemetry_detail("full") == "debug"
+    assert parse_phase4_refresh_optimization("off") == "off"
+    assert parse_phase4_refresh_optimization("v1") == "v1"
+    assert parse_phase4_row_executor("batched") == "batched"
+    assert parse_phase4_row_executor("streaming_v1") == "streaming_v1"
+    assert resolve_phase4_refresh_optimization_effective("v1") == "v1"
+    assert resolve_phase4_row_executor_effective("streaming_v1") == "batched"
+
+    try:
+        parse_phase4_scheduler_mode("unknown")
+    except argparse.ArgumentTypeError:
+        pass
+    else:
+        raise AssertionError("Expected scheduler mode parser to reject unknown value")
+
+    try:
+        parse_phase4_scheduler_telemetry_detail("verbose")
+    except argparse.ArgumentTypeError:
+        pass
+    else:
+        raise AssertionError(
+            "Expected scheduler telemetry detail parser to reject unknown value"
+        )
+
+    try:
+        parse_phase4_refresh_optimization("v2")
+    except argparse.ArgumentTypeError:
+        pass
+    else:
+        raise AssertionError(
+            "Expected refresh optimization parser to reject unknown value"
+        )
+
+    try:
+        parse_phase4_row_executor("streaming_v2")
+    except argparse.ArgumentTypeError:
+        pass
+    else:
+        raise AssertionError("Expected row executor parser to reject unknown value")
 
 
 def run_launcher_and_extractor_roundtrip_checks() -> None:
@@ -132,6 +223,11 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         "capture_phase3_row_bundle": True,
         "telemetry_max_events": 17,
         "phase4_anomaly_debug": False,
+        "phase4_scheduler_mode": "planner_v2",
+        "phase4_scheduler_debug": True,
+        "phase4_scheduler_telemetry_detail": "debug",
+        "phase4_refresh_optimization": "v1",
+        "phase4_row_executor": "streaming_v1",
     }
 
     command = build_command(Path("/tmp/out"), scenario)
@@ -174,6 +270,15 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
     assert "--phase0-replay-mode" not in old_patch_command
     assert "--phase0-donor-context-policy" not in old_patch_command
     assert "--capture-phase3-seed-bundle" not in old_patch_command
+    assert "--phase4-scheduler-mode" in command
+    assert "planner_v2" in command
+    assert "--phase4-scheduler-debug" in command
+    assert "--phase4-scheduler-telemetry-detail" in command
+    assert "debug" in command
+    assert "--phase4-refresh-optimization" in command
+    assert "v1" in command
+    assert "--phase4-row-executor" in command
+    assert "streaming_v1" in command
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         scenario_root = Path(tmp_dir) / "scenario"
@@ -188,12 +293,37 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         }
         run_config_payload = {
             "save_raw": True,
-            "exact_trace_internal_dtype": "fp64",
-            "exact_trace_internal_dtype_requested": "fp64",
+            "exact_trace_internal_dtype": "fp32",
+            "exact_trace_internal_dtype_requested": "fp32",
             "exact_trace_internal_dtype_contract_supported": False,
             "phase0_activation_threshold_compare_mode": "bf16",
             "cross_cluster_debug": False,
             "telemetry_max_events": 11,
+            "phase4_scheduler_mode": "planner_v2",
+            "phase4_scheduler_requested_mode": "planner_v2",
+            "phase4_scheduler_effective_mode": "planner_v2",
+            "phase4_scheduler_version": "planner_v2",
+            "phase4_scheduler_effective_version": "planner_v2",
+            "phase4_scheduler_policy": "bounded_membership_selection",
+            "phase4_scheduler_effective_policy": "bounded_membership_selection",
+            "phase4_scheduler_debug": True,
+            "phase4_scheduler_telemetry_detail": "debug",
+            "phase4_refresh_optimization": "v1",
+            "phase4_refresh_optimization_requested": "v1",
+            "phase4_refresh_optimization_mode_requested": "v1",
+            "phase4_refresh_optimization_effective": "v1",
+            "phase4_refresh_optimization_mode_effective": "v1",
+            "phase4_refresh_optimization_version": "v1",
+            "phase4_refresh_optimization_version_requested": "v1",
+            "phase4_refresh_optimization_version_effective": "v1",
+            "phase4_row_executor": "streaming_v1",
+            "phase4_row_executor_requested": "streaming_v1",
+            "phase4_row_executor_mode_requested": "streaming_v1",
+            "phase4_row_executor_effective": "batched",
+            "phase4_row_executor_mode_effective": "batched",
+            "phase4_row_executor_version": "batched_v1",
+            "phase4_row_executor_version_requested": "streaming_v1",
+            "phase4_row_executor_version_effective": "batched_v1",
             "attribution_batch_size": 128,
             "decoder_chunk_size": 2048,
             "max_feature_nodes": 8192,
@@ -215,6 +345,46 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         (scenario_root / "result.json").write_text(json.dumps(result_payload, indent=2))
         (artifact_dir / "run_config.json").write_text(
             json.dumps(run_config_payload, indent=2)
+        )
+        completion_dir = artifact_dir / "prompt_000" / "completion_000"
+        completion_dir.mkdir(parents=True, exist_ok=True)
+        completion_payload = {
+            "prompt_id": "prompt_000",
+            "completion_id": "completion_000",
+            "phase4_scheduler_mode": "planner_v2",
+            "phase4_scheduler_requested_mode": "planner_v2",
+            "phase4_scheduler_mode_requested": "planner_v2",
+            "phase4_scheduler_effective_mode": "planner_v2",
+            "phase4_scheduler_mode_effective": "planner_v2",
+            "phase4_scheduler_version": "planner_v2",
+            "phase4_scheduler_effective_version": "planner_v2",
+            "phase4_scheduler_version_effective": "planner_v2",
+            "phase4_scheduler_policy": "bounded_membership_selection",
+            "phase4_scheduler_effective_policy": "bounded_membership_selection",
+            "phase4_scheduler_policy_effective": "bounded_membership_selection",
+            "phase4_scheduler_debug_effective": True,
+            "phase4_scheduler_telemetry_detail_effective": "debug",
+            "phase4_refresh_optimization": "v1",
+            "phase4_refresh_optimization_requested": "v1",
+            "phase4_refresh_optimization_mode_requested": "v1",
+            "phase4_refresh_optimization_effective": "v1",
+            "phase4_refresh_optimization_mode_effective": "v1",
+            "phase4_refresh_optimization_version": "v1",
+            "phase4_refresh_optimization_version_requested": "v1",
+            "phase4_refresh_optimization_version_effective": "v1",
+            "phase4_row_executor": "streaming_v1",
+            "phase4_row_executor_requested": "streaming_v1",
+            "phase4_row_executor_mode_requested": "streaming_v1",
+            "phase4_row_executor_effective": "streaming_v1",
+            "phase4_row_executor_mode_effective": "streaming_v1",
+            "phase4_row_executor_version": "streaming_v1",
+            "phase4_row_executor_version_requested": "streaming_v1",
+            "phase4_row_executor_version_effective": "streaming_v1",
+            "phase4_executor_microbatch_count": 3,
+            "steps": [],
+        }
+        (completion_dir / "completion.json").write_text(
+            json.dumps(completion_payload, indent=2)
         )
 
         prompt_dir = artifact_dir / "prompt_000"
@@ -305,12 +475,47 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         benchmark_row = build_benchmark_index_row(scenario_root / "result.json")
         legacy_row = build_row(scenario_root / "result.json")
 
-        assert benchmark_row["exact_trace_internal_dtype"] == "fp64"
+        assert benchmark_row["exact_trace_internal_dtype"] == "fp32"
         assert benchmark_row["exact_trace_internal_dtype_contract_supported"] is False
         assert benchmark_row["telemetry_max_events"] == 11
         assert benchmark_row["phase0_activation_threshold_compare_mode"] == "bf16"
+        assert benchmark_row["phase4_scheduler_mode"] == "planner_v2"
+        assert benchmark_row["phase4_scheduler_mode_requested"] == "planner_v2"
+        assert benchmark_row["phase4_scheduler_mode_effective"] == "planner_v2"
+        assert benchmark_row["phase4_scheduler_version"] == "planner_v2"
+        assert benchmark_row["phase4_scheduler_version_requested"] == "planner_v2"
+        assert benchmark_row["phase4_scheduler_version_effective"] == "planner_v2"
+        assert (
+            benchmark_row["phase4_scheduler_policy"] == "bounded_membership_selection"
+        )
+        assert (
+            benchmark_row["phase4_scheduler_policy_requested"]
+            == "bounded_membership_selection"
+        )
+        assert (
+            benchmark_row["phase4_scheduler_policy_effective"]
+            == "bounded_membership_selection"
+        )
+        assert (
+            benchmark_row["phase4_scheduler_effective_policy"]
+            == "bounded_membership_selection"
+        )
+        assert benchmark_row["phase4_scheduler_debug"] is True
+        assert benchmark_row["phase4_scheduler_telemetry_detail"] == "debug"
+        assert benchmark_row["phase4_refresh_optimization"] == "v1"
+        assert benchmark_row["phase4_refresh_optimization_requested"] == "v1"
+        assert benchmark_row["phase4_refresh_optimization_mode_effective"] == "v1"
+        assert benchmark_row["phase4_refresh_optimization_version"] == "v1"
+        assert benchmark_row["phase4_refresh_optimization_version_requested"] == "v1"
+        assert benchmark_row["phase4_row_executor"] == "streaming_v1"
+        assert benchmark_row["phase4_row_executor_requested"] == "streaming_v1"
+        assert benchmark_row["phase4_row_executor_mode_effective"] == "streaming_v1"
+        assert benchmark_row["phase4_row_executor_version"] == "streaming_v1"
+        assert benchmark_row["phase4_row_executor_version_requested"] == "streaming_v1"
+        assert benchmark_row["phase4_row_executor_effective"] == "streaming_v1"
+        assert benchmark_row["phase4_row_executor_effective_version"] == "streaming_v1"
 
-        assert legacy_row["exact_trace_internal_dtype"] == "fp64"
+        assert legacy_row["exact_trace_internal_dtype"] == "fp32"
         assert legacy_row["exact_trace_internal_dtype_contract_supported"] is False
         assert legacy_row["telemetry_max_events"] == 11
         assert legacy_row["phase0_activation_threshold_compare_mode"] == "bf16"
@@ -374,6 +579,39 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
         assert legacy_row["phase3_gradient_replay_status"] == "applied"
         assert legacy_row["phase3_row_replay_mode"] == "donor"
         assert legacy_row["phase3_row_replay_status"] == "applied"
+        assert legacy_row["phase4_scheduler_mode"] == "planner_v2"
+        assert legacy_row["phase4_scheduler_mode_requested"] == "planner_v2"
+        assert legacy_row["phase4_scheduler_mode_effective"] == "planner_v2"
+        assert legacy_row["phase4_scheduler_version"] == "planner_v2"
+        assert legacy_row["phase4_scheduler_version_requested"] == "planner_v2"
+        assert legacy_row["phase4_scheduler_version_effective"] == "planner_v2"
+        assert legacy_row["phase4_scheduler_policy"] == "bounded_membership_selection"
+        assert (
+            legacy_row["phase4_scheduler_policy_requested"]
+            == "bounded_membership_selection"
+        )
+        assert (
+            legacy_row["phase4_scheduler_policy_effective"]
+            == "bounded_membership_selection"
+        )
+        assert (
+            legacy_row["phase4_scheduler_effective_policy"]
+            == "bounded_membership_selection"
+        )
+        assert legacy_row["phase4_scheduler_debug"] is True
+        assert legacy_row["phase4_scheduler_telemetry_detail"] == "debug"
+        assert legacy_row["phase4_refresh_optimization"] == "v1"
+        assert legacy_row["phase4_refresh_optimization_requested"] == "v1"
+        assert legacy_row["phase4_refresh_optimization_mode_effective"] == "v1"
+        assert legacy_row["phase4_refresh_optimization_version"] == "v1"
+        assert legacy_row["phase4_refresh_optimization_version_requested"] == "v1"
+        assert legacy_row["phase4_row_executor_effective"] == "streaming_v1"
+        assert legacy_row["phase4_row_executor_effective_version"] == "streaming_v1"
+        assert legacy_row["phase4_row_executor"] == "streaming_v1"
+        assert legacy_row["phase4_row_executor_requested"] == "streaming_v1"
+        assert legacy_row["phase4_row_executor_mode_effective"] == "streaming_v1"
+        assert legacy_row["phase4_row_executor_version"] == "streaming_v1"
+        assert legacy_row["phase4_row_executor_version_requested"] == "streaming_v1"
 
 
 def run_feature_semantic_descriptor_save_checks() -> None:

@@ -109,20 +109,21 @@ Preferred prompt sequence:
 Use:
 
 - `cross_cluster_debug=true`
-- `exact_trace_internal_dtype=fp64`
+- `exact_trace_internal_dtype=fp32` (default on the validated post-fix compact exact path)
 
-until a permanent overflow fix exists.
+The permanent overflow fix is now validated; the earlier healthy-prompt fp32
+collapse findings applied to the pre-fix code path.
 
 ### Track B — optimization
 
 Use the optimization worktree for:
 
-1. permanent overflow fix,
-2. upcast / RSS redesign,
-3. remaining refresh-path speedups,
-4. later replay-path or other secondary speed work.
+1. post-fix upcast / RSS redesign,
+2. remaining refresh-path speedups,
+3. later replay-path or other secondary speed work,
+4. targeted fp32/fp64 parity spot-checks when needed.
 
-For the permanent overflow fix, follow the chosen spec direction in
+For ongoing post-fix numerical-stability guidance, follow
 `docs/phase4_refresh_optimization_spec.md`:
 
 - preferred first implementation: **scaled row-L1 computation** (or an

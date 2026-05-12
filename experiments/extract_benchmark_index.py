@@ -45,6 +45,11 @@ def _load_completion_manifests(artifact_dir: Path) -> list[dict[str, Any]]:
     return manifests
 
 
+def _load_first_completion_manifest(artifact_dir: Path) -> dict[str, Any]:
+    manifests = _load_completion_manifests(artifact_dir)
+    return manifests[0] if manifests else {}
+
+
 def _to_float(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
@@ -1264,6 +1269,22 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     manifest_phase4_effective_sizes: list[int] = []
     manifest_phase4_planner_statuses: list[str] = []
     manifest_phase4_planner_skip_reasons: list[str] = []
+    phase4_scheduler_modes_requested: list[str] = []
+    phase4_scheduler_modes_effective: list[str] = []
+    phase4_scheduler_versions_requested: list[str] = []
+    phase4_scheduler_versions_effective: list[str] = []
+    phase4_scheduler_policies_requested: list[str] = []
+    phase4_scheduler_policies_effective: list[str] = []
+    phase4_scheduler_debug_values: list[bool] = []
+    phase4_scheduler_telemetry_details: list[str] = []
+    phase4_refresh_optimization_modes_requested: list[str] = []
+    phase4_refresh_optimization_modes_effective: list[str] = []
+    phase4_refresh_optimization_versions_requested: list[str] = []
+    phase4_refresh_optimization_versions_effective: list[str] = []
+    phase4_row_executor_modes_requested: list[str] = []
+    phase4_row_executor_modes_effective: list[str] = []
+    phase4_row_executor_versions_requested: list[str] = []
+    phase4_row_executor_versions_effective: list[str] = []
     for manifest in manifests:
         manifest_observed = manifest.get("phase4_feature_batch_sizes_observed")
         if isinstance(manifest_observed, list):
@@ -1281,6 +1302,152 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
         manifest_skip_reason = manifest.get("phase4_feature_batch_planner_skip_reason")
         if isinstance(manifest_skip_reason, str):
             manifest_phase4_planner_skip_reasons.append(manifest_skip_reason)
+        scheduler_mode_requested = manifest.get("phase4_scheduler_mode_requested")
+        if not isinstance(scheduler_mode_requested, str):
+            scheduler_mode_requested = manifest.get("phase4_scheduler_requested_mode")
+        if not isinstance(scheduler_mode_requested, str):
+            scheduler_mode_requested = manifest.get("phase4_scheduler_mode")
+        if isinstance(scheduler_mode_requested, str):
+            phase4_scheduler_modes_requested.append(scheduler_mode_requested)
+        scheduler_mode_effective = manifest.get("phase4_scheduler_mode_effective")
+        if not isinstance(scheduler_mode_effective, str):
+            scheduler_mode_effective = manifest.get("phase4_scheduler_effective_mode")
+        if not isinstance(scheduler_mode_effective, str):
+            scheduler_mode_effective = manifest.get("phase4_scheduler_mode")
+        if isinstance(scheduler_mode_effective, str):
+            phase4_scheduler_modes_effective.append(scheduler_mode_effective)
+
+        scheduler_version_requested = manifest.get("phase4_scheduler_version_requested")
+        if not isinstance(scheduler_version_requested, str):
+            scheduler_version_requested = manifest.get("phase4_scheduler_version")
+        if isinstance(scheduler_version_requested, str):
+            phase4_scheduler_versions_requested.append(scheduler_version_requested)
+        scheduler_version_effective = manifest.get("phase4_scheduler_version_effective")
+        if not isinstance(scheduler_version_effective, str):
+            scheduler_version_effective = manifest.get(
+                "phase4_scheduler_effective_version"
+            )
+        if not isinstance(scheduler_version_effective, str):
+            scheduler_version_effective = manifest.get("phase4_scheduler_version")
+        if isinstance(scheduler_version_effective, str):
+            phase4_scheduler_versions_effective.append(scheduler_version_effective)
+
+        scheduler_policy_requested = manifest.get("phase4_scheduler_policy_requested")
+        if not isinstance(scheduler_policy_requested, str):
+            scheduler_policy_requested = manifest.get("phase4_scheduler_policy")
+        if isinstance(scheduler_policy_requested, str):
+            phase4_scheduler_policies_requested.append(scheduler_policy_requested)
+        scheduler_policy_effective = manifest.get("phase4_scheduler_policy_effective")
+        if not isinstance(scheduler_policy_effective, str):
+            scheduler_policy_effective = manifest.get(
+                "phase4_scheduler_effective_policy"
+            )
+        if not isinstance(scheduler_policy_effective, str):
+            scheduler_policy_effective = manifest.get("phase4_scheduler_policy")
+        if isinstance(scheduler_policy_effective, str):
+            phase4_scheduler_policies_effective.append(scheduler_policy_effective)
+        scheduler_debug = manifest.get("phase4_scheduler_debug_effective")
+        if not isinstance(scheduler_debug, bool):
+            scheduler_debug = manifest.get("phase4_scheduler_debug")
+        if isinstance(scheduler_debug, bool):
+            phase4_scheduler_debug_values.append(scheduler_debug)
+        scheduler_detail = manifest.get("phase4_scheduler_telemetry_detail_effective")
+        if not isinstance(scheduler_detail, str):
+            scheduler_detail = manifest.get("phase4_scheduler_telemetry_detail")
+        if isinstance(scheduler_detail, str):
+            phase4_scheduler_telemetry_details.append(scheduler_detail)
+
+        refresh_mode_requested = manifest.get(
+            "phase4_refresh_optimization_mode_requested"
+        )
+        if not isinstance(refresh_mode_requested, str):
+            refresh_mode_requested = manifest.get(
+                "phase4_refresh_optimization_requested"
+            )
+        if not isinstance(refresh_mode_requested, str):
+            refresh_mode_requested = manifest.get("phase4_refresh_optimization")
+        if isinstance(refresh_mode_requested, str):
+            phase4_refresh_optimization_modes_requested.append(refresh_mode_requested)
+
+        refresh_mode_effective = manifest.get(
+            "phase4_refresh_optimization_mode_effective"
+        )
+        if not isinstance(refresh_mode_effective, str):
+            refresh_mode_effective = manifest.get(
+                "phase4_refresh_optimization_effective"
+            )
+        if not isinstance(refresh_mode_effective, str):
+            refresh_mode_effective = manifest.get("phase4_refresh_optimization")
+        if isinstance(refresh_mode_effective, str):
+            phase4_refresh_optimization_modes_effective.append(refresh_mode_effective)
+
+        refresh_version_requested = manifest.get(
+            "phase4_refresh_optimization_version_requested"
+        )
+        if not isinstance(refresh_version_requested, str):
+            refresh_version_requested = manifest.get(
+                "phase4_refresh_optimization_version"
+            )
+        if isinstance(refresh_version_requested, str):
+            phase4_refresh_optimization_versions_requested.append(
+                refresh_version_requested
+            )
+
+        refresh_version_effective = manifest.get(
+            "phase4_refresh_optimization_version_effective"
+        )
+        if not isinstance(refresh_version_effective, str):
+            refresh_version_effective = manifest.get(
+                "phase4_refresh_optimization_effective_version"
+            )
+        if not isinstance(refresh_version_effective, str):
+            refresh_version_effective = manifest.get(
+                "phase4_refresh_optimization_version"
+            )
+        if isinstance(refresh_version_effective, str):
+            phase4_refresh_optimization_versions_effective.append(
+                refresh_version_effective
+            )
+
+        row_executor_requested = manifest.get("phase4_row_executor_mode_requested")
+        if not isinstance(row_executor_requested, str):
+            row_executor_requested = manifest.get("phase4_row_executor_requested")
+        if not isinstance(row_executor_requested, str):
+            row_executor_requested = manifest.get("phase4_row_executor")
+        if isinstance(row_executor_requested, str):
+            phase4_row_executor_modes_requested.append(row_executor_requested)
+
+        row_executor_effective = manifest.get("phase4_row_executor_mode_effective")
+        if not isinstance(row_executor_effective, str):
+            row_executor_effective = manifest.get("phase4_row_executor_effective")
+        if not isinstance(row_executor_effective, str):
+            row_executor_effective = manifest.get("phase4_row_executor")
+        if isinstance(row_executor_effective, str):
+            phase4_row_executor_modes_effective.append(row_executor_effective)
+
+        row_executor_version_requested = manifest.get(
+            "phase4_row_executor_version_requested"
+        )
+        if not isinstance(row_executor_version_requested, str):
+            row_executor_version_requested = manifest.get("phase4_row_executor_version")
+        if isinstance(row_executor_version_requested, str):
+            phase4_row_executor_versions_requested.append(
+                row_executor_version_requested
+            )
+
+        row_executor_version_effective = manifest.get(
+            "phase4_row_executor_version_effective"
+        )
+        if not isinstance(row_executor_version_effective, str):
+            row_executor_version_effective = manifest.get(
+                "phase4_row_executor_effective_version"
+            )
+        if not isinstance(row_executor_version_effective, str):
+            row_executor_version_effective = manifest.get("phase4_row_executor_version")
+        if isinstance(row_executor_version_effective, str):
+            phase4_row_executor_versions_effective.append(
+                row_executor_version_effective
+            )
     all_phase4_feature_batch_sizes = sorted(
         set(
             step_phase4_feature_batch_sizes
@@ -1366,6 +1533,211 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
             manifest_phase4_planner_skip_reasons[-1]
             if manifest_phase4_planner_skip_reasons
             else None
+        ),
+        **(
+            {
+                "phase4_scheduler_mode": phase4_scheduler_modes_effective[-1],
+                "phase4_scheduler_mode_requested": phase4_scheduler_modes_requested[-1],
+                "phase4_scheduler_mode_effective": phase4_scheduler_modes_effective[-1],
+                "phase4_scheduler_modes_observed": sorted(
+                    set(phase4_scheduler_modes_effective)
+                ),
+                "phase4_scheduler_modes_requested_observed": sorted(
+                    set(phase4_scheduler_modes_requested)
+                ),
+                "phase4_scheduler_modes_effective_observed": sorted(
+                    set(phase4_scheduler_modes_effective)
+                ),
+            }
+            if phase4_scheduler_modes_requested and phase4_scheduler_modes_effective
+            else {}
+        ),
+        **(
+            {
+                "phase4_scheduler_version": phase4_scheduler_versions_effective[-1],
+                "phase4_scheduler_version_requested": phase4_scheduler_versions_requested[
+                    -1
+                ],
+                "phase4_scheduler_version_effective": phase4_scheduler_versions_effective[
+                    -1
+                ],
+                "phase4_scheduler_versions_observed": sorted(
+                    set(phase4_scheduler_versions_effective)
+                ),
+                "phase4_scheduler_versions_requested_observed": sorted(
+                    set(phase4_scheduler_versions_requested)
+                ),
+                "phase4_scheduler_versions_effective_observed": sorted(
+                    set(phase4_scheduler_versions_effective)
+                ),
+            }
+            if phase4_scheduler_versions_requested
+            and phase4_scheduler_versions_effective
+            else {}
+        ),
+        **(
+            {
+                "phase4_scheduler_policy": phase4_scheduler_policies_effective[-1],
+                "phase4_scheduler_policy_requested": phase4_scheduler_policies_requested[
+                    -1
+                ],
+                "phase4_scheduler_policy_effective": phase4_scheduler_policies_effective[
+                    -1
+                ],
+                "phase4_scheduler_effective_policy": phase4_scheduler_policies_effective[
+                    -1
+                ],
+                "phase4_scheduler_policies_observed": sorted(
+                    set(phase4_scheduler_policies_effective)
+                ),
+                "phase4_scheduler_policies_requested_observed": sorted(
+                    set(phase4_scheduler_policies_requested)
+                ),
+                "phase4_scheduler_policies_effective_observed": sorted(
+                    set(phase4_scheduler_policies_effective)
+                ),
+            }
+            if phase4_scheduler_policies_requested
+            and phase4_scheduler_policies_effective
+            else {}
+        ),
+        **(
+            {
+                "phase4_scheduler_debug": phase4_scheduler_debug_values[-1],
+                "phase4_scheduler_debug_values_observed": sorted(
+                    set(phase4_scheduler_debug_values)
+                ),
+            }
+            if phase4_scheduler_debug_values
+            else {}
+        ),
+        **(
+            {
+                "phase4_scheduler_telemetry_detail": phase4_scheduler_telemetry_details[
+                    -1
+                ],
+                "phase4_scheduler_telemetry_details_observed": sorted(
+                    set(phase4_scheduler_telemetry_details)
+                ),
+            }
+            if phase4_scheduler_telemetry_details
+            else {}
+        ),
+        **(
+            {
+                "phase4_refresh_optimization": phase4_refresh_optimization_modes_effective[
+                    -1
+                ],
+                "phase4_refresh_optimization_requested": phase4_refresh_optimization_modes_requested[
+                    -1
+                ],
+                "phase4_refresh_optimization_mode_requested": phase4_refresh_optimization_modes_requested[
+                    -1
+                ],
+                "phase4_refresh_optimization_effective": phase4_refresh_optimization_modes_effective[
+                    -1
+                ],
+                "phase4_refresh_optimization_mode_effective": phase4_refresh_optimization_modes_effective[
+                    -1
+                ],
+                "phase4_refresh_optimization_modes_observed": sorted(
+                    set(phase4_refresh_optimization_modes_effective)
+                ),
+                "phase4_refresh_optimization_modes_requested_observed": sorted(
+                    set(phase4_refresh_optimization_modes_requested)
+                ),
+                "phase4_refresh_optimization_modes_effective_observed": sorted(
+                    set(phase4_refresh_optimization_modes_effective)
+                ),
+            }
+            if phase4_refresh_optimization_modes_requested
+            and phase4_refresh_optimization_modes_effective
+            else {}
+        ),
+        **(
+            {
+                "phase4_refresh_optimization_version": phase4_refresh_optimization_versions_effective[
+                    -1
+                ],
+                "phase4_refresh_optimization_version_requested": phase4_refresh_optimization_versions_requested[
+                    -1
+                ],
+                "phase4_refresh_optimization_version_effective": phase4_refresh_optimization_versions_effective[
+                    -1
+                ],
+                "phase4_refresh_optimization_effective_version": phase4_refresh_optimization_versions_effective[
+                    -1
+                ],
+                "phase4_refresh_optimization_versions_observed": sorted(
+                    set(phase4_refresh_optimization_versions_effective)
+                ),
+                "phase4_refresh_optimization_versions_requested_observed": sorted(
+                    set(phase4_refresh_optimization_versions_requested)
+                ),
+                "phase4_refresh_optimization_versions_effective_observed": sorted(
+                    set(phase4_refresh_optimization_versions_effective)
+                ),
+            }
+            if phase4_refresh_optimization_versions_requested
+            and phase4_refresh_optimization_versions_effective
+            else {}
+        ),
+        **(
+            {
+                "phase4_row_executor": phase4_row_executor_modes_effective[-1],
+                "phase4_row_executor_requested": phase4_row_executor_modes_requested[
+                    -1
+                ],
+                "phase4_row_executor_mode_requested": phase4_row_executor_modes_requested[
+                    -1
+                ],
+                "phase4_row_executor_effective": phase4_row_executor_modes_effective[
+                    -1
+                ],
+                "phase4_row_executor_mode_effective": phase4_row_executor_modes_effective[
+                    -1
+                ],
+                "phase4_row_executor_modes_observed": sorted(
+                    set(phase4_row_executor_modes_effective)
+                ),
+                "phase4_row_executor_modes_requested_observed": sorted(
+                    set(phase4_row_executor_modes_requested)
+                ),
+                "phase4_row_executor_modes_effective_observed": sorted(
+                    set(phase4_row_executor_modes_effective)
+                ),
+            }
+            if phase4_row_executor_modes_requested
+            and phase4_row_executor_modes_effective
+            else {}
+        ),
+        **(
+            {
+                "phase4_row_executor_version": phase4_row_executor_versions_effective[
+                    -1
+                ],
+                "phase4_row_executor_version_requested": phase4_row_executor_versions_requested[
+                    -1
+                ],
+                "phase4_row_executor_version_effective": phase4_row_executor_versions_effective[
+                    -1
+                ],
+                "phase4_row_executor_effective_version": phase4_row_executor_versions_effective[
+                    -1
+                ],
+                "phase4_row_executor_versions_observed": sorted(
+                    set(phase4_row_executor_versions_effective)
+                ),
+                "phase4_row_executor_versions_requested_observed": sorted(
+                    set(phase4_row_executor_versions_requested)
+                ),
+                "phase4_row_executor_versions_effective_observed": sorted(
+                    set(phase4_row_executor_versions_effective)
+                ),
+            }
+            if phase4_row_executor_versions_requested
+            and phase4_row_executor_versions_effective
+            else {}
         ),
         "exact_trace_internal_dtype_requested": (
             exact_trace_internal_dtype_requested_values[-1]
@@ -2040,6 +2412,7 @@ def build_row(result_path: Path) -> dict[str, Any]:
     artifact_dir = Path(result.get("output_dir") or scenario_root / "artifacts")
     run_config_path = artifact_dir / "run_config.json"
     run_config = read_json(run_config_path) if run_config_path.exists() else {}
+    completion_manifest = _load_first_completion_manifest(artifact_dir)
     profiling = result.get("profiling_summary", {})
     artifact_summary = _summarize_artifacts(artifact_dir)
     special_case = _special_case_label(scenario_root, scenario)
@@ -2093,6 +2466,217 @@ def build_row(result_path: Path) -> dict[str, Any]:
         ),
         "cross_cluster_debug": run_config.get(
             "cross_cluster_debug", scenario.get("cross_cluster_debug")
+        ),
+        "phase4_scheduler_mode": run_config.get(
+            "phase4_scheduler_mode", scenario.get("phase4_scheduler_mode")
+        ),
+        "phase4_scheduler_mode_requested": run_config.get(
+            "phase4_scheduler_mode_requested",
+            run_config.get(
+                "phase4_scheduler_requested_mode",
+                run_config.get(
+                    "phase4_scheduler_mode", scenario.get("phase4_scheduler_mode")
+                ),
+            ),
+        ),
+        "phase4_scheduler_mode_effective": run_config.get(
+            "phase4_scheduler_mode_effective",
+            run_config.get(
+                "phase4_scheduler_effective_mode",
+                run_config.get(
+                    "phase4_scheduler_mode", scenario.get("phase4_scheduler_mode")
+                ),
+            ),
+        ),
+        "phase4_scheduler_version": run_config.get("phase4_scheduler_version"),
+        "phase4_scheduler_version_requested": run_config.get(
+            "phase4_scheduler_version_requested",
+            run_config.get("phase4_scheduler_version"),
+        ),
+        "phase4_scheduler_version_effective": run_config.get(
+            "phase4_scheduler_version_effective",
+            run_config.get(
+                "phase4_scheduler_effective_version",
+                run_config.get("phase4_scheduler_version"),
+            ),
+        ),
+        "phase4_scheduler_policy": run_config.get("phase4_scheduler_policy"),
+        "phase4_scheduler_policy_requested": run_config.get(
+            "phase4_scheduler_policy_requested",
+            run_config.get("phase4_scheduler_policy"),
+        ),
+        "phase4_scheduler_policy_effective": run_config.get(
+            "phase4_scheduler_policy_effective",
+            run_config.get(
+                "phase4_scheduler_effective_policy",
+                run_config.get("phase4_scheduler_policy"),
+            ),
+        ),
+        "phase4_scheduler_effective_policy": run_config.get(
+            "phase4_scheduler_effective_policy",
+            run_config.get(
+                "phase4_scheduler_policy_effective",
+                run_config.get("phase4_scheduler_policy"),
+            ),
+        ),
+        "phase4_scheduler_debug": run_config.get(
+            "phase4_scheduler_debug", scenario.get("phase4_scheduler_debug")
+        ),
+        "phase4_scheduler_telemetry_detail": run_config.get(
+            "phase4_scheduler_telemetry_detail",
+            scenario.get("phase4_scheduler_telemetry_detail"),
+        ),
+        "phase4_refresh_optimization": run_config.get(
+            "phase4_refresh_optimization", scenario.get("phase4_refresh_optimization")
+        ),
+        "phase4_refresh_optimization_requested": run_config.get(
+            "phase4_refresh_optimization_requested",
+            run_config.get(
+                "phase4_refresh_optimization_mode_requested",
+                run_config.get(
+                    "phase4_refresh_optimization",
+                    scenario.get("phase4_refresh_optimization"),
+                ),
+            ),
+        ),
+        "phase4_refresh_optimization_mode_requested": run_config.get(
+            "phase4_refresh_optimization_mode_requested",
+            run_config.get(
+                "phase4_refresh_optimization_requested",
+                run_config.get(
+                    "phase4_refresh_optimization",
+                    scenario.get("phase4_refresh_optimization"),
+                ),
+            ),
+        ),
+        "phase4_refresh_optimization_effective": run_config.get(
+            "phase4_refresh_optimization_effective",
+            run_config.get(
+                "phase4_refresh_optimization_mode_effective",
+                run_config.get(
+                    "phase4_refresh_optimization",
+                    scenario.get("phase4_refresh_optimization"),
+                ),
+            ),
+        ),
+        "phase4_refresh_optimization_mode_effective": run_config.get(
+            "phase4_refresh_optimization_mode_effective",
+            run_config.get(
+                "phase4_refresh_optimization_effective",
+                run_config.get(
+                    "phase4_refresh_optimization",
+                    scenario.get("phase4_refresh_optimization"),
+                ),
+            ),
+        ),
+        "phase4_refresh_optimization_version": run_config.get(
+            "phase4_refresh_optimization_version"
+        ),
+        "phase4_refresh_optimization_version_requested": run_config.get(
+            "phase4_refresh_optimization_version_requested",
+            run_config.get("phase4_refresh_optimization_version"),
+        ),
+        "phase4_refresh_optimization_version_effective": run_config.get(
+            "phase4_refresh_optimization_version_effective",
+            run_config.get(
+                "phase4_refresh_optimization_effective_version",
+                run_config.get("phase4_refresh_optimization_version"),
+            ),
+        ),
+        "phase4_refresh_optimization_effective_version": run_config.get(
+            "phase4_refresh_optimization_effective_version",
+            run_config.get(
+                "phase4_refresh_optimization_version_effective",
+                run_config.get("phase4_refresh_optimization_version"),
+            ),
+        ),
+        "phase4_row_executor": run_config.get(
+            "phase4_row_executor", scenario.get("phase4_row_executor")
+        ),
+        "phase4_row_executor_requested": run_config.get(
+            "phase4_row_executor_requested",
+            run_config.get(
+                "phase4_row_executor_mode_requested",
+                run_config.get(
+                    "phase4_row_executor", scenario.get("phase4_row_executor")
+                ),
+            ),
+        ),
+        "phase4_row_executor_mode_requested": run_config.get(
+            "phase4_row_executor_mode_requested",
+            run_config.get(
+                "phase4_row_executor_requested",
+                run_config.get(
+                    "phase4_row_executor", scenario.get("phase4_row_executor")
+                ),
+            ),
+        ),
+        "phase4_row_executor_effective": completion_manifest.get(
+            "phase4_row_executor_mode_effective",
+            completion_manifest.get(
+                "phase4_row_executor_effective",
+                run_config.get(
+                    "phase4_row_executor_effective",
+                    run_config.get(
+                        "phase4_row_executor_mode_effective",
+                        run_config.get(
+                            "phase4_row_executor", scenario.get("phase4_row_executor")
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        "phase4_row_executor_mode_effective": completion_manifest.get(
+            "phase4_row_executor_mode_effective",
+            completion_manifest.get(
+                "phase4_row_executor_effective",
+                run_config.get(
+                    "phase4_row_executor_mode_effective",
+                    run_config.get(
+                        "phase4_row_executor_effective",
+                        run_config.get(
+                            "phase4_row_executor", scenario.get("phase4_row_executor")
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        "phase4_row_executor_version": completion_manifest.get(
+            "phase4_row_executor_version",
+            run_config.get("phase4_row_executor_version"),
+        ),
+        "phase4_row_executor_version_requested": run_config.get(
+            "phase4_row_executor_version_requested",
+            completion_manifest.get(
+                "phase4_row_executor_version_requested",
+                run_config.get("phase4_row_executor_version"),
+            ),
+        ),
+        "phase4_row_executor_version_effective": completion_manifest.get(
+            "phase4_row_executor_version_effective",
+            completion_manifest.get(
+                "phase4_row_executor_effective_version",
+                run_config.get(
+                    "phase4_row_executor_version_effective",
+                    run_config.get(
+                        "phase4_row_executor_effective_version",
+                        run_config.get("phase4_row_executor_version"),
+                    ),
+                ),
+            ),
+        ),
+        "phase4_row_executor_effective_version": completion_manifest.get(
+            "phase4_row_executor_effective_version",
+            completion_manifest.get(
+                "phase4_row_executor_version_effective",
+                run_config.get(
+                    "phase4_row_executor_effective_version",
+                    run_config.get(
+                        "phase4_row_executor_version_effective",
+                        run_config.get("phase4_row_executor_version"),
+                    ),
+                ),
+            ),
         ),
         "telemetry_max_events": run_config.get(
             "telemetry_max_events", scenario.get("telemetry_max_events")

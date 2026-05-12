@@ -20,6 +20,74 @@ import trace_pipeline as base
 from circuit_utils import StepData, save_compact
 
 
+_PHASE4_SCHEDULER_MODE_ALIAS: dict[str, str] = {
+    "legacy": "locality",
+}
+
+_PHASE4_SCHEDULER_TELEMETRY_DETAIL_ALIAS: dict[str, str] = {
+    "compact": "summary",
+    "full": "debug",
+}
+
+_PHASE4_SCHEDULER_VERSION_BY_MODE: dict[str, str] = {
+    "locality": "locality_v1",
+    "planner_v1": "planner_v1",
+    "planner_v2": "planner_v2",
+}
+
+_PHASE4_SCHEDULER_POLICY_BY_MODE: dict[str, str] = {
+    "locality": "fixed_frontier_locality",
+    "planner_v1": "membership_preserving_locality",
+    "planner_v2": "bounded_membership_selection",
+}
+
+_PHASE4_REFRESH_OPTIMIZATION_VERSION_BY_MODE: dict[str, str] = {
+    "off": "off_v1",
+    "v1": "v1",
+}
+
+_PHASE4_REFRESH_OPTIMIZATION_EFFECTIVE_BY_MODE: dict[str, str] = {
+    "off": "off",
+    "v1": "v1",
+}
+
+_PHASE4_ROW_EXECUTOR_VERSION_BY_MODE: dict[str, str] = {
+    "batched": "batched_v1",
+    "streaming_v1": "streaming_v1",
+}
+
+_PHASE4_ROW_EXECUTOR_EFFECTIVE_BY_MODE: dict[str, str] = {
+    "batched": "batched",
+    "streaming_v1": "batched",
+}
+
+_PHASE1_TRACE_BATCH_POLICIES = {
+    "legacy",
+    "cap_effective_batches",
+}
+
+_PHASE4_REFRESH_POLICIES = {
+    "standard",
+    "deferred_v1",
+}
+
+_PHASE4_RANKERS = {
+    "argsort",
+    "topk_v1",
+}
+
+_ROW_STORE_CACHE_CONTROLS = {
+    "off",
+    "fadvise_dontneed_after_append_v1",
+}
+
+_EXACT_ENCODER_RESIDENCY_MODES = {
+    "lazy",
+    "active_cpu",
+    "active_pinned_cpu",
+}
+
+
 def parse_optional_bool(value: str) -> bool:
     lowered = value.strip().lower()
     if lowered in {"1", "true", "t", "yes", "y", "on"}:
@@ -92,6 +160,266 @@ def parse_phase3_replay_validation_policy(value: str) -> str:
     if normalized == "strict":
         return normalized
     raise argparse.ArgumentTypeError(f"Expected 'strict', got: {value!r}")
+
+
+def _normalize_phase1_trace_batch_policy(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _PHASE1_TRACE_BATCH_POLICIES:
+        return None
+    return normalized
+
+
+def parse_phase1_trace_batch_policy(value: str) -> str:
+    normalized = _normalize_phase1_trace_batch_policy(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{legacy, cap_effective_batches}}, got: {value!r}"
+        )
+    return normalized
+
+
+def _normalize_phase1_trace_batch_size_max(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"", "none", "null"}:
+            return None
+        try:
+            parsed = int(normalized)
+        except ValueError:
+            return None
+        return parsed if parsed > 0 else None
+    return None
+
+
+def parse_phase1_trace_batch_size_max(value: str) -> int | None:
+    normalized = value.strip().lower()
+    if normalized in {"none", "null"}:
+        return None
+    try:
+        parsed = int(normalized)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"Expected a positive integer or one of {{none, null}}, got: {value!r}"
+        ) from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError(
+            f"Expected a positive integer for phase1_trace_batch_size_max, got: {value!r}"
+        )
+    return parsed
+
+
+def _normalize_phase4_refresh_policy(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _PHASE4_REFRESH_POLICIES:
+        return None
+    return normalized
+
+
+def parse_phase4_refresh_policy(value: str) -> str:
+    normalized = _normalize_phase4_refresh_policy(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{standard, deferred_v1}}, got: {value!r}"
+        )
+    return normalized
+
+
+def _normalize_phase4_refresh_interval_multiplier(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        try:
+            parsed = int(normalized)
+        except ValueError:
+            return None
+        return parsed if parsed > 0 else None
+    return None
+
+
+def parse_phase4_refresh_interval_multiplier(value: str) -> int:
+    normalized = _normalize_phase4_refresh_interval_multiplier(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(f"Expected a positive integer, got: {value!r}")
+    return normalized
+
+
+def _normalize_phase4_ranker(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _PHASE4_RANKERS:
+        return None
+    return normalized
+
+
+def parse_phase4_ranker(value: str) -> str:
+    normalized = _normalize_phase4_ranker(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{argsort, topk_v1}}, got: {value!r}"
+        )
+    return normalized
+
+
+def _normalize_row_store_cache_control(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _ROW_STORE_CACHE_CONTROLS:
+        return None
+    return normalized
+
+
+def parse_row_store_cache_control(value: str) -> str:
+    normalized = _normalize_row_store_cache_control(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{off, fadvise_dontneed_after_append_v1}}, got: {value!r}"
+        )
+    return normalized
+
+
+def _normalize_exact_encoder_residency(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _EXACT_ENCODER_RESIDENCY_MODES:
+        return None
+    return normalized
+
+
+def parse_exact_encoder_residency(value: str) -> str:
+    normalized = _normalize_exact_encoder_residency(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{lazy, active_cpu, active_pinned_cpu}}, got: {value!r}"
+        )
+    return normalized
+
+
+def _normalize_phase4_scheduler_mode(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    normalized = _PHASE4_SCHEDULER_MODE_ALIAS.get(normalized, normalized)
+    if normalized not in _PHASE4_SCHEDULER_VERSION_BY_MODE:
+        return None
+    return normalized
+
+
+def parse_phase4_scheduler_mode(value: str) -> str:
+    normalized = _normalize_phase4_scheduler_mode(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{locality, planner_v1, planner_v2, legacy}}, got: {value!r}"
+        )
+    return normalized
+
+
+def _normalize_phase4_scheduler_telemetry_detail(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    normalized = _PHASE4_SCHEDULER_TELEMETRY_DETAIL_ALIAS.get(normalized, normalized)
+    if normalized not in {"summary", "normal", "debug"}:
+        return None
+    return normalized
+
+
+def parse_phase4_scheduler_telemetry_detail(value: str) -> str:
+    normalized = _normalize_phase4_scheduler_telemetry_detail(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{summary, normal, debug, compact, full}}, got: {value!r}"
+        )
+    return normalized
+
+
+def _normalize_phase4_refresh_optimization(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _PHASE4_REFRESH_OPTIMIZATION_VERSION_BY_MODE:
+        return None
+    return normalized
+
+
+def parse_phase4_refresh_optimization(value: str) -> str:
+    normalized = _normalize_phase4_refresh_optimization(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(f"Expected one of {{off, v1}}, got: {value!r}")
+    return normalized
+
+
+def resolve_phase4_refresh_optimization_version(mode: Any) -> str | None:
+    normalized = _normalize_phase4_refresh_optimization(mode)
+    if normalized is None:
+        return None
+    return _PHASE4_REFRESH_OPTIMIZATION_VERSION_BY_MODE.get(normalized)
+
+
+def resolve_phase4_refresh_optimization_effective(mode: Any) -> str | None:
+    normalized = _normalize_phase4_refresh_optimization(mode)
+    if normalized is None:
+        return None
+    return _PHASE4_REFRESH_OPTIMIZATION_EFFECTIVE_BY_MODE.get(normalized)
+
+
+def _normalize_phase4_row_executor(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _PHASE4_ROW_EXECUTOR_VERSION_BY_MODE:
+        return None
+    return normalized
+
+
+def parse_phase4_row_executor(value: str) -> str:
+    normalized = _normalize_phase4_row_executor(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{batched, streaming_v1}}, got: {value!r}"
+        )
+    return normalized
+
+
+def resolve_phase4_row_executor_version(mode: Any) -> str | None:
+    normalized = _normalize_phase4_row_executor(mode)
+    if normalized is None:
+        return None
+    return _PHASE4_ROW_EXECUTOR_VERSION_BY_MODE.get(normalized)
+
+
+def resolve_phase4_row_executor_effective(mode: Any) -> str | None:
+    normalized = _normalize_phase4_row_executor(mode)
+    if normalized is None:
+        return None
+    return _PHASE4_ROW_EXECUTOR_EFFECTIVE_BY_MODE.get(normalized)
+
+
+def resolve_phase4_scheduler_version(phase4_scheduler_mode: Any) -> str | None:
+    normalized = _normalize_phase4_scheduler_mode(phase4_scheduler_mode)
+    if normalized is None:
+        return None
+    return _PHASE4_SCHEDULER_VERSION_BY_MODE.get(normalized)
+
+
+def resolve_phase4_scheduler_policy(phase4_scheduler_mode: Any) -> str | None:
+    normalized = _normalize_phase4_scheduler_mode(phase4_scheduler_mode)
+    if normalized is None:
+        return None
+    return _PHASE4_SCHEDULER_POLICY_BY_MODE.get(normalized)
 
 
 def resolve_internal_precision(exact_trace_internal_dtype: str) -> str:
@@ -516,8 +844,10 @@ def extract_compact_chunked_attribution(
     feature_batch_target_reserved_fraction: float = 0.9,
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
-    exact_trace_internal_dtype: str = "fp64",
+    exact_trace_internal_dtype: str = "fp32",
     phase0_activation_threshold_compare_mode: str = "baseline",
+    phase1_trace_batch_policy: str = "legacy",
+    phase1_trace_batch_size_max: int | None = None,
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
     capture_phase0_donor_bundle: bool = False,
@@ -536,6 +866,16 @@ def extract_compact_chunked_attribution(
     semantic_descriptor_top_k: int = 2048,
     semantic_descriptor_dim: int = 64,
     telemetry_max_events: int | None = None,
+    phase4_refresh_policy: str = "standard",
+    phase4_refresh_interval_multiplier: int = 1,
+    phase4_ranker: str = "argsort",
+    row_store_cache_control: str = "off",
+    exact_encoder_residency: str = "lazy",
+    phase4_scheduler_mode: str = "locality",
+    phase4_scheduler_debug: bool = False,
+    phase4_scheduler_telemetry_detail: str = "normal",
+    phase4_refresh_optimization: str = "off",
+    phase4_row_executor: str = "batched",
 ) -> dict[str, Any]:
     gc.collect()
     if torch.cuda.is_available():
@@ -576,6 +916,8 @@ def extract_compact_chunked_attribution(
         feature_batch_min_free_fraction=feature_batch_min_free_fraction,
         feature_batch_probe_batches=feature_batch_probe_batches,
         internal_precision=internal_precision,
+        phase1_trace_batch_policy=phase1_trace_batch_policy,
+        phase1_trace_batch_size_max=phase1_trace_batch_size_max,
         phase4_anomaly_debug=phase4_anomaly_debug,
         cross_cluster_debug=cross_cluster_debug,
         capture_phase0_donor_bundle=capture_phase0_donor_bundle,
@@ -594,6 +936,16 @@ def extract_compact_chunked_attribution(
         phase3_row_donor_bundle=phase3_row_donor_bundle,
         phase3_row_replay_mode=phase3_row_replay_mode,
         phase3_replay_validation_policy=phase3_replay_validation_policy,
+        phase4_refresh_policy=phase4_refresh_policy,
+        phase4_refresh_interval_multiplier=phase4_refresh_interval_multiplier,
+        phase4_ranker=phase4_ranker,
+        row_store_cache_control=row_store_cache_control,
+        exact_encoder_residency=exact_encoder_residency,
+        phase4_scheduler_mode=phase4_scheduler_mode,
+        phase4_scheduler_debug=phase4_scheduler_debug,
+        phase4_scheduler_telemetry_detail=phase4_scheduler_telemetry_detail,
+        phase4_refresh_optimization=phase4_refresh_optimization,
+        phase4_row_executor=phase4_row_executor,
         compact_output=True,
         exact_trace_internal_dtype=exact_trace_internal_dtype,
         phase0_activation_threshold_compare_mode=phase0_activation_threshold_compare_mode,
@@ -701,6 +1053,22 @@ def build_step_telemetry_records(
     step_index: int,
     phase4_feature_batch_size: int,
     phase4_feature_batch_planner_status: str,
+    phase4_scheduler_mode_requested: str,
+    phase4_scheduler_mode_effective: str,
+    phase4_scheduler_version_requested: str | None,
+    phase4_scheduler_version_effective: str | None,
+    phase4_scheduler_policy_requested: str | None,
+    phase4_scheduler_policy_effective: str | None,
+    phase4_scheduler_debug: bool,
+    phase4_scheduler_telemetry_detail: str,
+    phase4_refresh_optimization_requested: str,
+    phase4_refresh_optimization_effective: str,
+    phase4_refresh_optimization_version_requested: str | None,
+    phase4_refresh_optimization_version_effective: str | None,
+    phase4_row_executor_requested: str,
+    phase4_row_executor_effective: str,
+    phase4_row_executor_version_requested: str | None,
+    phase4_row_executor_version_effective: str | None,
     events: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
@@ -712,6 +1080,37 @@ def build_step_telemetry_records(
             "event_index": event_index,
             "phase4_feature_batch_size": phase4_feature_batch_size,
             "phase4_feature_batch_planner_status": phase4_feature_batch_planner_status,
+            "phase4_scheduler_requested_mode": phase4_scheduler_mode_requested,
+            "phase4_scheduler_mode": phase4_scheduler_mode_effective,
+            "phase4_scheduler_mode_requested": phase4_scheduler_mode_requested,
+            "phase4_scheduler_mode_effective": phase4_scheduler_mode_effective,
+            "phase4_scheduler_effective_mode": phase4_scheduler_mode_effective,
+            "phase4_scheduler_version": phase4_scheduler_version_effective,
+            "phase4_scheduler_version_requested": phase4_scheduler_version_requested,
+            "phase4_scheduler_version_effective": phase4_scheduler_version_effective,
+            "phase4_scheduler_effective_version": phase4_scheduler_version_effective,
+            "phase4_scheduler_policy": phase4_scheduler_policy_effective,
+            "phase4_scheduler_policy_requested": phase4_scheduler_policy_requested,
+            "phase4_scheduler_policy_effective": phase4_scheduler_policy_effective,
+            "phase4_scheduler_effective_policy": phase4_scheduler_policy_effective,
+            "phase4_scheduler_debug": phase4_scheduler_debug,
+            "phase4_scheduler_telemetry_detail": phase4_scheduler_telemetry_detail,
+            "phase4_refresh_optimization": phase4_refresh_optimization_effective,
+            "phase4_refresh_optimization_requested": phase4_refresh_optimization_requested,
+            "phase4_refresh_optimization_mode_requested": phase4_refresh_optimization_requested,
+            "phase4_refresh_optimization_effective": phase4_refresh_optimization_effective,
+            "phase4_refresh_optimization_mode_effective": phase4_refresh_optimization_effective,
+            "phase4_refresh_optimization_version": phase4_refresh_optimization_version_effective,
+            "phase4_refresh_optimization_version_requested": phase4_refresh_optimization_version_requested,
+            "phase4_refresh_optimization_version_effective": phase4_refresh_optimization_version_effective,
+            "phase4_row_executor": phase4_row_executor_effective,
+            "phase4_row_executor_requested": phase4_row_executor_requested,
+            "phase4_row_executor_mode_requested": phase4_row_executor_requested,
+            "phase4_row_executor_effective": phase4_row_executor_effective,
+            "phase4_row_executor_mode_effective": phase4_row_executor_effective,
+            "phase4_row_executor_version": phase4_row_executor_version_effective,
+            "phase4_row_executor_version_requested": phase4_row_executor_version_requested,
+            "phase4_row_executor_version_effective": phase4_row_executor_version_effective,
         }
         record.update(event)
         records.append(record)
@@ -785,8 +1184,10 @@ def trace_completion_compact_chunked(
     feature_batch_target_reserved_fraction: float = 0.9,
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
-    exact_trace_internal_dtype: str = "fp64",
+    exact_trace_internal_dtype: str = "fp32",
     phase0_activation_threshold_compare_mode: str = "baseline",
+    phase1_trace_batch_policy: str = "legacy",
+    phase1_trace_batch_size_max: int | None = None,
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
     capture_phase0_donor_bundle: bool = False,
@@ -805,6 +1206,16 @@ def trace_completion_compact_chunked(
     semantic_descriptor_top_k: int = 2048,
     semantic_descriptor_dim: int = 64,
     telemetry_max_events: int | None = None,
+    phase4_refresh_policy: str = "standard",
+    phase4_refresh_interval_multiplier: int = 1,
+    phase4_ranker: str = "argsort",
+    row_store_cache_control: str = "off",
+    exact_encoder_residency: str = "lazy",
+    phase4_scheduler_mode: str = "locality",
+    phase4_scheduler_debug: bool = False,
+    phase4_scheduler_telemetry_detail: str = "normal",
+    phase4_refresh_optimization: str = "off",
+    phase4_row_executor: str = "batched",
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
     fixture_name: str | None = None,
@@ -836,6 +1247,36 @@ def trace_completion_compact_chunked(
     observed_phase4_feature_batch_sizes: list[int] = []
     observed_phase4_planner_statuses: list[str] = []
     observed_phase4_planner_skip_reasons: list[str] = []
+    observed_phase4_scheduler_modes_requested: list[str] = []
+    observed_phase4_scheduler_modes_effective: list[str] = []
+    observed_phase4_scheduler_versions_requested: list[str] = []
+    observed_phase4_scheduler_versions_effective: list[str] = []
+    observed_phase4_scheduler_policies_requested: list[str] = []
+    observed_phase4_scheduler_policies_effective: list[str] = []
+    observed_phase4_scheduler_debug_values: list[bool] = []
+    observed_phase4_scheduler_telemetry_details: list[str] = []
+    observed_phase4_refresh_optimization_requested: list[str] = []
+    observed_phase4_refresh_optimization_effective: list[str] = []
+    observed_phase4_refresh_optimization_versions_requested: list[str] = []
+    observed_phase4_refresh_optimization_versions_effective: list[str] = []
+    observed_phase4_row_executor_requested: list[str] = []
+    observed_phase4_row_executor_effective: list[str] = []
+    observed_phase4_row_executor_versions_requested: list[str] = []
+    observed_phase4_row_executor_versions_effective: list[str] = []
+    observed_phase1_trace_batch_policies_requested: list[str] = []
+    observed_phase1_trace_batch_policies_effective: list[str] = []
+    observed_phase1_trace_batch_size_max_requested: list[int | None] = []
+    observed_phase1_trace_batch_size_max_effective: list[int | None] = []
+    observed_phase4_refresh_policies_requested: list[str] = []
+    observed_phase4_refresh_policies_effective: list[str] = []
+    observed_phase4_refresh_interval_multipliers_requested: list[int] = []
+    observed_phase4_refresh_interval_multipliers_effective: list[int] = []
+    observed_phase4_rankers_requested: list[str] = []
+    observed_phase4_rankers_effective: list[str] = []
+    observed_row_store_cache_controls_requested: list[str] = []
+    observed_row_store_cache_controls_effective: list[str] = []
+    observed_exact_encoder_residency_requested: list[str] = []
+    observed_exact_encoder_residency_effective: list[str] = []
     telemetry_jsonl_path = completion_dir / "telemetry.jsonl"
     telemetry_jsonl_path.write_text("")
     telemetry_events_written = 0
@@ -914,6 +1355,8 @@ def trace_completion_compact_chunked(
             feature_batch_probe_batches=feature_batch_probe_batches,
             exact_trace_internal_dtype=exact_trace_internal_dtype,
             phase0_activation_threshold_compare_mode=phase0_activation_threshold_compare_mode,
+            phase1_trace_batch_policy=phase1_trace_batch_policy,
+            phase1_trace_batch_size_max=phase1_trace_batch_size_max,
             phase4_anomaly_debug=phase4_anomaly_debug,
             cross_cluster_debug=cross_cluster_debug,
             capture_phase0_donor_bundle=capture_phase0_donor_bundle,
@@ -932,6 +1375,16 @@ def trace_completion_compact_chunked(
             semantic_descriptor_top_k=semantic_descriptor_top_k,
             semantic_descriptor_dim=semantic_descriptor_dim,
             telemetry_max_events=telemetry_max_events,
+            phase4_refresh_policy=phase4_refresh_policy,
+            phase4_refresh_interval_multiplier=phase4_refresh_interval_multiplier,
+            phase4_ranker=phase4_ranker,
+            row_store_cache_control=row_store_cache_control,
+            exact_encoder_residency=exact_encoder_residency,
+            phase4_scheduler_mode=phase4_scheduler_mode,
+            phase4_scheduler_debug=phase4_scheduler_debug,
+            phase4_scheduler_telemetry_detail=phase4_scheduler_telemetry_detail,
+            phase4_refresh_optimization=phase4_refresh_optimization,
+            phase4_row_executor=phase4_row_executor,
         )
         attribution_seconds = time.perf_counter() - attribution_start
 
@@ -956,6 +1409,432 @@ def trace_completion_compact_chunked(
         if isinstance(resolved_phase4_planner_skip_reason, str):
             observed_phase4_planner_skip_reasons.append(
                 resolved_phase4_planner_skip_reason
+            )
+
+        resolved_phase1_trace_batch_policy_requested = (
+            _normalize_phase1_trace_batch_policy(
+                compact_result.get("phase1_trace_batch_policy_requested")
+            )
+            or _normalize_phase1_trace_batch_policy(
+                compact_result.get("phase1_trace_batch_policy")
+            )
+            or phase1_trace_batch_policy
+        )
+        observed_phase1_trace_batch_policies_requested.append(
+            resolved_phase1_trace_batch_policy_requested
+        )
+        resolved_phase1_trace_batch_policy_effective = (
+            _normalize_phase1_trace_batch_policy(
+                compact_result.get("phase1_trace_batch_policy_effective")
+            )
+            or _normalize_phase1_trace_batch_policy(
+                compact_result.get("phase1_trace_batch_policy")
+            )
+            or resolved_phase1_trace_batch_policy_requested
+        )
+        observed_phase1_trace_batch_policies_effective.append(
+            resolved_phase1_trace_batch_policy_effective
+        )
+
+        resolved_phase1_trace_batch_size_max_requested = (
+            _normalize_phase1_trace_batch_size_max(
+                compact_result.get("phase1_trace_batch_size_max_requested")
+            )
+            if compact_result.get("phase1_trace_batch_size_max_requested") is not None
+            else None
+        )
+        if resolved_phase1_trace_batch_size_max_requested is None:
+            resolved_phase1_trace_batch_size_max_requested = (
+                _normalize_phase1_trace_batch_size_max(
+                    compact_result.get("phase1_trace_batch_size_max")
+                )
+                if compact_result.get("phase1_trace_batch_size_max") is not None
+                else phase1_trace_batch_size_max
+            )
+        observed_phase1_trace_batch_size_max_requested.append(
+            resolved_phase1_trace_batch_size_max_requested
+        )
+        resolved_phase1_trace_batch_size_max_effective = (
+            _normalize_phase1_trace_batch_size_max(
+                compact_result.get("phase1_trace_batch_size_max_effective")
+            )
+            if compact_result.get("phase1_trace_batch_size_max_effective") is not None
+            else None
+        )
+        if resolved_phase1_trace_batch_size_max_effective is None:
+            resolved_phase1_trace_batch_size_max_effective = (
+                _normalize_phase1_trace_batch_size_max(
+                    compact_result.get("phase1_trace_batch_size_max")
+                )
+                if compact_result.get("phase1_trace_batch_size_max") is not None
+                else resolved_phase1_trace_batch_size_max_requested
+            )
+        observed_phase1_trace_batch_size_max_effective.append(
+            resolved_phase1_trace_batch_size_max_effective
+        )
+
+        resolved_phase4_refresh_policy_requested = (
+            _normalize_phase4_refresh_policy(
+                compact_result.get("phase4_refresh_policy_requested")
+            )
+            or _normalize_phase4_refresh_policy(
+                compact_result.get("phase4_refresh_policy")
+            )
+            or phase4_refresh_policy
+        )
+        observed_phase4_refresh_policies_requested.append(
+            resolved_phase4_refresh_policy_requested
+        )
+        resolved_phase4_refresh_policy_effective = (
+            _normalize_phase4_refresh_policy(
+                compact_result.get("phase4_refresh_policy_effective")
+            )
+            or _normalize_phase4_refresh_policy(
+                compact_result.get("phase4_refresh_policy")
+            )
+            or resolved_phase4_refresh_policy_requested
+        )
+        observed_phase4_refresh_policies_effective.append(
+            resolved_phase4_refresh_policy_effective
+        )
+
+        resolved_phase4_refresh_interval_multiplier_requested = (
+            _normalize_phase4_refresh_interval_multiplier(
+                compact_result.get("phase4_refresh_interval_multiplier_requested")
+            )
+            or _normalize_phase4_refresh_interval_multiplier(
+                compact_result.get("phase4_refresh_interval_multiplier")
+            )
+            or phase4_refresh_interval_multiplier
+        )
+        observed_phase4_refresh_interval_multipliers_requested.append(
+            resolved_phase4_refresh_interval_multiplier_requested
+        )
+        resolved_phase4_refresh_interval_multiplier_effective = (
+            _normalize_phase4_refresh_interval_multiplier(
+                compact_result.get("phase4_refresh_interval_multiplier_effective")
+            )
+            or _normalize_phase4_refresh_interval_multiplier(
+                compact_result.get("phase4_refresh_interval_multiplier")
+            )
+            or resolved_phase4_refresh_interval_multiplier_requested
+        )
+        observed_phase4_refresh_interval_multipliers_effective.append(
+            resolved_phase4_refresh_interval_multiplier_effective
+        )
+
+        resolved_phase4_ranker_requested = (
+            _normalize_phase4_ranker(compact_result.get("phase4_ranker_requested"))
+            or _normalize_phase4_ranker(compact_result.get("phase4_ranker"))
+            or phase4_ranker
+        )
+        observed_phase4_rankers_requested.append(resolved_phase4_ranker_requested)
+        resolved_phase4_ranker_effective = (
+            _normalize_phase4_ranker(compact_result.get("phase4_ranker_effective"))
+            or _normalize_phase4_ranker(compact_result.get("phase4_ranker"))
+            or resolved_phase4_ranker_requested
+        )
+        observed_phase4_rankers_effective.append(resolved_phase4_ranker_effective)
+
+        resolved_row_store_cache_control_requested = (
+            _normalize_row_store_cache_control(
+                compact_result.get("row_store_cache_control_requested")
+            )
+            or _normalize_row_store_cache_control(
+                compact_result.get("row_store_cache_control")
+            )
+            or row_store_cache_control
+        )
+        observed_row_store_cache_controls_requested.append(
+            resolved_row_store_cache_control_requested
+        )
+        resolved_row_store_cache_control_effective = (
+            _normalize_row_store_cache_control(
+                compact_result.get("row_store_cache_control_effective")
+            )
+            or _normalize_row_store_cache_control(
+                compact_result.get("row_store_cache_control")
+            )
+            or resolved_row_store_cache_control_requested
+        )
+        observed_row_store_cache_controls_effective.append(
+            resolved_row_store_cache_control_effective
+        )
+
+        resolved_exact_encoder_residency_requested = (
+            _normalize_exact_encoder_residency(
+                compact_result.get("exact_encoder_residency_requested")
+            )
+            or _normalize_exact_encoder_residency(
+                compact_result.get("exact_encoder_residency")
+            )
+            or exact_encoder_residency
+        )
+        observed_exact_encoder_residency_requested.append(
+            resolved_exact_encoder_residency_requested
+        )
+        resolved_exact_encoder_residency_effective = (
+            _normalize_exact_encoder_residency(
+                compact_result.get("exact_encoder_residency_effective")
+            )
+            or _normalize_exact_encoder_residency(
+                compact_result.get("exact_encoder_residency")
+            )
+            or resolved_exact_encoder_residency_requested
+        )
+        observed_exact_encoder_residency_effective.append(
+            resolved_exact_encoder_residency_effective
+        )
+
+        resolved_phase4_scheduler_mode_requested = (
+            _normalize_phase4_scheduler_mode(
+                compact_result.get("phase4_scheduler_mode_requested")
+            )
+            or _normalize_phase4_scheduler_mode(
+                compact_result.get("phase4_scheduler_requested_mode")
+            )
+            or phase4_scheduler_mode
+        )
+        observed_phase4_scheduler_modes_requested.append(
+            resolved_phase4_scheduler_mode_requested
+        )
+        resolved_phase4_scheduler_mode_effective = (
+            _normalize_phase4_scheduler_mode(
+                compact_result.get("phase4_scheduler_mode_effective")
+            )
+            or _normalize_phase4_scheduler_mode(
+                compact_result.get("phase4_scheduler_effective_mode")
+            )
+            or _normalize_phase4_scheduler_mode(
+                compact_result.get("phase4_scheduler_mode")
+            )
+            or resolved_phase4_scheduler_mode_requested
+        )
+        observed_phase4_scheduler_modes_effective.append(
+            resolved_phase4_scheduler_mode_effective
+        )
+
+        resolved_phase4_scheduler_version_requested = compact_result.get(
+            "phase4_scheduler_version_requested"
+        )
+        if not isinstance(resolved_phase4_scheduler_version_requested, str):
+            resolved_phase4_scheduler_version_requested = (
+                resolve_phase4_scheduler_version(
+                    resolved_phase4_scheduler_mode_requested
+                )
+            )
+        if isinstance(resolved_phase4_scheduler_version_requested, str):
+            observed_phase4_scheduler_versions_requested.append(
+                resolved_phase4_scheduler_version_requested
+            )
+
+        resolved_phase4_scheduler_version_effective = compact_result.get(
+            "phase4_scheduler_version_effective"
+        )
+        if not isinstance(resolved_phase4_scheduler_version_effective, str):
+            resolved_phase4_scheduler_version_effective = compact_result.get(
+                "phase4_scheduler_effective_version"
+            )
+        if not isinstance(resolved_phase4_scheduler_version_effective, str):
+            resolved_phase4_scheduler_version_effective = compact_result.get(
+                "phase4_scheduler_version"
+            )
+        if not isinstance(resolved_phase4_scheduler_version_effective, str):
+            resolved_phase4_scheduler_version_effective = (
+                resolve_phase4_scheduler_version(
+                    resolved_phase4_scheduler_mode_effective
+                )
+            )
+        if isinstance(resolved_phase4_scheduler_version_effective, str):
+            observed_phase4_scheduler_versions_effective.append(
+                resolved_phase4_scheduler_version_effective
+            )
+
+        resolved_phase4_scheduler_policy_requested = compact_result.get(
+            "phase4_scheduler_policy_requested"
+        )
+        if not isinstance(resolved_phase4_scheduler_policy_requested, str):
+            resolved_phase4_scheduler_policy_requested = (
+                resolve_phase4_scheduler_policy(
+                    resolved_phase4_scheduler_mode_requested
+                )
+            )
+        if isinstance(resolved_phase4_scheduler_policy_requested, str):
+            observed_phase4_scheduler_policies_requested.append(
+                resolved_phase4_scheduler_policy_requested
+            )
+
+        resolved_phase4_scheduler_policy_effective = compact_result.get(
+            "phase4_scheduler_policy_effective"
+        )
+        if not isinstance(resolved_phase4_scheduler_policy_effective, str):
+            resolved_phase4_scheduler_policy_effective = compact_result.get(
+                "phase4_scheduler_effective_policy"
+            )
+        if not isinstance(resolved_phase4_scheduler_policy_effective, str):
+            resolved_phase4_scheduler_policy_effective = compact_result.get(
+                "phase4_scheduler_policy"
+            )
+        if not isinstance(resolved_phase4_scheduler_policy_effective, str):
+            resolved_phase4_scheduler_policy_effective = (
+                resolve_phase4_scheduler_policy(
+                    resolved_phase4_scheduler_mode_effective
+                )
+            )
+        if isinstance(resolved_phase4_scheduler_policy_effective, str):
+            observed_phase4_scheduler_policies_effective.append(
+                resolved_phase4_scheduler_policy_effective
+            )
+        resolved_phase4_scheduler_debug = bool(
+            compact_result.get("phase4_scheduler_debug", phase4_scheduler_debug)
+        )
+        observed_phase4_scheduler_debug_values.append(resolved_phase4_scheduler_debug)
+        resolved_phase4_scheduler_telemetry_detail = (
+            _normalize_phase4_scheduler_telemetry_detail(
+                compact_result.get("phase4_scheduler_telemetry_detail")
+            )
+            or phase4_scheduler_telemetry_detail
+        )
+        observed_phase4_scheduler_telemetry_details.append(
+            resolved_phase4_scheduler_telemetry_detail
+        )
+
+        resolved_phase4_refresh_optimization_requested = (
+            _normalize_phase4_refresh_optimization(
+                compact_result.get("phase4_refresh_optimization_mode_requested")
+            )
+            or _normalize_phase4_refresh_optimization(
+                compact_result.get("phase4_refresh_optimization_requested")
+            )
+            or _normalize_phase4_refresh_optimization(
+                compact_result.get("phase4_refresh_optimization")
+            )
+            or phase4_refresh_optimization
+        )
+        observed_phase4_refresh_optimization_requested.append(
+            resolved_phase4_refresh_optimization_requested
+        )
+        resolved_phase4_refresh_optimization_effective = (
+            _normalize_phase4_refresh_optimization(
+                compact_result.get("phase4_refresh_optimization_mode_effective")
+            )
+            or _normalize_phase4_refresh_optimization(
+                compact_result.get("phase4_refresh_optimization_effective")
+            )
+            or resolve_phase4_refresh_optimization_effective(
+                resolved_phase4_refresh_optimization_requested
+            )
+            or resolved_phase4_refresh_optimization_requested
+        )
+        observed_phase4_refresh_optimization_effective.append(
+            resolved_phase4_refresh_optimization_effective
+        )
+        resolved_phase4_refresh_optimization_version_requested = compact_result.get(
+            "phase4_refresh_optimization_version_requested"
+        )
+        if not isinstance(resolved_phase4_refresh_optimization_version_requested, str):
+            resolved_phase4_refresh_optimization_version_requested = compact_result.get(
+                "phase4_refresh_optimization_version"
+            )
+        if not isinstance(resolved_phase4_refresh_optimization_version_requested, str):
+            resolved_phase4_refresh_optimization_version_requested = (
+                resolve_phase4_refresh_optimization_version(
+                    resolved_phase4_refresh_optimization_requested
+                )
+            )
+        if isinstance(resolved_phase4_refresh_optimization_version_requested, str):
+            observed_phase4_refresh_optimization_versions_requested.append(
+                resolved_phase4_refresh_optimization_version_requested
+            )
+
+        resolved_phase4_refresh_optimization_version_effective = compact_result.get(
+            "phase4_refresh_optimization_version_effective"
+        )
+        if not isinstance(resolved_phase4_refresh_optimization_version_effective, str):
+            resolved_phase4_refresh_optimization_version_effective = compact_result.get(
+                "phase4_refresh_optimization_effective_version"
+            )
+        if not isinstance(resolved_phase4_refresh_optimization_version_effective, str):
+            resolved_phase4_refresh_optimization_version_effective = compact_result.get(
+                "phase4_refresh_optimization_version"
+            )
+        if not isinstance(resolved_phase4_refresh_optimization_version_effective, str):
+            resolved_phase4_refresh_optimization_version_effective = (
+                resolve_phase4_refresh_optimization_version(
+                    resolved_phase4_refresh_optimization_effective
+                )
+            )
+        if isinstance(resolved_phase4_refresh_optimization_version_effective, str):
+            observed_phase4_refresh_optimization_versions_effective.append(
+                resolved_phase4_refresh_optimization_version_effective
+            )
+
+        resolved_phase4_row_executor_requested = (
+            _normalize_phase4_row_executor(
+                compact_result.get("phase4_row_executor_mode_requested")
+            )
+            or _normalize_phase4_row_executor(
+                compact_result.get("phase4_row_executor_requested")
+            )
+            or _normalize_phase4_row_executor(compact_result.get("phase4_row_executor"))
+            or phase4_row_executor
+        )
+        observed_phase4_row_executor_requested.append(
+            resolved_phase4_row_executor_requested
+        )
+        resolved_phase4_row_executor_effective = (
+            _normalize_phase4_row_executor(
+                compact_result.get("phase4_row_executor_mode_effective")
+            )
+            or _normalize_phase4_row_executor(
+                compact_result.get("phase4_row_executor_effective")
+            )
+            or resolve_phase4_row_executor_effective(
+                resolved_phase4_row_executor_requested
+            )
+            or resolved_phase4_row_executor_requested
+        )
+        observed_phase4_row_executor_effective.append(
+            resolved_phase4_row_executor_effective
+        )
+        resolved_phase4_row_executor_version_requested = compact_result.get(
+            "phase4_row_executor_version_requested"
+        )
+        if not isinstance(resolved_phase4_row_executor_version_requested, str):
+            resolved_phase4_row_executor_version_requested = compact_result.get(
+                "phase4_row_executor_version"
+            )
+        if not isinstance(resolved_phase4_row_executor_version_requested, str):
+            resolved_phase4_row_executor_version_requested = (
+                resolve_phase4_row_executor_version(
+                    resolved_phase4_row_executor_requested
+                )
+            )
+        if isinstance(resolved_phase4_row_executor_version_requested, str):
+            observed_phase4_row_executor_versions_requested.append(
+                resolved_phase4_row_executor_version_requested
+            )
+
+        resolved_phase4_row_executor_version_effective = compact_result.get(
+            "phase4_row_executor_version_effective"
+        )
+        if not isinstance(resolved_phase4_row_executor_version_effective, str):
+            resolved_phase4_row_executor_version_effective = compact_result.get(
+                "phase4_row_executor_effective_version"
+            )
+        if not isinstance(resolved_phase4_row_executor_version_effective, str):
+            resolved_phase4_row_executor_version_effective = compact_result.get(
+                "phase4_row_executor_version"
+            )
+        if not isinstance(resolved_phase4_row_executor_version_effective, str):
+            resolved_phase4_row_executor_version_effective = (
+                resolve_phase4_row_executor_version(
+                    resolved_phase4_row_executor_effective
+                )
+            )
+        if isinstance(resolved_phase4_row_executor_version_effective, str):
+            observed_phase4_row_executor_versions_effective.append(
+                resolved_phase4_row_executor_version_effective
             )
 
         attribution_telemetry_summary = base.summarize_attribution_telemetry(
@@ -985,6 +1864,22 @@ def trace_completion_compact_chunked(
             step_index=step_idx,
             phase4_feature_batch_size=resolved_phase4_feature_batch_size,
             phase4_feature_batch_planner_status=resolved_phase4_planner_status,
+            phase4_scheduler_mode_requested=resolved_phase4_scheduler_mode_requested,
+            phase4_scheduler_mode_effective=resolved_phase4_scheduler_mode_effective,
+            phase4_scheduler_version_requested=resolved_phase4_scheduler_version_requested,
+            phase4_scheduler_version_effective=resolved_phase4_scheduler_version_effective,
+            phase4_scheduler_policy_requested=resolved_phase4_scheduler_policy_requested,
+            phase4_scheduler_policy_effective=resolved_phase4_scheduler_policy_effective,
+            phase4_scheduler_debug=resolved_phase4_scheduler_debug,
+            phase4_scheduler_telemetry_detail=resolved_phase4_scheduler_telemetry_detail,
+            phase4_refresh_optimization_requested=resolved_phase4_refresh_optimization_requested,
+            phase4_refresh_optimization_effective=resolved_phase4_refresh_optimization_effective,
+            phase4_refresh_optimization_version_requested=resolved_phase4_refresh_optimization_version_requested,
+            phase4_refresh_optimization_version_effective=resolved_phase4_refresh_optimization_version_effective,
+            phase4_row_executor_requested=resolved_phase4_row_executor_requested,
+            phase4_row_executor_effective=resolved_phase4_row_executor_effective,
+            phase4_row_executor_version_requested=resolved_phase4_row_executor_version_requested,
+            phase4_row_executor_version_effective=resolved_phase4_row_executor_version_effective,
             events=telemetry_events,
         )
         telemetry_events_written += base.append_jsonl_records(
@@ -1474,13 +2369,71 @@ def trace_completion_compact_chunked(
             ),
             "phase4_feature_batch_planner_status": resolved_phase4_planner_status,
             "phase4_feature_batch_planner_skip_reason": resolved_phase4_planner_skip_reason,
+            "phase1_trace_batch_policy": resolved_phase1_trace_batch_policy_effective,
+            "phase1_trace_batch_policy_requested": resolved_phase1_trace_batch_policy_requested,
+            "phase1_trace_batch_policy_effective": resolved_phase1_trace_batch_policy_effective,
+            "phase1_trace_batch_size_max": resolved_phase1_trace_batch_size_max_effective,
+            "phase1_trace_batch_size_max_requested": resolved_phase1_trace_batch_size_max_requested,
+            "phase1_trace_batch_size_max_effective": resolved_phase1_trace_batch_size_max_effective,
+            "phase4_refresh_policy": resolved_phase4_refresh_policy_effective,
+            "phase4_refresh_policy_requested": resolved_phase4_refresh_policy_requested,
+            "phase4_refresh_policy_effective": resolved_phase4_refresh_policy_effective,
+            "phase4_refresh_interval_multiplier": resolved_phase4_refresh_interval_multiplier_effective,
+            "phase4_refresh_interval_multiplier_requested": resolved_phase4_refresh_interval_multiplier_requested,
+            "phase4_refresh_interval_multiplier_effective": resolved_phase4_refresh_interval_multiplier_effective,
+            "phase4_ranker": resolved_phase4_ranker_effective,
+            "phase4_ranker_requested": resolved_phase4_ranker_requested,
+            "phase4_ranker_effective": resolved_phase4_ranker_effective,
+            "row_store_cache_control": resolved_row_store_cache_control_effective,
+            "row_store_cache_control_requested": resolved_row_store_cache_control_requested,
+            "row_store_cache_control_effective": resolved_row_store_cache_control_effective,
+            "exact_encoder_residency": resolved_exact_encoder_residency_effective,
+            "exact_encoder_residency_requested": resolved_exact_encoder_residency_requested,
+            "exact_encoder_residency_effective": resolved_exact_encoder_residency_effective,
+            "phase4_scheduler_requested_mode": resolved_phase4_scheduler_mode_requested,
+            "phase4_scheduler_mode": resolved_phase4_scheduler_mode_effective,
+            "phase4_scheduler_mode_requested": resolved_phase4_scheduler_mode_requested,
+            "phase4_scheduler_mode_effective": resolved_phase4_scheduler_mode_effective,
+            "phase4_scheduler_effective_mode": resolved_phase4_scheduler_mode_effective,
+            "phase4_scheduler_version": resolved_phase4_scheduler_version_effective,
+            "phase4_scheduler_version_requested": resolved_phase4_scheduler_version_requested,
+            "phase4_scheduler_version_effective": resolved_phase4_scheduler_version_effective,
+            "phase4_scheduler_effective_version": resolved_phase4_scheduler_version_effective,
+            "phase4_scheduler_policy": resolved_phase4_scheduler_policy_effective,
+            "phase4_scheduler_policy_requested": resolved_phase4_scheduler_policy_requested,
+            "phase4_scheduler_policy_effective": resolved_phase4_scheduler_policy_effective,
+            "phase4_scheduler_effective_policy": resolved_phase4_scheduler_policy_effective,
+            "phase4_scheduler_debug": resolved_phase4_scheduler_debug,
+            "phase4_scheduler_telemetry_detail": resolved_phase4_scheduler_telemetry_detail,
+            "phase4_refresh_optimization": resolved_phase4_refresh_optimization_effective,
+            "phase4_refresh_optimization_requested": resolved_phase4_refresh_optimization_requested,
+            "phase4_refresh_optimization_mode_requested": resolved_phase4_refresh_optimization_requested,
+            "phase4_refresh_optimization_effective": resolved_phase4_refresh_optimization_effective,
+            "phase4_refresh_optimization_mode_effective": resolved_phase4_refresh_optimization_effective,
+            "phase4_refresh_optimization_version": resolved_phase4_refresh_optimization_version_effective,
+            "phase4_refresh_optimization_version_requested": resolved_phase4_refresh_optimization_version_requested,
+            "phase4_refresh_optimization_version_effective": resolved_phase4_refresh_optimization_version_effective,
+            "phase4_row_executor": resolved_phase4_row_executor_effective,
+            "phase4_row_executor_requested": resolved_phase4_row_executor_requested,
+            "phase4_row_executor_mode_requested": resolved_phase4_row_executor_requested,
+            "phase4_row_executor_effective": resolved_phase4_row_executor_effective,
+            "phase4_row_executor_mode_effective": resolved_phase4_row_executor_effective,
+            "phase4_row_executor_version": resolved_phase4_row_executor_version_effective,
+            "phase4_row_executor_version_requested": resolved_phase4_row_executor_version_requested,
+            "phase4_row_executor_version_effective": resolved_phase4_row_executor_version_effective,
             "phase4_anomaly_debug_enabled": bool(
                 compact_result.get("phase4_anomaly_debug_enabled", phase4_anomaly_debug)
             ),
             "phase4_refresh_count": int(compact_result.get("phase4_refresh_count", 0)),
             "phase4_batch_count": int(compact_result.get("phase4_batch_count", 0)),
+            "phase4_executor_microbatch_count": int(
+                compact_result.get("phase4_executor_microbatch_count", 0)
+            ),
             "phase4_refresh_elapsed_seconds_total": compact_result.get(
                 "phase4_refresh_elapsed_seconds_total"
+            ),
+            "phase4_feature_batch_elapsed_seconds_total": compact_result.get(
+                "phase4_feature_batch_elapsed_seconds_total"
             ),
             "telemetry_max_events": compact_result.get("telemetry_max_events"),
             "phase0_activation_threshold_compare_mode": compact_result.get(
@@ -1594,6 +2547,89 @@ def trace_completion_compact_chunked(
     completion_text = tokenizer.decode(generated_token_ids, skip_special_tokens=True)
     unique_phase4_feature_batch_sizes = sorted(set(observed_phase4_feature_batch_sizes))
     unique_phase4_planner_statuses = sorted(set(observed_phase4_planner_statuses))
+    unique_phase1_trace_batch_policies_requested = sorted(
+        set(observed_phase1_trace_batch_policies_requested)
+    )
+    unique_phase1_trace_batch_policies_effective = sorted(
+        set(observed_phase1_trace_batch_policies_effective)
+    )
+    unique_phase1_trace_batch_size_max_requested = list(
+        dict.fromkeys(observed_phase1_trace_batch_size_max_requested)
+    )
+    unique_phase1_trace_batch_size_max_effective = list(
+        dict.fromkeys(observed_phase1_trace_batch_size_max_effective)
+    )
+    unique_phase4_refresh_policies_requested = sorted(
+        set(observed_phase4_refresh_policies_requested)
+    )
+    unique_phase4_refresh_policies_effective = sorted(
+        set(observed_phase4_refresh_policies_effective)
+    )
+    unique_phase4_refresh_interval_multipliers_requested = sorted(
+        set(observed_phase4_refresh_interval_multipliers_requested)
+    )
+    unique_phase4_refresh_interval_multipliers_effective = sorted(
+        set(observed_phase4_refresh_interval_multipliers_effective)
+    )
+    unique_phase4_rankers_requested = sorted(set(observed_phase4_rankers_requested))
+    unique_phase4_rankers_effective = sorted(set(observed_phase4_rankers_effective))
+    unique_row_store_cache_controls_requested = sorted(
+        set(observed_row_store_cache_controls_requested)
+    )
+    unique_row_store_cache_controls_effective = sorted(
+        set(observed_row_store_cache_controls_effective)
+    )
+    unique_exact_encoder_residency_requested = sorted(
+        set(observed_exact_encoder_residency_requested)
+    )
+    unique_exact_encoder_residency_effective = sorted(
+        set(observed_exact_encoder_residency_effective)
+    )
+    unique_phase4_scheduler_modes_requested = sorted(
+        set(observed_phase4_scheduler_modes_requested)
+    )
+    unique_phase4_scheduler_modes_effective = sorted(
+        set(observed_phase4_scheduler_modes_effective)
+    )
+    unique_phase4_scheduler_versions_requested = sorted(
+        set(observed_phase4_scheduler_versions_requested)
+    )
+    unique_phase4_scheduler_versions_effective = sorted(
+        set(observed_phase4_scheduler_versions_effective)
+    )
+    unique_phase4_scheduler_policies_requested = sorted(
+        set(observed_phase4_scheduler_policies_requested)
+    )
+    unique_phase4_scheduler_policies_effective = sorted(
+        set(observed_phase4_scheduler_policies_effective)
+    )
+    unique_phase4_scheduler_telemetry_details = sorted(
+        set(observed_phase4_scheduler_telemetry_details)
+    )
+    unique_phase4_refresh_optimization_requested = sorted(
+        set(observed_phase4_refresh_optimization_requested)
+    )
+    unique_phase4_refresh_optimization_effective = sorted(
+        set(observed_phase4_refresh_optimization_effective)
+    )
+    unique_phase4_refresh_optimization_versions_requested = sorted(
+        set(observed_phase4_refresh_optimization_versions_requested)
+    )
+    unique_phase4_refresh_optimization_versions_effective = sorted(
+        set(observed_phase4_refresh_optimization_versions_effective)
+    )
+    unique_phase4_row_executor_requested = sorted(
+        set(observed_phase4_row_executor_requested)
+    )
+    unique_phase4_row_executor_effective = sorted(
+        set(observed_phase4_row_executor_effective)
+    )
+    unique_phase4_row_executor_versions_requested = sorted(
+        set(observed_phase4_row_executor_versions_requested)
+    )
+    unique_phase4_row_executor_versions_effective = sorted(
+        set(observed_phase4_row_executor_versions_effective)
+    )
     completion_end_to_end_seconds = time.perf_counter() - trace_start_perf
     if cross_cluster_debug and not cross_cluster_debug_artifacts_captured:
         cross_cluster_debug_checkpoints_status = "not_captured"
@@ -1707,6 +2743,368 @@ def trace_completion_compact_chunked(
             observed_phase4_planner_skip_reasons[-1]
             if observed_phase4_planner_skip_reasons
             else None
+        ),
+        "phase1_trace_batch_policy": phase1_trace_batch_policy,
+        "phase1_trace_batch_policy_requested": (
+            observed_phase1_trace_batch_policies_requested[-1]
+            if observed_phase1_trace_batch_policies_requested
+            else phase1_trace_batch_policy
+        ),
+        "phase1_trace_batch_policy_effective": (
+            observed_phase1_trace_batch_policies_effective[-1]
+            if observed_phase1_trace_batch_policies_effective
+            else phase1_trace_batch_policy
+        ),
+        "phase1_trace_batch_policies_requested_observed": (
+            unique_phase1_trace_batch_policies_requested
+        ),
+        "phase1_trace_batch_policies_effective_observed": (
+            unique_phase1_trace_batch_policies_effective
+        ),
+        "phase1_trace_batch_size_max": phase1_trace_batch_size_max,
+        "phase1_trace_batch_size_max_requested": (
+            observed_phase1_trace_batch_size_max_requested[-1]
+            if observed_phase1_trace_batch_size_max_requested
+            else phase1_trace_batch_size_max
+        ),
+        "phase1_trace_batch_size_max_effective": (
+            observed_phase1_trace_batch_size_max_effective[-1]
+            if observed_phase1_trace_batch_size_max_effective
+            else phase1_trace_batch_size_max
+        ),
+        "phase1_trace_batch_size_max_requested_observed": (
+            unique_phase1_trace_batch_size_max_requested
+        ),
+        "phase1_trace_batch_size_max_effective_observed": (
+            unique_phase1_trace_batch_size_max_effective
+        ),
+        "phase4_refresh_policy": phase4_refresh_policy,
+        "phase4_refresh_policy_requested": (
+            observed_phase4_refresh_policies_requested[-1]
+            if observed_phase4_refresh_policies_requested
+            else phase4_refresh_policy
+        ),
+        "phase4_refresh_policy_effective": (
+            observed_phase4_refresh_policies_effective[-1]
+            if observed_phase4_refresh_policies_effective
+            else phase4_refresh_policy
+        ),
+        "phase4_refresh_policies_requested_observed": (
+            unique_phase4_refresh_policies_requested
+        ),
+        "phase4_refresh_policies_effective_observed": (
+            unique_phase4_refresh_policies_effective
+        ),
+        "phase4_refresh_interval_multiplier": phase4_refresh_interval_multiplier,
+        "phase4_refresh_interval_multiplier_requested": (
+            observed_phase4_refresh_interval_multipliers_requested[-1]
+            if observed_phase4_refresh_interval_multipliers_requested
+            else phase4_refresh_interval_multiplier
+        ),
+        "phase4_refresh_interval_multiplier_effective": (
+            observed_phase4_refresh_interval_multipliers_effective[-1]
+            if observed_phase4_refresh_interval_multipliers_effective
+            else phase4_refresh_interval_multiplier
+        ),
+        "phase4_refresh_interval_multipliers_requested_observed": (
+            unique_phase4_refresh_interval_multipliers_requested
+        ),
+        "phase4_refresh_interval_multipliers_effective_observed": (
+            unique_phase4_refresh_interval_multipliers_effective
+        ),
+        "phase4_ranker": phase4_ranker,
+        "phase4_ranker_requested": (
+            observed_phase4_rankers_requested[-1]
+            if observed_phase4_rankers_requested
+            else phase4_ranker
+        ),
+        "phase4_ranker_effective": (
+            observed_phase4_rankers_effective[-1]
+            if observed_phase4_rankers_effective
+            else phase4_ranker
+        ),
+        "phase4_rankers_requested_observed": unique_phase4_rankers_requested,
+        "phase4_rankers_effective_observed": unique_phase4_rankers_effective,
+        "row_store_cache_control": row_store_cache_control,
+        "row_store_cache_control_requested": (
+            observed_row_store_cache_controls_requested[-1]
+            if observed_row_store_cache_controls_requested
+            else row_store_cache_control
+        ),
+        "row_store_cache_control_effective": (
+            observed_row_store_cache_controls_effective[-1]
+            if observed_row_store_cache_controls_effective
+            else row_store_cache_control
+        ),
+        "row_store_cache_controls_requested_observed": (
+            unique_row_store_cache_controls_requested
+        ),
+        "row_store_cache_controls_effective_observed": (
+            unique_row_store_cache_controls_effective
+        ),
+        "exact_encoder_residency": exact_encoder_residency,
+        "exact_encoder_residency_requested": (
+            observed_exact_encoder_residency_requested[-1]
+            if observed_exact_encoder_residency_requested
+            else exact_encoder_residency
+        ),
+        "exact_encoder_residency_effective": (
+            observed_exact_encoder_residency_effective[-1]
+            if observed_exact_encoder_residency_effective
+            else exact_encoder_residency
+        ),
+        "exact_encoder_residency_requested_observed": (
+            unique_exact_encoder_residency_requested
+        ),
+        "exact_encoder_residency_effective_observed": (
+            unique_exact_encoder_residency_effective
+        ),
+        "phase4_scheduler_mode": phase4_scheduler_mode,
+        "phase4_scheduler_requested_mode": (
+            observed_phase4_scheduler_modes_requested[-1]
+            if observed_phase4_scheduler_modes_requested
+            else phase4_scheduler_mode
+        ),
+        "phase4_scheduler_mode_requested": (
+            observed_phase4_scheduler_modes_requested[-1]
+            if observed_phase4_scheduler_modes_requested
+            else phase4_scheduler_mode
+        ),
+        "phase4_scheduler_mode_effective": (
+            observed_phase4_scheduler_modes_effective[-1]
+            if observed_phase4_scheduler_modes_effective
+            else phase4_scheduler_mode
+        ),
+        "phase4_scheduler_effective_mode": (
+            observed_phase4_scheduler_modes_effective[-1]
+            if observed_phase4_scheduler_modes_effective
+            else phase4_scheduler_mode
+        ),
+        "phase4_scheduler_modes_observed": unique_phase4_scheduler_modes_effective,
+        "phase4_scheduler_modes_requested_observed": (
+            unique_phase4_scheduler_modes_requested
+        ),
+        "phase4_scheduler_modes_effective_observed": (
+            unique_phase4_scheduler_modes_effective
+        ),
+        "phase4_scheduler_version": (
+            observed_phase4_scheduler_versions_effective[-1]
+            if observed_phase4_scheduler_versions_effective
+            else resolve_phase4_scheduler_version(phase4_scheduler_mode)
+        ),
+        "phase4_scheduler_version_requested": (
+            observed_phase4_scheduler_versions_requested[-1]
+            if observed_phase4_scheduler_versions_requested
+            else resolve_phase4_scheduler_version(phase4_scheduler_mode)
+        ),
+        "phase4_scheduler_version_effective": (
+            observed_phase4_scheduler_versions_effective[-1]
+            if observed_phase4_scheduler_versions_effective
+            else resolve_phase4_scheduler_version(phase4_scheduler_mode)
+        ),
+        "phase4_scheduler_effective_version": (
+            observed_phase4_scheduler_versions_effective[-1]
+            if observed_phase4_scheduler_versions_effective
+            else resolve_phase4_scheduler_version(phase4_scheduler_mode)
+        ),
+        "phase4_scheduler_versions_observed": unique_phase4_scheduler_versions_effective,
+        "phase4_scheduler_versions_requested_observed": (
+            unique_phase4_scheduler_versions_requested
+        ),
+        "phase4_scheduler_versions_effective_observed": (
+            unique_phase4_scheduler_versions_effective
+        ),
+        "phase4_scheduler_policy": (
+            observed_phase4_scheduler_policies_effective[-1]
+            if observed_phase4_scheduler_policies_effective
+            else resolve_phase4_scheduler_policy(phase4_scheduler_mode)
+        ),
+        "phase4_scheduler_policy_requested": (
+            observed_phase4_scheduler_policies_requested[-1]
+            if observed_phase4_scheduler_policies_requested
+            else resolve_phase4_scheduler_policy(phase4_scheduler_mode)
+        ),
+        "phase4_scheduler_policy_effective": (
+            observed_phase4_scheduler_policies_effective[-1]
+            if observed_phase4_scheduler_policies_effective
+            else resolve_phase4_scheduler_policy(phase4_scheduler_mode)
+        ),
+        "phase4_scheduler_effective_policy": (
+            observed_phase4_scheduler_policies_effective[-1]
+            if observed_phase4_scheduler_policies_effective
+            else resolve_phase4_scheduler_policy(phase4_scheduler_mode)
+        ),
+        "phase4_scheduler_policies_observed": unique_phase4_scheduler_policies_effective,
+        "phase4_scheduler_policies_requested_observed": (
+            unique_phase4_scheduler_policies_requested
+        ),
+        "phase4_scheduler_policies_effective_observed": (
+            unique_phase4_scheduler_policies_effective
+        ),
+        "phase4_scheduler_debug": bool(phase4_scheduler_debug),
+        "phase4_scheduler_debug_effective": (
+            observed_phase4_scheduler_debug_values[-1]
+            if observed_phase4_scheduler_debug_values
+            else bool(phase4_scheduler_debug)
+        ),
+        "phase4_scheduler_telemetry_detail": phase4_scheduler_telemetry_detail,
+        "phase4_scheduler_telemetry_detail_effective": (
+            observed_phase4_scheduler_telemetry_details[-1]
+            if observed_phase4_scheduler_telemetry_details
+            else phase4_scheduler_telemetry_detail
+        ),
+        "phase4_scheduler_telemetry_details_observed": (
+            unique_phase4_scheduler_telemetry_details
+        ),
+        "phase4_refresh_optimization": phase4_refresh_optimization,
+        "phase4_refresh_optimization_requested": (
+            observed_phase4_refresh_optimization_requested[-1]
+            if observed_phase4_refresh_optimization_requested
+            else phase4_refresh_optimization
+        ),
+        "phase4_refresh_optimization_mode_requested": (
+            observed_phase4_refresh_optimization_requested[-1]
+            if observed_phase4_refresh_optimization_requested
+            else phase4_refresh_optimization
+        ),
+        "phase4_refresh_optimization_effective": (
+            observed_phase4_refresh_optimization_effective[-1]
+            if observed_phase4_refresh_optimization_effective
+            else resolve_phase4_refresh_optimization_effective(
+                phase4_refresh_optimization
+            )
+            or phase4_refresh_optimization
+        ),
+        "phase4_refresh_optimization_mode_effective": (
+            observed_phase4_refresh_optimization_effective[-1]
+            if observed_phase4_refresh_optimization_effective
+            else resolve_phase4_refresh_optimization_effective(
+                phase4_refresh_optimization
+            )
+            or phase4_refresh_optimization
+        ),
+        "phase4_refresh_optimization_version": (
+            observed_phase4_refresh_optimization_versions_effective[-1]
+            if observed_phase4_refresh_optimization_versions_effective
+            else resolve_phase4_refresh_optimization_version(
+                resolve_phase4_refresh_optimization_effective(
+                    phase4_refresh_optimization
+                )
+                or phase4_refresh_optimization
+            )
+        ),
+        "phase4_refresh_optimization_version_requested": (
+            observed_phase4_refresh_optimization_versions_requested[-1]
+            if observed_phase4_refresh_optimization_versions_requested
+            else resolve_phase4_refresh_optimization_version(
+                phase4_refresh_optimization
+            )
+        ),
+        "phase4_refresh_optimization_version_effective": (
+            observed_phase4_refresh_optimization_versions_effective[-1]
+            if observed_phase4_refresh_optimization_versions_effective
+            else resolve_phase4_refresh_optimization_version(
+                resolve_phase4_refresh_optimization_effective(
+                    phase4_refresh_optimization
+                )
+                or phase4_refresh_optimization
+            )
+        ),
+        "phase4_refresh_optimization_effective_version": (
+            observed_phase4_refresh_optimization_versions_effective[-1]
+            if observed_phase4_refresh_optimization_versions_effective
+            else resolve_phase4_refresh_optimization_version(
+                resolve_phase4_refresh_optimization_effective(
+                    phase4_refresh_optimization
+                )
+                or phase4_refresh_optimization
+            )
+        ),
+        "phase4_refresh_optimization_modes_observed": (
+            unique_phase4_refresh_optimization_effective
+        ),
+        "phase4_refresh_optimization_modes_requested_observed": (
+            unique_phase4_refresh_optimization_requested
+        ),
+        "phase4_refresh_optimization_modes_effective_observed": (
+            unique_phase4_refresh_optimization_effective
+        ),
+        "phase4_refresh_optimization_versions_observed": (
+            unique_phase4_refresh_optimization_versions_effective
+        ),
+        "phase4_refresh_optimization_versions_requested_observed": (
+            unique_phase4_refresh_optimization_versions_requested
+        ),
+        "phase4_refresh_optimization_versions_effective_observed": (
+            unique_phase4_refresh_optimization_versions_effective
+        ),
+        "phase4_row_executor": phase4_row_executor,
+        "phase4_row_executor_requested": (
+            observed_phase4_row_executor_requested[-1]
+            if observed_phase4_row_executor_requested
+            else phase4_row_executor
+        ),
+        "phase4_row_executor_mode_requested": (
+            observed_phase4_row_executor_requested[-1]
+            if observed_phase4_row_executor_requested
+            else phase4_row_executor
+        ),
+        "phase4_row_executor_effective": (
+            observed_phase4_row_executor_effective[-1]
+            if observed_phase4_row_executor_effective
+            else resolve_phase4_row_executor_effective(phase4_row_executor)
+            or phase4_row_executor
+        ),
+        "phase4_row_executor_mode_effective": (
+            observed_phase4_row_executor_effective[-1]
+            if observed_phase4_row_executor_effective
+            else resolve_phase4_row_executor_effective(phase4_row_executor)
+            or phase4_row_executor
+        ),
+        "phase4_row_executor_version": (
+            observed_phase4_row_executor_versions_effective[-1]
+            if observed_phase4_row_executor_versions_effective
+            else resolve_phase4_row_executor_version(
+                resolve_phase4_row_executor_effective(phase4_row_executor)
+                or phase4_row_executor
+            )
+        ),
+        "phase4_row_executor_version_requested": (
+            observed_phase4_row_executor_versions_requested[-1]
+            if observed_phase4_row_executor_versions_requested
+            else resolve_phase4_row_executor_version(phase4_row_executor)
+        ),
+        "phase4_row_executor_version_effective": (
+            observed_phase4_row_executor_versions_effective[-1]
+            if observed_phase4_row_executor_versions_effective
+            else resolve_phase4_row_executor_version(
+                resolve_phase4_row_executor_effective(phase4_row_executor)
+                or phase4_row_executor
+            )
+        ),
+        "phase4_row_executor_effective_version": (
+            observed_phase4_row_executor_versions_effective[-1]
+            if observed_phase4_row_executor_versions_effective
+            else resolve_phase4_row_executor_version(
+                resolve_phase4_row_executor_effective(phase4_row_executor)
+                or phase4_row_executor
+            )
+        ),
+        "phase4_row_executor_modes_observed": unique_phase4_row_executor_effective,
+        "phase4_row_executor_modes_requested_observed": (
+            unique_phase4_row_executor_requested
+        ),
+        "phase4_row_executor_modes_effective_observed": (
+            unique_phase4_row_executor_effective
+        ),
+        "phase4_row_executor_versions_observed": (
+            unique_phase4_row_executor_versions_effective
+        ),
+        "phase4_row_executor_versions_requested_observed": (
+            unique_phase4_row_executor_versions_requested
+        ),
+        "phase4_row_executor_versions_effective_observed": (
+            unique_phase4_row_executor_versions_effective
         ),
         "sparsification": (
             {
@@ -1994,11 +3392,29 @@ def run_pipeline(args: argparse.Namespace) -> None:
         raise ValueError(
             "--phase3-row-donor-bundle was provided while --phase3-row-replay-mode=disabled"
         )
-    if args.save_raw and args.exact_trace_internal_dtype != "fp64":
+    if args.save_raw and args.exact_trace_internal_dtype != "fp32":
         raise ValueError(
             "The explicit internal precision contract is currently supported only for "
             "compact exact-chunked output. --save-raw/full-graph output does not support "
-            "--exact-trace-internal-dtype values other than the default-compatible fp64 mode."
+            "--exact-trace-internal-dtype values other than the default-compatible fp32 mode."
+        )
+    if args.save_raw and (
+        args.phase1_trace_batch_policy != "legacy"
+        or args.phase1_trace_batch_size_max is not None
+        or args.phase4_refresh_policy != "standard"
+        or args.phase4_refresh_interval_multiplier != 1
+        or args.phase4_ranker != "argsort"
+        or args.row_store_cache_control != "off"
+        or args.exact_encoder_residency != "lazy"
+        or args.phase4_scheduler_mode != "locality"
+        or args.phase4_scheduler_debug
+        or args.phase4_scheduler_telemetry_detail != "normal"
+        or args.phase4_refresh_optimization != "off"
+        or args.phase4_row_executor != "batched"
+    ):
+        raise ValueError(
+            "Exact-mode execution controls currently support only compact exact-chunked output. "
+            "--save-raw/full-graph output is unsupported with non-default exact-path flags."
         )
     if args.save_raw and args.phase0_activation_threshold_compare_mode != "baseline":
         raise ValueError(
@@ -2025,6 +3441,12 @@ def run_pipeline(args: argparse.Namespace) -> None:
         raise ValueError("feature_batch_min_free_fraction must be in [0, 1)")
     if args.feature_batch_probe_batches <= 0:
         raise ValueError("feature_batch_probe_batches must be > 0")
+    if args.semantic_descriptor_top_k <= 0:
+        raise ValueError("semantic_descriptor_top_k must be > 0")
+    if args.semantic_descriptor_dim <= 0:
+        raise ValueError("semantic_descriptor_dim must be > 0")
+    if args.phase4_refresh_interval_multiplier <= 0:
+        raise ValueError("phase4_refresh_interval_multiplier must be > 0")
     if args.semantic_descriptor_top_k <= 0:
         raise ValueError("semantic_descriptor_top_k must be > 0")
     if args.semantic_descriptor_dim <= 0:
@@ -2113,6 +3535,27 @@ def run_pipeline(args: argparse.Namespace) -> None:
             if args.phase0_replay_mode != "disabled" and args.max_steps > 1
             else None
         ),
+        "phase1_trace_batch_policy": args.phase1_trace_batch_policy,
+        "phase1_trace_batch_policy_requested": args.phase1_trace_batch_policy,
+        "phase1_trace_batch_policy_effective": args.phase1_trace_batch_policy,
+        "phase1_trace_batch_size_max": args.phase1_trace_batch_size_max,
+        "phase1_trace_batch_size_max_requested": args.phase1_trace_batch_size_max,
+        "phase1_trace_batch_size_max_effective": args.phase1_trace_batch_size_max,
+        "phase4_refresh_policy": args.phase4_refresh_policy,
+        "phase4_refresh_policy_requested": args.phase4_refresh_policy,
+        "phase4_refresh_policy_effective": args.phase4_refresh_policy,
+        "phase4_refresh_interval_multiplier": args.phase4_refresh_interval_multiplier,
+        "phase4_refresh_interval_multiplier_requested": args.phase4_refresh_interval_multiplier,
+        "phase4_refresh_interval_multiplier_effective": args.phase4_refresh_interval_multiplier,
+        "phase4_ranker": args.phase4_ranker,
+        "phase4_ranker_requested": args.phase4_ranker,
+        "phase4_ranker_effective": args.phase4_ranker,
+        "row_store_cache_control": args.row_store_cache_control,
+        "row_store_cache_control_requested": args.row_store_cache_control,
+        "row_store_cache_control_effective": args.row_store_cache_control,
+        "exact_encoder_residency": args.exact_encoder_residency,
+        "exact_encoder_residency_requested": args.exact_encoder_residency,
+        "exact_encoder_residency_effective": args.exact_encoder_residency,
         "exact_trace_internal_dtype_contract_supported": not args.save_raw,
         "exact_trace_internal_dtype_contract_status": (
             "compact_exact_chunked"
@@ -2129,6 +3572,99 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "semantic_descriptor_top_k": args.semantic_descriptor_top_k,
         "semantic_descriptor_dim": args.semantic_descriptor_dim,
         "telemetry_max_events": args.telemetry_max_events,
+        "phase4_scheduler_mode": args.phase4_scheduler_mode,
+        "phase4_scheduler_requested_mode": args.phase4_scheduler_mode,
+        "phase4_scheduler_mode_requested": args.phase4_scheduler_mode,
+        "phase4_scheduler_mode_effective": args.phase4_scheduler_mode,
+        "phase4_scheduler_effective_mode": args.phase4_scheduler_mode,
+        "phase4_scheduler_version": resolve_phase4_scheduler_version(
+            args.phase4_scheduler_mode
+        ),
+        "phase4_scheduler_version_requested": resolve_phase4_scheduler_version(
+            args.phase4_scheduler_mode
+        ),
+        "phase4_scheduler_version_effective": resolve_phase4_scheduler_version(
+            args.phase4_scheduler_mode
+        ),
+        "phase4_scheduler_effective_version": resolve_phase4_scheduler_version(
+            args.phase4_scheduler_mode
+        ),
+        "phase4_scheduler_policy": resolve_phase4_scheduler_policy(
+            args.phase4_scheduler_mode
+        ),
+        "phase4_scheduler_policy_requested": resolve_phase4_scheduler_policy(
+            args.phase4_scheduler_mode
+        ),
+        "phase4_scheduler_policy_effective": resolve_phase4_scheduler_policy(
+            args.phase4_scheduler_mode
+        ),
+        "phase4_scheduler_effective_policy": resolve_phase4_scheduler_policy(
+            args.phase4_scheduler_mode
+        ),
+        "phase4_scheduler_debug": args.phase4_scheduler_debug,
+        "phase4_scheduler_telemetry_detail": args.phase4_scheduler_telemetry_detail,
+        "phase4_refresh_optimization": args.phase4_refresh_optimization,
+        "phase4_refresh_optimization_requested": args.phase4_refresh_optimization,
+        "phase4_refresh_optimization_mode_requested": args.phase4_refresh_optimization,
+        "phase4_refresh_optimization_effective": (
+            resolve_phase4_refresh_optimization_effective(
+                args.phase4_refresh_optimization
+            )
+            or args.phase4_refresh_optimization
+        ),
+        "phase4_refresh_optimization_mode_effective": (
+            resolve_phase4_refresh_optimization_effective(
+                args.phase4_refresh_optimization
+            )
+            or args.phase4_refresh_optimization
+        ),
+        "phase4_refresh_optimization_version": resolve_phase4_refresh_optimization_version(
+            resolve_phase4_refresh_optimization_effective(
+                args.phase4_refresh_optimization
+            )
+            or args.phase4_refresh_optimization
+        ),
+        "phase4_refresh_optimization_version_requested": resolve_phase4_refresh_optimization_version(
+            args.phase4_refresh_optimization
+        ),
+        "phase4_refresh_optimization_version_effective": resolve_phase4_refresh_optimization_version(
+            resolve_phase4_refresh_optimization_effective(
+                args.phase4_refresh_optimization
+            )
+            or args.phase4_refresh_optimization
+        ),
+        "phase4_refresh_optimization_effective_version": resolve_phase4_refresh_optimization_version(
+            resolve_phase4_refresh_optimization_effective(
+                args.phase4_refresh_optimization
+            )
+            or args.phase4_refresh_optimization
+        ),
+        "phase4_row_executor": args.phase4_row_executor,
+        "phase4_row_executor_requested": args.phase4_row_executor,
+        "phase4_row_executor_mode_requested": args.phase4_row_executor,
+        "phase4_row_executor_effective": (
+            resolve_phase4_row_executor_effective(args.phase4_row_executor)
+            or args.phase4_row_executor
+        ),
+        "phase4_row_executor_mode_effective": (
+            resolve_phase4_row_executor_effective(args.phase4_row_executor)
+            or args.phase4_row_executor
+        ),
+        "phase4_row_executor_version": resolve_phase4_row_executor_version(
+            resolve_phase4_row_executor_effective(args.phase4_row_executor)
+            or args.phase4_row_executor
+        ),
+        "phase4_row_executor_version_requested": resolve_phase4_row_executor_version(
+            args.phase4_row_executor
+        ),
+        "phase4_row_executor_version_effective": resolve_phase4_row_executor_version(
+            resolve_phase4_row_executor_effective(args.phase4_row_executor)
+            or args.phase4_row_executor
+        ),
+        "phase4_row_executor_effective_version": resolve_phase4_row_executor_version(
+            resolve_phase4_row_executor_effective(args.phase4_row_executor)
+            or args.phase4_row_executor
+        ),
         "prepared_prompt_file": args.prepared_prompt_file,
         "prepared_prompt_meta_file": args.prepared_prompt_meta_file,
         "graph_packaging_mode": (
@@ -2246,6 +3782,18 @@ def run_pipeline(args: argparse.Namespace) -> None:
                         ),
                         "semantic_descriptor_top_k": args.semantic_descriptor_top_k,
                         "semantic_descriptor_dim": args.semantic_descriptor_dim,
+                        "phase1_trace_batch_policy": args.phase1_trace_batch_policy,
+                        "phase1_trace_batch_size_max": args.phase1_trace_batch_size_max,
+                        "phase4_refresh_policy": args.phase4_refresh_policy,
+                        "phase4_refresh_interval_multiplier": args.phase4_refresh_interval_multiplier,
+                        "phase4_ranker": args.phase4_ranker,
+                        "row_store_cache_control": args.row_store_cache_control,
+                        "exact_encoder_residency": args.exact_encoder_residency,
+                        "phase4_scheduler_mode": args.phase4_scheduler_mode,
+                        "phase4_scheduler_debug": args.phase4_scheduler_debug,
+                        "phase4_scheduler_telemetry_detail": args.phase4_scheduler_telemetry_detail,
+                        "phase4_refresh_optimization": args.phase4_refresh_optimization,
+                        "phase4_row_executor": args.phase4_row_executor,
                     }
                     if not args.save_raw
                     else {}
@@ -2474,7 +4022,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--exact-trace-internal-dtype",
         type=parse_exact_trace_internal_dtype,
-        default="fp64",
+        default="fp32",
         help=(
             "Internal dtype for exact-trace normalization/ranking path (fp32 or fp64)"
         ),
@@ -2489,9 +4037,91 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
+        "--phase1-trace-batch-policy",
+        type=parse_phase1_trace_batch_policy,
+        default="legacy",
+        help=("Phase-1 trace microbatch policy (legacy or cap_effective_batches)"),
+    )
+    parser.add_argument(
+        "--phase1-trace-batch-size-max",
+        type=parse_phase1_trace_batch_size_max,
+        default=None,
+        help=(
+            "Optional cap for effective Phase-1 trace batch size "
+            "(positive integer or none)"
+        ),
+    )
+    parser.add_argument(
+        "--phase4-refresh-policy",
+        type=parse_phase4_refresh_policy,
+        default="standard",
+        help="Phase-4 refresh policy (standard or deferred_v1)",
+    )
+    parser.add_argument(
+        "--phase4-refresh-interval-multiplier",
+        type=parse_phase4_refresh_interval_multiplier,
+        default=1,
+        help="Positive integer multiplier for Phase-4 refresh interval",
+    )
+    parser.add_argument(
+        "--phase4-ranker",
+        type=parse_phase4_ranker,
+        default="argsort",
+        help="Phase-4 ranker implementation (argsort or topk_v1)",
+    )
+    parser.add_argument(
+        "--row-store-cache-control",
+        type=parse_row_store_cache_control,
+        default="off",
+        help=("Row-store cache-control mode (off or fadvise_dontneed_after_append_v1)"),
+    )
+    parser.add_argument(
+        "--exact-encoder-residency",
+        type=parse_exact_encoder_residency,
+        default="lazy",
+        help=(
+            "Exact-path encoder residency mode (lazy, active_cpu, active_pinned_cpu)"
+        ),
+    )
+    parser.add_argument(
         "--phase4-anomaly-debug",
         action="store_true",
         help="Enable opt-in Phase-4 anomaly shadow diagnostics (compact exact-chunked path only)",
+    )
+    parser.add_argument(
+        "--phase4-scheduler-mode",
+        type=parse_phase4_scheduler_mode,
+        default="locality",
+        help=(
+            "Phase-4 frontier scheduler mode "
+            "(locality, planner_v1, planner_v2; legacy aliases to locality)"
+        ),
+    )
+    parser.add_argument(
+        "--phase4-scheduler-debug",
+        action="store_true",
+        help="Enable additional Phase-4 scheduler debug diagnostics",
+    )
+    parser.add_argument(
+        "--phase4-scheduler-telemetry-detail",
+        type=parse_phase4_scheduler_telemetry_detail,
+        default="normal",
+        help=(
+            "Phase-4 scheduler telemetry detail "
+            "(summary, normal, debug; compact/full accepted as aliases)"
+        ),
+    )
+    parser.add_argument(
+        "--phase4-refresh-optimization",
+        type=parse_phase4_refresh_optimization,
+        default="off",
+        help="Phase-4 refresh optimization mode (off, v1)",
+    )
+    parser.add_argument(
+        "--phase4-row-executor",
+        type=parse_phase4_row_executor,
+        default="batched",
+        help="Phase-4 row execution mode (batched, streaming_v1)",
     )
     parser.add_argument(
         "--cross-cluster-debug",

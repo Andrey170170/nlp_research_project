@@ -23,11 +23,12 @@ PHASE4_BATCH_RE = re.compile(
     r"Phase 4 batch (?P<batch_idx>\d+)/(?P<total_batches>\d+) in (?P<seconds>\d+(?:\.\d+)?)s"
 )
 MEMORY_RE = re.compile(
-    r"rss=(?P<rss>n/a|\d+(?:\.\d+)?) GiB, "
-    r"cuda_alloc=(?P<cuda_alloc>n/a|\d+(?:\.\d+)?) GiB, "
-    r"cuda_reserved=(?P<cuda_reserved>n/a|\d+(?:\.\d+)?) GiB, "
-    r"cuda_peak_alloc=(?P<cuda_peak_alloc>n/a|\d+(?:\.\d+)?) GiB, "
-    r"cuda_peak_reserved=(?P<cuda_peak_reserved>n/a|\d+(?:\.\d+)?) GiB"
+    r"rss=(?P<rss>n/a|\d+(?:\.\d+)?(?: GiB)?), "
+    r"(?:rss_current=(?P<rss_current>n/a|\d+(?:\.\d+)?(?: GiB)?), )?"
+    r"cuda_alloc=(?P<cuda_alloc>n/a|\d+(?:\.\d+)?(?: GiB)?), "
+    r"cuda_reserved=(?P<cuda_reserved>n/a|\d+(?:\.\d+)?(?: GiB)?), "
+    r"cuda_peak_alloc=(?P<cuda_peak_alloc>n/a|\d+(?:\.\d+)?(?: GiB)?), "
+    r"cuda_peak_reserved=(?P<cuda_peak_reserved>n/a|\d+(?:\.\d+)?(?: GiB)?)"
 )
 
 
@@ -100,7 +101,8 @@ def _build_prompt_source_args(scenario: dict[str, Any]) -> list[str]:
 def _parse_optional_gib(value: str) -> float | None:
     if value == "n/a":
         return None
-    return float(value)
+    normalized = value.removesuffix(" GiB")
+    return float(normalized)
 
 
 def _format_optional_bool_arg(value: Any) -> str:
@@ -371,6 +373,20 @@ def build_command(
         )
 
     if method != "old_patch":
+        if scenario.get("phase1_trace_batch_policy") is not None:
+            cmd.extend(
+                [
+                    "--phase1-trace-batch-policy",
+                    str(scenario["phase1_trace_batch_policy"]),
+                ]
+            )
+        if scenario.get("phase1_trace_batch_size_max") is not None:
+            cmd.extend(
+                [
+                    "--phase1-trace-batch-size-max",
+                    str(scenario["phase1_trace_batch_size_max"]),
+                ]
+            )
         cmd.extend(["--decoder-chunk-size", str(scenario["decoder_chunk_size"])])
         cross_batch_decoder_cache_bytes = (
             cross_batch_decoder_cache_bytes_override
@@ -454,6 +470,66 @@ def build_command(
             )
         if scenario.get("phase4_anomaly_debug", False):
             cmd.append("--phase4-anomaly-debug")
+        if scenario.get("phase4_refresh_policy") is not None:
+            cmd.extend(
+                [
+                    "--phase4-refresh-policy",
+                    str(scenario["phase4_refresh_policy"]),
+                ]
+            )
+        if scenario.get("phase4_refresh_interval_multiplier") is not None:
+            cmd.extend(
+                [
+                    "--phase4-refresh-interval-multiplier",
+                    str(scenario["phase4_refresh_interval_multiplier"]),
+                ]
+            )
+        if scenario.get("phase4_ranker") is not None:
+            cmd.extend(["--phase4-ranker", str(scenario["phase4_ranker"])])
+        if scenario.get("row_store_cache_control") is not None:
+            cmd.extend(
+                [
+                    "--row-store-cache-control",
+                    str(scenario["row_store_cache_control"]),
+                ]
+            )
+        if scenario.get("exact_encoder_residency") is not None:
+            cmd.extend(
+                [
+                    "--exact-encoder-residency",
+                    str(scenario["exact_encoder_residency"]),
+                ]
+            )
+        if scenario.get("phase4_scheduler_mode") is not None:
+            cmd.extend(
+                [
+                    "--phase4-scheduler-mode",
+                    str(scenario["phase4_scheduler_mode"]),
+                ]
+            )
+        if scenario.get("phase4_scheduler_debug", False):
+            cmd.append("--phase4-scheduler-debug")
+        if scenario.get("phase4_scheduler_telemetry_detail") is not None:
+            cmd.extend(
+                [
+                    "--phase4-scheduler-telemetry-detail",
+                    str(scenario["phase4_scheduler_telemetry_detail"]),
+                ]
+            )
+        if scenario.get("phase4_refresh_optimization") is not None:
+            cmd.extend(
+                [
+                    "--phase4-refresh-optimization",
+                    str(scenario["phase4_refresh_optimization"]),
+                ]
+            )
+        if scenario.get("phase4_row_executor") is not None:
+            cmd.extend(
+                [
+                    "--phase4-row-executor",
+                    str(scenario["phase4_row_executor"]),
+                ]
+            )
         if scenario.get("cross_cluster_debug", False):
             cmd.append("--cross-cluster-debug")
         if scenario.get("capture_phase0_donor_bundle", False):

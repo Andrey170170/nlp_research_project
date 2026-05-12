@@ -69,3 +69,48 @@ This workspace is for **cross-cluster investigation**, not optimization.
   - `cardinal/fast`
   - `cardinal/anomaly`
   - `cardinal/long_eval`
+
+## Optimization-track reference (from opt worktree)
+
+These notes are kept here additively as a reference checklist for the separate
+optimization workspace pair.
+
+### Immediate tasks
+
+1. Confirm the refreshed optimization project+library pair is operational.
+2. Keep the permanent overflow fix semantics-preserving:
+   - no reliance on fp32 collapse
+   - no frontier-selection policy changes
+   - no silent approximation
+3. Fix the current Phase 4 memory problem with the **safe hybrid row-store cut**:
+   - preserve cheap mmap-style reads/materialization
+   - change only append/writeback behavior
+   - target batch-aligned file-backed RSS growth directly
+4. Validate the hybrid fix on canonical fast prompts (`828_base`, `361_base`)
+   using RSS/time/exactness checks.
+5. Only after main hybrid validation, consider smaller cleanup:
+   - staging buffer shrink/reset
+   - read-cache tuning
+   - other narrow hygiene passes
+
+### Later scheduler-redesign considerations
+
+Only revisit during a later scheduler/frontier redesign where memory behavior is
+evaluated together:
+
+- two-tier hot/cold row storage
+- cheaper scheduler indexes / metadata summaries that reduce rereads
+- incremental refresh state
+- approximate ranking / prefilter ideas
+- larger storage-layout redesigns coordinated with scheduler work
+
+### Optimization order
+
+1. Permanent overflow fix
+2. Safe hybrid row-store memory fix
+3. Smaller staging/cache cleanup if still needed
+4. Later scheduler redesign with memory implications evaluated jointly
+
+### Optimization-track rule
+
+- Distinguish experiments using run metadata, not new top-level folders.

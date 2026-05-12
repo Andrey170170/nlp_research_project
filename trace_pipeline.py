@@ -674,7 +674,7 @@ def extract_graph(
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
     phase4_anomaly_debug: bool = False,
-    exact_trace_internal_dtype: str = "fp64",
+    exact_trace_internal_dtype: str = "fp32",
 ):
     planner_enabled = bool(plan_feature_batch_size or auto_scale_feature_batch_size)
     if planner_enabled or phase4_anomaly_debug:
@@ -815,7 +815,7 @@ def trace_completion(
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
     phase4_anomaly_debug: bool = False,
-    exact_trace_internal_dtype: str = "fp64",
+    exact_trace_internal_dtype: str = "fp32",
     save_raw: bool = False,
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
@@ -1245,7 +1245,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--exact-trace-internal-dtype",
         type=parse_exact_trace_internal_dtype,
-        default="fp64",
+        default="fp32",
         help=(
             "Internal dtype for exact-trace normalization/ranking path (fp32 or fp64)"
         ),

@@ -19,11 +19,12 @@ DEFAULT_INPUT_ROOT = Path("/fs/scratch/PAS3272/kopanev.1/weekend_exact_chunked")
 DEFAULT_OUTPUT_DIR = Path("experiments/extracted/weekend_exact_chunked")
 
 MEMORY_RE = re.compile(
-    r"rss=(?P<rss>n/a|\d+(?:\.\d+)?) GiB, "
-    r"cuda_alloc=(?P<cuda_alloc>n/a|\d+(?:\.\d+)?) GiB, "
-    r"cuda_reserved=(?P<cuda_reserved>n/a|\d+(?:\.\d+)?) GiB, "
-    r"cuda_peak_alloc=(?P<cuda_peak_alloc>n/a|\d+(?:\.\d+)?) GiB, "
-    r"cuda_peak_reserved=(?P<cuda_peak_reserved>n/a|\d+(?:\.\d+)?) GiB"
+    r"rss=(?P<rss>n/a|\d+(?:\.\d+)?(?: GiB)?), "
+    r"(?:rss_current=(?P<rss_current>n/a|\d+(?:\.\d+)?(?: GiB)?), )?"
+    r"cuda_alloc=(?P<cuda_alloc>n/a|\d+(?:\.\d+)?(?: GiB)?), "
+    r"cuda_reserved=(?P<cuda_reserved>n/a|\d+(?:\.\d+)?(?: GiB)?), "
+    r"cuda_peak_alloc=(?P<cuda_peak_alloc>n/a|\d+(?:\.\d+)?(?: GiB)?), "
+    r"cuda_peak_reserved=(?P<cuda_peak_reserved>n/a|\d+(?:\.\d+)?(?: GiB)?)"
 )
 PRECOMP_RE = re.compile(r"Precomputation completed in (?P<seconds>\d+(?:\.\d+)?)s")
 FORWARD_RE = re.compile(r"Forward pass completed in (?P<seconds>\d+(?:\.\d+)?)s")
