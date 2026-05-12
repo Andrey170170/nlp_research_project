@@ -112,3 +112,50 @@ Optimization worktree state has been locked non-destructively before merges.
    - preserve stable row-L1 normalization and fp32 exact-trace defaults,
    - keep optimization knobs explicit rather than promoting new defaults during
      consolidation.
+
+## 2026-05-12 merge progress
+
+### Project integration
+
+- Branch: `integrate/exact-trace-baseline-20260512`
+- Merged `exact-trace-bench-harness` first:
+  - merge commit: `8cca590`
+- Merged `exact-trace-bench-opt` second:
+  - merge commit: `9a6b873`
+- Conflict-resolution policy applied:
+  - root `PLAN.md` kept deleted,
+  - `TODO.md` resolved additively,
+  - cross-cluster debug/replay plumbing preserved,
+  - optimization scenario/config plumbing preserved,
+  - meaningful optimization-worktree `EXPERIMENTS.md` additions carried forward,
+  - `.tmp_exact_trace_extract_hybrid/` left out.
+- Lightweight validation:
+  - `uv run ruff check experiments/exact_trace_bench/config.py experiments/exact_trace_bench/scenarios.py tests/test_cross_cluster_debug_artifacts.py trace_pipeline_chunked.py`
+  - `uv run ruff check experiments/exact_trace_bench trace_pipeline_chunked.py tests/test_cross_cluster_debug_artifacts.py`
+  - both passed.
+
+### Library integration
+
+- Branch: `integrate/exact-trace-baseline-20260512`
+- Merged `exact-trace-hidden-knobs` first into the library integration branch.
+- Merged `exact-trace-hidden-knobs-opt` second:
+  - merge commit: `c8999d8`
+- Conflict-resolution policy applied:
+  - kept Phase-0 / Phase-3 donor capture, replay, validation, semantic
+    descriptors, and boundary/debug hooks,
+  - kept stable scaled row-L1 denominator representation and fp32 exact-trace
+    default,
+  - kept Phase-4 planner/refresh/ranker/row-store/executor/encoder-residency
+    knobs explicit,
+  - combined `context_nnsight.py` Phase-3 gradient replay/capture with opt memory
+    telemetry,
+  - reviewed `replacement_model_nnsight.py` via targeted lint as an auto-merged
+    execution-path file.
+- Lightweight validation:
+  - `uv run python -m py_compile circuit_tracer/attribution/attribute_nnsight.py circuit_tracer/attribution/context_nnsight.py tests/test_chunked_decoder_optimizations.py`
+  - `uv run ruff check circuit_tracer/attribution/attribute_nnsight.py circuit_tracer/attribution/context_nnsight.py tests/test_chunked_decoder_optimizations.py`
+  - `uv run ruff check circuit_tracer/replacement_model/replacement_model_nnsight.py circuit_tracer/attribution/attribute.py circuit_tracer/attribution/sparsification.py circuit_tracer/graph.py circuit_tracer/utils/telemetry.py tests/test_attribute_nnsight_telemetry.py tests/test_double_pass_sparsification.py tests/test_partial_influences.py tests/utils/test_telemetry.py`
+  - `git diff --check`
+  - `uv run python -m py_compile circuit_tracer/attribution/attribute_nnsight.py circuit_tracer/attribution/context_nnsight.py circuit_tracer/replacement_model/replacement_model_nnsight.py tests/test_chunked_decoder_optimizations.py`
+  - all passed; `ruff` emitted only the repository's existing top-level linter
+    settings deprecation warning.

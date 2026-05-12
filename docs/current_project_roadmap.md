@@ -111,12 +111,12 @@ the validated behavior and remain usable for new work.
 - [x] Commit or otherwise preserve important `EXPERIMENTS.md` updates.
 - [ ] Discard irrelevant untracked drafts/scratch files.
 - [x] Create project integration branch from `main`.
-- [ ] Bring in `exact-trace-bench-harness` and `exact-trace-bench-opt`.
+- [x] Bring in `exact-trace-bench-harness` and `exact-trace-bench-opt`.
 - [x] Create paired library integration branch from library `main` / current fork
       baseline.
-- [ ] Bring in `exact-trace-hidden-knobs` and `exact-trace-hidden-knobs-opt`.
-- [ ] Resolve conflicts preserving correctness and runnable paths.
-- [ ] Run lightweight validation with `uv run` only.
+- [x] Bring in `exact-trace-hidden-knobs` and `exact-trace-hidden-knobs-opt`.
+- [x] Resolve conflicts preserving correctness and runnable paths.
+- [x] Run lightweight validation with `uv run` only.
 - [ ] If appropriate, launch minimal SLURM smoke checks for canonical fast/anomaly
       scenarios.
 
