@@ -1,0 +1,9 @@
+Let $W$ be the amount of work each painter put in per day.
+The team of 4 painters worked for 3 weeks.
+Since there are 7 days in a week, 3 weeks is $3 \times 7 = 21$ days.
+The total number of days the team worked is 21 days.
+The team worked on the mansion for 3/8ths of a day every day.
+So, the total work done by the team is $\frac{3}{8}$ of a day per day multiplied by the number of days.
+Total work = $\frac{3}{8} \times 21 = \frac{3 \times 21}{8} = \frac{63}{8}$ days.
+Since there are 4 painters, the total work done by the team is $4 \times \frac{63}{8} = \frac{4 \times 63}{8} = \frac{252}{8} = \frac{126}{4} = \frac{63}{2} = 31.5$ hours.
+However, we are asked for the number of hours each painter put in.

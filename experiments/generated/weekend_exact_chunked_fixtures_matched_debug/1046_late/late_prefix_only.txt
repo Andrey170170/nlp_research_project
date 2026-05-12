@@ -1,0 +1,4 @@
+Let $W$ be the amount of work each painter put in per day.
+The team of 4 painters worked for 3 weeks.
+Since there are 7 days in a week, 3 weeks is $3 \times 7 = 21$ days.
+The total number of days the team worked

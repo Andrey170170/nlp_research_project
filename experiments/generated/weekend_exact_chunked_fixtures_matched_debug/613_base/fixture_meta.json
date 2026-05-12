@@ -1,0 +1,11 @@
+{
+  "fixture_name": "613_base",
+  "fixture_kind": "base",
+  "prompt_source": "gsm8k",
+  "gsm8k_index": 613,
+  "question": "A Reddit group has 1000 members. If each member posts an average of 3 posts per day, what's the total number of posts that the group will have in March?",
+  "ground_truth_answer": "The total number of posts from all members in a day is 1000 members * 3 posts/member = <<1000*3=3000>>3000 posts.\nMarch has 31 days, so the total number of posts will be 31 days * 3000 posts/day = <<31*3000=93000>>93000 posts\n#### 93000",
+  "prompt_token_count": 69,
+  "initial_input_token_count": 69,
+  "greedy_completion_token_count": 92
+}

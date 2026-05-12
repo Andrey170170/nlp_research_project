@@ -1,14 +1,15 @@
 #!/bin/bash
-#SBATCH --job-name=weekend-exact-bench
+#SBATCH --job-name=weekend-exact-long
 #SBATCH --account=PAS3272
-#SBATCH --partition=gpu
+#SBATCH --cluster=ascend
+#SBATCH --partition=quad
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=10
 #SBATCH --gpus-per-task=1
-#SBATCH --mem=350G
-#SBATCH --time=01:00:00
-#SBATCH --array=0-0
+#SBATCH --mem=700G
+#SBATCH --time=04:00:00
+#SBATCH --array=0-7
 #SBATCH --output=logs/slurm-%x-%A_%a.out
 #SBATCH --error=logs/slurm-%x-%A_%a.err
 
@@ -19,8 +20,8 @@ LIB_WORKSPACE_ROOT="${LIB_WORKSPACE_ROOT:-$WORKSPACE_ROOT/../circuit-tracer_chun
 
 cd "$WORKSPACE_ROOT"
 
-SCENARIOS_FILE="${SCENARIOS_FILE:-experiments/generated/weekend_exact_chunked_wave1_cardinal_scenarios.json}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS3272/kopanev.1/weekend_exact_chunked/cardinal}"
+SCENARIOS_FILE="${SCENARIOS_FILE:-experiments/generated/weekend_exact_chunked_wave2_ascend_361_late_scenarios.json}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS3272/kopanev.1/weekend_exact_chunked/ascend/wave2}"
 
 RUN_ID=""
 RUN_NAME=""
@@ -74,7 +75,7 @@ fi
 echo "Job ID: ${SLURM_JOB_ID}"
 echo "Array task: ${SLURM_ARRAY_TASK_ID}"
 echo "Node: $(hostname)"
-echo "Cluster: cardinal"
+echo "Cluster: ascend"
 echo "Start: $(date)"
 echo "Working directory: ${WORKSPACE_ROOT}"
 echo "Scenarios file: ${SCENARIOS_FILE}"

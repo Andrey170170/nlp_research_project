@@ -1,0 +1,22 @@
+{
+  "fixture_name": "828_late",
+  "fixture_kind": "late_prefix",
+  "prompt_source": "prepared_prefix",
+  "gsm8k_index": 828,
+  "question": "Mulan has $40. Her father gave her $100. She buys two pairs of jeans at $30 each and a bag for $20. How much money does Mulan have left?",
+  "ground_truth_answer": "Mulan has a total of $40 + $100 = $<<40+100=140>>140.\nTwo pairs of jeans cost 2 x $30 = $<<2*30=60>>60.\nThus, Mulan spends a total of $60 + $20 = $<<60+20=80>>80.\nTherefore, Mulan has $140 - $80 = $<<140-80=60>>60 left.\n#### 60",
+  "prompt_token_count": 73,
+  "initial_input_token_count": 146,
+  "late_prefix_token_count": 73,
+  "late_prefix_fraction_of_completion_tokens": 0.28515625,
+  "greedy_completion_token_count": 256,
+  "truncation": {
+    "selection_reason": "prompt_multiplier_cap",
+    "target_fraction": 0.8,
+    "fraction_token_target": 205,
+    "fraction_token_min": 192,
+    "fraction_token_max": 217,
+    "multiplier_cap_total_tokens": 146,
+    "multiplier_cap_generated_tokens": 73
+  }
+}

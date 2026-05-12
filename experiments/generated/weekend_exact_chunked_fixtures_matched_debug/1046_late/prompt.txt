@@ -1,0 +1,8 @@
+<bos><start_of_turn>user
+Question: A team of 4 painters worked on a mansion for 3/8ths of a day every day for 3 weeks. How many hours of work did each painter put in?
+Please solve this step by step and end with 'Final answer: <number>'.<end_of_turn>
+<start_of_turn>model
+Let $W$ be the amount of work each painter put in per day.
+The team of 4 painters worked for 3 weeks.
+Since there are 7 days in a week, 3 weeks is $3 \times 7 = 21$ days.
+The total number of days the team worked

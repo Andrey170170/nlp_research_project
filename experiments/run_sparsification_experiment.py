@@ -47,6 +47,33 @@ def apply_runtime_overrides(
     return effective_scenario
 
 
+def _normalize_run_metadata_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    normalized = " ".join(str(value).split())
+    return normalized or None
+
+
+def _has_run_metadata(run_metadata: dict[str, str | None]) -> bool:
+    return any(value is not None for value in run_metadata.values())
+
+
+def _assert_fresh_scenario_root(scenario_root: Path) -> None:
+    collision_paths = [
+        scenario_root / "scenario.json",
+        scenario_root / "result.json",
+        scenario_root / "run.log",
+        scenario_root / "artifacts",
+    ]
+    existing = [path for path in collision_paths if path.exists()]
+    if existing:
+        joined = ", ".join(str(path) for path in existing)
+        raise FileExistsError(
+            "Scenario output directory already contains artifacts; refusing to reuse it: "
+            f"{scenario_root} ({joined})"
+        )
+
+
 def _build_prompt_source_args(scenario: dict[str, Any]) -> list[str]:
     prepared_prompt_file = scenario.get("prepared_prompt_file")
     if prepared_prompt_file is not None:
@@ -74,6 +101,22 @@ def _parse_optional_gib(value: str) -> float | None:
     if value == "n/a":
         return None
     return float(value)
+
+
+def _format_optional_bool_arg(value: Any) -> str:
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "t", "yes", "y", "on"}:
+            return "true"
+        if lowered in {"0", "false", "f", "no", "n", "off"}:
+            return "false"
+        raise ValueError(f"Unsupported boolean string override: {value!r}")
+    if isinstance(value, int):
+        if value in {0, 1}:
+            return str(bool(value)).lower()
+    raise ValueError(f"Unsupported boolean override type/value: {value!r}")
 
 
 def _extract_benchmark_metrics(log_path: Path) -> dict[str, Any]:
@@ -201,6 +244,18 @@ def _summarize_artifacts(run_output_dir: Path) -> dict[str, Any]:
         for step in manifest.get("steps", [])
         if step.get("transcoder_diagnostics")
     ]
+    feature_semantic_descriptor_statuses = [
+        step.get("feature_semantic_descriptor_status")
+        for manifest in completion_manifests
+        for step in manifest.get("steps", [])
+        if isinstance(step.get("feature_semantic_descriptor_status"), str)
+    ]
+    feature_semantic_descriptor_paths = [
+        Path(path).parent / step.get("feature_semantic_descriptor_path")
+        for path, manifest in zip(completion_files, completion_manifests, strict=False)
+        for step in manifest.get("steps", [])
+        if isinstance(step.get("feature_semantic_descriptor_path"), str)
+    ]
 
     first_prompt_meta = prompt_metas[0] if prompt_metas else {}
     first_completion = completion_manifests[0] if completion_manifests else {}
@@ -228,6 +283,14 @@ def _summarize_artifacts(run_output_dir: Path) -> dict[str, Any]:
         "decoder_cache_eviction_count": max(cache_evictions)
         if cache_evictions
         else None,
+        "feature_semantic_descriptor_status": (
+            feature_semantic_descriptor_statuses[-1]
+            if feature_semantic_descriptor_statuses
+            else None
+        ),
+        "feature_semantic_descriptor_file_count": sum(
+            1 for path in feature_semantic_descriptor_paths if path.exists()
+        ),
         "resource_snapshot": first_completion.get("resource_snapshot"),
     }
 
@@ -289,6 +352,23 @@ def build_command(
         cmd.extend(["--feature-batch-size", str(scenario["feature_batch_size"])])
     if scenario.get("logit_batch_size") is not None:
         cmd.extend(["--logit-batch-size", str(scenario["logit_batch_size"])])
+    if scenario.get("exact_trace_internal_dtype") is not None:
+        cmd.extend(
+            [
+                "--exact-trace-internal-dtype",
+                str(scenario["exact_trace_internal_dtype"]),
+            ]
+        )
+    if (
+        method != "old_patch"
+        and scenario.get("phase0_activation_threshold_compare_mode") is not None
+    ):
+        cmd.extend(
+            [
+                "--phase0-activation-threshold-compare-mode",
+                str(scenario["phase0_activation_threshold_compare_mode"]),
+            ]
+        )
 
     if method != "old_patch":
         cmd.extend(["--decoder-chunk-size", str(scenario["decoder_chunk_size"])])
@@ -313,6 +393,137 @@ def build_command(
             )
         if scenario.get("sparsify_global_cap") is not None:
             cmd.extend(["--sparsify-global-cap", str(scenario["sparsify_global_cap"])])
+        if scenario.get("chunked_feature_replay_window") is not None:
+            cmd.extend(
+                [
+                    "--chunked-feature-replay-window",
+                    str(scenario["chunked_feature_replay_window"]),
+                ]
+            )
+        if scenario.get("error_vector_prefetch_lookahead") is not None:
+            cmd.extend(
+                [
+                    "--error-vector-prefetch-lookahead",
+                    str(scenario["error_vector_prefetch_lookahead"]),
+                ]
+            )
+        if scenario.get("stage_encoder_vecs_on_cpu") is not None:
+            cmd.extend(
+                [
+                    "--stage-encoder-vecs-on-cpu",
+                    _format_optional_bool_arg(scenario["stage_encoder_vecs_on_cpu"]),
+                ]
+            )
+        if scenario.get("stage_error_vectors_on_cpu") is not None:
+            cmd.extend(
+                [
+                    "--stage-error-vectors-on-cpu",
+                    _format_optional_bool_arg(scenario["stage_error_vectors_on_cpu"]),
+                ]
+            )
+        if scenario.get("row_subchunk_size") is not None:
+            cmd.extend(["--row-subchunk-size", str(scenario["row_subchunk_size"])])
+        if scenario.get("plan_feature_batch_size", False):
+            cmd.append("--plan-feature-batch-size")
+        if scenario.get("auto_scale_feature_batch_size", False):
+            cmd.append("--auto-scale-feature-batch-size")
+        if scenario.get("feature_batch_size_max") is not None:
+            cmd.extend(
+                ["--feature-batch-size-max", str(scenario["feature_batch_size_max"])]
+            )
+        if scenario.get("feature_batch_target_reserved_fraction") is not None:
+            cmd.extend(
+                [
+                    "--feature-batch-target-reserved-fraction",
+                    str(scenario["feature_batch_target_reserved_fraction"]),
+                ]
+            )
+        if scenario.get("feature_batch_min_free_fraction") is not None:
+            cmd.extend(
+                [
+                    "--feature-batch-min-free-fraction",
+                    str(scenario["feature_batch_min_free_fraction"]),
+                ]
+            )
+        if scenario.get("feature_batch_probe_batches") is not None:
+            cmd.extend(
+                [
+                    "--feature-batch-probe-batches",
+                    str(scenario["feature_batch_probe_batches"]),
+                ]
+            )
+        if scenario.get("phase4_anomaly_debug", False):
+            cmd.append("--phase4-anomaly-debug")
+        if scenario.get("cross_cluster_debug", False):
+            cmd.append("--cross-cluster-debug")
+        if scenario.get("capture_phase0_donor_bundle", False):
+            cmd.append("--capture-phase0-donor-bundle")
+        if scenario.get("phase0_donor_bundle") is not None:
+            cmd.extend(["--phase0-donor-bundle", str(scenario["phase0_donor_bundle"])])
+        if scenario.get("phase0_replay_mode") is not None:
+            cmd.extend(["--phase0-replay-mode", str(scenario["phase0_replay_mode"])])
+        if scenario.get("phase0_donor_context_policy") is not None:
+            cmd.extend(
+                [
+                    "--phase0-donor-context-policy",
+                    str(scenario["phase0_donor_context_policy"]),
+                ]
+            )
+        if scenario.get("phase3_gradient_donor_bundle") is not None:
+            cmd.extend(
+                [
+                    "--phase3-gradient-donor-bundle",
+                    str(scenario["phase3_gradient_donor_bundle"]),
+                ]
+            )
+        if scenario.get("phase3_gradient_replay_mode") is not None:
+            cmd.extend(
+                [
+                    "--phase3-gradient-replay-mode",
+                    str(scenario["phase3_gradient_replay_mode"]),
+                ]
+            )
+        if scenario.get("phase3_row_donor_bundle") is not None:
+            cmd.extend(
+                ["--phase3-row-donor-bundle", str(scenario["phase3_row_donor_bundle"])]
+            )
+        if scenario.get("phase3_row_replay_mode") is not None:
+            cmd.extend(
+                ["--phase3-row-replay-mode", str(scenario["phase3_row_replay_mode"])]
+            )
+        if scenario.get("phase3_replay_validation_policy") is not None:
+            cmd.extend(
+                [
+                    "--phase3-replay-validation-policy",
+                    str(scenario["phase3_replay_validation_policy"]),
+                ]
+            )
+        if scenario.get("capture_phase3_seed_bundle", False):
+            cmd.append("--capture-phase3-seed-bundle")
+        if scenario.get("capture_phase3_gradient_bundle", False):
+            cmd.append("--capture-phase3-gradient-bundle")
+        if scenario.get("capture_phase3_row_bundle", False):
+            cmd.append("--capture-phase3-row-bundle")
+        if scenario.get("capture_feature_semantic_descriptors", False):
+            cmd.append("--capture-feature-semantic-descriptors")
+        if scenario.get("semantic_descriptor_top_k") is not None:
+            cmd.extend(
+                [
+                    "--semantic-descriptor-top-k",
+                    str(scenario["semantic_descriptor_top_k"]),
+                ]
+            )
+        if scenario.get("semantic_descriptor_dim") is not None:
+            cmd.extend(
+                [
+                    "--semantic-descriptor-dim",
+                    str(scenario["semantic_descriptor_dim"]),
+                ]
+            )
+        if scenario.get("telemetry_max_events") is not None:
+            cmd.extend(
+                ["--telemetry-max-events", str(scenario["telemetry_max_events"])]
+            )
 
     if scenario.get("verbose_attribution", False):
         cmd.append("--verbose-attribution")
@@ -341,6 +552,7 @@ def run_scenario(
     scenario: dict[str, Any],
     *,
     env: dict[str, str],
+    run_metadata: dict[str, str | None],
     cross_batch_decoder_cache_bytes_override: int | None = None,
 ) -> dict[str, Any]:
     scenario_name = scenario["name"]
@@ -350,15 +562,17 @@ def run_scenario(
         else output_root / scenario_name
     )
     run_output_dir = scenario_root / "artifacts"
+    _assert_fresh_scenario_root(scenario_root)
     scenario_root.mkdir(parents=True, exist_ok=True)
     run_output_dir.mkdir(parents=True, exist_ok=True)
     effective_scenario = apply_runtime_overrides(
         scenario,
         cross_batch_decoder_cache_bytes_override=cross_batch_decoder_cache_bytes_override,
     )
-    (scenario_root / "scenario.json").write_text(
-        json.dumps(effective_scenario, indent=2)
-    )
+    scenario_payload = dict(effective_scenario)
+    if _has_run_metadata(run_metadata):
+        scenario_payload["run_metadata"] = run_metadata
+    (scenario_root / "scenario.json").write_text(json.dumps(scenario_payload, indent=2))
 
     log_path = scenario_root / "run.log"
     cmd = build_command(
@@ -373,6 +587,12 @@ def run_scenario(
         "name": scenario_name,
         "stage": scenario.get("stage"),
         "method": scenario["method"],
+        "run_id": run_metadata.get("run_id"),
+        "launch_id": run_metadata.get("run_id"),
+        "run_name": run_metadata.get("run_name"),
+        "run_description": run_metadata.get("run_description"),
+        "run_goal": run_metadata.get("run_goal"),
+        "run_metadata": run_metadata,
         "gsm8k_indices": scenario.get("gsm8k_indices"),
         "prepared_prompt_file": scenario.get("prepared_prompt_file"),
         "prepared_prompt_meta_file": scenario.get("prepared_prompt_meta_file"),
@@ -388,6 +608,13 @@ def run_scenario(
         log_file.write(f"Scenario: {scenario_name}\n")
         log_file.write(f"Stage: {scenario.get('stage')}\n")
         log_file.write(f"Method: {scenario['method']}\n")
+        if _has_run_metadata(run_metadata):
+            log_file.write(f"Run ID: {run_metadata.get('run_id')}\n")
+            log_file.write(f"Run name: {run_metadata.get('run_name')}\n")
+            if run_metadata.get("run_description"):
+                log_file.write(f"Run description: {run_metadata['run_description']}\n")
+            if run_metadata.get("run_goal"):
+                log_file.write(f"Run goal: {run_metadata['run_goal']}\n")
         log_file.write(f"Start: {time.ctime(start)}\n")
         log_file.write(f"Working directory: {REPO_ROOT}\n")
         log_file.write(f"Command: {shlex.join(cmd)}\n\n")
@@ -473,9 +700,39 @@ def main() -> None:
         default=None,
         help="Optional override for exact chunked Phase-4 cross-batch decoder cache budget",
     )
+    parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Optional run identifier for grouping scenario outputs and metadata",
+    )
+    parser.add_argument(
+        "--run-name",
+        default=None,
+        help="Optional human-readable run name",
+    )
+    parser.add_argument(
+        "--run-description",
+        default=None,
+        help="Optional short free-text run description",
+    )
+    parser.add_argument(
+        "--run-goal",
+        default=None,
+        help="Optional free-text run goal",
+    )
     args = parser.parse_args()
 
     scenarios, metadata = load_scenarios(args.scenarios_file)
+    run_metadata = {
+        "run_id": _normalize_run_metadata_value(args.run_id)
+        or _normalize_run_metadata_value(metadata.get("run_id")),
+        "run_name": _normalize_run_metadata_value(args.run_name)
+        or _normalize_run_metadata_value(metadata.get("run_name")),
+        "run_description": _normalize_run_metadata_value(args.run_description)
+        or _normalize_run_metadata_value(metadata.get("run_description")),
+        "run_goal": _normalize_run_metadata_value(args.run_goal)
+        or _normalize_run_metadata_value(metadata.get("run_goal")),
+    }
 
     if args.list:
         for idx, scenario in enumerate(scenarios):
@@ -511,6 +768,8 @@ def main() -> None:
     print(f"Loaded {len(scenarios)} scenario(s) from {args.scenarios_file}")
     if metadata:
         print(f"Scenario metadata: {json.dumps(metadata, indent=2)}")
+    if _has_run_metadata(run_metadata):
+        print(f"Run metadata: {json.dumps(run_metadata, indent=2)}")
 
     results = []
     for scenario in scenarios:
@@ -530,6 +789,7 @@ def main() -> None:
                 output_root,
                 scenario,
                 env=env,
+                run_metadata=run_metadata,
                 cross_batch_decoder_cache_bytes_override=args.cross_batch_decoder_cache_bytes,
             )
         )
@@ -544,6 +804,12 @@ def main() -> None:
         "timestamp": timestamp,
         "scenarios_file": str(args.scenarios_file),
         "metadata": metadata,
+        "run_id": run_metadata.get("run_id"),
+        "launch_id": run_metadata.get("run_id"),
+        "run_name": run_metadata.get("run_name"),
+        "run_description": run_metadata.get("run_description"),
+        "run_goal": run_metadata.get("run_goal"),
+        "run_metadata": run_metadata,
         "output_root": str(output_root),
         "results": results,
     }

@@ -1,0 +1,5 @@
+Here's how to solve this problem step-by-step:
+
+1. **Posts per day by all members:** 1000 members * 3 posts/member = 3000 posts per day.
+
+2. **Total posts in March:** 3000 posts/day * 30 days

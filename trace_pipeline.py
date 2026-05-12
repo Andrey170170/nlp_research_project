@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import gc
 import json
+import math
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -54,6 +55,17 @@ DTYPE = torch.bfloat16
 
 HF_REPO = "google/gemma-scope-2-1b-it"
 CLT_SUBFOLDER = "clt/width_262k_l0_medium_affine"
+
+
+def parse_exact_trace_internal_dtype(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized in {"fp32", "float32", "torch.float32"}:
+        return "fp32"
+    if normalized in {"fp64", "float64", "torch.float64"}:
+        return "fp64"
+    raise argparse.ArgumentTypeError(
+        f"Expected one of {{fp32, fp64, float32, float64}}, got: {value!r}"
+    )
 
 
 # ── feature cap patch ────────────────────────────────────────────────
@@ -426,6 +438,180 @@ def capture_transcoder_diagnostics(model) -> dict[str, Any] | None:
     return {key: snapshot.get(key) for key in keys_of_interest if key in snapshot}
 
 
+def _safe_numeric_seconds(value: object, *, divide_ms: bool = False) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    numeric = float(value)
+    if not math.isfinite(numeric):
+        return None
+    seconds = numeric / 1000.0 if divide_ms else numeric
+    return round(seconds, 6)
+
+
+def summarize_attribution_telemetry(
+    telemetry_summary: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(telemetry_summary, dict):
+        return None
+
+    summary: dict[str, Any] = {}
+    for count_key in ("event_count", "stored_event_count", "dropped_event_count"):
+        value = telemetry_summary.get(count_key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        summary[count_key] = int(value)
+
+    total_elapsed_seconds = _safe_numeric_seconds(
+        telemetry_summary.get("total_elapsed_ms"),
+        divide_ms=True,
+    )
+    if total_elapsed_seconds is not None:
+        summary["total_elapsed_seconds"] = total_elapsed_seconds
+
+    wall_clock_total_elapsed_seconds = _safe_numeric_seconds(
+        telemetry_summary.get("wall_clock_elapsed_ms_total"),
+        divide_ms=True,
+    )
+    if wall_clock_total_elapsed_seconds is not None:
+        summary["wall_clock_total_elapsed_seconds"] = wall_clock_total_elapsed_seconds
+
+    def _extract_phase_seconds(values: object) -> dict[str, float]:
+        phase_seconds: dict[str, float] = {}
+        if not isinstance(values, dict):
+            return phase_seconds
+        for phase_name, elapsed_ms in values.items():
+            if not isinstance(phase_name, str):
+                continue
+            elapsed_seconds = _safe_numeric_seconds(elapsed_ms, divide_ms=True)
+            if elapsed_seconds is not None:
+                phase_seconds[phase_name] = elapsed_seconds
+        return phase_seconds
+
+    elapsed_seconds_by_phase_aggregate = _extract_phase_seconds(
+        telemetry_summary.get("elapsed_ms_by_phase_aggregate")
+        or telemetry_summary.get("elapsed_ms_by_phase")
+    )
+    if elapsed_seconds_by_phase_aggregate:
+        summary["elapsed_seconds_by_phase"] = elapsed_seconds_by_phase_aggregate
+        summary["elapsed_seconds_by_phase_aggregate"] = (
+            elapsed_seconds_by_phase_aggregate
+        )
+
+    wall_clock_elapsed_seconds_by_phase = _extract_phase_seconds(
+        telemetry_summary.get("wall_clock_elapsed_ms_by_phase")
+    )
+    if wall_clock_elapsed_seconds_by_phase:
+        summary["wall_clock_elapsed_seconds_by_phase"] = (
+            wall_clock_elapsed_seconds_by_phase
+        )
+
+    return summary
+
+
+def append_jsonl_records(path: Path, records: list[dict[str, Any]]) -> int:
+    if not records:
+        return 0
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record, ensure_ascii=False))
+            handle.write("\n")
+    return len(records)
+
+
+def build_completion_timing_summary(
+    *,
+    completion_end_to_end_seconds: float,
+    step_records: list[dict[str, Any]],
+) -> dict[str, Any]:
+    tracked_step_fields = (
+        "step_end_to_end_seconds",
+        "attribution_seconds",
+        "token_generation_seconds",
+        "artifact_save_seconds",
+    )
+
+    totals = {key: 0.0 for key in tracked_step_fields}
+    attribution_phase_elapsed_seconds_total_aggregate: dict[str, float] = {}
+    attribution_phase_wall_clock_elapsed_seconds_total: dict[str, float] = {}
+
+    for step_record in step_records:
+        for field_name in tracked_step_fields:
+            value_seconds = _safe_numeric_seconds(step_record.get(field_name))
+            if value_seconds is not None:
+                totals[field_name] += value_seconds
+
+        phase_elapsed_aggregate = step_record.get(
+            "attribution_phase_elapsed_seconds_aggregate",
+            step_record.get("attribution_phase_elapsed_seconds"),
+        )
+        if isinstance(phase_elapsed_aggregate, dict):
+            for phase_name, value in phase_elapsed_aggregate.items():
+                if not isinstance(phase_name, str):
+                    continue
+                value_seconds = _safe_numeric_seconds(value)
+                if value_seconds is None:
+                    continue
+                attribution_phase_elapsed_seconds_total_aggregate[phase_name] = (
+                    attribution_phase_elapsed_seconds_total_aggregate.get(
+                        phase_name, 0.0
+                    )
+                    + value_seconds
+                )
+
+        phase_elapsed_wall_clock = step_record.get(
+            "attribution_phase_wall_clock_elapsed_seconds"
+        )
+        if isinstance(phase_elapsed_wall_clock, dict):
+            for phase_name, value in phase_elapsed_wall_clock.items():
+                if not isinstance(phase_name, str):
+                    continue
+                value_seconds = _safe_numeric_seconds(value)
+                if value_seconds is None:
+                    continue
+                attribution_phase_wall_clock_elapsed_seconds_total[phase_name] = (
+                    attribution_phase_wall_clock_elapsed_seconds_total.get(
+                        phase_name, 0.0
+                    )
+                    + value_seconds
+                )
+
+    step_count = len(step_records)
+    averages = {
+        key: round((value / step_count) if step_count else 0.0, 6)
+        for key, value in totals.items()
+    }
+    summary: dict[str, Any] = {
+        "completion_end_to_end_seconds": round(completion_end_to_end_seconds, 6),
+        "totals": {key: round(value, 6) for key, value in totals.items()},
+        "averages_per_step": averages,
+        "step_count": step_count,
+    }
+    if attribution_phase_elapsed_seconds_total_aggregate:
+        summary["attribution_phase_elapsed_seconds_total"] = {
+            key: round(value, 6)
+            for key, value in sorted(
+                attribution_phase_elapsed_seconds_total_aggregate.items()
+            )
+        }
+        summary["attribution_phase_elapsed_seconds_total_aggregate"] = {
+            key: round(value, 6)
+            for key, value in sorted(
+                attribution_phase_elapsed_seconds_total_aggregate.items()
+            )
+        }
+    if attribution_phase_wall_clock_elapsed_seconds_total:
+        summary["attribution_phase_wall_clock_elapsed_seconds_total"] = {
+            key: round(value, 6)
+            for key, value in sorted(
+                attribution_phase_wall_clock_elapsed_seconds_total.items()
+            )
+        }
+
+    return summary
+
+
 # ── generation ───────────────────────────────────────────────────────
 
 
@@ -476,7 +662,28 @@ def extract_graph(
     profile_log_interval: int = 1,
     diagnostic_feature_cap: int | None = None,
     sparsification: Any | None = None,
+    chunked_feature_replay_window: int = 4,
+    error_vector_prefetch_lookahead: int = 2,
+    stage_encoder_vecs_on_cpu: bool | None = None,
+    stage_error_vectors_on_cpu: bool | None = None,
+    row_subchunk_size: int | None = None,
+    plan_feature_batch_size: bool = False,
+    auto_scale_feature_batch_size: bool = False,
+    feature_batch_size_max: int | None = None,
+    feature_batch_target_reserved_fraction: float = 0.9,
+    feature_batch_min_free_fraction: float = 0.05,
+    feature_batch_probe_batches: int = 1,
+    phase4_anomaly_debug: bool = False,
+    exact_trace_internal_dtype: str = "fp64",
 ):
+    planner_enabled = bool(plan_feature_batch_size or auto_scale_feature_batch_size)
+    if planner_enabled or phase4_anomaly_debug:
+        raise ValueError(
+            "Phase-4 feature batch planner/anomaly debug is unsupported in trace_pipeline.extract_graph() "
+            "because this path uses full-graph attribution via the top-level attribute() wrapper. "
+            "Use trace_pipeline_chunked.py compact mode (without --save-raw)."
+        )
+
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -498,6 +705,18 @@ def extract_graph(
         "profile_log_interval": profile_log_interval,
         "diagnostic_feature_cap": diagnostic_feature_cap,
         "sparsification": sparsification,
+        "chunked_feature_replay_window": chunked_feature_replay_window,
+        "error_vector_prefetch_lookahead": error_vector_prefetch_lookahead,
+        "stage_encoder_vecs_on_cpu": stage_encoder_vecs_on_cpu,
+        "stage_error_vectors_on_cpu": stage_error_vectors_on_cpu,
+        "row_subchunk_size": row_subchunk_size,
+        "plan_feature_batch_size": plan_feature_batch_size,
+        "auto_scale_feature_batch_size": auto_scale_feature_batch_size,
+        "feature_batch_size_max": feature_batch_size_max,
+        "feature_batch_target_reserved_fraction": feature_batch_target_reserved_fraction,
+        "feature_batch_min_free_fraction": feature_batch_min_free_fraction,
+        "feature_batch_probe_batches": feature_batch_probe_batches,
+        "exact_trace_internal_dtype": exact_trace_internal_dtype,
     }
     return attribute(**attribute_kwargs)
 
@@ -584,6 +803,19 @@ def trace_completion(
     profile_log_interval: int = 1,
     diagnostic_feature_cap: int | None = None,
     sparsification: Any | None = None,
+    chunked_feature_replay_window: int = 4,
+    error_vector_prefetch_lookahead: int = 2,
+    stage_encoder_vecs_on_cpu: bool | None = None,
+    stage_error_vectors_on_cpu: bool | None = None,
+    row_subchunk_size: int | None = None,
+    plan_feature_batch_size: bool = False,
+    auto_scale_feature_batch_size: bool = False,
+    feature_batch_size_max: int | None = None,
+    feature_batch_target_reserved_fraction: float = 0.9,
+    feature_batch_min_free_fraction: float = 0.05,
+    feature_batch_probe_batches: int = 1,
+    phase4_anomaly_debug: bool = False,
+    exact_trace_internal_dtype: str = "fp64",
     save_raw: bool = False,
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
@@ -591,6 +823,14 @@ def trace_completion(
     fixture_kind: str | None = None,
 ) -> dict:
     """Trace a single completion: generate token-by-token with attribution."""
+    planner_enabled = bool(plan_feature_batch_size or auto_scale_feature_batch_size)
+    if planner_enabled or phase4_anomaly_debug:
+        raise ValueError(
+            "Phase-4 feature batch planner/anomaly debug is unsupported in trace_pipeline.trace_completion(); "
+            "this route produces full Graph outputs (and optional raw .pt). "
+            "Use trace_pipeline_chunked.py compact mode (without --save-raw)."
+        )
+
     tokenizer = model.tokenizer
     prompt_id = f"prompt_{prompt_idx:03d}"
     completion_id = f"completion_{completion_idx:03d}"
@@ -601,6 +841,7 @@ def trace_completion(
         torch.cuda.reset_peak_memory_stats()
 
     trace_start = time.time()
+    trace_start_perf = time.perf_counter()
     input_ids = model.ensure_tokenized(prompt).unsqueeze(0)
     initial_input_token_count = int(input_ids.shape[1])
     resolved_prompt_token_count = (
@@ -621,6 +862,8 @@ def trace_completion(
     print(f"\n  [{prompt_id}/{completion_id}] Starting trace (temp={temperature})")
 
     for step_idx in range(max_steps):
+        step_start = time.perf_counter()
+        attribution_start = time.perf_counter()
         graph = extract_graph(
             model,
             input_ids[0],
@@ -637,9 +880,24 @@ def trace_completion(
             profile_log_interval=profile_log_interval,
             diagnostic_feature_cap=diagnostic_feature_cap,
             sparsification=sparsification,
+            chunked_feature_replay_window=chunked_feature_replay_window,
+            error_vector_prefetch_lookahead=error_vector_prefetch_lookahead,
+            stage_encoder_vecs_on_cpu=stage_encoder_vecs_on_cpu,
+            stage_error_vectors_on_cpu=stage_error_vectors_on_cpu,
+            row_subchunk_size=row_subchunk_size,
+            plan_feature_batch_size=plan_feature_batch_size,
+            auto_scale_feature_batch_size=auto_scale_feature_batch_size,
+            feature_batch_size_max=feature_batch_size_max,
+            feature_batch_target_reserved_fraction=feature_batch_target_reserved_fraction,
+            feature_batch_min_free_fraction=feature_batch_min_free_fraction,
+            feature_batch_probe_batches=feature_batch_probe_batches,
+            exact_trace_internal_dtype=exact_trace_internal_dtype,
         )
+        attribution_seconds = time.perf_counter() - attribution_start
 
+        token_generation_start = time.perf_counter()
         token_result = generate_next_token(model, input_ids, temperature=temperature)
+        token_generation_seconds = time.perf_counter() - token_generation_start
         next_token_id = token_result["token_id"]
         next_token_text = token_result["token_text"]
         generated_token_ids.append(next_token_id)
@@ -652,11 +910,15 @@ def trace_completion(
             logprob=token_result["token_logprob"],
             max_edges=max_edges,
         )
+
+        artifact_save_start = time.perf_counter()
         save_compact(sd, completion_dir / f"step_{step_idx:03d}.npz")
 
         # Optionally save raw .pt
         if save_raw:
             graph.to_pt(str(completion_dir / f"step_{step_idx:03d}.pt"))
+        artifact_save_seconds = time.perf_counter() - artifact_save_start
+        step_end_to_end_seconds = time.perf_counter() - step_start
 
         step_record = {
             "step_index": step_idx,
@@ -668,6 +930,11 @@ def trace_completion(
             "n_active_features": sd.n_features,
             "n_edges_retained": len(sd.weights),
             "stop_reason": "eos" if next_token_id in stop_token_ids else None,
+            "step_end_to_end_seconds": round(step_end_to_end_seconds, 6),
+            "attribution_seconds": round(attribution_seconds, 6),
+            "token_generation_seconds": round(token_generation_seconds, 6),
+            "artifact_save_seconds": round(artifact_save_seconds, 6),
+            "attribution_phase_elapsed_seconds": None,
             "resource_snapshot": capture_resource_snapshot(),
             "transcoder_diagnostics": capture_transcoder_diagnostics(model),
         }
@@ -689,6 +956,7 @@ def trace_completion(
 
     completion_text = tokenizer.decode(generated_token_ids, skip_special_tokens=True)
 
+    completion_end_to_end_seconds = time.perf_counter() - trace_start_perf
     manifest = {
         "prompt_id": prompt_id,
         "completion_id": completion_id,
@@ -716,6 +984,18 @@ def trace_completion(
         "profile_attribution": profile_attribution,
         "profile_log_interval": profile_log_interval,
         "diagnostic_feature_cap": diagnostic_feature_cap,
+        "chunked_feature_replay_window": chunked_feature_replay_window,
+        "error_vector_prefetch_lookahead": error_vector_prefetch_lookahead,
+        "stage_encoder_vecs_on_cpu": stage_encoder_vecs_on_cpu,
+        "stage_error_vectors_on_cpu": stage_error_vectors_on_cpu,
+        "row_subchunk_size": row_subchunk_size,
+        "plan_feature_batch_size": plan_feature_batch_size,
+        "auto_scale_feature_batch_size": auto_scale_feature_batch_size,
+        "feature_batch_size_max": feature_batch_size_max,
+        "feature_batch_target_reserved_fraction": feature_batch_target_reserved_fraction,
+        "feature_batch_min_free_fraction": feature_batch_min_free_fraction,
+        "feature_batch_probe_batches": feature_batch_probe_batches,
+        "exact_trace_internal_dtype": exact_trace_internal_dtype,
         "sparsification": (
             {
                 "per_layer_position_topk": sparsification.per_layer_position_topk,
@@ -726,6 +1006,10 @@ def trace_completion(
         ),
         "save_raw": save_raw,
         "resource_snapshot": capture_resource_snapshot(),
+        "timing_summary": build_completion_timing_summary(
+            completion_end_to_end_seconds=completion_end_to_end_seconds,
+            step_records=step_records,
+        ),
         "steps": step_records,
     }
     manifest_path = completion_dir / "completion.json"
@@ -769,6 +1053,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "logit_batch_size": args.logit_batch_size,
         "max_n_logits": args.max_n_logits,
         "desired_logit_prob": args.desired_logit_prob,
+        "exact_trace_internal_dtype": args.exact_trace_internal_dtype,
         "offload": offload,
         "verbose_attribution": args.verbose_attribution,
         "attribution_update_interval": args.attribution_update_interval,
@@ -824,6 +1109,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 logit_batch_size=args.logit_batch_size,
                 max_n_logits=args.max_n_logits,
                 desired_logit_prob=args.desired_logit_prob,
+                exact_trace_internal_dtype=args.exact_trace_internal_dtype,
                 offload=offload,
                 verbose_attribution=args.verbose_attribution,
                 attribution_update_interval=args.attribution_update_interval,
@@ -955,6 +1241,14 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Debug-only early active-feature cap for profiling/scaling experiments",
+    )
+    parser.add_argument(
+        "--exact-trace-internal-dtype",
+        type=parse_exact_trace_internal_dtype,
+        default="fp64",
+        help=(
+            "Internal dtype for exact-trace normalization/ranking path (fp32 or fp64)"
+        ),
     )
     args = parser.parse_args()
 

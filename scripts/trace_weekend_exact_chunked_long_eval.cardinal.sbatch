@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=weekend-exact-bench
+#SBATCH --job-name=weekend-exact-long
 #SBATCH --account=PAS3272
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --gpus-per-task=1
-#SBATCH --mem=350G
-#SBATCH --time=01:00:00
+#SBATCH --mem=700G
+#SBATCH --time=04:00:00
 #SBATCH --array=0-0
 #SBATCH --output=logs/slurm-%x-%A_%a.out
 #SBATCH --error=logs/slurm-%x-%A_%a.err
@@ -19,8 +19,8 @@ LIB_WORKSPACE_ROOT="${LIB_WORKSPACE_ROOT:-$WORKSPACE_ROOT/../circuit-tracer_chun
 
 cd "$WORKSPACE_ROOT"
 
-SCENARIOS_FILE="${SCENARIOS_FILE:-experiments/generated/weekend_exact_chunked_wave1_cardinal_scenarios.json}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS3272/kopanev.1/weekend_exact_chunked/cardinal}"
+SCENARIOS_FILE="${SCENARIOS_FILE:-experiments/generated/exact_trace_bench/exact_trace_bench_long_eval_cardinal_scenarios.json}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/long_eval}"
 
 RUN_ID=""
 RUN_NAME=""

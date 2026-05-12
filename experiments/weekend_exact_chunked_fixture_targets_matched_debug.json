@@ -1,0 +1,12 @@
+{
+  "gsm8k_indices": [828, 1046, 613, 1075, 999],
+  "late_prefix_fraction_min": 0.75,
+  "late_prefix_fraction_max": 0.85,
+  "prompt_token_multiplier_cap": 2.0,
+  "max_new_tokens": 256,
+  "notes": [
+    "Generate deterministic greedy completions for the matched-config cross-cluster debug study.",
+    "This set includes anchor prompt 828 plus four new GSM8K prompts chosen to bracket the short/base-like and prompt-94-like length regimes.",
+    "Fixtures are written to a separate output directory so the existing weekend exact chunked benchmark catalog remains untouched."
+  ]
+}

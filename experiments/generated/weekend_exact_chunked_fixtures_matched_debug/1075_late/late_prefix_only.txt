@@ -1,0 +1,7 @@
+Here's how to solve the problem step-by-step:
+
+1. **Cost of roses:** Jenny bought 15 roses at $2 each, so the total cost is 15 * $2 = $30.
+
+2. **Cost of a dozen roses:** A dozen roses costs $15.
+
+3. **Total cost of roses:** The total cost of the roses is
