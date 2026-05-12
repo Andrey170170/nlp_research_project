@@ -107,18 +107,21 @@ the validated behavior and remain usable for new work.
 
 #### Consolidation checklist
 
-- [ ] Record current project + sibling library git states for both workspaces.
-- [ ] Commit or otherwise preserve important `EXPERIMENTS.md` updates.
+- [x] Record current project + sibling library git states for both workspaces.
+- [x] Commit or otherwise preserve important `EXPERIMENTS.md` updates.
 - [ ] Discard irrelevant untracked drafts/scratch files.
-- [ ] Create project integration branch from `main`.
+- [x] Create project integration branch from `main`.
 - [ ] Bring in `exact-trace-bench-harness` and `exact-trace-bench-opt`.
-- [ ] Create paired library integration branch from library `main` / current fork
+- [x] Create paired library integration branch from library `main` / current fork
       baseline.
 - [ ] Bring in `exact-trace-hidden-knobs` and `exact-trace-hidden-knobs-opt`.
 - [ ] Resolve conflicts preserving correctness and runnable paths.
 - [ ] Run lightweight validation with `uv run` only.
 - [ ] If appropriate, launch minimal SLURM smoke checks for canonical fast/anomaly
       scenarios.
+
+Merge-state details and conflict triage for this track live in
+`docs/consolidation_merge_notes.md`.
 
 #### Acceptance criteria
 

@@ -19,3 +19,4 @@ docs/
 !docs/
 docs/*
 !docs/current_project_roadmap.md
+!docs/consolidation_merge_notes.md
