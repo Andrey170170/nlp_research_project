@@ -32,8 +32,8 @@ on login nodes.
 ## Working-doc roles
 
 - `AGENTS.md` = durable repo operating instructions and workflow conventions.
-- `PLAN.md` = current scratch/working plan for the active task; do not treat it
-  as the durable source of project policy.
+- `docs/current_project_roadmap.md` = current scratch/working plan for the active
+  task; do not treat it as the durable source of project policy.
 - `EXPERIMENTS.md` = living experiment inventory **and investigation log** for
   experiment decisions, launches, findings, run-family meaning, and current
   interpretation notes.
@@ -43,7 +43,7 @@ on login nodes.
 When updating project guidance:
 
 - put durable workflow rules in `AGENTS.md`,
-- put current execution steps in `PLAN.md`,
+- put current execution steps in `docs/current_project_roadmap.md`,
 - put observed results and run interpretation in `EXPERIMENTS.md`,
 - put chosen implementation strategy/tradeoffs in the relevant spec under
   `docs/`.
@@ -172,7 +172,7 @@ explore_pipeline.cardinal.sbatch
 explore_analysis.py          # original single-completion analysis (reference)
 
 # ── Docs ──
-plan.md                      # weekly implementation plan
+docs/current_project_roadmap.md # current scratch/working roadmap
 project_proposal.pdf         # original project proposal
 
 # ── Data (on scratch, not in repo) ──

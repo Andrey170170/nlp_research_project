@@ -175,6 +175,172 @@ Relaunched jobs:
   - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/phase3_replay_matrix_94_base_cardinal_tracebatchfix`
   - task ids: `0-7`
 
+Result interpretation after relaunch completion:
+
+- SLURM/accounting status:
+  - Ascend relaunch `5148766_[2-3,6-7]`: all `COMPLETED`, exit `0:0`.
+  - Cardinal relaunch `8980846_[0-7]`: all `COMPLETED`, exit `0:0`.
+  - CPU comparison job `9026476`: `COMPLETED`, exit `0:0`, elapsed
+    `00:36:46`.
+- Scenario-level status:
+  - Ascend gradient-only rerun: all four rerun scenarios succeeded with
+    `phase0_replay_status=applied`, `phase3_gradient_replay_status=applied`
+    where expected, `phase3_row_replay_status=applied` for row modes, and no
+    Phase-0 validation warnings.
+  - Cardinal full rerun: all eight scenarios succeeded with the expected replay
+    status combinations and no Phase-0 validation warnings.
+  - All checked one-step completions generated `"Let"`.
+- Comparison artifacts:
+  - summary:
+    `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/analysis/phase3_replay_matrix_94_base_tracebatchfix_compare_summary_no_semantic.json`
+  - per-mode comparisons:
+    `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/analysis/phase3_replay_matrix_94_base_{baseline,row_donor,gradient_donor,gradient_row_donor}_compare_no_semantic.json`
+
+Key findings:
+
+- Same-cluster self controls passed for every mode (`baseline`, `row_donor`,
+  `gradient_donor`, and `gradient_row_donor`) on both Ascend and Cardinal:
+  - Phase-3 support Jaccard `1.0`,
+  - Phase-3 seed influence Pearson effectively `1.0`,
+  - top-1024 seed overlap `1.0`,
+  - compact weighted edge Jaccard `1.0`,
+  - no dtype roundtrip-loss flag.
+- Baseline / Phase-0-only donor replay still made feature support donor-like but
+  left downstream graph structure host-like:
+  - feature/support similarity to donor: `1.0`,
+  - weighted-edge similarity to donor: approximately `0.6128`,
+  - seed-influence Pearson to donor: approximately `0.98438`,
+  - frontier-post Jaccard to donor: approximately `0.7010`.
+- Injecting Phase-3 donor rows moved downstream metrics strongly to donor:
+  - Ascend host with Cardinal donor: weighted-edge movement `+0.38056`,
+    seed-influence movement `+0.01561`, frontier-post movement `+0.29900`.
+  - Cardinal host with Ascend donor: weighted-edge movement `+0.38211`,
+    seed-influence movement `+0.01561`, frontier-post movement `+0.29900`.
+- Injecting Phase-3 donor gradients produced effectively the same donor movement
+  as row injection; `gradient_donor` and `gradient_row_donor` are indistinguishable
+  from `row_donor` on the current compact graph and Phase-3 seed/frontier metrics:
+  - donor Phase-3 support Jaccard `1.0`,
+  - donor seed-influence Pearson `1.0`,
+  - donor top-1024 overlap `1.0`,
+  - donor frontier-post Jaccard `1.0`,
+  - compact weighted-edge Jaccard to donor approximately `0.9933` for
+    Ascend-with-Cardinal and `0.9943` for Cardinal-with-Ascend.
+
+Interpretation:
+
+- The cross-cluster graph drift for this one-step `94_base` anomaly is now
+  localized causally to the Phase-3 gradient/row construction path, not to
+  Phase-0 feature support alone.
+- Since donor gradients are sufficient to reproduce the donor-like row/frontier
+  behavior, the likely numerical source is in the gradient values entering
+  Phase-3 row construction, or immediately upstream of those gradients. Row
+  assembly/selection is downstream of the culprit unless a later probe shows that
+  the same donor gradients can still assemble differently under a different row
+  construction implementation.
+- Next investigation target: compare Ascend/Cardinal gradient-bundle numerical
+  summaries, trace-batch slices, layer/position localization, and any available
+  Phase-3 debug checkpoints to determine whether the gradient delta originates
+  from forward hidden-state/logit differences, backward/autograd kernel behavior,
+  target slicing, or dtype/backend differences.
+
+Numerical-cause investigation started 2026-04-30:
+
+- Code path inspected:
+  - `trace_pipeline_chunked.py` loads Gemma-3-1B-IT and GemmaScope-2 CLTs through
+    `trace_pipeline.load_model(...)` with `DTYPE=torch.bfloat16`.
+  - `NNSightReplacementModel.from_pretrained_and_transcoders(...)` uses HF/nnsight
+    with `attn_implementation="eager"` but still relies on GPU bf16 GEMM/autograd
+    kernels.
+  - `AttributionContext.cache_residual(...)` caches forward residual and feature
+    output activations.
+  - Phase-3 logit attribution calls `AttributionContext.compute_batch(...)`, which
+    injects the target-logit vector at the final residual location and reads
+    `self._feature_output_activations[layer + 1].grad` during the backward pass.
+  - `exact_trace_internal_dtype=fp64` controls attribution row normalization and
+    planner math, but does **not** make the model forward/backward pass fp64; the
+    model/transcoder execution remains bf16/float32 GPU code.
+- Hardware/environment evidence from run logs:
+  - Ascend donor capture ran on `GPU: NVIDIA A100-PCIE-40GB`.
+  - Cardinal donor capture ran on `GPU: NVIDIA H100`.
+  - Both used `Device: cuda, Dtype: torch.bfloat16`, torch `2.10.0+cu128`, CUDA
+    `12.8`, same snapshot paths, and same target-logit/probability hash.
+  - No project/library code sets `torch.use_deterministic_algorithms`, disables
+    TF32 globally, sets `CUBLAS_WORKSPACE_CONFIG`, or otherwise requests
+    cross-architecture deterministic GEMM/autograd behavior.
+- Artifact metadata comparison (header/scalar checks only; dense gradient arrays
+  were not fully loaded on the login node):
+  - target token/probability match exactly across Ascend/Cardinal:
+    `target_token_ids=[6481]`, `target_probability_hash=437d56a13df41ec1`.
+  - gradient bundle shapes match exactly:
+    `[layers=26, trace_batch=128, positions=80, d_model=1152]`.
+  - all layers are present and finite (`layer_mask` all true,
+    `per_layer_nonfinite_count=0`).
+  - gradient hashes differ on every layer; whole-bundle hashes:
+    - Ascend `9439db929b7bd065`,
+    - Cardinal `201828f60d3cf292`.
+  - per-layer gradient absolute sums differ substantially, especially early
+    layers; total gradient abs sum is approximately `4.960e36` on Ascend versus
+    `5.449e36` on Cardinal.
+- Replay hash check:
+  - In baseline Phase-0-only cross-swaps, the captured Phase-3 gradient hash stays
+    with the **host** cluster even when active features/activations are donor:
+    - Ascend with Cardinal Phase-0 donor still has Ascend gradient hash
+      `9439db929b7bd065`.
+    - Cardinal with Ascend Phase-0 donor still has Cardinal gradient hash
+      `201828f60d3cf292`.
+  - In `gradient_donor` cross-swaps, the captured effective-state gradient hash
+    changes to the **donor** gradient hash, and the downstream graph becomes
+    donor-like.
+- Raw Phase-3 feature-row comparison for `gradient_donor` versus donor rows:
+  - Ascend host + Cardinal gradients versus Cardinal donor row:
+    - exact element equality fraction `0.9999911`,
+    - L1 difference / donor L1 `3.09e-11`,
+    - correlation `1.0`,
+    - top-1024 absolute-row overlap `1.0`.
+  - Cardinal host + Ascend gradients versus Ascend donor row:
+    - exact element equality fraction `0.9999920`,
+    - L1 difference / donor L1 `3.55e-11`,
+    - correlation `1.0`,
+    - top-1024 absolute-row overlap `1.0`.
+  - By contrast, Phase-0-only baseline cross-swaps differ from donor rows by
+    about `20%`/`22%` L1 and top-1024 overlap about `0.828`.
+
+Working conclusion:
+
+- The best current explanation is **cross-architecture bf16 GPU forward/backward
+  numerical drift** between A100 and H100, first visible in earlier debug as the
+  Phase-0 pre-CLT input hash mismatch, and causally amplified/expressed in the
+  Phase-3 backward gradients.
+- This returns us to the original model-computation drift hypothesis, but with a
+  stronger causal chain. The refined interpretation is:
+  `A100/H100 bf16 model+transcoder numerical differences -> different cached
+  forward residual / feature-output states and/or different backward gradients ->
+  different Phase-3 logit gradients -> different Phase-3 direct-effect rows ->
+  different seed/frontier/compact graph`.
+- Earlier suspicion focused on attention-score or other forward-pass drift causing
+  slightly different CLT activations. The replay results show that this is not
+  enough by itself: Phase-0 donor support/activations make support donor-like but
+  do not make the downstream graph donor-like. The graph identity follows the
+  Phase-3 gradient tensor: host gradients keep the graph host-like; donor
+  gradients make it donor-like.
+- Therefore the decisive graph-level divergence is best described as arising in
+  **Phase-3 backward gradients**, while acknowledging that those gradients may
+  already encode upstream forward activation drift.
+- Target-token selection is unlikely to be the source: target IDs/probabilities
+  match exactly at the recorded precision.
+- Replay indexing/batch slicing is unlikely to be the source: gradient bundle
+  shapes, layer masks, batch call indices, and strict self-controls all validate.
+- Row assembly is not the primary culprit for the observed cluster identity:
+  supplying donor gradients and recomputing rows on the host reproduces donor rows
+  to ~`1e-11` relative L1, while supplying host gradients with donor Phase-0 state
+  remains host-like.
+- Remaining uncertainty: whether the primitive difference is already in the
+  cached forward activations used by nnsight autograd, in backward kernels given
+  nearly-identical forward state, or both. A decisive next probe would run a tiny
+  paired capture that hashes/summarizes the cached residual/feature-output
+  activations entering `compute_batch` plus the resulting per-layer gradients,
+  ideally with a forced fp32 model/transcoder variant if memory allows.
+
 ### 2026-04-27 — Launched Phase-0 donor-bundle capture pair for replay matrix
 
 Purpose:
