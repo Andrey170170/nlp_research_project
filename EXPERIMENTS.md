@@ -4118,6 +4118,74 @@ Current readout:
 - Treat `c1024`/`c4096` wins as performance + numerical-sensitivity evidence, not
   a drop-in exact replacement.
 
+## 2026-05-12 — post-consolidation Ascend validation launch
+
+Purpose: validate the consolidated project/library pair on the normal Ascend base
+stack before doing follow-up work. This is a same-cluster sanity check that the
+Track-0B merge did not perturb canonical compact exact-trace outputs for
+`828_base`, `361_base`, or `94_base`.
+
+Code state used at launch:
+
+- project repo: `nlp_research_project`
+  - source workspace before snapshot: main workspace `./`
+  - branch: `integrate/exact-trace-baseline-20260512`
+  - commit: `6ff2cce` (`Record consolidation merge progress`)
+  - pushed to `origin/integrate/exact-trace-baseline-20260512` before launch
+- sibling library repo: `circuit-tracer_chunked`
+  - source workspace before snapshot: `../circuit-tracer_chunked`
+  - branch: `integrate/exact-trace-baseline-20260512`
+  - commit: `c8999d8` (`Merge exact trace optimization branch`)
+  - pushed to `origin/integrate/exact-trace-baseline-20260512` before launch
+- immutable workspace snapshot:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260512_193308_post_consolidation_ascend_validation`
+
+Launch metadata:
+
+- run name: `post-consolidation Ascend validation`
+- run description: validate consolidated project/library pair on Ascend base
+  fixtures `828_base`, `361_base`, and `94_base` against known baselines.
+- run goal: confirm consolidation did not perturb canonical exact-trace outputs
+  before follow-up work.
+- Fast/base job:
+  - SLURM array job: `5232773` on cluster `ascend`, array indices `0-1`
+  - run id: `20260512_193309_605201_post-consolidation-ascend-validation`
+  - output root:
+    `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260512_193309_605201_post-consolidation-ascend-validation`
+  - scenarios: `828_base` and `361_base`, normal fast tier (`b128`, `c2048`,
+    `cache0g`)
+- Anomaly/base job:
+  - SLURM array job: `5232774` on cluster `ascend`, array index `0`
+  - run id: `20260512_193309_737038_post-consolidation-ascend-validation`
+  - output root:
+    `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260512_193309_737038_post-consolidation-ascend-validation`
+  - scenario: `94_base`, normal anomaly tier (`b256`, `c4096`, `cache0g`)
+
+Initial scheduler status after submit:
+
+- jobs initially pending for priority, then running on Ascend nodes:
+  - `5232773_0` on `a0162`,
+  - `5232773_1` on `a0280`,
+  - `5232774_0` on `a0176`.
+
+Planned same-cluster compact comparisons after completion:
+
+- `828_base` new run vs known same-scenario post-hidden-knobs baseline:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260427_151047_170269_post-hidden-knobs-baseline/ascend_fast_828_base_b128_c2048_cache0g`
+- `361_base` new run vs known same-scenario post-hidden-knobs baseline:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260427_151047_170269_post-hidden-knobs-baseline/ascend_fast_361_base_b128_c2048_cache0g`
+- `94_base` new run vs prior standard Ascend anomaly reference:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260420_131329_865838_prompt94-standard-ascend-float64-norm/ascend_anomaly_94_base_b256_c4096_cache0g`
+
+Post-completion checklist:
+
+- confirm all three array tasks complete successfully,
+- compare compact outputs (`step_000.npz`) against the references above,
+- check generated token / logprob, active feature count, retained edge count, and
+  compact graph hashes/Jaccards,
+- inspect runtime/RSS only as secondary sanity data; this launch is primarily a
+  correctness-preserving merge validation.
+
 ## Status of this note
 
 This file is descriptive, not normative.
