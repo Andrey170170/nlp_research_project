@@ -4186,6 +4186,114 @@ Post-completion checklist:
 - inspect runtime/RSS only as secondary sanity data; this launch is primarily a
   correctness-preserving merge validation.
 
+Status / interpretation notes:
+
+- all three Ascend array tasks completed successfully (`COMPLETED 0:0`):
+  - `5232773_0`: elapsed `00:13:57`, sacct MaxRSS `182098704K`,
+  - `5232773_1`: elapsed `00:22:21`, sacct MaxRSS `286721948K`,
+  - `5232774_0`: elapsed `00:11:59`, sacct MaxRSS `202811380K`.
+- `828_base` matched the post-hidden-knobs same-scenario baseline exactly:
+  - features: `2993540` vs `2993540`,
+  - retained edges: `11808` vs `11808`,
+  - `feature_jaccard=1.0`, `edge_jaccard=1.0`,
+    `weighted_edge_jaccard=1.0`,
+  - new duration `829.09 s`; Phase 3 `88.87 s`; Phase 4 `545.66 s`.
+- `361_base` matched the post-hidden-knobs same-scenario baseline exactly:
+  - features: `5223267` vs `5223267`,
+  - retained edges: `11808` vs `11808`,
+  - `feature_jaccard=1.0`, `edge_jaccard=1.0`,
+    `weighted_edge_jaccard=1.0`,
+  - new duration `1322.39 s`; Phase 3 `123.78 s`; Phase 4 `941.56 s`.
+- `94_base` completed successfully and preserved Phase-0/active-feature support
+  versus the prior Ascend anomaly references, but did **not** match retained edges
+  exactly:
+  - features: `3371343` vs `3371343`,
+  - retained edges: `11808` vs `11808`,
+  - vs prior standard Ascend anomaly reference
+    (`20260420_131329_865838_prompt94-standard-ascend-float64-norm`):
+    `feature_jaccard=1.0`, `edge_jaccard=0.8602599448601812`,
+    `weighted_edge_jaccard=0.8381106483926327`,
+  - the same comparison result was observed against the older
+    `overflow_fix_fp32` and root anomaly references,
+  - new duration `708.39 s`; Phase 3 `146.89 s`; Phase 4 `370.65 s`.
+
+Interpretation:
+
+- The consolidated pair looks clean for the healthy fast fixtures (`828_base` and
+  `361_base`) under the normal Ascend fast stack.
+- The anomaly fixture (`94_base`) is not a strict compact match to the older
+  Ascend anomaly references: active features are identical, but retained Phase-4
+  edge membership/weights drift.
+- Because the compared `94_base` references predate the fully consolidated
+  optimization branch and no same-scenario post-optimization `94_base` reference
+  was available, this does not yet isolate whether the drift came from expected
+  optimization-branch behavior, scenario/default changes, or a merge-resolution
+  issue. Treat `94_base` as needing a focused follow-up comparison before calling
+  Track 0B fully validated.
+
+Suggested next check:
+
+- run or reconstruct a same-scenario `94_base` control from the pre-consolidation
+  optimization project/library pair, then compare it to this consolidated run. If
+  that matches, the drift predates consolidation and is an optimization-track
+  baseline shift; if it does not, inspect the library conflict-resolution paths in
+  Phase 4 ranking/materialization.
+
+Follow-up launch:
+
+- submitted the suggested pre-consolidation optimization-pair `94_base` control on
+  Ascend.
+- project source workspace before snapshot:
+  `/users/PAS2119/andreykopanev/worktrees_opt/nlp_research_project`
+  - branch: `exact-trace-bench-opt`
+  - commit: `c56be53` (`new traces`)
+  - dirty state at launch: modified `EXPERIMENTS.md` and untracked
+    `.tmp_exact_trace_extract_hybrid/`; no code-file dirt was observed.
+- sibling library source workspace before snapshot:
+  `/users/PAS2119/andreykopanev/worktrees_opt/circuit-tracer_chunked`
+  - branch: `exact-trace-hidden-knobs-opt`
+  - commit: `493760d` (`decouple phase1 trace batch cap`)
+  - worktree clean.
+- immutable workspace snapshot:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260512_201118_pre_consolidation_opt_94_control`
+- SLURM array job: `5233298` on cluster `ascend`, array index `0`
+- initial scheduler status after submit: pending (`PD`, priority)
+- run id: `20260512_201118_810555_pre-consolidation-optimization-94-control`
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260512_201118_810555_pre-consolidation-optimization-94-control`
+- scenario: `94_base`, normal anomaly tier (`b256`, `c4096`, `cache0g`), using
+  the optimization worktree's generated anomaly scenario file.
+- planned comparison after completion: compare this control to the consolidated
+  validation run at
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260512_193309_737038_post-consolidation-ascend-validation/ascend_anomaly_94_base_b256_c4096_cache0g`.
+
+Control completion / comparison result:
+
+- SLURM task `5233298_0` completed successfully (`COMPLETED 0:0`), elapsed
+  `00:12:18`, sacct MaxRSS `203208644K`.
+- Control result status: `success`, duration `732.10 s`, Phase 3 `144.23 s`,
+  Phase 4 `418.11 s`.
+- Compact comparison of the pre-consolidation optimization-pair control against
+  the consolidated validation run was exact:
+  - features: `3371343` vs `3371343`,
+  - retained edges: `11808` vs `11808`,
+  - `feature_jaccard=1.0`, `edge_jaccard=1.0`,
+    `weighted_edge_jaccard=1.0`,
+  - common-edge weight deltas were all zero.
+
+Conclusion:
+
+- The `94_base` retained-edge drift versus older Apr-20/21 Ascend references
+  **predates Track-0B consolidation**. The consolidated branch exactly reproduces
+  the pre-consolidation optimization branch for this same `94_base` scenario.
+- Therefore the Track-0B merge itself is not the source of the `94_base` edge
+  mismatch. Treat it as an optimization-track baseline evolution / scenario-default
+  generation issue to understand later, not as a consolidation blocker.
+- Together with exact `828_base` and `361_base` matches against their newer
+  post-hidden-knobs baselines, this validates the consolidated project+library
+  pair as the runnable Track-0B baseline, subject to documenting that `94_base`
+  should now use the post-optimization control as its same-generation reference.
+
 ## Status of this note
 
 This file is descriptive, not normative.
