@@ -1,37 +1,51 @@
 # Temporal Circuit Stability for LLM Reliability
 
-This repository contains the course/research code for investigating whether
-temporal stability of attribution circuits can be used as a reliability signal for
-math reasoning. In practice, much of the project became measurement and systems
-work around exact attribution-graph tracing: chunked tracing, numerical stability,
-cross-cluster parity diagnostics, and optimization harnesses.
+This repository investigates whether temporal stability of internal attribution
+circuits during autoregressive generation can predict answer correctness in math
+reasoning. The current codebase is also the project harness for exact/chunked
+attribution tracing, cross-cluster parity diagnostics, and optimization work.
 
-The codebase is intentionally experimental. Many scripts are one-off harnesses
-used to reproduce a specific bug, benchmark, or cluster run. Treat this README as
-orientation rather than a stable package API.
+The repo is experimental, but `main` is now the consolidated working baseline.
+Use this README for orientation, `AGENTS.md` for durable operating rules, and
+`EXPERIMENTS.md` for current experiment provenance and interpretation.
 
-## Repository layout
+## Current baseline
 
-Important entry points:
+| Item | Current value |
+|---|---|
+| Project repo | `nlp_research_project` on local `main` |
+| Sibling library | `../circuit-tracer_chunked` on local `main` |
+| Editable dependency | `circuit-tracer = { path = "../circuit-tracer_chunked", editable = true }` |
+| Model stack | Gemma-3-1B-IT + GemmaScope-2 cross-layer transcoders |
+| Canonical exact-trace dtype | `exact_trace_internal_dtype=fp32` |
+| Current benchmark harness | `experiments/exact_trace_bench/` |
+| Scratch root | `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/` |
 
-- `trace_pipeline.py` — original multi-prompt tracing pipeline.
-- `trace_pipeline_chunked.py` — exact/chunked tracing pipeline used by most later
-  experiments.
-- `evaluate.py` / `analyze.py` — earlier evaluation and analysis scripts.
-- `circuit_utils.py` — shared compact-graph and metric utilities.
-- `experiments/` — scenario builders, one-off analysis scripts, extraction
-  scripts, plotting helpers, and benchmark utilities.
-- `scripts/` — SLURM submission scripts for OSC clusters.
-- `prefix_caching/` — cross-run prefix-caching prototype direction.
-- `tests/` — lightweight correctness/unit checks.
+Every serious run depends on **both** this repository and the sibling
+`../circuit-tracer_chunked` checkout. Record both branch/commit states before
+launching SLURM jobs.
 
-Most GPU work was run on OSC via SLURM. Do **not** launch model-loading or tracing
-jobs on a login node.
+## OSC safety boundary
 
-## Required sibling checkout
+This project runs on Ohio Supercomputer Center systems. Do **not** load models,
+download weights, run nnsight tracing, or launch heavy CPU/GPU work on login
+nodes.
 
-This project depends on a local editable fork of `circuit-tracer`. The checkout
-must be a sibling directory named exactly `circuit-tracer_chunked`:
+Safe on login nodes:
+
+```bash
+uv run ruff check .
+uv run ty check .
+uv run pytest tests -q
+```
+
+Only run lightweight tests locally. If a test or script loads Gemma/GemmaScope,
+uses GPUs, runs exact tracing, or scans large scratch trees, submit it through
+SLURM instead.
+
+## Required layout
+
+The sibling circuit-tracer fork must be adjacent to this repo:
 
 ```text
 parent_directory/
@@ -39,176 +53,83 @@ parent_directory/
 └── circuit-tracer_chunked/
 ```
 
-The path is encoded in `pyproject.toml`:
+The path is encoded in `pyproject.toml`, so missing or misnamed sibling checkouts
+will break imports and SLURM runs.
 
-```toml
-[tool.uv.sources]
-circuit-tracer = { path = "../circuit-tracer_chunked", editable = true }
-```
-
-If the sibling fork is missing or has the wrong directory name, imports and
-environment setup will fail.
-
-## Branches and provenance
-
-The `main` branch is not a complete record of every experiment described in the
-final report. Much of the work remains on separate project and sibling-library
-branches.
-
-Project branches used during the investigation include, for example:
-
-- `exact-trace-bench-harness`
-- `exact-trace-bench-opt`
-- `exact-trace-bench-optimization`
-
-Sibling `circuit-tracer_chunked` branches include, for example:
-
-- `exact-trace-hidden-knobs`
-- `exact-trace-hidden-knobs-opt`
-
-For exact reproduction, use the branch/commit pair recorded in the relevant
-experiment log or workspace snapshot. A result depends on **both** this repository
-and the sibling `circuit-tracer_chunked` checkout.
-
-## Environment setup
+## Environment
 
 Python requirement: `>=3.12,<3.13`.
 
-Preferred setup uses `uv`:
+Use `uv`:
 
 ```bash
-# from nlp_research_project/
 uv sync
-```
-
-Run Python through `uv`:
-
-```bash
 uv run python --version
-uv run ruff check .
 ```
 
-If you are not using `uv`, create a Python 3.12 environment and install the
-project in editable mode after placing the sibling tracer checkout correctly:
+All Python invocations in this repo should go through `uv run` or the `.venv`
+created by uv.
+
+## Current harness workflow
+
+The canonical exact-bench harness lives at:
+
+- `experiments/exact_trace_bench/`
+- `docs/harness.md`
+
+Typical flow:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ../circuit-tracer_chunked
-pip install -e .
+# Inspect CLI options.
+uv run python -m experiments.exact_trace_bench --help
+
+# Generate current scenario configs.
+uv run python -m experiments.exact_trace_bench build-scenarios --all-tiers --all-clusters
+
+# Render a launch plan before submitting.
+uv run python -m experiments.exact_trace_bench launch-plan \
+  --cluster ascend \
+  --scenarios-file experiments/generated/exact_trace_bench/exact_trace_bench_fast_ascend_scenarios.json \
+  --immutable-workspace
 ```
 
-The explicit sibling install is needed for non-`uv` environments because
-`tool.uv.sources` is only interpreted by `uv`.
+Submit GPU/model-loading work only via SLURM. Preset helpers and wrapper scripts
+are documented in `experiments/exact_trace_bench/README.md`.
 
-`uv` is what was used for project validation, so prefer it when possible.
+Run placement convention:
 
-## Running experiments
+- cluster: `ascend` / `cardinal`
+- tier: `fast` / `anomaly` / `long_eval`
 
-There is no single canonical experiment command. Most experiments follow this
-pattern:
+Use `run_id`, `run_name`, `run_description`, `run_goal`, and scenario names to
+distinguish campaigns. Do not introduce new ordinary scratch buckets like
+`matched_debug`; those are historical provenance only.
 
-1. Generate or select a scenario/config file with a script under `experiments/`.
-2. Submit an appropriate SLURM script from `scripts/`.
-3. Write outputs to scratch.
-4. Run an extraction/analysis script over the output directory.
+## Documentation map
 
-Example: generate one family of exact/chunked benchmark scenarios:
+- `AGENTS.md` — durable repo policy and workflow conventions.
+- `EXPERIMENTS.md` — compact current baseline, run-family meanings, and current
+  interpretation.
+- `experiments/logs/` — append-only structured experiment records.
+- `docs/README.md` — documentation index.
+- `docs/harness.md` — current exact-bench harness overview.
+- `docs/current_project_roadmap.md` — current scratch roadmap for active cleanup.
+- `docs/history/` — archived/superseded plans and long-form investigation logs.
 
-```bash
-uv run python experiments/build_weekend_exact_chunked_benchmark_configs.py
-```
+## Repository layout
 
-Example: count scenarios before launching an array job:
+Important entry points:
 
-```bash
-uv run python experiments/print_scenario_count.py \
-  --scenarios-file experiments/generated/weekend_exact_chunked_wave1_ascend_scenarios.json
-```
+- `trace_pipeline_chunked.py` — fork-native exact/chunked tracing entrypoint.
+- `trace_pipeline.py` — older multi-prompt tracing pipeline.
+- `evaluate.py` / `analyze.py` — earlier correctness evaluation and analysis.
+- `circuit_utils.py` — compact graph metrics and `.npz` utilities.
+- `experiments/exact_trace_bench/` — current benchmark setup/extraction/compare
+  harness.
+- `scripts/` — SLURM submission scripts and wrappers.
+- `tests/` — lightweight local checks where possible; GPU/model tests must be
+  marked or run through SLURM.
 
-Example: submit an Ascend exact/chunked benchmark array:
-
-```bash
-sbatch --time=02:30:00 \
-  --array=0-$(($(uv run python experiments/print_scenario_count.py \
-    --scenarios-file experiments/generated/weekend_exact_chunked_wave1_ascend_scenarios.json)-1)) \
-  --export=ALL,SCENARIOS_FILE=experiments/generated/weekend_exact_chunked_wave1_ascend_scenarios.json,OUTPUT_ROOT=/fs/scratch/PAS3272/kopanev.1/weekend_exact_chunked/ascend/wave1 \
-  scripts/trace_weekend_exact_chunked.ascend.sbatch
-```
-
-Example: submit the newer decoder-aware comparison harness on Ascend:
-
-```bash
-uv run python experiments/build_decoder_aware_comparison_configs.py
-sbatch scripts/decoder_aware_comparison.ascend.sbatch
-```
-
-Always inspect the scenario JSON and SLURM script before launching. Many scripts
-were created for a specific run family and may hard-code scratch paths, cluster
-assumptions, walltimes, or branch-specific options.
-
-## Common script families
-
-Some useful script groups:
-
-- Exact/chunked tracing:
-  - `trace_pipeline_chunked.py`
-  - `scripts/trace_pipeline_chunked.sbatch`
-  - `scripts/trace_weekend_exact_chunked.ascend.sbatch`
-  - `scripts/trace_weekend_exact_chunked.cardinal.sbatch`
-- Exact smoke/reference runs:
-  - `scripts/trace_exact_smoke.ascend.sbatch`
-  - `scripts/trace_exact_reference_overnight.ascend.sbatch`
-- Feature-distribution/scaling:
-  - `experiments/build_feature_distribution_analysis_configs.py`
-  - `experiments/run_feature_distribution_analysis.py`
-  - `scripts/feature_distribution_analysis.ascend.sbatch`
-- Sparsification prototypes:
-  - `experiments/build_sparsification_experiment_configs.py`
-  - `experiments/run_sparsification_experiment.py`
-  - `scripts/trace_sparsification_experiment.ascend.sbatch`
-- Prefix caching prototype:
-  - `prefix_caching/`
-  - `scripts/trace_prefix_cache_bench.ascend.sbatch`
-- Decoder-aware comparison work on `main`:
-  - `experiments/build_decoder_aware_comparison_configs.py`
-  - `experiments/analyze_decoder_aware_comparison.py`
-  - `scripts/decoder_aware_comparison.ascend.sbatch`
-
-## Output locations
-
-Most large outputs were written outside the repository on OSC scratch, commonly
-under paths like:
-
-```text
-/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/
-/fs/scratch/PAS3272/kopanev.1/weekend_exact_chunked/
-```
-
-Do not commit generated trace artifacts, model outputs, large `.pt` graphs, or
-scratch extraction directories unless a small derived artifact is intentionally
-being tracked.
-
-## Local validation
-
-Safe login-node commands are limited to lightweight checks:
-
-```bash
-uv run ruff check .
-uv run pytest tests -q
-```
-
-Avoid commands that load Gemma, download model weights, run nnsight tracing, or
-perform heavy CPU/GPU work outside a SLURM job.
-
-## Notes for future users
-
-- Expect rough edges. The project evolved as an investigation rather than as a
-  stable library.
-- Prefer immutable workspace snapshots or explicit branch/commit notes for serious
-  runs.
-- Check both repositories: this project and `../circuit-tracer_chunked`.
-- If a command appears to depend on an unmerged option, switch to the branch where
-  that option was developed.
-- For final-report reproduction, consult the experiment notes and the relevant
-  branch-specific logs rather than assuming `main` contains every result.
+Large generated artifacts, raw `.pt` graphs, model outputs, and scratch
+extractions should stay out of git unless a small derived artifact is explicitly
+chosen as a fixture.

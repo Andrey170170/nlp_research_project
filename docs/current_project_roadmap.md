@@ -1,5 +1,8 @@
 # Current Execution Plan — Post-Consolidation Cleanup
 
+Status: Current scratch roadmap
+Last updated: 2026-05-16
+
 ## Problem statement
 
 Track-0B consolidation is complete enough to treat local `main` in the project

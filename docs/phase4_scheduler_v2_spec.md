@@ -1,5 +1,8 @@
 # Phase 4 Frontier Planner / Scheduler V2 Spec
 
+Status: Proposed/deferred optimization design
+Last updated: 2026-05-16
+
 ## 1. Problem statement
 
 Phase 4 is still the dominant exact-trace cost after the validated overflow fix,

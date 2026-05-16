@@ -1,5 +1,8 @@
 # Tracing Profiling Spec
 
+Status: Current profiling/telemetry design
+Last updated: 2026-05-16
+
 ## 1. Problem statement
 
 Current exact-trace profiling is good enough for phase-level summaries, but it

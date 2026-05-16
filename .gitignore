@@ -18,6 +18,18 @@ logs/
 docs/
 !docs/
 docs/*
+!docs/README.md
+!docs/harness.md
 !docs/current_project_roadmap.md
-!docs/consolidation_merge_notes.md
 !docs/post_consolidation_cleanup_spec.md
+!docs/phase4_refresh_optimization_spec.md
+!docs/phase4_scheduler_v2_spec.md
+!docs/next_exact_optimization_paths_spec.md
+!docs/tracing_profiling_spec.md
+!docs/history/
+!docs/history/*.md
+
+# Keep structured experiment logs, but still ignore unrelated runtime logs.
+!experiments/logs/
+!experiments/logs/README.md
+!experiments/logs/*.jsonl

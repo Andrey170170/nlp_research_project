@@ -1,5 +1,8 @@
 # Phase 4 Memory Stabilization and Refresh Optimization Spec
 
+Status: Current optimization guidance
+Last updated: 2026-05-16
+
 ## 1. Goal
 
 Document the current post-fix exact-trace memory situation and define the

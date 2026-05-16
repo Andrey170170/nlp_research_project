@@ -1,7 +1,7 @@
 # Post-Consolidation Cleanup Spec
 
-Status: Current cleanup strategy  
-Date: 2026-05-15  
+Status: Current cleanup strategy
+Date: 2026-05-15
 Applies to: project `main` + sibling `../circuit-tracer_chunked` `main` after
 Track-0B consolidation
 
