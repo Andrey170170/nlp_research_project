@@ -20,3 +20,4 @@ docs/
 docs/*
 !docs/current_project_roadmap.md
 !docs/consolidation_merge_notes.md
+!docs/post_consolidation_cleanup_spec.md

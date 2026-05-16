@@ -4294,6 +4294,108 @@ Conclusion:
   pair as the runnable Track-0B baseline, subject to documenting that `94_base`
   should now use the post-optimization control as its same-generation reference.
 
+## 2026-05-15 — Phase-3 row replay/capture effective-state fix validation
+
+Context:
+
+- During the post-consolidation cleanup review, the Phase-3 row capture/replay path
+  was flagged as a correctness risk:
+  - row-bundle capture without donor replay could reference `row_abs_sums_cpu`
+    before assignment,
+  - row donor replay could override `rows_cpu` but still append stale host
+    `feature_row_slice` / stale host row-denominator components to the compact row
+    store.
+- Implemented in the sibling library workspace
+  `/users/PAS2119/andreykopanev/circuit-tracer_chunked` on local `main` at base
+  commit `c8999d8` with uncommitted changes to:
+  - `circuit_tracer/attribution/attribute_nnsight.py`,
+  - `tests/test_attribute_nnsight_telemetry.py`.
+- Project workspace at launch was local `main` commit `4e8d520` with uncommitted
+  cleanup planning/report files only; the SLURM snapshots copied both the project
+  workspace and sibling library live tree.
+
+Local validation before SLURM:
+
+- `uv run pytest tests/test_attribute_nnsight_telemetry.py -q`: `29 passed`
+- `uv run pytest tests/test_phase3_replay_validation.py -q`: `9 passed`
+- `uv run pytest tests/test_partial_influences.py -q`: `20 passed`
+- `uv run ruff check ...`: passed for touched/related library files.
+
+Ascend SLURM validation:
+
+- canonical fast/anomaly run id: `phase1-row-replay-fix-20260515-01`
+  - jobs: `5277715` (`fast`, array `0-1`) and `5277716` (`anomaly`, array `0`),
+  - snapshot:
+    `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260515_224038_preset`,
+  - output roots:
+    - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/phase1-row-replay-fix-20260515-01`,
+    - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/phase1-row-replay-fix-20260515-01`.
+- Phase-3 row donor replay smoke run id: `phase1-row-replay-smoke-20260515-01`
+  - job: `5277717` (`anomaly`, array `0`),
+  - snapshot:
+    `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260515_224237`,
+  - output root:
+    `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/phase1-row-replay-smoke-20260515-01`.
+
+Job completion:
+
+- `5277715_0`: `COMPLETED 0:0`, elapsed `00:14:27`, node `a0103`.
+- `5277715_1`: `COMPLETED 0:0`, elapsed `00:19:45`, node `a0159`.
+- `5277716_0`: `COMPLETED 0:0`, elapsed `00:11:05`, node `a0263`.
+- `5277717_0`: `COMPLETED 0:0`, elapsed `00:27:03`, node `a0351`.
+
+Canonical compact comparisons against post-consolidation same-generation
+references:
+
+- `828_base` versus
+  `20260512_193309_605201_post-consolidation-ascend-validation`:
+  - features: `2993540` vs `2993540`,
+  - retained edges: `11808` vs `11808`,
+  - `feature_jaccard=1.0`, `edge_jaccard=1.0`,
+    `weighted_edge_jaccard=1.0`.
+- `361_base` versus
+  `20260512_193309_605201_post-consolidation-ascend-validation`:
+  - features: `5223267` vs `5223267`,
+  - retained edges: `11808` vs `11808`,
+  - `feature_jaccard=1.0`, `edge_jaccard=1.0`,
+    `weighted_edge_jaccard=1.0`.
+- `94_base` versus
+  `20260512_193309_737038_post-consolidation-ascend-validation`:
+  - features: `3371343` vs `3371343`,
+  - retained edges: `11808` vs `11808`,
+  - `feature_jaccard=1.0`, `edge_jaccard=1.0`,
+    `weighted_edge_jaccard=1.0`.
+
+Phase-3 row donor replay smoke check:
+
+- scenario:
+  `ascend_phase3_row_donor_smoke_with_ascend_donor_94_base_anomaly_b128_c2048_cache0g`,
+  using the Apr-29 Ascend donor Phase-0 and Phase-3 row bundles.
+- result status: `success`, duration `1618.77 s`, Phase 3 `92.27 s`, Phase 4
+  `1087.11 s`.
+- saved row bundle:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/phase1-row-replay-smoke-20260515-01/ascend_phase3_row_donor_smoke_with_ascend_donor_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000/step_000_phase3_row_bundle.npz`.
+- row-bundle finiteness / split-sum sanity:
+  - `row_abs_sums`: shape `(1,)`, dtype `float64`, finite, max
+    `3.306366250278821e+38`,
+  - `feature_abs_sums`: finite, max `2.9732265315158493e+38`,
+  - `error_abs_sums`: finite, max `3.326560605963343e+37`,
+  - `token_abs_sums`: finite, max `4.836581666369178e+34`,
+  - `phase3_feature_rows`: shape `(1, 3371343)`, dtype `float32`, finite,
+  - `row_abs_sums` matched `feature_abs_sums + error_abs_sums + token_abs_sums`
+    under `np.allclose`.
+
+Conclusion:
+
+- The Phase-3 row replay/capture effective-state fix preserves canonical compact
+  exact outputs for `828_base`, `361_base`, and same-generation `94_base`.
+- The dedicated Phase-3 row donor replay smoke completed successfully and produced
+  finite row-bundle sums, including a large finite `float64` row L1 above the fp32
+  max range.
+- This validates the Phase-1 correctness fix enough to proceed with cleanup
+  backlog/docs/test hygiene, while keeping the uncommitted code changes available
+  for final review/commit.
+
 ## Status of this note
 
 This file is descriptive, not normative.
