@@ -20,23 +20,21 @@ SCENARIO_TIERS = ("fast", "anomaly", "long_eval")
 RESOURCE_PROFILE_STANDARD = "standard"
 RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM = "long_eval_high_mem"
 
-EXACT_MODE_KNOB_KEYS = (
+STABLE_PUBLIC_SCENARIO_KEYS = ("exact_trace_internal_dtype",)
+
+ADVANCED_PUBLIC_TUNING_KEYS = (
     "chunked_feature_replay_window",
     "error_vector_prefetch_lookahead",
     "stage_encoder_vecs_on_cpu",
     "stage_error_vectors_on_cpu",
     "row_subchunk_size",
-    "exact_trace_internal_dtype",
-    "phase0_activation_threshold_compare_mode",
     "phase1_trace_batch_policy",
     "phase1_trace_batch_size_max",
     "plan_feature_batch_size",
-    "auto_scale_feature_batch_size",
     "feature_batch_size_max",
     "feature_batch_target_reserved_fraction",
     "feature_batch_min_free_fraction",
     "feature_batch_probe_batches",
-    "phase4_anomaly_debug",
     "phase4_refresh_policy",
     "phase4_refresh_interval_multiplier",
     "phase4_ranker",
@@ -47,6 +45,11 @@ EXACT_MODE_KNOB_KEYS = (
     "phase4_scheduler_telemetry_detail",
     "phase4_refresh_optimization",
     "phase4_row_executor",
+)
+
+DEBUG_REPLAY_PUBLIC_KEYS = (
+    "phase0_activation_threshold_compare_mode",
+    "phase4_anomaly_debug",
     "cross_cluster_debug",
     "capture_phase0_donor_bundle",
     "phase0_donor_bundle",
@@ -63,8 +66,25 @@ EXACT_MODE_KNOB_KEYS = (
     "capture_feature_semantic_descriptors",
     "semantic_descriptor_top_k",
     "semantic_descriptor_dim",
-    "telemetry_max_events",
 )
+
+TELEMETRY_KEYS = ("telemetry_max_events",)
+
+DEPRECATED_COMPAT_KEYS = ("auto_scale_feature_batch_size",)
+
+PRIVATE_INTERNAL_KEYS: tuple[str, ...] = ()
+
+EXACT_MODE_KNOB_KEYS = (
+    STABLE_PUBLIC_SCENARIO_KEYS
+    + ADVANCED_PUBLIC_TUNING_KEYS
+    + DEBUG_REPLAY_PUBLIC_KEYS
+    + TELEMETRY_KEYS
+    + DEPRECATED_COMPAT_KEYS
+    + PRIVATE_INTERNAL_KEYS
+)
+
+if len(EXACT_MODE_KNOB_KEYS) != len(set(EXACT_MODE_KNOB_KEYS)):
+    raise RuntimeError("Duplicate exact-mode scenario knob classification")
 
 CLUSTER_SETTINGS: dict[str, dict[str, Any]] = {
     "ascend": {
