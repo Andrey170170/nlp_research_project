@@ -15,9 +15,9 @@ and immutable workspace snapshots.
 - Extraction/aggregation helpers for `result.json`, `run.log`, and SLURM logs
 - Compact graph comparison helpers for prompt94-style analysis (`step_*.npz`)
 - Immutable workspace snapshot helper for launch safety
-- Optional exact-mode scenario knobs forwarded to `trace_pipeline_chunked.py`:
-  `chunked_feature_replay_window`, `error_vector_prefetch_lookahead`,
-  `stage_encoder_vecs_on_cpu`, `stage_error_vectors_on_cpu`, `row_subchunk_size`
+- Exact-mode knob taxonomy documented in `docs/knob_api_taxonomy.md`, with
+  stable public, advanced sweep, debug/replay, telemetry, and deprecated/compat
+  categories.
 
 Immutable workspace snapshots copy:
 
@@ -43,6 +43,32 @@ uv run python -m experiments.exact_trace_bench build-scenarios --all-tiers --all
 Writes JSON configs to:
 
 - `experiments/generated/exact_trace_bench/`
+
+The generated-config index at `experiments/generated/README.md` distinguishes
+current canonical templates from historical one-off debug/sweep configs.
+
+### Scenario knob categories
+
+Ordinary exact-bench templates keep the visible scenario rows small: fixture
+metadata, batch sizes, `decoder_chunk_size`, and
+`cross_batch_decoder_cache_bytes`. The defaults block pins the canonical precision
+contract with `exact_trace_internal_dtype=fp32`.
+
+Advanced public knobs remain available for explicit sweep configs:
+
+- Phase-1 trace-batch sizing,
+- Phase-4 scheduler/refresh/ranker/executor controls,
+- row-store/cache/residency controls,
+- chunked replay, prefetch, staging, row-subchunk, and feature-batch planner
+  controls.
+
+Debug/replay knobs are opt-in validation tooling. Use them only in explicit
+debug/replay scenario files and record donor/capture provenance. This includes
+Phase-0 and Phase-3 donor capture/replay, semantic descriptor capture,
+cross-cluster debug summaries, and telemetry caps.
+
+Deprecated/compatibility knobs are kept only to avoid breaking old scenario files;
+prefer the canonical names in new configs.
 
 ### 1.5) Render a scratch-backed launch plan
 

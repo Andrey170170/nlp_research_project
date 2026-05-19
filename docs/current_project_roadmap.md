@@ -126,6 +126,8 @@ Acceptance criteria:
 ### Phase 3 — Knob/API taxonomy
 
 Mapping document: `docs/knob_api_taxonomy.md`.
+Implementation status: mostly complete as of 2026-05-18; remaining follow-up is
+general sweep execution after login-safe validation.
 
 1. Make `exact_trace_internal_dtype` the canonical precision knob.
 2. Deprecate or hide direct public use of `internal_precision` unless explicitly
@@ -144,6 +146,7 @@ Acceptance criteria:
 - Normal exact-bench scenarios cannot accidentally inherit Track-A replay/debug
   settings.
 - Canonical defaults are stated in code, docs, and tests consistently.
+- Generated scenario ownership is indexed in `experiments/generated/README.md`.
 
 ### Phase 4 — Track-A machinery cleanup and amplification-reduction support
 

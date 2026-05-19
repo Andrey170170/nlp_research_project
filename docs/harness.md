@@ -49,15 +49,31 @@ distinguish debug campaigns. Do not introduce new ordinary buckets such as
 
 ## Canonical exact-trace knobs
 
-Normal public/resource surface:
+Detailed mapping: `docs/knob_api_taxonomy.md`.
+
+Stable public/resource surface:
 
 - `exact_trace_internal_dtype`
 - `decoder_chunk_size`
 - `cross_batch_decoder_cache_bytes`
 
-Track-A replay/debug controls should be explicit scenario/debug settings, not
-ordinary benchmark defaults. Phase 3 of the cleanup plan will make this taxonomy
-stricter in code and tests.
+Advanced public/research-tuning knobs remain intentionally available for sweeps,
+including Phase-1 trace-batch sizing, Phase-4 scheduler/refresh/ranker/executor
+controls, row-store/cache/residency controls, and feature-batch planner controls.
+They should be treated as explicit sweep dimensions, not hidden defaults.
+
+Track-A replay/debug controls are also public for validation work, but they must
+stay opt-in and provenance-heavy: donor paths, capture flags, semantic descriptor
+capture, and verbose telemetry should appear only in explicit debug/replay
+scenario files.
+
+Deprecated/compatibility surfaces:
+
+- direct NNSight `internal_precision` is compatibility-only; use
+  `exact_trace_internal_dtype`,
+- `auto_scale_feature_batch_size` is a legacy alias for planner behavior,
+- environment-variable debug overrides are not part of the supported provenance
+  surface; use explicit CLI/scenario knobs.
 
 ## Local vs SLURM boundary
 
@@ -89,3 +105,5 @@ Old generated scenarios and configs containing `matched_debug`, weekend benchmar
 names, or pre-consolidation branch assumptions are provenance artifacts. They may
 remain useful for reconstructing old runs, but should not be copied as templates
 for new scenarios without checking current defaults.
+
+See `experiments/generated/README.md` for the current generated-config index.
