@@ -3,5 +3,6 @@
   "fixture_name": "toy_dax_wug",
   "fixture_kind": "toy_prompt",
   "question": "If all daxes are wugs and Mira is a dax, is Mira a wug?",
-  "ground_truth_answer": "yes"
+  "ground_truth_answer": "yes",
+  "prompt_format": "gemma_chat_template_manual"
 }

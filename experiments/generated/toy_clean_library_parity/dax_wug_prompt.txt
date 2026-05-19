@@ -1,1 +1,3 @@
-Question: If all daxes are wugs and Mira is a dax, is Mira a wug? Answer:
+<bos><start_of_turn>user
+Question: If all daxes are wugs and Mira is a dax, is Mira a wug? Answer:<end_of_turn>
+<start_of_turn>model
