@@ -116,15 +116,23 @@ def _load_clean_model(*, max_feature_nodes: int):
         paths[len(layer_files)] = str(layer_files[-1])
     print(f"  Found {len(layer_files)} transcoder layer files")
 
+    # Upstream GemmaScope-2 loader does not support lazy/chunked decoder loading.
+    # Loading directly on a 40GB A100 briefly duplicates the full decoder stack
+    # during torch.stack and OOMs before attribution begins. Load/stack on CPU,
+    # then move the final module to GPU; this preserves the non-chunk clean
+    # attribution path while avoiding the loader's transient GPU peak.
     transcoders = load_gemma_scope_2_clt(
         paths=paths,
         feature_input_hook="hook_resid_mid",
         feature_output_hook="hook_mlp_out",
-        device=torch.device(DEVICE),
+        device=torch.device("cpu"),
         dtype=DTYPE,
         lazy_encoder=False,
         lazy_decoder=False,
     )
+    if DEVICE != "cpu":
+        print("  Moving fully loaded clean CLTs from CPU to GPU")
+        transcoders = transcoders.to(torch.device(DEVICE))
     _install_feature_cap_patch(transcoders, max_feature_nodes)
     return ReplacementModel.from_pretrained_and_transcoders(
         model_name=MODEL_NAME,
