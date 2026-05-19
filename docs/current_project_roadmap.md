@@ -125,6 +125,8 @@ Acceptance criteria:
 
 ### Phase 3 — Knob/API taxonomy
 
+Mapping document: `docs/knob_api_taxonomy.md`.
+
 1. Make `exact_trace_internal_dtype` the canonical precision knob.
 2. Deprecate or hide direct public use of `internal_precision` unless explicitly
    needed as debug/compatibility plumbing.

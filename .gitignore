@@ -20,6 +20,7 @@ docs/
 docs/*
 !docs/README.md
 !docs/harness.md
+!docs/knob_api_taxonomy.md
 !docs/current_project_roadmap.md
 !docs/post_consolidation_cleanup_spec.md
 !docs/phase4_refresh_optimization_spec.md

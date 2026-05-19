@@ -15,6 +15,7 @@ names as source-of-truth signals.
 | `../AGENTS.md` | Durable repo policy and operating conventions |
 | `../EXPERIMENTS.md` | Compact experiment baseline/index and current interpretation |
 | `harness.md` | Current exact-bench harness overview |
+| `knob_api_taxonomy.md` | Exact-trace knob/API taxonomy and Phase-3 cleanup map |
 | `current_project_roadmap.md` | Current scratch roadmap for the active cleanup phase |
 | `post_consolidation_cleanup_spec.md` | Durable cleanup strategy after Track-0B consolidation |
 | `phase4_refresh_optimization_spec.md` | Current Phase-4 normalization/RSS optimization guidance |
