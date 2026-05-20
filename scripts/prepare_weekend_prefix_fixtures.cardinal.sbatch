@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=prep-weekend-prefix
+#SBATCH --job-name=prep-wave0-prefix
 #SBATCH --account=PAS3272
-#SBATCH --cluster=ascend
+#SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32
+#SBATCH --cpus-per-task=16
 #SBATCH --gpus-per-task=1
-#SBATCH --mem-per-cpu=10724
+#SBATCH --mem=350G
 #SBATCH --time=01:00:00
 #SBATCH --output=logs/slurm-%x-%j.out
 #SBATCH --error=logs/slurm-%x-%j.err
@@ -39,7 +39,7 @@ fi
 
 echo "Job ID: ${SLURM_JOB_ID}"
 echo "Node: $(hostname)"
-echo "Cluster: ascend"
+echo "Cluster: cardinal"
 echo "Start: $(date)"
 echo "Working directory: ${WORKSPACE_ROOT}"
 echo "Target spec file: ${TARGET_SPEC_FILE}"

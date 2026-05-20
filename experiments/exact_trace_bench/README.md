@@ -47,6 +47,32 @@ Writes JSON configs to:
 The generated-config index at `experiments/generated/README.md` distinguishes
 current canonical templates from historical one-off debug/sweep configs.
 
+### 1.1) Prepare Wave 0 prompt fixtures
+
+Fixture preparation loads the model and must run inside SLURM. Use the helper to
+render or submit a cluster job:
+
+```bash
+uv run python -m experiments.exact_trace_bench submit-fixture-prep \
+  --cluster cardinal \
+  --no-immutable-workspace \
+  --print-only
+```
+
+Defaults target the expanded Wave 0 corpus:
+
+- target spec: `experiments/exact_trace_wave0_fixture_targets.json`
+- output dir: `experiments/generated/exact_trace_wave0_fixtures`
+
+After the fixture catalog exists, generate Wave 0 scenarios with:
+
+```bash
+uv run python -m experiments.exact_trace_bench build-wave0-scenarios \
+  --all-tiers \
+  --all-clusters \
+  --fixture-catalog experiments/generated/exact_trace_wave0_fixtures/fixture_catalog.json
+```
+
 ### Scenario knob categories
 
 Ordinary exact-bench templates keep the visible scenario rows small: fixture
@@ -69,6 +95,35 @@ cross-cluster debug summaries, and telemetry caps.
 
 Deprecated/compatibility knobs are kept only to avoid breaking old scenario files;
 prefer the canonical names in new configs.
+
+### Scenario self-scoring
+
+Sweep scenarios can opt into job-side comparison against a pinned baseline
+registry:
+
+```json
+"baseline_check": {
+  "enabled": true,
+  "mode": "metrics",
+  "registry_key": "wave0/828_base/ascend/fast/fp32_default",
+  "baseline_required": true,
+  "thresholds": null
+}
+```
+
+`mode=metrics` writes comparison metrics without failing the run. `mode=gate`
+also evaluates numeric thresholds such as
+`overall_mean_weighted_edge_jaccard_min`.
+
+Each self-scored scenario emits:
+
+- `baseline_compare.json`
+- `scenario_metrics.json`
+- `scenario_metrics.csv`
+
+Use `--baseline-registry` on `launch-plan`/`experiments/run_sparsification_experiment.py`,
+or put `metadata.baseline_registry` in the scenarios JSON. Later ranking can
+concatenate `scenario_metrics.csv` files.
 
 ### 1.5) Render a scratch-backed launch plan
 

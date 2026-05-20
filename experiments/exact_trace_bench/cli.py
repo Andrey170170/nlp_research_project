@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 from pathlib import Path
 
 from .config import (
@@ -11,12 +12,14 @@ from .config import (
     REPO_ROOT,
     DEFAULT_SCRATCH_ROOT,
     DEFAULT_WAVE0_FIXTURE_CATALOG,
+    DEFAULT_WAVE0_FIXTURE_OUTPUT_DIR,
+    DEFAULT_WAVE0_FIXTURE_TARGET_SPEC,
 )
 from .extract import run_full_extraction
 from .fixtures import describe_fixture_tiers
 from .graph_compare import compare_artifact_dirs
 from .io_utils import ensure_dir
-from .jobs import render_launch_plan
+from .jobs import render_fixture_prep_plan, render_launch_plan
 from .phase0_replay_matrix_compare import compare_phase0_replay_matrix_to_json
 from .phase3_seed_bundle_compare import compare_phase3_seed_bundles_to_json
 from .presets import preset_names, run_preset
@@ -204,7 +207,29 @@ def _cmd_launch_plan(args: argparse.Namespace) -> None:
         source_root=args.source_root,
         workspace_label=args.workspace_label,
         walltime=args.walltime,
+        baseline_registry=args.baseline_registry,
+        fail_on_baseline_missing=args.fail_on_baseline_missing,
+        fail_on_validation_fail=args.fail_on_validation_fail,
     )
+    print(json.dumps(plan, indent=2))
+
+
+def _cmd_submit_fixture_prep(args: argparse.Namespace) -> None:
+    plan = render_fixture_prep_plan(
+        cluster=args.cluster,
+        target_spec_file=args.target_spec_file,
+        output_dir=args.output_dir,
+        decoder_chunk_size=args.decoder_chunk_size,
+        cross_batch_decoder_cache_bytes=args.cross_batch_decoder_cache_bytes,
+        immutable_workspace=not args.no_immutable_workspace,
+        snapshot_root=args.snapshot_root,
+        source_root=args.source_root,
+        workspace_label=args.workspace_label,
+        walltime=args.walltime,
+        run_name=args.run_name,
+    )
+    if not args.print_only:
+        subprocess.run(plan["sbatch_argv"], check=True)
     print(json.dumps(plan, indent=2))
 
 
@@ -528,7 +553,88 @@ def build_parser() -> argparse.ArgumentParser:
     )
     launch_plan.add_argument("--workspace-label", default=None)
     launch_plan.add_argument("--walltime", default=None)
+    launch_plan.add_argument(
+        "--baseline-registry",
+        type=Path,
+        default=None,
+        help="Optional pinned baseline registry forwarded to runner jobs",
+    )
+    launch_plan.add_argument(
+        "--fail-on-baseline-missing",
+        action="store_true",
+        help="Forward fail-on-missing-baseline behavior to runner jobs",
+    )
+    launch_plan.add_argument(
+        "--fail-on-validation-fail",
+        action="store_true",
+        help="Forward fail-on-validation-fail behavior to runner jobs",
+    )
     launch_plan.set_defaults(func=_cmd_launch_plan)
+
+    fixture_prep = subparsers.add_parser(
+        "submit-fixture-prep",
+        help="Render or submit a SLURM job to prepare Wave 0 prompt fixtures",
+    )
+    fixture_prep.add_argument(
+        "--cluster",
+        choices=["ascend", "cardinal"],
+        default="ascend",
+        help="Cluster profile to use for fixture preparation",
+    )
+    fixture_prep.add_argument(
+        "--target-spec-file",
+        type=Path,
+        default=DEFAULT_WAVE0_FIXTURE_TARGET_SPEC,
+        help="Fixture target spec JSON",
+    )
+    fixture_prep.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_WAVE0_FIXTURE_OUTPUT_DIR,
+        help="Directory where prepared fixtures and catalog will be written",
+    )
+    fixture_prep.add_argument(
+        "--decoder-chunk-size",
+        type=int,
+        default=256,
+        help="Decoder chunk size used when loading the tracing model",
+    )
+    fixture_prep.add_argument(
+        "--cross-batch-decoder-cache-bytes",
+        type=int,
+        default=None,
+        help="Optional decoder cache budget used for fixture prep model loading",
+    )
+    fixture_prep.add_argument(
+        "--no-immutable-workspace",
+        action="store_true",
+        help="Run against the live workspace instead of a workspace snapshot",
+    )
+    fixture_prep.add_argument(
+        "--snapshot-root",
+        type=Path,
+        default=DEFAULT_SNAPSHOT_ROOT,
+        help="Where immutable workspace snapshots are created",
+    )
+    fixture_prep.add_argument(
+        "--source-root",
+        type=Path,
+        default=REPO_ROOT,
+        help="Workspace source root for immutable launch snapshots",
+    )
+    fixture_prep.add_argument("--workspace-label", default=None)
+    fixture_prep.add_argument("--walltime", default=None)
+    fixture_prep.add_argument(
+        "--run-name",
+        default=None,
+        help="Human-readable label used for the SLURM job name",
+    )
+    fixture_prep.add_argument(
+        "--print-only",
+        action="store_true",
+        help="Print the sbatch plan without submitting it",
+    )
+    fixture_prep.set_defaults(func=_cmd_submit_fixture_prep)
 
     submit_preset = subparsers.add_parser(
         "submit-preset",

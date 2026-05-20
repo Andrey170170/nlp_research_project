@@ -6,7 +6,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .config import DEFAULT_SCRATCH_ROOT, REPO_ROOT, recommended_output_root
+from .config import (
+    DEFAULT_SCRATCH_ROOT,
+    DEFAULT_WAVE0_FIXTURE_OUTPUT_DIR,
+    DEFAULT_WAVE0_FIXTURE_TARGET_SPEC,
+    REPO_ROOT,
+    recommended_output_root,
+)
 from .io_utils import read_json
 from .scenarios import (
     RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM,
@@ -32,6 +38,13 @@ SBATCH_SCRIPTS: dict[tuple[str, str], Path] = {
     ("cardinal", RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM): REPO_ROOT
     / "scripts"
     / "trace_weekend_exact_chunked_long_eval.cardinal.sbatch",
+}
+
+SBATCH_FIXTURE_PREP_SCRIPTS: dict[str, Path] = {
+    "ascend": REPO_ROOT / "scripts" / "prepare_weekend_prefix_fixtures.ascend.sbatch",
+    "cardinal": REPO_ROOT
+    / "scripts"
+    / "prepare_weekend_prefix_fixtures.cardinal.sbatch",
 }
 
 GOAL_BY_TIER: dict[str, str] = {
@@ -185,6 +198,9 @@ def render_launch_plan(
     source_root: Path = REPO_ROOT,
     workspace_label: str | None = None,
     walltime: str | None = None,
+    baseline_registry: Path | None = None,
+    fail_on_baseline_missing: bool = False,
+    fail_on_validation_fail: bool = False,
 ) -> dict[str, Any]:
     scenarios_file = scenarios_file.resolve()
     resource_profile = _resolve_resource_profile(scenarios_file)
@@ -259,13 +275,20 @@ def render_launch_plan(
 
     scenario_count = _scenario_count(launch_scenarios_file)
     array_range = f"0-{scenario_count - 1}"
-    export_blob = (
-        "ALL,"
-        f"SCENARIOS_FILE={launch_scenarios_file},"
-        f"OUTPUT_ROOT={resolved_output_root},"
-        f"WORKSPACE_ROOT={workspace},"
-        f"LIB_WORKSPACE_ROOT={library_workspace or ''}"
-    )
+    export_parts = [
+        "ALL",
+        f"SCENARIOS_FILE={launch_scenarios_file}",
+        f"OUTPUT_ROOT={resolved_output_root}",
+        f"WORKSPACE_ROOT={workspace}",
+        f"LIB_WORKSPACE_ROOT={library_workspace or ''}",
+    ]
+    if baseline_registry is not None:
+        export_parts.append(f"BASELINE_REGISTRY={baseline_registry.resolve()}")
+    if fail_on_baseline_missing:
+        export_parts.append("FAIL_ON_BASELINE_MISSING=1")
+    if fail_on_validation_fail:
+        export_parts.append("FAIL_ON_VALIDATION_FAIL=1")
+    export_blob = ",".join(export_parts)
     script_args: list[str] = [
         "--run-id",
         resolved_run_id,
@@ -298,6 +321,11 @@ def render_launch_plan(
         "run_name": resolved_run_name,
         "run_description": resolved_run_description,
         "run_goal": resolved_run_goal,
+        "baseline_registry": None
+        if baseline_registry is None
+        else str(baseline_registry.resolve()),
+        "fail_on_baseline_missing": fail_on_baseline_missing,
+        "fail_on_validation_fail": fail_on_validation_fail,
         "sbatch_argv": command_parts,
         "workspace_root": str(workspace),
         "library_workspace_root": None
@@ -305,5 +333,99 @@ def render_launch_plan(
         else str(library_workspace),
         "immutable_workspace": immutable_workspace,
         "sbatch_script": str(launch_script_path),
+        "sbatch_command": shlex.join(command_parts),
+    }
+
+
+def _path_in_workspace(path: Path, *, workspace: Path, source_root: Path) -> Path:
+    resolved_path = path.resolve()
+    try:
+        return workspace / resolved_path.relative_to(source_root.resolve())
+    except ValueError:
+        return resolved_path
+
+
+def render_fixture_prep_plan(
+    *,
+    cluster: str,
+    target_spec_file: Path = DEFAULT_WAVE0_FIXTURE_TARGET_SPEC,
+    output_dir: Path = DEFAULT_WAVE0_FIXTURE_OUTPUT_DIR,
+    decoder_chunk_size: int = 256,
+    cross_batch_decoder_cache_bytes: int | None = None,
+    immutable_workspace: bool = False,
+    snapshot_root: Path = DEFAULT_SNAPSHOT_ROOT,
+    source_root: Path = REPO_ROOT,
+    workspace_label: str | None = None,
+    walltime: str | None = None,
+    run_name: str | None = None,
+) -> dict[str, Any]:
+    if cluster not in SBATCH_FIXTURE_PREP_SCRIPTS:
+        raise ValueError(f"Unsupported fixture prep cluster: {cluster!r}")
+    if decoder_chunk_size <= 0:
+        raise ValueError("decoder_chunk_size must be positive")
+    if (
+        cross_batch_decoder_cache_bytes is not None
+        and cross_batch_decoder_cache_bytes < 0
+    ):
+        raise ValueError("cross_batch_decoder_cache_bytes must be non-negative")
+
+    workspace = resolve_launch_workspace(
+        immutable=immutable_workspace,
+        snapshot_root=snapshot_root,
+        source_root=source_root,
+        label=workspace_label,
+    ).resolve()
+    library_workspace = sibling_library_root(workspace)
+
+    source_root = source_root.resolve()
+    script_path = SBATCH_FIXTURE_PREP_SCRIPTS[cluster].resolve()
+    launch_script_path = _path_in_workspace(
+        script_path,
+        workspace=workspace,
+        source_root=source_root,
+    )
+    launch_target_spec = _path_in_workspace(
+        target_spec_file,
+        workspace=workspace,
+        source_root=source_root,
+    )
+    resolved_output_dir = output_dir.resolve()
+    resolved_run_name = (
+        _normalize_free_text(run_name) or f"wave0 fixture prep {cluster}"
+    )
+
+    export_parts = [
+        "ALL",
+        f"TARGET_SPEC_FILE={launch_target_spec}",
+        f"OUTPUT_DIR={resolved_output_dir}",
+        f"DECODER_CHUNK_SIZE={decoder_chunk_size}",
+        f"WORKSPACE_ROOT={workspace}",
+        f"LIB_WORKSPACE_ROOT={library_workspace or ''}",
+    ]
+    if cross_batch_decoder_cache_bytes is not None:
+        export_parts.append(
+            f"CROSS_BATCH_DECODER_CACHE_BYTES={cross_batch_decoder_cache_bytes}"
+        )
+    command_parts = [
+        "sbatch",
+        *([f"--time={walltime}"] if walltime else []),
+        f"--job-name={_slugify_run_name(resolved_run_name)}",
+        f"--export={','.join(export_parts)}",
+        str(launch_script_path),
+    ]
+    return {
+        "cluster": cluster,
+        "target_spec_file": str(launch_target_spec),
+        "output_dir": str(resolved_output_dir),
+        "decoder_chunk_size": decoder_chunk_size,
+        "cross_batch_decoder_cache_bytes": cross_batch_decoder_cache_bytes,
+        "run_name": resolved_run_name,
+        "workspace_root": str(workspace),
+        "library_workspace_root": None
+        if library_workspace is None
+        else str(library_workspace),
+        "immutable_workspace": immutable_workspace,
+        "sbatch_script": str(launch_script_path),
+        "sbatch_argv": command_parts,
         "sbatch_command": shlex.join(command_parts),
     }

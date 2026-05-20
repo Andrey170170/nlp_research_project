@@ -23,6 +23,12 @@ DEFAULT_WAVE0_FIXTURE_CATALOG = (
     / "exact_trace_wave0_fixtures"
     / "fixture_catalog.json"
 )
+DEFAULT_WAVE0_FIXTURE_TARGET_SPEC = (
+    REPO_ROOT / "experiments" / "exact_trace_wave0_fixture_targets.json"
+)
+DEFAULT_WAVE0_FIXTURE_OUTPUT_DIR = (
+    REPO_ROOT / "experiments" / "generated" / "exact_trace_wave0_fixtures"
+)
 DEFAULT_LOGS_DIR = REPO_ROOT / "logs"
 
 

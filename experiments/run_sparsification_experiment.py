@@ -11,8 +11,23 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from experiments.exact_trace_bench.baselines import (  # noqa: E402
+    BASELINE_DISABLED,
+    build_scenario_metrics_row,
+    load_baseline_registry,
+    normalize_baseline_check,
+    resolve_baseline_entry,
+    run_baseline_comparison,
+    validate_baseline_entry,
+    write_scenario_metrics,
+)
+from experiments.exact_trace_bench.io_utils import write_csv  # noqa: E402
+
+
 DEFAULT_SCENARIOS = (
     Path(__file__).with_name("generated") / "sparsification_calibration_scenarios.json"
 )
@@ -629,6 +644,10 @@ def run_scenario(
     *,
     env: dict[str, str],
     run_metadata: dict[str, str | None],
+    baseline_registry: dict[str, dict[str, Any]] | None = None,
+    baseline_registry_path: Path | None = None,
+    fail_on_baseline_missing: bool = False,
+    fail_on_validation_fail: bool = False,
     cross_batch_decoder_cache_bytes_override: int | None = None,
 ) -> dict[str, Any]:
     scenario_name = scenario["name"]
@@ -679,6 +698,57 @@ def run_scenario(
     if timeout_minutes is not None:
         result["timeout_minutes"] = timeout_minutes
 
+    baseline_check = {}
+    baseline_entry = None
+    try:
+        baseline_check = normalize_baseline_check(effective_scenario)
+        baseline_check, baseline_entry = resolve_baseline_entry(
+            baseline_check,
+            registry=baseline_registry,
+            registry_path=baseline_registry_path,
+        )
+        if baseline_entry is not None:
+            baseline_check = validate_baseline_entry(
+                baseline_entry,
+                status=baseline_check,
+            )
+    except Exception as exc:  # noqa: BLE001 - keep failure in scenario artifacts
+        baseline_check = {
+            **BASELINE_DISABLED,
+            "enabled": True,
+            "status": "baseline_invalid",
+            "passed": False,
+            "failure_reasons": [str(exc)],
+        }
+
+    if (
+        baseline_check.get("enabled")
+        and baseline_check.get("baseline_required", True)
+        and baseline_check.get("status") in {"baseline_missing", "baseline_invalid"}
+    ):
+        result["status"] = "baseline_invalid"
+        result["returncode"] = None
+        result["duration_seconds"] = 0.0
+        result["log_path"] = str(log_path)
+        result["baseline_check"] = baseline_check
+        row = build_scenario_metrics_row(
+            scenario=effective_scenario,
+            result=result,
+            baseline_status=baseline_check,
+        )
+        write_scenario_metrics(
+            scenario_root,
+            row,
+            baseline_status=baseline_check,
+        )
+        (scenario_root / "result.json").write_text(json.dumps(result, indent=2))
+        if fail_on_baseline_missing:
+            raise RuntimeError(
+                f"Required baseline invalid for scenario {scenario_name}: "
+                f"{baseline_check.get('failure_reasons')}"
+            )
+        return result
+
     start = time.time()
     with log_path.open("w", encoding="utf-8") as log_file:
         log_file.write(f"Scenario: {scenario_name}\n")
@@ -722,7 +792,50 @@ def run_scenario(
     )
     result["profiling_summary"] = _extract_benchmark_metrics(log_path)
     result["artifact_summary"] = _summarize_artifacts(run_output_dir)
+
+    comparison_metrics: dict[str, Any] = {}
+    if baseline_check.get("enabled"):
+        if result["status"] != "success":
+            baseline_check["status"] = "skipped_trace_failed"
+            baseline_check["passed"] = False
+            failure_reasons = baseline_check.setdefault("failure_reasons", [])
+            if isinstance(failure_reasons, list):
+                failure_reasons.append(f"trace status was {result['status']}")
+        elif baseline_check.get("status") in {"baseline_missing", "baseline_invalid"}:
+            baseline_check["passed"] = False
+        else:
+            baseline_check, comparison_metrics = run_baseline_comparison(
+                scenario_root=scenario_root,
+                current_artifacts=run_output_dir,
+                baseline_check=baseline_check,
+                baseline_entry=baseline_entry,
+            )
+    else:
+        baseline_check = dict(BASELINE_DISABLED)
+
+    result["baseline_check"] = baseline_check
+    row = build_scenario_metrics_row(
+        scenario=effective_scenario,
+        result=result,
+        baseline_status=baseline_check,
+        comparison_metrics=comparison_metrics,
+    )
+    write_scenario_metrics(
+        scenario_root,
+        row,
+        baseline_status=baseline_check,
+    )
     (scenario_root / "result.json").write_text(json.dumps(result, indent=2))
+    if (
+        fail_on_validation_fail
+        and baseline_check.get("enabled")
+        and baseline_check.get("passed") is False
+        and baseline_check.get("status") in {"gate_fail", "compare_error"}
+    ):
+        raise RuntimeError(
+            f"Baseline validation failed for scenario {scenario_name}: "
+            f"{baseline_check.get('failure_reasons')}"
+        )
     return result
 
 
@@ -796,9 +909,31 @@ def main() -> None:
         default=None,
         help="Optional free-text run goal",
     )
+    parser.add_argument(
+        "--baseline-registry",
+        type=Path,
+        default=None,
+        help="Optional pinned baseline registry used by scenario baseline_check blocks",
+    )
+    parser.add_argument(
+        "--fail-on-baseline-missing",
+        action="store_true",
+        help="Exit nonzero after writing artifacts if a required baseline is missing/invalid",
+    )
+    parser.add_argument(
+        "--fail-on-validation-fail",
+        action="store_true",
+        help="Exit nonzero after writing artifacts if a gate comparison fails",
+    )
     args = parser.parse_args()
 
     scenarios, metadata = load_scenarios(args.scenarios_file)
+    baseline_registry_path = args.baseline_registry
+    if baseline_registry_path is None and metadata.get("baseline_registry"):
+        baseline_registry_path = Path(str(metadata["baseline_registry"]))
+    baseline_registry = None
+    if baseline_registry_path is not None:
+        baseline_registry = load_baseline_registry(baseline_registry_path)
     run_metadata = {
         "run_id": _normalize_run_metadata_value(args.run_id)
         or _normalize_run_metadata_value(metadata.get("run_id")),
@@ -848,6 +983,7 @@ def main() -> None:
         print(f"Run metadata: {json.dumps(run_metadata, indent=2)}")
 
     results = []
+    scenario_metric_rows: list[dict[str, Any]] = []
     for scenario in scenarios:
         name = scenario["name"]
         scenario_root = output_root if len(scenarios) == 1 else output_root / name
@@ -860,15 +996,25 @@ def main() -> None:
             print(f"DRY RUN {name}: {shlex.join(cmd)}")
             continue
         print(f"\n{'=' * 80}\nRunning scenario: {name}\n{'=' * 80}")
-        results.append(
-            run_scenario(
-                output_root,
-                scenario,
-                env=env,
-                run_metadata=run_metadata,
-                cross_batch_decoder_cache_bytes_override=args.cross_batch_decoder_cache_bytes,
-            )
+        result = run_scenario(
+            output_root,
+            scenario,
+            env=env,
+            run_metadata=run_metadata,
+            baseline_registry=baseline_registry,
+            baseline_registry_path=baseline_registry_path,
+            fail_on_baseline_missing=args.fail_on_baseline_missing,
+            fail_on_validation_fail=args.fail_on_validation_fail,
+            cross_batch_decoder_cache_bytes_override=args.cross_batch_decoder_cache_bytes,
         )
+        results.append(result)
+        scenario_metrics_path = (
+            Path(result["output_dir"]).parent / "scenario_metrics.json"
+        )
+        if scenario_metrics_path.exists():
+            payload = json.loads(scenario_metrics_path.read_text())
+            if isinstance(payload.get("metrics"), dict):
+                scenario_metric_rows.append(payload["metrics"])
         print(
             f"Completed {name}: status={results[-1]['status']} duration={results[-1]['duration_seconds']:.2f}s"
         )
@@ -891,6 +1037,12 @@ def main() -> None:
     }
     summary_path = output_root / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2))
+    if (
+        args.scenario_index is None
+        and args.scenario_name is None
+        and scenario_metric_rows
+    ):
+        write_csv(output_root / "summary.csv", scenario_metric_rows)
     print(f"\nSummary written to {summary_path}")
 
 

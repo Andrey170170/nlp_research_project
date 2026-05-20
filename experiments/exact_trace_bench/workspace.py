@@ -5,9 +5,13 @@ import os
 import shutil
 import subprocess
 import time
-import tomllib
 from pathlib import Path
 from typing import Any
+
+try:  # Python 3.11+
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised on older OSC Python
+    import toml as tomllib
 
 from .config import DEFAULT_SCRATCH_ROOT, REPO_ROOT
 from .io_utils import ensure_dir

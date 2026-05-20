@@ -61,6 +61,16 @@ fi
 if [[ -n "$RUN_GOAL" ]]; then
     RUN_METADATA_ARGS+=(--run-goal "$RUN_GOAL")
 fi
+BASELINE_ARGS=()
+if [[ -n "${BASELINE_REGISTRY:-}" ]]; then
+    BASELINE_ARGS+=(--baseline-registry "${BASELINE_REGISTRY}")
+fi
+if [[ "${FAIL_ON_BASELINE_MISSING:-0}" == "1" ]]; then
+    BASELINE_ARGS+=(--fail-on-baseline-missing)
+fi
+if [[ "${FAIL_ON_VALIDATION_FAIL:-0}" == "1" ]]; then
+    BASELINE_ARGS+=(--fail-on-validation-fail)
+fi
 
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 export TOKENIZERS_PARALLELISM=false
@@ -101,6 +111,7 @@ uv run python -u experiments/run_sparsification_experiment.py \
     --scenarios-file "${SCENARIOS_FILE}" \
     --output-root "${OUTPUT_ROOT}" \
     --scenario-index "${SLURM_ARRAY_TASK_ID}" \
+    "${BASELINE_ARGS[@]}" \
     "${RUN_METADATA_ARGS[@]}"
 
 echo "End: $(date)"

@@ -52,13 +52,18 @@ larger knob sweeps. Fixture targets are declared in:
 - `../exact_trace_wave0_fixture_targets.json`
 
 Prepare the fixture catalog inside a SLURM job, not on a login node, because this
-loads Gemma/GemmaScope machinery:
+loads Gemma/GemmaScope machinery. The exact-bench helper renders/submits the
+appropriate cluster script:
 
 ```bash
-uv run python experiments/prepare_weekend_prefix_fixtures.py \
-  --target-spec-file experiments/exact_trace_wave0_fixture_targets.json \
-  --output-dir experiments/generated/exact_trace_wave0_fixtures
+uv run python -m experiments.exact_trace_bench submit-fixture-prep \
+  --cluster cardinal \
+  --no-immutable-workspace \
+  --print-only
 ```
+
+Remove `--print-only` to submit. The underlying fixture-prep command remains
+`experiments/prepare_weekend_prefix_fixtures.py` for direct SLURM script use.
 
 After the catalog exists, generate Wave 0 scenario files on a login node:
 
