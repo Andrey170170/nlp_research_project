@@ -7,6 +7,7 @@ from .config import (
     DEFAULT_FIXTURE_CATALOG,
     DEFAULT_GENERATED_DIR,
     DEFAULT_SCRATCH_ROOT,
+    DEFAULT_WAVE0_BASELINE_REGISTRY,
     base_trace_defaults,
     gib_to_bytes,
     recommended_output_root,
@@ -21,6 +22,7 @@ from .io_utils import ensure_dir, write_json
 
 
 SCENARIO_TIERS = ("fast", "anomaly", "long_eval")
+WAVE2A_PHASE1_TIERS = ("fast", "anomaly")
 
 WAVE0_NEW_GSM8K_INDICES: tuple[int, ...] = (
     18,
@@ -58,6 +60,27 @@ WAVE0_NEW_LATE_FIXTURES: tuple[str, ...] = tuple(
     f"{index}_late" for index in WAVE0_NEW_LATE_GSM8K_INDICES
 )
 WAVE0_REPEAT_COUNT = 2
+WAVE2A_PHASE1_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "label": "legacy_default",
+        "phase1_trace_batch_policy": "legacy",
+    },
+    {
+        "label": "cap64",
+        "phase1_trace_batch_policy": "cap_effective_batches",
+        "phase1_trace_batch_size_max": 64,
+    },
+    {
+        "label": "cap16",
+        "phase1_trace_batch_policy": "cap_effective_batches",
+        "phase1_trace_batch_size_max": 16,
+    },
+    {
+        "label": "cap1",
+        "phase1_trace_batch_policy": "cap_effective_batches",
+        "phase1_trace_batch_size_max": 1,
+    },
+)
 
 RESOURCE_PROFILE_STANDARD = "standard"
 RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM = "long_eval_high_mem"
@@ -628,6 +651,106 @@ def write_wave0_baseline_config(
 ) -> Path:
     ensure_dir(output_dir)
     output_path = output_dir / wave0_scenario_file_name(tier=tier, cluster=cluster)
+    write_json(output_path, payload)
+    return output_path
+
+
+def build_wave2a_phase1_config(
+    *,
+    tier: str,
+    cluster: str,
+    catalog_by_name: dict[str, dict[str, Any]],
+    scratch_root: Path = DEFAULT_SCRATCH_ROOT,
+    baseline_registry: Path = DEFAULT_WAVE0_BASELINE_REGISTRY,
+) -> dict[str, Any]:
+    """Build Wave 2A Phase-1 trace-batch policy sweep scenarios."""
+    _require_cluster(cluster)
+    if tier not in WAVE2A_PHASE1_TIERS:
+        raise ValueError(f"Unknown Wave 2A Phase-1 tier '{tier}'")
+
+    cfg = CLUSTER_SETTINGS[cluster][tier]
+    fixture_names = (
+        WAVE0_CANONICAL_FAST_FIXTURES
+        if tier == "fast"
+        else WAVE0_CANONICAL_ANOMALY_FIXTURES
+    )
+    fixtures = _resolve_required_fixtures(
+        fixture_names,
+        catalog_by_name=catalog_by_name,
+    )
+    stage = f"exact_trace_wave2a_phase1_{tier}"
+    payload = _base_payload(
+        cluster=cluster,
+        tier=tier,
+        notes=[
+            "Wave 2A Phase-1 trace-batch policy sweep over canonical sentinels.",
+            "Self-scored in metrics mode against same-cluster Wave 0 fp32 baselines.",
+            "Uses Wave 1 locked batch/chunk/cache settings for this cluster and tier.",
+        ],
+        scratch_root=scratch_root,
+        resource_profile=RESOURCE_PROFILE_STANDARD,
+    )
+    payload["metadata"].update(
+        {
+            "stage": stage,
+            "wave": "wave2a",
+            "sweep_family": "phase1_trace_batch",
+            "baseline_registry": str(baseline_registry),
+            "run_name": "Wave 2A Phase-1 trace-batch sweep",
+            "run_goal": "Measure Phase-1 trace-batch policy effects against Wave 0 metrics baselines.",
+        }
+    )
+
+    for fixture in fixtures:
+        for variant in WAVE2A_PHASE1_VARIANTS:
+            label = variant["label"]
+            _append_exact_scenario(
+                payload,
+                cluster=cluster,
+                tier=tier,
+                stage=stage,
+                fixture=fixture,
+                batch=cfg["batch"],
+                chunk=cfg["chunk"],
+                cache_gib=cfg["cache_gib"],
+                resource_profile=RESOURCE_PROFILE_STANDARD,
+                scratch_root=scratch_root,
+                label=f"wave2a_phase1_{label}",
+                extra={
+                    "wave": "wave2a",
+                    "sweep_family": "phase1_trace_batch",
+                    "phase1_variant": label,
+                    "baseline_check": {
+                        "enabled": True,
+                        "mode": "metrics",
+                        "registry_key": f"wave0/{fixture.fixture_name}/{cluster}/{tier}/fp32_default",
+                        "baseline_required": True,
+                        "thresholds": None,
+                    },
+                    **{key: value for key, value in variant.items() if key != "label"},
+                    **_select_exact_mode_knobs(cfg),
+                },
+            )
+
+    return payload
+
+
+def wave2a_phase1_scenario_file_name(*, tier: str, cluster: str) -> str:
+    return f"exact_trace_wave2a_phase1_{tier}_{cluster}_scenarios.json"
+
+
+def write_wave2a_phase1_config(
+    payload: dict[str, Any],
+    *,
+    output_dir: Path = DEFAULT_GENERATED_DIR,
+    tier: str,
+    cluster: str,
+) -> Path:
+    ensure_dir(output_dir)
+    output_path = output_dir / wave2a_phase1_scenario_file_name(
+        tier=tier,
+        cluster=cluster,
+    )
     write_json(output_path, payload)
     return output_path
 

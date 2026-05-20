@@ -29,6 +29,9 @@ DEFAULT_WAVE0_FIXTURE_TARGET_SPEC = (
 DEFAULT_WAVE0_FIXTURE_OUTPUT_DIR = (
     REPO_ROOT / "experiments" / "generated" / "exact_trace_wave0_fixtures"
 )
+DEFAULT_WAVE0_BASELINE_REGISTRY = (
+    DEFAULT_SCRATCH_ROOT / "baselines" / "wave0-baseline-20260520-01.json"
+)
 DEFAULT_LOGS_DIR = REPO_ROOT / "logs"
 
 
