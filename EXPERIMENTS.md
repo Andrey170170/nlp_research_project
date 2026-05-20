@@ -1,7 +1,7 @@
 # Experiments inventory
 
 Status: Current compact index and interpretation summary
-Last updated: 2026-05-16
+Last updated: 2026-05-20
 
 This file is the readable front page for experiment provenance. It should stay
 small enough to edit by hand.
@@ -55,6 +55,20 @@ Track-A cross-cluster localization is mostly complete:
   circuit outputs,
 - debug/replay machinery should remain available as internal validation tooling,
   but it should not dominate the ordinary user-facing workflow.
+
+Clean/current toy parity follow-up (May 2026):
+
+- Current exact-chunked outputs are semantically useful for continued research,
+  but strict clean parity depends on NNSight trace/source batch semantics.
+- Phase 3 is trace-batch sensitive in the underlying NNSight/replacement path;
+  dense/non-chunk and exact-chunked runs agree at the same trace batch, while
+  both can differ from singleton. Use singleton trace/batch settings for strict
+  clean-like Phase-3 validation.
+- Phase 4 is much more stable in same-feature micro-tests, but trace batch >1 can
+  produce sparse row-specific differences. Treat batched Phase-4 rows as
+  meaningful but not bit-exact clean parity evidence.
+- The observed batch sensitivity is not attributed to the exact-chunked decoder
+  implementation itself; it appears to be general NNSight/replacement behavior.
 
 Near-term cleanup focus:
 

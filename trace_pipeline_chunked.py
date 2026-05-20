@@ -962,15 +962,21 @@ def compact_result_to_step_data(
 ) -> StepData:
     feature_feature_edges = compact_result["feature_feature_edges"]
     logit_feature_edges = compact_result["logit_feature_edges"]
-    feature_row_node_indices = compact_result["feature_row_node_indices"].to(
-        dtype=torch.int64
+    feature_row_node_indices = (
+        compact_result["feature_row_node_indices"].to(dtype=torch.int64).detach().cpu()
     )
-    logit_row_node_indices = compact_result["logit_row_node_indices"].to(
-        dtype=torch.int64
+    selected_features = (
+        compact_result["selected_features"].to(dtype=torch.int64).detach().cpu()
     )
-    selected_features = compact_result["selected_features"].to(dtype=torch.int64)
-    feature_ids = compact_result["active_features"].numpy().astype(base.np.int64)
+    active_features = (
+        compact_result["active_features"].to(dtype=torch.int64).detach().cpu()
+    )
+    feature_ids = active_features[selected_features].numpy().astype(base.np.int64)
     n_features = feature_ids.shape[0]
+    selected_feature_local_index = {
+        int(feature_idx): local_idx
+        for local_idx, feature_idx in enumerate(selected_features.tolist())
+    }
 
     ff_flat = feature_feature_edges.abs().float().reshape(-1)
     lf_flat = logit_feature_edges.abs().float().reshape(-1)
@@ -1008,20 +1014,26 @@ def compact_result_to_step_data(
     rows: list[int] = []
     cols: list[int] = []
 
-    in_ff = topk_idx < ff_size
-    ff_idx = topk_idx[in_ff]
-    for flat_idx in ff_idx.tolist():
-        local_row = flat_idx // n_selected
-        local_col = flat_idx % n_selected
-        rows.append(int(feature_row_node_indices[local_row].item()))
-        cols.append(int(selected_features[local_col].item()))
+    for flat_idx in topk_idx.tolist():
+        if flat_idx < ff_size:
+            local_row = flat_idx // n_selected
+            local_col = flat_idx % n_selected
+            active_row = int(feature_row_node_indices[local_row].item())
+            try:
+                row = selected_feature_local_index[active_row]
+            except KeyError as exc:
+                raise ValueError(
+                    "compact feature row is not present in selected_features"
+                ) from exc
+            rows.append(row)
+            cols.append(int(local_col))
+            continue
 
-    lf_idx = (topk_idx[~in_ff] - ff_size).tolist()
-    for flat_idx in lf_idx:
-        local_row = flat_idx // n_selected
-        local_col = flat_idx % n_selected
-        rows.append(int(logit_row_node_indices[local_row].item()))
-        cols.append(int(selected_features[local_col].item()))
+        logit_flat_idx = flat_idx - ff_size
+        local_logit_row = logit_flat_idx // n_selected
+        local_col = logit_flat_idx % n_selected
+        rows.append(n_features + int(local_logit_row))
+        cols.append(int(local_col))
 
     return StepData(
         step_idx=step_idx,
