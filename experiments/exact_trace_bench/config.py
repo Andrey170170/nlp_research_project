@@ -16,6 +16,13 @@ DEFAULT_FIXTURE_CATALOG = (
     / "weekend_exact_chunked_fixtures"
     / "fixture_catalog.json"
 )
+DEFAULT_WAVE0_FIXTURE_CATALOG = (
+    REPO_ROOT
+    / "experiments"
+    / "generated"
+    / "exact_trace_wave0_fixtures"
+    / "fixture_catalog.json"
+)
 DEFAULT_LOGS_DIR = REPO_ROOT / "logs"
 
 

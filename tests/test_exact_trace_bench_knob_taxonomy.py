@@ -15,7 +15,14 @@ from experiments.exact_trace_bench.scenarios import (  # noqa: E402
     SCENARIO_TIERS,
     STABLE_PUBLIC_SCENARIO_KEYS,
     TELEMETRY_KEYS,
+    WAVE0_CANONICAL_ANOMALY_FIXTURES,
+    WAVE0_CANONICAL_FAST_FIXTURES,
+    WAVE0_CANONICAL_LATE_FIXTURES,
+    WAVE0_NEW_BASE_FIXTURES,
+    WAVE0_NEW_LATE_FIXTURES,
+    WAVE0_REPEAT_COUNT,
     build_tier_config,
+    build_wave0_baseline_config,
 )
 from experiments.run_sparsification_experiment import build_command  # noqa: E402
 
@@ -55,6 +62,28 @@ def _canonical_payloads() -> list[tuple[str, str, dict]]:
 
 def _merged_scenarios(payload: dict) -> list[dict]:
     return [payload["defaults"] | scenario for scenario in payload["scenarios"]]
+
+
+def _fake_wave0_catalog() -> dict[str, dict]:
+    fixture_names = (
+        WAVE0_CANONICAL_FAST_FIXTURES
+        + WAVE0_CANONICAL_ANOMALY_FIXTURES
+        + WAVE0_CANONICAL_LATE_FIXTURES
+        + WAVE0_NEW_BASE_FIXTURES
+        + WAVE0_NEW_LATE_FIXTURES
+    )
+    catalog = {}
+    for fixture_name in fixture_names:
+        index_str, fixture_suffix = fixture_name.split("_", maxsplit=1)
+        fixture_kind = "late_prefix" if fixture_suffix == "late" else "base"
+        catalog[fixture_name] = {
+            "fixture_name": fixture_name,
+            "fixture_kind": fixture_kind,
+            "gsm8k_index": int(index_str),
+            "prepared_prompt_file": f"/tmp/wave0/{fixture_name}/prompt.txt",
+            "prepared_prompt_meta_file": f"/tmp/wave0/{fixture_name}/fixture_meta.json",
+        }
+    return catalog
 
 
 def test_exact_mode_knobs_are_classified_without_duplicates() -> None:
@@ -122,5 +151,82 @@ def test_canonical_commands_do_not_enable_debug_or_replay_knobs() -> None:
             dtype_index = command.index("--exact-trace-internal-dtype")
             assert command[dtype_index + 1] == "fp32"
 
+            assert "--decoder-chunk-size" in command
+            assert "--cross-batch-decoder-cache-bytes" in command
+
+
+def test_wave0_baseline_scenario_counts_and_tiers() -> None:
+    catalog = _fake_wave0_catalog()
+    fast = build_wave0_baseline_config(
+        tier="fast",
+        cluster="ascend",
+        catalog_by_name=catalog,
+    )
+    anomaly = build_wave0_baseline_config(
+        tier="anomaly",
+        cluster="ascend",
+        catalog_by_name=catalog,
+    )
+    long_eval = build_wave0_baseline_config(
+        tier="long_eval",
+        cluster="ascend",
+        catalog_by_name=catalog,
+    )
+
+    assert fast["metadata"]["tier"] == "fast"
+    assert anomaly["metadata"]["tier"] == "anomaly"
+    assert long_eval["metadata"]["tier"] == "long_eval"
+    assert long_eval["metadata"]["resource_profile"] == "long_eval_high_mem"
+
+    assert len(fast["scenarios"]) == (
+        len(WAVE0_CANONICAL_FAST_FIXTURES) * WAVE0_REPEAT_COUNT
+        + len(WAVE0_NEW_BASE_FIXTURES)
+    )
+    assert len(anomaly["scenarios"]) == (
+        len(WAVE0_CANONICAL_ANOMALY_FIXTURES) * WAVE0_REPEAT_COUNT
+    )
+    assert len(long_eval["scenarios"]) == (
+        len(WAVE0_CANONICAL_LATE_FIXTURES) + len(WAVE0_NEW_LATE_FIXTURES)
+    )
+
+    assert {scenario["wave0_role"] for scenario in fast["scenarios"]} == {
+        "canonical_repeat",
+        "expanded_base",
+    }
+    assert {scenario["wave0_role"] for scenario in long_eval["scenarios"]} == {
+        "canonical_late",
+        "expanded_late",
+    }
+
+
+def test_wave0_scenarios_require_explicit_catalog_entries() -> None:
+    catalog = _fake_wave0_catalog()
+    catalog.pop(WAVE0_NEW_BASE_FIXTURES[0])
+
+    try:
+        build_wave0_baseline_config(
+            tier="fast",
+            cluster="ascend",
+            catalog_by_name=catalog,
+        )
+    except KeyError as exc:
+        assert WAVE0_NEW_BASE_FIXTURES[0] in str(exc)
+    else:
+        raise AssertionError("missing Wave 0 fixture did not fail")
+
+
+def test_wave0_commands_do_not_enable_debug_or_replay_knobs() -> None:
+    catalog = _fake_wave0_catalog()
+    for tier in SCENARIO_TIERS:
+        payload = build_wave0_baseline_config(
+            tier=tier,
+            cluster="cardinal",
+            catalog_by_name=catalog,
+        )
+        for scenario in _merged_scenarios(payload):
+            command = build_command(Path("/tmp/exact-bench-wave0"), scenario)
+            command_flags = {part for part in command if part.startswith("--")}
+            assert command_flags.isdisjoint(DISALLOWED_CANONICAL_COMMAND_FLAGS)
+            assert "--exact-trace-internal-dtype" in command
             assert "--decoder-chunk-size" in command
             assert "--cross-batch-decoder-cache-bytes" in command

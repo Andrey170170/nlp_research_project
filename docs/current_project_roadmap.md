@@ -1,7 +1,7 @@
 # Current Execution Plan — Post-Consolidation Cleanup
 
 Status: Current scratch roadmap
-Last updated: 2026-05-16
+Last updated: 2026-05-20
 
 ## Problem statement
 
@@ -126,8 +126,9 @@ Acceptance criteria:
 ### Phase 3 — Knob/API taxonomy
 
 Mapping document: `docs/knob_api_taxonomy.md`.
-Implementation status: mostly complete as of 2026-05-18; remaining follow-up is
-general sweep execution after login-safe validation.
+Implementation status: mostly complete as of 2026-05-18; cleanup follow-up is
+nearly done, and the next active phase after cleanup is the sweep campaign in
+`docs/exact_trace_sweep_campaign_spec.md`.
 
 1. Make `exact_trace_internal_dtype` the canonical precision knob.
 2. Deprecate or hide direct public use of `internal_precision` unless explicitly

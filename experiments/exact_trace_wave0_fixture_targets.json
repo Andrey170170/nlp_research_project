@@ -1,0 +1,51 @@
+{
+  "gsm8k_indices": [
+    828,
+    94,
+    361,
+    18,
+    57,
+    103,
+    214,
+    318,
+    462,
+    579,
+    702,
+    915,
+    1046,
+    1201,
+    1289
+  ],
+  "late_prefix_fraction_min": 0.75,
+  "late_prefix_fraction_max": 0.85,
+  "prompt_token_multiplier_cap": 2.0,
+  "max_new_tokens": 256,
+  "wave0_new_base_indices": [
+    18,
+    57,
+    103,
+    214,
+    318,
+    462,
+    579,
+    702,
+    915,
+    1046,
+    1201,
+    1289
+  ],
+  "wave0_new_late_indices": [
+    214,
+    462,
+    702,
+    1046,
+    1201,
+    1289
+  ],
+  "notes": [
+    "Generate deterministic greedy completions for the Wave 0 exact-trace sweep baseline corpus.",
+    "The first three indices preserve the current canonical fixtures: 828_base, 94_base, and 361_base.",
+    "The additional indices are a deterministic spread across GSM8K for broader prompt baselines; inspect generated token counts before treating the set as final.",
+    "Wave 0 scenarios use all new base fixtures and only the wave0_new_late_indices late-prefix subset."
+  ]
+}

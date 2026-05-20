@@ -10,6 +10,7 @@ from .config import (
     DEFAULT_GENERATED_DIR,
     REPO_ROOT,
     DEFAULT_SCRATCH_ROOT,
+    DEFAULT_WAVE0_FIXTURE_CATALOG,
 )
 from .extract import run_full_extraction
 from .fixtures import describe_fixture_tiers
@@ -19,7 +20,13 @@ from .jobs import render_launch_plan
 from .phase0_replay_matrix_compare import compare_phase0_replay_matrix_to_json
 from .phase3_seed_bundle_compare import compare_phase3_seed_bundles_to_json
 from .presets import preset_names, run_preset
-from .scenarios import SCENARIO_TIERS, build_tier_config, write_tier_config
+from .scenarios import (
+    SCENARIO_TIERS,
+    build_tier_config,
+    build_wave0_baseline_config,
+    write_tier_config,
+    write_wave0_baseline_config,
+)
 from .semantic_feature_compare import compare_semantic_feature_descriptors_to_json
 from .workspace import (
     DEFAULT_SNAPSHOT_ROOT,
@@ -59,6 +66,43 @@ def _cmd_build_scenarios(args: argparse.Namespace) -> None:
             written_paths.append(output_path)
 
     print("Wrote scenario configs:")
+    for path in written_paths:
+        print(f"  - {path}")
+
+
+def _cmd_build_wave0_scenarios(args: argparse.Namespace) -> None:
+    clusters = [args.cluster] if not args.all_clusters else ["ascend", "cardinal"]
+    tiers = [args.tier] if not args.all_tiers else list(SCENARIO_TIERS)
+
+    if not args.fixture_catalog.exists():
+        raise FileNotFoundError(
+            "Wave 0 scenario generation requires a prepared fixture catalog. "
+            f"Missing: {args.fixture_catalog}"
+        )
+
+    from .fixtures import load_fixture_catalog
+
+    catalog_by_name = load_fixture_catalog(args.fixture_catalog)
+    ensure_dir(args.output_dir)
+
+    written_paths: list[Path] = []
+    for cluster in clusters:
+        for tier in tiers:
+            payload = build_wave0_baseline_config(
+                tier=tier,
+                cluster=cluster,
+                catalog_by_name=catalog_by_name,
+                scratch_root=args.scratch_root,
+            )
+            output_path = write_wave0_baseline_config(
+                payload,
+                output_dir=args.output_dir,
+                tier=tier,
+                cluster=cluster,
+            )
+            written_paths.append(output_path)
+
+    print("Wrote Wave 0 scenario configs:")
     for path in written_paths:
         print(f"  - {path}")
 
@@ -247,6 +291,52 @@ def build_parser() -> argparse.ArgumentParser:
         help="Scratch root used for recommended output_root metadata",
     )
     build_scenarios.set_defaults(func=_cmd_build_scenarios)
+
+    build_wave0_scenarios = subparsers.add_parser(
+        "build-wave0-scenarios",
+        help="Generate expanded Wave 0 baseline scenario JSON files",
+    )
+    build_wave0_scenarios.add_argument(
+        "--tier",
+        choices=SCENARIO_TIERS,
+        default="fast",
+        help="Wave 0 scenario tier to generate",
+    )
+    build_wave0_scenarios.add_argument(
+        "--all-tiers",
+        action="store_true",
+        help="Generate all Wave 0 tiers (fast/anomaly/long_eval)",
+    )
+    build_wave0_scenarios.add_argument(
+        "--cluster",
+        choices=["ascend", "cardinal"],
+        default="ascend",
+        help="Cluster profile to target",
+    )
+    build_wave0_scenarios.add_argument(
+        "--all-clusters",
+        action="store_true",
+        help="Generate configs for both clusters",
+    )
+    build_wave0_scenarios.add_argument(
+        "--fixture-catalog",
+        type=Path,
+        default=DEFAULT_WAVE0_FIXTURE_CATALOG,
+        help="Prepared Wave 0 fixture catalog JSON; must already exist",
+    )
+    build_wave0_scenarios.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_GENERATED_DIR,
+        help="Output directory for Wave 0 scenario configs",
+    )
+    build_wave0_scenarios.add_argument(
+        "--scratch-root",
+        type=Path,
+        default=DEFAULT_SCRATCH_ROOT,
+        help="Scratch root used for recommended output_root metadata",
+    )
+    build_wave0_scenarios.set_defaults(func=_cmd_build_wave0_scenarios)
 
     extract = subparsers.add_parser(
         "extract",

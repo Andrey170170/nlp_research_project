@@ -1,7 +1,7 @@
 # Documentation index
 
 Status: Current docs map
-Last updated: 2026-05-16
+Last updated: 2026-05-20
 
 This directory is split between current working documentation and archived
 historical plans. Prefer linking to this index instead of relying on old file
@@ -17,6 +17,7 @@ names as source-of-truth signals.
 | `harness.md` | Current exact-bench harness overview |
 | `knob_api_taxonomy.md` | Exact-trace knob/API taxonomy and Phase-3 cleanup map |
 | `current_project_roadmap.md` | Current scratch roadmap for the active cleanup phase |
+| `exact_trace_sweep_campaign_spec.md` | Next exact-trace sweep campaign plan and wave structure |
 | `post_consolidation_cleanup_spec.md` | Durable cleanup strategy after Track-0B consolidation |
 | `phase4_refresh_optimization_spec.md` | Current Phase-4 normalization/RSS optimization guidance |
 | `next_exact_optimization_paths_spec.md` | Current optimization option map |

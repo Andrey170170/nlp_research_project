@@ -44,6 +44,43 @@ These are not ordinary templates, but remain useful as prior sweep/probe inputs:
 Before reusing one, confirm the sibling library commit and current knob taxonomy;
 these files may encode pre-cleanup defaults or old run-family assumptions.
 
+## Wave 0 sweep-baseline configs
+
+The next exact-trace sweep campaign uses an expanded Wave 0 prompt baseline before
+larger knob sweeps. Fixture targets are declared in:
+
+- `../exact_trace_wave0_fixture_targets.json`
+
+Prepare the fixture catalog inside a SLURM job, not on a login node, because this
+loads Gemma/GemmaScope machinery:
+
+```bash
+uv run python experiments/prepare_weekend_prefix_fixtures.py \
+  --target-spec-file experiments/exact_trace_wave0_fixture_targets.json \
+  --output-dir experiments/generated/exact_trace_wave0_fixtures
+```
+
+After the catalog exists, generate Wave 0 scenario files on a login node:
+
+```bash
+uv run python -m experiments.exact_trace_bench build-wave0-scenarios \
+  --all-tiers \
+  --all-clusters \
+  --fixture-catalog experiments/generated/exact_trace_wave0_fixtures/fixture_catalog.json
+```
+
+Expected generated files:
+
+- `exact_trace_bench/exact_trace_wave0_baseline_fast_ascend_scenarios.json`
+- `exact_trace_bench/exact_trace_wave0_baseline_anomaly_ascend_scenarios.json`
+- `exact_trace_bench/exact_trace_wave0_baseline_long_eval_ascend_scenarios.json`
+- `exact_trace_bench/exact_trace_wave0_baseline_fast_cardinal_scenarios.json`
+- `exact_trace_bench/exact_trace_wave0_baseline_anomaly_cardinal_scenarios.json`
+- `exact_trace_bench/exact_trace_wave0_baseline_long_eval_cardinal_scenarios.json`
+
+These configs still write under the normal `{cluster}/{tier}` scratch roots; use
+`run_id`, run metadata, and scenario names to identify the Wave 0 campaign.
+
 ## Debug/replay and validation configs
 
 These are Track-A or validation fixtures, not normal benchmark templates:

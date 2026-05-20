@@ -22,6 +22,7 @@ docs/*
 !docs/harness.md
 !docs/knob_api_taxonomy.md
 !docs/current_project_roadmap.md
+!docs/exact_trace_sweep_campaign_spec.md
 !docs/post_consolidation_cleanup_spec.md
 !docs/phase4_refresh_optimization_spec.md
 !docs/phase4_scheduler_v2_spec.md
