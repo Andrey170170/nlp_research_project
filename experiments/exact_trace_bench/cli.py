@@ -110,6 +110,36 @@ def _cmd_build_wave0_scenarios(args: argparse.Namespace) -> None:
         print(f"  - {path}")
 
 
+def _cmd_build_baseline_registry(args: argparse.Namespace) -> None:
+    from .baselines import build_baseline_registry_from_run_roots, wave0_run_roots
+
+    if args.run_root:
+        run_roots = [Path(path) for path in args.run_root]
+    else:
+        clusters = [args.cluster] if not args.all_clusters else ["ascend", "cardinal"]
+        tiers = [args.tier] if not args.all_tiers else list(SCENARIO_TIERS)
+        run_roots = wave0_run_roots(
+            run_id=args.run_id,
+            scratch_root=args.scratch_root,
+            clusters=tuple(clusters),
+            tiers=tuple(tiers),
+        )
+    registry = build_baseline_registry_from_run_roots(
+        run_roots,
+        registry_id=args.registry_id or args.run_id,
+        project_root=args.project_root,
+        library_root=args.library_root,
+    )
+    write_path = args.output
+    ensure_dir(write_path.parent)
+    write_path.write_text(json.dumps(registry, indent=2), encoding="utf-8")
+    print(
+        json.dumps(
+            {"output": str(write_path), "entries": len(registry["entries"])}, indent=2
+        )
+    )
+
+
 def _cmd_extract(args: argparse.Namespace) -> None:
     counts = run_full_extraction(
         input_root=args.input_root,
@@ -362,6 +392,74 @@ def build_parser() -> argparse.ArgumentParser:
         help="Scratch root used for recommended output_root metadata",
     )
     build_wave0_scenarios.set_defaults(func=_cmd_build_wave0_scenarios)
+
+    build_baseline_registry = subparsers.add_parser(
+        "build-baseline-registry",
+        help="Build a pinned baseline registry from completed scenario roots",
+    )
+    build_baseline_registry.add_argument(
+        "--run-id",
+        default="wave0-baseline-20260520-01",
+        help="Run id under scratch cluster/tier roots",
+    )
+    build_baseline_registry.add_argument(
+        "--registry-id",
+        default=None,
+        help="Optional registry id stored in the output JSON",
+    )
+    build_baseline_registry.add_argument(
+        "--cluster",
+        choices=["ascend", "cardinal"],
+        default="ascend",
+        help="Cluster to include when --all-clusters is not set",
+    )
+    build_baseline_registry.add_argument(
+        "--all-clusters",
+        action="store_true",
+        help="Include both Ascend and Cardinal roots",
+    )
+    build_baseline_registry.add_argument(
+        "--tier",
+        choices=SCENARIO_TIERS,
+        default="fast",
+        help="Tier to include when --all-tiers is not set",
+    )
+    build_baseline_registry.add_argument(
+        "--all-tiers",
+        action="store_true",
+        help="Include fast, anomaly, and long_eval roots",
+    )
+    build_baseline_registry.add_argument(
+        "--run-root",
+        action="append",
+        default=None,
+        help="Explicit completed run root; may be repeated. Overrides cluster/tier/run-id expansion.",
+    )
+    build_baseline_registry.add_argument(
+        "--scratch-root",
+        type=Path,
+        default=DEFAULT_SCRATCH_ROOT,
+        help="Scratch root containing cluster/tier/run-id outputs",
+    )
+    build_baseline_registry.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Output registry JSON path",
+    )
+    build_baseline_registry.add_argument(
+        "--project-root",
+        type=Path,
+        default=REPO_ROOT,
+        help="Project repo path recorded in registry provenance",
+    )
+    build_baseline_registry.add_argument(
+        "--library-root",
+        type=Path,
+        default=REPO_ROOT.parent / "circuit-tracer_chunked",
+        help="Sibling library repo path recorded in registry provenance",
+    )
+    build_baseline_registry.set_defaults(func=_cmd_build_baseline_registry)
 
     extract = subparsers.add_parser(
         "extract",

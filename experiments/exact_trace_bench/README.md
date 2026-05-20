@@ -125,6 +125,16 @@ Use `--baseline-registry` on `launch-plan`/`experiments/run_sparsification_exper
 or put `metadata.baseline_registry` in the scenarios JSON. Later ranking can
 concatenate `scenario_metrics.csv` files.
 
+Build a registry from completed Wave 0 runs with:
+
+```bash
+uv run python -m experiments.exact_trace_bench build-baseline-registry \
+  --run-id wave0-baseline-20260520-01 \
+  --all-clusters \
+  --all-tiers \
+  --output /fs/scratch/PAS3272/kopanev.1/exact_trace_bench/baselines/wave0-baseline-20260520-01.json
+```
+
 ### 1.5) Render a scratch-backed launch plan
 
 ```bash

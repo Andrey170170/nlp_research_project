@@ -86,6 +86,16 @@ Expected generated files:
 These configs still write under the normal `{cluster}/{tier}` scratch roots; use
 `run_id`, run metadata, and scenario names to identify the Wave 0 campaign.
 
+After Wave 0 completes, build the pinned baseline registry from the scratch roots:
+
+```bash
+uv run python -m experiments.exact_trace_bench build-baseline-registry \
+  --run-id wave0-baseline-20260520-01 \
+  --all-clusters \
+  --all-tiers \
+  --output /fs/scratch/PAS3272/kopanev.1/exact_trace_bench/baselines/wave0-baseline-20260520-01.json
+```
+
 ## Debug/replay and validation configs
 
 These are Track-A or validation fixtures, not normal benchmark templates:

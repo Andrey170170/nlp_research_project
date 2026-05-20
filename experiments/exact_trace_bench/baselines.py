@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-import math
 import json
+import math
+import hashlib
+import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
+from .config import DEFAULT_SCRATCH_ROOT, REPO_ROOT
 from .graph_compare import compare_artifact_dirs
 from .io_utils import read_json, write_csv, write_json
 
@@ -376,3 +380,195 @@ def write_scenario_metrics(
         [row],
         preferred_headers=METRICS_PREFERRED_HEADERS,
     )
+
+
+def _safe_git_output(args: list[str], *, cwd: Path) -> str | None:
+    try:
+        completed = subprocess.run(
+            args,
+            cwd=cwd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    if completed.returncode != 0:
+        return None
+    return completed.stdout.strip()
+
+
+def _workspace_state(path: Path) -> dict[str, Any]:
+    return {
+        "path": str(path),
+        "branch": _safe_git_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=path
+        ),
+        "commit": _safe_git_output(["git", "rev-parse", "--short", "HEAD"], cwd=path),
+        "dirty_files": (
+            _safe_git_output(["git", "status", "--short"], cwd=path) or ""
+        ).splitlines(),
+    }
+
+
+def _sha256_file(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _infer_tier_from_root_or_stage(
+    scenario_root: Path,
+    scenario: dict[str, Any],
+) -> str | None:
+    for part in scenario_root.parts:
+        if part in {"fast", "anomaly", "long_eval"}:
+            return part
+    stage = str(scenario.get("stage") or "")
+    for tier in ("fast", "anomaly", "long_eval"):
+        if tier in stage:
+            return tier
+    return None
+
+
+def _profile_for_contract(contract: dict[str, Any]) -> str:
+    dtype = str(contract.get("exact_trace_internal_dtype") or "unknown")
+    return f"{dtype}_default"
+
+
+def _comparison_contract(scenario: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "method",
+        "exact_trace_internal_dtype",
+        "temperature",
+        "completions",
+        "max_steps",
+        "max_feature_nodes",
+        "max_edges",
+        "max_n_logits",
+        "desired_logit_prob",
+    )
+    return {key: scenario.get(key) for key in keys if key in scenario}
+
+
+def _entry_from_scenario_root(scenario_root: Path) -> dict[str, Any]:
+    scenario = read_json(scenario_root / "scenario.json")
+    result = read_json(scenario_root / "result.json")
+    prompt_file_text = scenario.get("prepared_prompt_file")
+    prompt_file = Path(str(prompt_file_text)) if prompt_file_text else None
+    return {
+        "cluster": scenario.get("cluster"),
+        "tier": _infer_tier_from_root_or_stage(scenario_root, scenario),
+        "fixture_name": scenario.get("fixture_name"),
+        "fixture_kind": scenario.get("fixture_kind"),
+        "gsm8k_indices": scenario.get("gsm8k_indices"),
+        "run_id": result.get("run_id")
+        or scenario.get("run_metadata", {}).get("run_id"),
+        "run_name": result.get("run_name")
+        or scenario.get("run_metadata", {}).get("run_name"),
+        "scenario_name": scenario.get("name") or scenario_root.name,
+        "scenario_root": str(scenario_root),
+        "artifacts_dir": str(scenario_root / "artifacts"),
+        "result_json": str(scenario_root / "result.json"),
+        "expected_status": "success",
+        "result_status": result.get("status"),
+        "resource_profile": scenario.get("resource_profile"),
+        "wave": scenario.get("wave"),
+        "wave0_role": scenario.get("wave0_role"),
+        "wave0_repeat_index": scenario.get("wave0_repeat_index"),
+        "decoder_chunk_size": scenario.get("decoder_chunk_size"),
+        "cross_batch_decoder_cache_bytes": scenario.get(
+            "cross_batch_decoder_cache_bytes"
+        ),
+        "attribution_batch_size": scenario.get("attribution_batch_size"),
+        "feature_batch_size": scenario.get("feature_batch_size"),
+        "logit_batch_size": scenario.get("logit_batch_size"),
+        "comparison_contract": _comparison_contract(scenario),
+        "prompt_identity": {
+            "prepared_prompt_file": str(prompt_file) if prompt_file else None,
+            "prepared_prompt_sha256": _sha256_file(prompt_file)
+            if prompt_file is not None
+            else None,
+            "prepared_prompt_meta_file": scenario.get("prepared_prompt_meta_file"),
+        },
+    }
+
+
+def _keys_for_entry(entry: dict[str, Any]) -> list[str]:
+    fixture_name = entry.get("fixture_name")
+    cluster = entry.get("cluster")
+    tier = entry.get("tier")
+    if not fixture_name or not cluster or not tier:
+        return []
+    profile = _profile_for_contract(entry.get("comparison_contract", {}))
+    base = f"wave0/{fixture_name}/{cluster}/{tier}/{profile}"
+    repeat_index = entry.get("wave0_repeat_index")
+    if repeat_index is None:
+        return [base]
+    keys = [f"{base}_r{repeat_index}"]
+    if int(repeat_index) == 1:
+        keys.insert(0, base)
+    return keys
+
+
+def build_baseline_registry_from_run_roots(
+    run_roots: list[Path],
+    *,
+    registry_id: str,
+    project_root: Path = REPO_ROOT,
+    library_root: Path | None = None,
+) -> dict[str, Any]:
+    entries: dict[str, dict[str, Any]] = {}
+    invalid_roots: list[str] = []
+    duplicate_keys: list[str] = []
+    for run_root in run_roots:
+        if not run_root.is_dir():
+            invalid_roots.append(str(run_root))
+            continue
+        for scenario_root in sorted(
+            path for path in run_root.iterdir() if path.is_dir()
+        ):
+            if (
+                not (scenario_root / "scenario.json").is_file()
+                or not (scenario_root / "result.json").is_file()
+            ):
+                continue
+            entry = _entry_from_scenario_root(scenario_root)
+            if entry.get("result_status") != "success":
+                continue
+            for key in _keys_for_entry(entry):
+                if key in entries:
+                    duplicate_keys.append(key)
+                    continue
+                entries[key] = dict(entry, registry_key=key)
+    library_root = library_root or (project_root.parent / "circuit-tracer_chunked")
+    return {
+        "schema_version": 1,
+        "registry_id": registry_id,
+        "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "created_from": "experiments.exact_trace_bench build-baseline-registry",
+        "source_roots": [str(root) for root in run_roots],
+        "invalid_roots": invalid_roots,
+        "duplicate_keys": duplicate_keys,
+        "project_repo": _workspace_state(project_root),
+        "sibling_library_repo": _workspace_state(library_root)
+        if library_root.exists()
+        else {"path": str(library_root), "missing": True},
+        "entries": dict(sorted(entries.items())),
+    }
+
+
+def wave0_run_roots(
+    *,
+    run_id: str,
+    scratch_root: Path = DEFAULT_SCRATCH_ROOT,
+    clusters: tuple[str, ...] = ("ascend", "cardinal"),
+    tiers: tuple[str, ...] = ("fast", "anomaly", "long_eval"),
+) -> list[Path]:
+    return [
+        scratch_root / cluster / tier / run_id for cluster in clusters for tier in tiers
+    ]

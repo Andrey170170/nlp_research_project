@@ -125,3 +125,51 @@ def test_fixture_prep_plan_uses_cluster_script_and_exports(tmp_path: Path) -> No
     assert "TARGET_SPEC_FILE=" in plan["sbatch_command"]
     assert "OUTPUT_DIR=" in plan["sbatch_command"]
     assert "CROSS_BATCH_DECODER_CACHE_BYTES=1024" in plan["sbatch_command"]
+
+
+def test_build_baseline_registry_from_wave0_roots(tmp_path: Path) -> None:
+    run_root = tmp_path / "ascend" / "fast" / "wave0"
+    scenario_root = run_root / "ascend_fast_wave0_r1_828_base_b128_c2048_cache0g"
+    artifacts_dir = scenario_root / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+    prompt = tmp_path / "prompt.txt"
+    prompt.write_text("test prompt", encoding="utf-8")
+    scenario = {
+        **base_trace_defaults(),
+        "name": scenario_root.name,
+        "stage": "exact_trace_wave0_baseline_fast",
+        "cluster": "ascend",
+        "resource_profile": "standard",
+        "fixture_name": "828_base",
+        "fixture_kind": "base",
+        "gsm8k_indices": [828],
+        "prepared_prompt_file": str(prompt),
+        "method": "exact",
+        "decoder_chunk_size": 2048,
+        "cross_batch_decoder_cache_bytes": 0,
+        "attribution_batch_size": 128,
+        "feature_batch_size": 128,
+        "logit_batch_size": 128,
+        "wave": "wave0",
+        "wave0_role": "canonical_repeat",
+        "wave0_repeat_index": 1,
+    }
+    (scenario_root / "scenario.json").write_text(json.dumps(scenario), encoding="utf-8")
+    (scenario_root / "result.json").write_text(
+        json.dumps({"status": "success", "run_id": "wave0"}),
+        encoding="utf-8",
+    )
+
+    registry = baselines.build_baseline_registry_from_run_roots(
+        [run_root],
+        registry_id="test-registry",
+        project_root=PROJECT_ROOT,
+        library_root=PROJECT_ROOT,
+    )
+
+    default_key = "wave0/828_base/ascend/fast/fp32_default"
+    repeat_key = "wave0/828_base/ascend/fast/fp32_default_r1"
+    assert default_key in registry["entries"]
+    assert repeat_key in registry["entries"]
+    assert registry["entries"][default_key]["artifacts_dir"] == str(artifacts_dir)
+    assert registry["entries"][default_key]["prompt_identity"]["prepared_prompt_sha256"]
