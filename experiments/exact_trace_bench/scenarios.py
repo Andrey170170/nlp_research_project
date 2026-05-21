@@ -25,6 +25,7 @@ SCENARIO_TIERS = ("fast", "anomaly", "long_eval")
 WAVE2A_PHASE1_TIERS = ("fast", "anomaly")
 WAVE2B_PHASE4_TIERS = ("fast", "anomaly")
 WAVE2C_ROW_ENCODER_TIERS = ("fast", "anomaly")
+WAVE3_INTERACTION_CONFIRMATION_TIERS = ("fast", "anomaly")
 
 WAVE0_NEW_GSM8K_INDICES: tuple[int, ...] = (
     18,
@@ -156,6 +157,46 @@ WAVE2C_ROW_ENCODER_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "label": "feature_batch_planner",
         "plan_feature_batch_size": True,
+    },
+)
+WAVE3_INTERACTION_CONFIRMATION_LEGACY_DEFAULTS: dict[str, Any] = {
+    **WAVE2C_ROW_ENCODER_LEGACY_DEFAULTS,
+    "row_subchunk_size": None,
+    "plan_feature_batch_size": False,
+}
+WAVE3_INTERACTION_CONFIRMATION_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "label": "baseline",
+    },
+    {
+        "label": "deferred_v1",
+        "phase4_refresh_policy": "deferred_v1",
+    },
+    {
+        "label": "row_subchunk_512",
+        "row_subchunk_size": 512,
+    },
+    {
+        "label": "plan_feature_batch_size",
+        "plan_feature_batch_size": True,
+    },
+    {
+        "label": "deferred_v1_row_subchunk_512",
+        "phase4_refresh_policy": "deferred_v1",
+        "row_subchunk_size": 512,
+    },
+    {
+        "label": "deferred_v1_plan_feature_batch_size",
+        "phase4_refresh_policy": "deferred_v1",
+        "plan_feature_batch_size": True,
+    },
+)
+WAVE3_OPTIONAL_SPEED_INTERACTION_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "label": "deferred_v1_streaming_v1_row_subchunk_512",
+        "phase4_refresh_policy": "deferred_v1",
+        "phase4_row_executor": "streaming_v1",
+        "row_subchunk_size": 512,
     },
 )
 
@@ -1032,6 +1073,119 @@ def write_wave2c_row_encoder_config(
 ) -> Path:
     ensure_dir(output_dir)
     output_path = output_dir / wave2c_row_encoder_scenario_file_name(
+        tier=tier,
+        cluster=cluster,
+    )
+    write_json(output_path, payload)
+    return output_path
+
+
+def build_wave3_interaction_confirmation_config(
+    *,
+    tier: str,
+    cluster: str,
+    catalog_by_name: dict[str, dict[str, Any]],
+    scratch_root: Path = DEFAULT_SCRATCH_ROOT,
+    baseline_registry: Path = DEFAULT_WAVE0_BASELINE_REGISTRY,
+    include_optional_speed_interaction: bool = False,
+) -> dict[str, Any]:
+    """Build Wave 3 interaction-confirmation scenarios."""
+    _require_cluster(cluster)
+    if tier not in WAVE3_INTERACTION_CONFIRMATION_TIERS:
+        raise ValueError(f"Unknown Wave 3 interaction-confirmation tier '{tier}'")
+
+    cfg = CLUSTER_SETTINGS[cluster][tier]
+    fixture_names = (
+        WAVE0_CANONICAL_FAST_FIXTURES
+        if tier == "fast"
+        else WAVE0_CANONICAL_ANOMALY_FIXTURES
+    )
+    fixtures = _resolve_required_fixtures(
+        fixture_names,
+        catalog_by_name=catalog_by_name,
+    )
+    variants = WAVE3_INTERACTION_CONFIRMATION_VARIANTS
+    if include_optional_speed_interaction:
+        variants = variants + WAVE3_OPTIONAL_SPEED_INTERACTION_VARIANTS
+
+    stage = f"exact_trace_wave3_interaction_confirmation_{tier}"
+    payload = _base_payload(
+        cluster=cluster,
+        tier=tier,
+        notes=[
+            "Wave 3 interaction-confirmation sweep over canonical sentinels.",
+            "Self-scored in metrics mode against same-cluster Wave 0 fp32 baselines.",
+            "Confirms selected interactions among deferred refresh, row subchunking, and feature-batch planning.",
+            "Pins legacy Phase-1/Phase-4, row-store, and encoder defaults outside the interaction under test.",
+            "Optional speed interaction with streaming_v1 is excluded unless requested.",
+        ],
+        scratch_root=scratch_root,
+        resource_profile=RESOURCE_PROFILE_STANDARD,
+    )
+    payload["metadata"].update(
+        {
+            "stage": stage,
+            "wave": "wave3",
+            "sweep_family": "interaction_confirmation",
+            "baseline_registry": str(baseline_registry),
+            "include_optional_speed_interaction": include_optional_speed_interaction,
+            "run_name": "Wave 3 interaction-confirmation sweep",
+            "run_goal": "Measure candidate interactions among deferred refresh, row subchunking, and feature-batch planning against Wave 0 metrics baselines while pinning legacy defaults outside the interaction under test.",
+        }
+    )
+
+    for fixture in fixtures:
+        for variant in variants:
+            label = variant["label"]
+            _append_exact_scenario(
+                payload,
+                cluster=cluster,
+                tier=tier,
+                stage=stage,
+                fixture=fixture,
+                batch=cfg["batch"],
+                chunk=cfg["chunk"],
+                cache_gib=cfg["cache_gib"],
+                resource_profile=RESOURCE_PROFILE_STANDARD,
+                scratch_root=scratch_root,
+                label=f"wave3_interaction_{label}",
+                extra={
+                    "wave": "wave3",
+                    "sweep_family": "interaction_confirmation",
+                    "interaction_variant": label,
+                    "baseline_check": {
+                        "enabled": True,
+                        "mode": "metrics",
+                        "registry_key": f"wave0/{fixture.fixture_name}/{cluster}/{tier}/fp32_default",
+                        "baseline_required": True,
+                        "thresholds": None,
+                    },
+                    **WAVE3_INTERACTION_CONFIRMATION_LEGACY_DEFAULTS,
+                    **{key: value for key, value in variant.items() if key != "label"},
+                    **_select_exact_mode_knobs(cfg),
+                },
+            )
+
+    return payload
+
+
+def wave3_interaction_confirmation_scenario_file_name(
+    *,
+    tier: str,
+    cluster: str,
+) -> str:
+    return f"exact_trace_wave3_interaction_confirmation_{tier}_{cluster}_scenarios.json"
+
+
+def write_wave3_interaction_confirmation_config(
+    payload: dict[str, Any],
+    *,
+    output_dir: Path = DEFAULT_GENERATED_DIR,
+    tier: str,
+    cluster: str,
+) -> Path:
+    ensure_dir(output_dir)
+    output_path = output_dir / wave3_interaction_confirmation_scenario_file_name(
         tier=tier,
         cluster=cluster,
     )

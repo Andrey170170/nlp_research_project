@@ -23,6 +23,7 @@ from experiments.exact_trace_bench.scenarios import (  # noqa: E402
     WAVE0_REPEAT_COUNT,
     build_tier_config,
     build_wave0_baseline_config,
+    build_wave3_interaction_confirmation_config,
 )
 from experiments.run_sparsification_experiment import build_command  # noqa: E402
 
@@ -230,3 +231,65 @@ def test_wave0_commands_do_not_enable_debug_or_replay_knobs() -> None:
             assert "--exact-trace-internal-dtype" in command
             assert "--decoder-chunk-size" in command
             assert "--cross-batch-decoder-cache-bytes" in command
+
+
+def test_wave3_interaction_scenarios_default_and_optional_variants() -> None:
+    catalog = _fake_wave0_catalog()
+    default_payload = build_wave3_interaction_confirmation_config(
+        tier="fast",
+        cluster="ascend",
+        catalog_by_name=catalog,
+    )
+    optional_payload = build_wave3_interaction_confirmation_config(
+        tier="fast",
+        cluster="ascend",
+        catalog_by_name=catalog,
+        include_optional_speed_interaction=True,
+    )
+
+    assert default_payload["metadata"]["wave"] == "wave3"
+    assert default_payload["metadata"]["sweep_family"] == "interaction_confirmation"
+    assert len(default_payload["scenarios"]) == len(WAVE0_CANONICAL_FAST_FIXTURES) * 6
+    assert len(optional_payload["scenarios"]) == len(WAVE0_CANONICAL_FAST_FIXTURES) * 7
+
+    default_variants = {
+        scenario["interaction_variant"] for scenario in default_payload["scenarios"]
+    }
+    assert default_variants == {
+        "baseline",
+        "deferred_v1",
+        "row_subchunk_512",
+        "plan_feature_batch_size",
+        "deferred_v1_row_subchunk_512",
+        "deferred_v1_plan_feature_batch_size",
+    }
+    assert "deferred_v1_streaming_v1_row_subchunk_512" not in default_variants
+
+    for scenario in default_payload["scenarios"]:
+        assert scenario["baseline_check"]["enabled"] is True
+        assert scenario["baseline_check"]["mode"] == "metrics"
+        assert scenario["baseline_check"]["baseline_required"] is True
+        assert scenario["phase1_trace_batch_policy"] == "legacy"
+        assert scenario["phase4_scheduler_mode"] == "locality"
+        assert scenario["phase4_ranker"] == "argsort"
+        assert scenario["phase4_refresh_optimization"] == "off"
+
+    baseline = next(
+        scenario
+        for scenario in default_payload["scenarios"]
+        if scenario["interaction_variant"] == "baseline"
+    )
+    assert baseline["phase4_refresh_policy"] == "standard"
+    assert baseline["phase4_row_executor"] == "batched"
+    assert baseline["row_subchunk_size"] is None
+    assert baseline["plan_feature_batch_size"] is False
+
+    optional = next(
+        scenario
+        for scenario in optional_payload["scenarios"]
+        if scenario["interaction_variant"]
+        == "deferred_v1_streaming_v1_row_subchunk_512"
+    )
+    assert optional["phase4_refresh_policy"] == "deferred_v1"
+    assert optional["phase4_row_executor"] == "streaming_v1"
+    assert optional["row_subchunk_size"] == 512
