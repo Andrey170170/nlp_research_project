@@ -90,6 +90,33 @@ Near-term cleanup focus:
 
 ## Recent durable decisions
 
+### 2026-05-20 — Sweep Wave 0/1/2A baseline and Phase-1 decision
+
+Sweep campaign status:
+
+- Wave 0 established the pinned cross-cluster baseline registry:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/baselines/wave0-baseline-20260520-01.json`.
+- Wave 1 locked stable resource settings for later waves:
+  - Ascend fast: `batch=128`, `decoder_chunk_size=2048`, cache `0`.
+  - Ascend anomaly: `batch=256`, `decoder_chunk_size=4096`, cache `0`.
+  - Cardinal fast/anomaly: `decoder_chunk_size=4096`, cache `0`.
+- Wave 2A Phase-1 trace-batch screening completed successfully after replacing
+  Cardinal `c0811` node failures with reruns excluding that node.
+
+Wave 2A effective result:
+
+- 24/24 successful scenarios, all compared against Wave 0 baselines.
+- Minimum feature/edge/weighted-edge Jaccard across effective results: `1.0`.
+- `cap16` is the safer optional Phase-1 resource candidate, but the ordinary
+  Wave 2B path keeps `phase1_trace_batch_policy=legacy` because Phase-1 caps did
+  not produce a consistent cross-prompt speed win.
+- Cardinal node `c0811` produced CUDA misaligned/illegal-access/CUBLAS failures
+  and should be avoided or reported for exact-trace runs.
+
+Structured record:
+
+- `experiments/logs/2026-05.jsonl`
+
 ### 2026-05-15/16 — Phase-3 row capture/replay fix validated and committed
 
 Project commit:
