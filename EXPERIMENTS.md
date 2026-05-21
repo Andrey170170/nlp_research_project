@@ -117,6 +117,27 @@ Structured record:
 
 - `experiments/logs/2026-05.jsonl`
 
+### 2026-05-20 — Sweep Wave 2B Phase-4 family decision
+
+Wave 2B screened curated Phase-4 scheduler/refresh/ranker/executor variants on
+the sentinel prompts while keeping Wave 2A's ordinary `legacy` Phase-1 setting.
+
+Effective result:
+
+- 42/42 successful scenarios, all compared against Wave 0 baselines.
+- `planner_v2` caused compact graph drift and is not promoted
+  (`min_weighted_edge_jaccard=0.866600`).
+- All other Phase-4 variants preserved exact compact graph agreement against Wave
+  0 (`min_weighted_edge_jaccard=1.0`).
+- Primary Wave 2B promotion candidate: `phase4_refresh_policy=deferred_v1`.
+- Secondary candidate for later interaction testing: `phase4_row_executor=streaming_v1`.
+- Wave 2C should still screen the row/encoder/staging family independently rather
+  than combining Wave 2B winners before Wave 3.
+
+Structured record:
+
+- `experiments/logs/2026-05.jsonl`
+
 ### 2026-05-15/16 — Phase-3 row capture/replay fix validated and committed
 
 Project commit:

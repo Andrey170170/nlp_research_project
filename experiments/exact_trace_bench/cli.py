@@ -28,13 +28,16 @@ from .scenarios import (
     SCENARIO_TIERS,
     WAVE2A_PHASE1_TIERS,
     WAVE2B_PHASE4_TIERS,
+    WAVE2C_ROW_ENCODER_TIERS,
     build_tier_config,
     build_wave2a_phase1_config,
     build_wave2b_phase4_config,
+    build_wave2c_row_encoder_config,
     build_wave0_baseline_config,
     write_tier_config,
     write_wave2a_phase1_config,
     write_wave2b_phase4_config,
+    write_wave2c_row_encoder_config,
     write_wave0_baseline_config,
 )
 from .semantic_feature_compare import compare_semantic_feature_descriptors_to_json
@@ -189,6 +192,44 @@ def _cmd_build_wave2b_phase4_scenarios(args: argparse.Namespace) -> None:
             written_paths.append(output_path)
 
     print("Wrote Wave 2B Phase-4 scenario configs:")
+    for path in written_paths:
+        print(f"  - {path}")
+
+
+def _cmd_build_wave2c_row_encoder_scenarios(args: argparse.Namespace) -> None:
+    clusters = [args.cluster] if not args.all_clusters else ["ascend", "cardinal"]
+    tiers = [args.tier] if not args.all_tiers else list(WAVE2C_ROW_ENCODER_TIERS)
+
+    if not args.fixture_catalog.exists():
+        raise FileNotFoundError(
+            "Wave 2C row/encoder scenario generation requires a prepared fixture catalog. "
+            f"Missing: {args.fixture_catalog}"
+        )
+
+    from .fixtures import load_fixture_catalog
+
+    catalog_by_name = load_fixture_catalog(args.fixture_catalog)
+    ensure_dir(args.output_dir)
+
+    written_paths: list[Path] = []
+    for cluster in clusters:
+        for tier in tiers:
+            payload = build_wave2c_row_encoder_config(
+                tier=tier,
+                cluster=cluster,
+                catalog_by_name=catalog_by_name,
+                scratch_root=args.scratch_root,
+                baseline_registry=args.baseline_registry,
+            )
+            output_path = write_wave2c_row_encoder_config(
+                payload,
+                output_dir=args.output_dir,
+                tier=tier,
+                cluster=cluster,
+            )
+            written_paths.append(output_path)
+
+    print("Wrote Wave 2C row/encoder/staging/planner scenario configs:")
     for path in written_paths:
         print(f"  - {path}")
 
@@ -579,6 +620,58 @@ def build_parser() -> argparse.ArgumentParser:
         help="Scratch root used for recommended output_root metadata",
     )
     build_wave2b_phase4.set_defaults(func=_cmd_build_wave2b_phase4_scenarios)
+
+    build_wave2c_row_encoder = subparsers.add_parser(
+        "build-wave2c-row-encoder-scenarios",
+        help="Generate Wave 2C row/encoder/staging/planner scenario JSON files",
+    )
+    build_wave2c_row_encoder.add_argument(
+        "--tier",
+        choices=WAVE2C_ROW_ENCODER_TIERS,
+        default="fast",
+        help="Wave 2C row/encoder tier to generate",
+    )
+    build_wave2c_row_encoder.add_argument(
+        "--all-tiers",
+        action="store_true",
+        help="Generate all Wave 2C row/encoder tiers (fast/anomaly)",
+    )
+    build_wave2c_row_encoder.add_argument(
+        "--cluster",
+        choices=["ascend", "cardinal"],
+        default="ascend",
+        help="Cluster profile to target",
+    )
+    build_wave2c_row_encoder.add_argument(
+        "--all-clusters",
+        action="store_true",
+        help="Generate configs for both clusters",
+    )
+    build_wave2c_row_encoder.add_argument(
+        "--fixture-catalog",
+        type=Path,
+        default=DEFAULT_WAVE0_FIXTURE_CATALOG,
+        help="Prepared Wave 0 fixture catalog JSON; must already exist",
+    )
+    build_wave2c_row_encoder.add_argument(
+        "--baseline-registry",
+        type=Path,
+        default=DEFAULT_WAVE0_BASELINE_REGISTRY,
+        help="Pinned Wave 0 baseline registry recorded in generated metadata",
+    )
+    build_wave2c_row_encoder.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_GENERATED_DIR,
+        help="Output directory for Wave 2C row/encoder scenario configs",
+    )
+    build_wave2c_row_encoder.add_argument(
+        "--scratch-root",
+        type=Path,
+        default=DEFAULT_SCRATCH_ROOT,
+        help="Scratch root used for recommended output_root metadata",
+    )
+    build_wave2c_row_encoder.set_defaults(func=_cmd_build_wave2c_row_encoder_scenarios)
 
     build_baseline_registry = subparsers.add_parser(
         "build-baseline-registry",

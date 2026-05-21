@@ -24,6 +24,7 @@ from .io_utils import ensure_dir, write_json
 SCENARIO_TIERS = ("fast", "anomaly", "long_eval")
 WAVE2A_PHASE1_TIERS = ("fast", "anomaly")
 WAVE2B_PHASE4_TIERS = ("fast", "anomaly")
+WAVE2C_ROW_ENCODER_TIERS = ("fast", "anomaly")
 
 WAVE0_NEW_GSM8K_INDICES: tuple[int, ...] = (
     18,
@@ -114,6 +115,47 @@ WAVE2B_PHASE4_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "label": "streaming_v1",
         "phase4_row_executor": "streaming_v1",
+    },
+)
+WAVE2C_ROW_ENCODER_LEGACY_DEFAULTS: dict[str, Any] = {
+    "row_store_cache_control": "off",
+    "exact_encoder_residency": "lazy",
+    "phase4_scheduler_mode": "locality",
+    "phase4_refresh_policy": "standard",
+    "phase4_ranker": "argsort",
+    "phase4_refresh_optimization": "off",
+    "phase4_row_executor": "batched",
+    "phase1_trace_batch_policy": "legacy",
+}
+WAVE2C_ROW_ENCODER_VARIANTS: tuple[dict[str, Any], ...] = (
+    {
+        "label": "legacy_default",
+        **WAVE2C_ROW_ENCODER_LEGACY_DEFAULTS,
+    },
+    {
+        "label": "row_fadvise",
+        "row_store_cache_control": "fadvise_dontneed_after_append_v1",
+    },
+    {
+        "label": "active_cpu_encoder",
+        "exact_encoder_residency": "active_cpu",
+    },
+    {
+        "label": "active_pinned_cpu_encoder",
+        "exact_encoder_residency": "active_pinned_cpu",
+    },
+    {
+        "label": "no_cpu_staging",
+        "stage_encoder_vecs_on_cpu": False,
+        "stage_error_vectors_on_cpu": False,
+    },
+    {
+        "label": "row_subchunk_512",
+        "row_subchunk_size": 512,
+    },
+    {
+        "label": "feature_batch_planner",
+        "plan_feature_batch_size": True,
     },
 )
 
@@ -885,6 +927,111 @@ def write_wave2b_phase4_config(
 ) -> Path:
     ensure_dir(output_dir)
     output_path = output_dir / wave2b_phase4_scenario_file_name(
+        tier=tier,
+        cluster=cluster,
+    )
+    write_json(output_path, payload)
+    return output_path
+
+
+def build_wave2c_row_encoder_config(
+    *,
+    tier: str,
+    cluster: str,
+    catalog_by_name: dict[str, dict[str, Any]],
+    scratch_root: Path = DEFAULT_SCRATCH_ROOT,
+    baseline_registry: Path = DEFAULT_WAVE0_BASELINE_REGISTRY,
+) -> dict[str, Any]:
+    """Build Wave 2C row-store/encoder/staging/planner sweep scenarios."""
+    _require_cluster(cluster)
+    if tier not in WAVE2C_ROW_ENCODER_TIERS:
+        raise ValueError(f"Unknown Wave 2C row/encoder tier '{tier}'")
+
+    cfg = CLUSTER_SETTINGS[cluster][tier]
+    fixture_names = (
+        WAVE0_CANONICAL_FAST_FIXTURES
+        if tier == "fast"
+        else WAVE0_CANONICAL_ANOMALY_FIXTURES
+    )
+    fixtures = _resolve_required_fixtures(
+        fixture_names,
+        catalog_by_name=catalog_by_name,
+    )
+    stage = f"exact_trace_wave2c_row_encoder_{tier}"
+    payload = _base_payload(
+        cluster=cluster,
+        tier=tier,
+        notes=[
+            "Wave 2C row/encoder/staging/planner sweep over canonical sentinels.",
+            "Self-scored in metrics mode against same-cluster Wave 0 fp32 baselines.",
+            "Uses Wave 1 locked batch/chunk/cache settings for this cluster and tier.",
+            "Legacy Phase-1 and legacy Phase-4 are intentionally retained to avoid cross-family interactions before Wave 3.",
+        ],
+        scratch_root=scratch_root,
+        resource_profile=RESOURCE_PROFILE_STANDARD,
+    )
+    payload["metadata"].update(
+        {
+            "stage": stage,
+            "wave": "wave2c",
+            "sweep_family": "row_encoder_staging_planner",
+            "baseline_registry": str(baseline_registry),
+            "run_name": "Wave 2C row/encoder/staging/planner sweep",
+            "run_goal": "Measure curated row-store, encoder residency, CPU staging, row-subchunk, and feature-batch planner variants against Wave 0 metrics baselines while keeping legacy Phase-1 and legacy Phase-4 defaults.",
+        }
+    )
+
+    for fixture in fixtures:
+        for variant in WAVE2C_ROW_ENCODER_VARIANTS:
+            label = variant["label"]
+            knobs = {
+                **WAVE2C_ROW_ENCODER_LEGACY_DEFAULTS,
+                **{key: value for key, value in variant.items() if key != "label"},
+            }
+            _append_exact_scenario(
+                payload,
+                cluster=cluster,
+                tier=tier,
+                stage=stage,
+                fixture=fixture,
+                batch=cfg["batch"],
+                chunk=cfg["chunk"],
+                cache_gib=cfg["cache_gib"],
+                resource_profile=RESOURCE_PROFILE_STANDARD,
+                scratch_root=scratch_root,
+                label=f"wave2c_row_encoder_{label}",
+                extra={
+                    "wave": "wave2c",
+                    "sweep_family": "row_encoder_staging_planner",
+                    "row_encoder_variant": label,
+                    "baseline_check": {
+                        "enabled": True,
+                        "mode": "metrics",
+                        "registry_key": f"wave0/{fixture.fixture_name}/{cluster}/{tier}/fp32_default",
+                        "baseline_required": True,
+                        "thresholds": None,
+                    },
+                    **knobs,
+                    **_select_exact_mode_knobs(cfg),
+                },
+            )
+
+    return payload
+
+
+def wave2c_row_encoder_scenario_file_name(*, tier: str, cluster: str) -> str:
+    return f"exact_trace_wave2c_row_encoder_{tier}_{cluster}_scenarios.json"
+
+
+def write_wave2c_row_encoder_config(
+    payload: dict[str, Any],
+    *,
+    output_dir: Path = DEFAULT_GENERATED_DIR,
+    tier: str,
+    cluster: str,
+) -> Path:
+    ensure_dir(output_dir)
+    output_path = output_dir / wave2c_row_encoder_scenario_file_name(
         tier=tier,
         cluster=cluster,
     )
