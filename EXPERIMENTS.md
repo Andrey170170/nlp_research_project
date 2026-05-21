@@ -90,6 +90,60 @@ Near-term cleanup focus:
 
 ## Recent durable decisions
 
+### 2026-05-21 — Sweep Wave 2 complete; Wave 3 candidate set
+
+Wave 2 completed the independent advanced-family screens on sentinel prompts.
+
+Results and decisions:
+
+- Wave 2A Phase-1 trace batch: all effective results were exact; keep ordinary
+  `phase1_trace_batch_policy=legacy`. Retain `cap16` only as an optional later
+  resource candidate, not a Wave 3 default.
+- Wave 2B Phase-4 family: promote `phase4_refresh_policy=deferred_v1` as the
+  primary candidate; keep `phase4_row_executor=streaming_v1` as a secondary speed
+  interaction candidate; reject `planner_v2` and `refresh_opt_v1`.
+- Wave 2C row/encoder/staging/planner: all variants were exact. Promote
+  `row_subchunk_size=512` as the primary row/memory candidate and
+  `plan_feature_batch_size=true` as the conservative memory candidate.
+
+Wave 3 should combine only a small candidate set:
+
+1. locked stable-resource baseline from Wave 1,
+2. `deferred_v1` alone,
+3. `row_subchunk_size=512` alone,
+4. `plan_feature_batch_size=true` alone,
+5. `deferred_v1 + row_subchunk_size=512`,
+6. `deferred_v1 + plan_feature_batch_size=true`,
+7. optional speed interaction: `deferred_v1 + streaming_v1 + row_subchunk_size=512`.
+
+Keep Cardinal node `c0811` excluded for exact-trace launches unless it is
+explicitly being diagnosed.
+
+Structured record:
+
+- `experiments/logs/2026-05.jsonl`
+
+### 2026-05-21 — Sweep Wave 2C row/encoder/staging decision
+
+Wave 2C screened row-store, encoder residency, CPU staging, row-subchunk, and
+feature-batch planner variants independently, without combining Wave 2B winners.
+
+Effective result:
+
+- 42/42 successful scenarios, all compared against Wave 0 baselines.
+- Every Wave 2C variant preserved exact compact graph agreement against Wave 0
+  (`min_weighted_edge_jaccard=1.0`).
+- `row_subchunk_size=512` had the best mean runtime ratio (`0.941`) and lower mean
+  RSS than legacy (`192.8 GiB` vs `202.5 GiB`), but was mixed by prompt.
+- `plan_feature_batch_size=true` had the most conservative memory profile
+  (`191.5 GiB` mean RSS) with near-neutral runtime (`0.992` mean ratio).
+- Do not promote `row_fadvise`, active CPU encoder residency, active pinned CPU
+  encoder residency, or no-CPU-staging as ordinary candidates.
+
+Structured record:
+
+- `experiments/logs/2026-05.jsonl`
+
 ### 2026-05-20 — Sweep Wave 0/1/2A baseline and Phase-1 decision
 
 Sweep campaign status:
