@@ -1,7 +1,7 @@
 # Experiments inventory
 
 Status: Current compact index and interpretation summary
-Last updated: 2026-05-20
+Last updated: 2026-05-21
 
 This file is the readable front page for experiment provenance. It should stay
 small enough to edit by hand.
@@ -89,6 +89,50 @@ Near-term cleanup focus:
 | historical `matched_debug` artifacts | Old matched-debug campaign outputs/configs | Historical only; do not use as an ordinary bucket |
 
 ## Recent durable decisions
+
+### 2026-05-21 — Sweep Wave 3 interaction confirmation
+
+Wave 3 combined the selected Wave 2 candidates, including the optional speed
+interaction, across Ascend/Cardinal fast/anomaly sentinel prompts.
+
+Run:
+
+- `wave3-interaction-20260521-01`
+- jobs: Ascend `5379152`, `5379153`; Cardinal `10303141`, `10303142`
+- Cardinal submissions excluded `c0811`.
+
+Effective result:
+
+- 42/42 successful scenarios, all compared against Wave 0 fp32 baselines.
+- Minimum feature/edge/weighted-edge Jaccard across all Wave 3 scenarios: `1.0`.
+- No promoted interaction caused compact graph drift.
+
+Runtime/resource interpretation:
+
+- Best aggregate mean runtime ratio: `row_subchunk_size=512` (`0.969`).
+- `phase4_refresh_policy=deferred_v1` was close (`0.978`) and helped Cardinal,
+  but was mixed on Ascend.
+- `plan_feature_batch_size=true` was near-neutral (`0.986`) and remains a
+  conservative memory/planning candidate rather than a speed win.
+- Combined candidates did not beat the best singleton:
+  `deferred_v1 + row_subchunk_size=512` was neutral (`0.997`),
+  `deferred_v1 + plan_feature_batch_size=true` was slower (`1.029`), and
+  `deferred_v1 + streaming_v1 + row_subchunk_size=512` was exact but slower
+  overall (`1.042`).
+
+Decision:
+
+- Promote `row_subchunk_size=512` as the primary next default candidate to test
+  more broadly.
+- Keep `deferred_v1` as a Cardinal/throughput candidate, not a universal default
+  yet.
+- Keep `plan_feature_batch_size=true` for conservative memory-sensitive launches.
+- Do not promote the combined Wave 3 interactions or the streaming interaction as
+  global defaults.
+
+Structured record:
+
+- `experiments/logs/2026-05.jsonl`
 
 ### 2026-05-21 — Sweep Wave 2 complete; Wave 3 candidate set
 
