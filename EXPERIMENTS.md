@@ -90,6 +90,52 @@ Near-term cleanup focus:
 
 ## Recent durable decisions
 
+### 2026-05-22 — Sweep Wave 4 prompt generalization
+
+Wave 4 broadened the finalist validation from sentinel prompts to the Wave 0
+fast/anomaly/long-eval prompt coverage.
+
+Run:
+
+- `wave4-generalization-20260521-01`
+- jobs: Ascend `5381290`, `5381291`, `5381292`; Cardinal `10306425`,
+  `10306426`, `10306427`
+- Cardinal submissions excluded `c0811`.
+
+Effective result:
+
+- 144/144 successful scenarios, all compared against Wave 0 fp32 baselines.
+- Minimum feature/edge Jaccard: `1.0`.
+- Minimum weighted-edge Jaccard: `0.9999999998808901`; the only sub-1.0 rows
+  were three Ascend `row_subchunk_512` cases with feature/edge Jaccard still
+  exactly `1.0`, so this is treated as tiny numerical weighted-edge noise rather
+  than structural compact-graph drift.
+
+Runtime/resource interpretation:
+
+- `plan_feature_batch_size=true` was the best broad finalist overall:
+  mean runtime ratio `0.981`, median `0.975`, geometric mean `0.971`, with
+  26/48 prompt-cluster-tier cases faster than baseline by >2%.
+- `row_subchunk_size=512` was mixed: mean ratio `1.015`, median `1.002`, with
+  22/48 faster and 22/48 slower by >2%.
+- Long-eval favored `plan_feature_batch_size=true` (`0.955` mean ratio) more than
+  `row_subchunk_size=512` (`0.993` mean ratio).
+- Slurm MaxRSS differences were small overall; neither finalist showed a broad
+  memory reduction relative to baseline.
+
+Decision:
+
+- Promote `plan_feature_batch_size=true` as the safest broad default/finalist
+  candidate from Wave 4.
+- Keep `row_subchunk_size=512` as an opt-in prompt/resource tuning knob rather
+  than a global default.
+- Continue not promoting combined Wave 3 interactions or streaming as ordinary
+  defaults.
+
+Structured record:
+
+- `experiments/logs/2026-05.jsonl`
+
 ### 2026-05-21 — Sweep Wave 3 interaction confirmation
 
 Wave 3 combined the selected Wave 2 candidates, including the optional speed
