@@ -21,9 +21,11 @@ from experiments.exact_trace_bench.scenarios import (  # noqa: E402
     WAVE0_NEW_BASE_FIXTURES,
     WAVE0_NEW_LATE_FIXTURES,
     WAVE0_REPEAT_COUNT,
+    WAVE4_GENERALIZATION_VARIANTS,
     build_tier_config,
     build_wave0_baseline_config,
     build_wave3_interaction_confirmation_config,
+    build_wave4_generalization_config,
 )
 from experiments.run_sparsification_experiment import build_command  # noqa: E402
 
@@ -293,3 +295,81 @@ def test_wave3_interaction_scenarios_default_and_optional_variants() -> None:
     assert optional["phase4_refresh_policy"] == "deferred_v1"
     assert optional["phase4_row_executor"] == "streaming_v1"
     assert optional["row_subchunk_size"] == 512
+
+
+def test_wave4_generalization_scenarios_cover_wave0_prompts_and_finalists() -> None:
+    catalog = _fake_wave0_catalog()
+    expected_fixtures = {
+        "fast": WAVE0_CANONICAL_FAST_FIXTURES + WAVE0_NEW_BASE_FIXTURES,
+        "anomaly": WAVE0_CANONICAL_ANOMALY_FIXTURES,
+        "long_eval": WAVE0_CANONICAL_LATE_FIXTURES + WAVE0_NEW_LATE_FIXTURES,
+    }
+    expected_variants = {variant["label"] for variant in WAVE4_GENERALIZATION_VARIANTS}
+
+    for tier, fixture_names in expected_fixtures.items():
+        payload = build_wave4_generalization_config(
+            tier=tier,
+            cluster="cardinal",
+            catalog_by_name=catalog,
+        )
+
+        assert payload["metadata"]["wave"] == "wave4"
+        assert payload["metadata"]["sweep_family"] == "prompt_generalization"
+        assert "baseline_registry" in payload["metadata"]
+        assert "run_name" in payload["metadata"]
+        assert "run_goal" in payload["metadata"]
+        assert payload["metadata"]["resource_profile"] == (
+            "long_eval_high_mem" if tier == "long_eval" else "standard"
+        )
+        assert len(payload["scenarios"]) == len(fixture_names) * 3
+        assert {scenario["fixture_name"] for scenario in payload["scenarios"]} == set(
+            fixture_names
+        )
+        assert {
+            scenario["generalization_variant"] for scenario in payload["scenarios"]
+        } == expected_variants
+
+        for scenario in payload["scenarios"]:
+            assert scenario["baseline_check"] == {
+                "enabled": True,
+                "mode": "metrics",
+                "registry_key": f"wave0/{scenario['fixture_name']}/cardinal/{tier}/fp32_default",
+                "baseline_required": True,
+                "thresholds": None,
+            }
+            assert scenario["phase1_trace_batch_policy"] == "legacy"
+            assert scenario["row_store_cache_control"] == "off"
+            assert scenario["exact_encoder_residency"] == "lazy"
+            assert scenario["phase4_scheduler_mode"] == "locality"
+            assert scenario["phase4_refresh_policy"] == "standard"
+            assert scenario["phase4_ranker"] == "argsort"
+            assert scenario["phase4_refresh_optimization"] == "off"
+            assert scenario["phase4_row_executor"] == "batched"
+            if tier == "long_eval":
+                assert scenario["attribution_batch_size"] == 256
+                assert scenario["decoder_chunk_size"] == 4096
+                assert scenario["cross_batch_decoder_cache_bytes"] == 0
+
+        baseline = next(
+            scenario
+            for scenario in payload["scenarios"]
+            if scenario["generalization_variant"] == "baseline"
+        )
+        assert baseline["row_subchunk_size"] is None
+        assert baseline["plan_feature_batch_size"] is False
+
+        row_subchunk = next(
+            scenario
+            for scenario in payload["scenarios"]
+            if scenario["generalization_variant"] == "row_subchunk_512"
+        )
+        assert row_subchunk["row_subchunk_size"] == 512
+        assert row_subchunk["plan_feature_batch_size"] is False
+
+        planner = next(
+            scenario
+            for scenario in payload["scenarios"]
+            if scenario["generalization_variant"] == "plan_feature_batch_size"
+        )
+        assert planner["row_subchunk_size"] is None
+        assert planner["plan_feature_batch_size"] is True
