@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from nlp_research_project.exact_trace_bench.jobs import render_full_answer_shard_plan
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PROJECT_ROOT / "src"
 
@@ -61,6 +63,7 @@ def test_full_answer_cli_help_is_login_safe() -> None:
     assert run_cli("aggregate-full-answer-shards", "--help").returncode == 0
     assert run_cli("run-full-answer-trajectory", "--help").returncode == 0
     assert run_cli("submit-full-answer-trajectory", "--help").returncode == 0
+    assert run_cli("launch-full-answer-shards", "--help").returncode == 0
 
 
 def test_full_answer_cli_writes_planning_artifacts(tmp_path: Path) -> None:
@@ -135,3 +138,148 @@ def test_full_answer_trajectory_print_only_plan_uses_snapshot_template(
     )
     assert "WORKSPACE_ROOT=" in plan["sbatch_command"]
     assert "LIB_WORKSPACE_ROOT=" in plan["sbatch_command"]
+
+
+def test_full_answer_shard_print_only_plan_uses_snapshot_paths(tmp_path: Path) -> None:
+    input_dir = (
+        PROJECT_ROOT
+        / "experiments"
+        / "generated"
+        / "exact_trace_bench"
+        / "unit_full_answer"
+    )
+    input_dir.mkdir(parents=True, exist_ok=True)
+    trajectory_path = input_dir / "trajectory.json"
+    specs_path = input_dir / "trace_specs.jsonl"
+    shards_path = input_dir / "shards.json"
+    trajectory_path.write_text(json.dumps(tiny_trajectory()), encoding="utf-8")
+    specs_path.write_text("", encoding="utf-8")
+    shards_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "trace_specs_file": str(specs_path),
+                "cost_model": "prefix_token_count_lpt_v1",
+                "shards": [
+                    {"shard_id": 0, "estimated_cost_sum": 0, "spec_indices": []},
+                    {"shard_id": 1, "estimated_cost_sum": 0, "spec_indices": []},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    proc = run_cli(
+        "launch-full-answer-shards",
+        "--cluster",
+        "ascend",
+        "--trajectory",
+        str(trajectory_path),
+        "--trace-specs",
+        str(specs_path),
+        "--shards",
+        str(shards_path),
+        "--output-root",
+        str(tmp_path / "runs"),
+        "--snapshot-root",
+        str(tmp_path / "snapshots"),
+        "--workspace-label",
+        "test-shards",
+        "--run-id",
+        "unit-run",
+        "--run-description",
+        "comma, safe metadata",
+        "--run-goal",
+        "propagate metadata args",
+        "--print-only",
+    )
+    assert proc.returncode == 0, proc.stderr
+    plan = json.loads(proc.stdout)
+    assert plan["array_range"] == "0-1"
+    assert "test-shards" in plan["workspace_root"]
+    assert plan["sbatch_script"].endswith(
+        "slurm/exact_trace_bench/full_answer_trace.ascend.sbatch"
+    )
+    assert "test-shards" in plan["trajectory_path"]
+    assert plan["trajectory_path"].endswith(
+        "experiments/generated/exact_trace_bench/unit_full_answer/trajectory.json"
+    )
+    assert plan["trace_specs_path"].endswith(
+        "experiments/generated/exact_trace_bench/unit_full_answer/trace_specs.jsonl"
+    )
+    assert plan["shards_path"].endswith(
+        "experiments/generated/exact_trace_bench/unit_full_answer/shards.json"
+    )
+    assert plan["output_root"].endswith("/runs/unit-run")
+    assert "WORKSPACE_ROOT=" in plan["sbatch_command"]
+    assert "LIB_WORKSPACE_ROOT=" in plan["sbatch_command"]
+    assert "--run-id unit-run" in plan["sbatch_command"]
+    assert "--run-name" in plan["sbatch_command"]
+    assert "--run-description" in plan["sbatch_command"]
+    assert "--run-goal" in plan["sbatch_command"]
+
+
+def test_full_answer_shard_plan_rejects_existing_output_root(tmp_path: Path) -> None:
+    trajectory_path = tmp_path / "trajectory.json"
+    trace_specs_path = tmp_path / "trace_specs.jsonl"
+    shards_path = tmp_path / "shards.json"
+    trajectory_path.write_text(json.dumps(tiny_trajectory()), encoding="utf-8")
+    trace_specs_path.write_text("", encoding="utf-8")
+    shards_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "trace_specs_file": str(trace_specs_path),
+                "cost_model": "prefix_token_count_lpt_v1",
+                "shards": [
+                    {"shard_id": 0, "estimated_cost_sum": 0, "spec_indices": []}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    existing_root = tmp_path / "runs" / "existing-run"
+    existing_root.mkdir(parents=True)
+    try:
+        render_full_answer_shard_plan(
+            cluster="ascend",
+            trajectory_path=trajectory_path,
+            trace_specs_path=trace_specs_path,
+            shards_path=shards_path,
+            output_root=tmp_path / "runs",
+            run_id="existing-run",
+        )
+    except ValueError as exc:
+        assert "already exists" in str(exc)
+    else:
+        raise AssertionError("expected existing output root to be rejected")
+
+
+def test_full_answer_shard_plan_rejects_malformed_shard_schema(tmp_path: Path) -> None:
+    trajectory_path = tmp_path / "trajectory.json"
+    trace_specs_path = tmp_path / "trace_specs.jsonl"
+    shards_path = tmp_path / "shards.json"
+    trajectory_path.write_text(json.dumps(tiny_trajectory()), encoding="utf-8")
+    trace_specs_path.write_text("", encoding="utf-8")
+    shards_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "trace_specs_file": str(trace_specs_path),
+                "cost_model": "prefix_token_count_lpt_v1",
+                "shards": [{"shard_id": 0}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    try:
+        render_full_answer_shard_plan(
+            cluster="ascend",
+            trajectory_path=trajectory_path,
+            trace_specs_path=trace_specs_path,
+            shards_path=shards_path,
+            output_root=tmp_path / "runs",
+        )
+    except ValueError as exc:
+        assert "estimated_cost_sum" in str(exc)
+    else:
+        raise AssertionError("expected malformed shards schema to be rejected")

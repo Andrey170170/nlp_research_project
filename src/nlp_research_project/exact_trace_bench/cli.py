@@ -35,6 +35,7 @@ from .io_utils import ensure_dir
 from .jobs import (
     render_fixture_prep_plan,
     render_full_answer_trajectory_plan,
+    render_full_answer_shard_plan,
     render_launch_plan,
 )
 from .phase0_replay_matrix_compare import compare_phase0_replay_matrix_to_json
@@ -597,7 +598,24 @@ def _cmd_run_full_answer_shard(args: argparse.Namespace) -> None:
         )
         print(json.dumps(result, indent=2))
         return
-    raise NotImplementedError("real full-answer tracing not implemented yet")
+    if args.output_root is None:
+        raise ValueError("--output-root is required for real shard tracing")
+    from .full_answer.runner import run_real_shard
+
+    result = run_real_shard(
+        trajectory_path=args.trajectory,
+        trace_specs_path=args.trace_specs,
+        shards_path=args.shards,
+        shard_id=args.shard_id,
+        output_root=args.output_root,
+        run_id=args.run_id,
+        run_name=args.run_name,
+        run_description=args.run_description,
+        run_goal=args.run_goal,
+    )
+    if result.get("status") not in {"complete", "ok"}:
+        raise RuntimeError(f"full-answer shard failed: {result}")
+    print(json.dumps(result, indent=2))
 
 
 def _cmd_aggregate_full_answer_shards(args: argparse.Namespace) -> None:
@@ -644,6 +662,28 @@ def _cmd_submit_full_answer_trajectory(args: argparse.Namespace) -> None:
         workspace_label=args.workspace_label,
         walltime=args.walltime,
         run_name=args.run_name,
+    )
+    if not args.print_only:
+        subprocess.run(plan["sbatch_argv"], check=True)
+    print(json.dumps(plan, indent=2))
+
+
+def _cmd_launch_full_answer_shards(args: argparse.Namespace) -> None:
+    plan = render_full_answer_shard_plan(
+        cluster=args.cluster,
+        trajectory_path=args.trajectory,
+        trace_specs_path=args.trace_specs,
+        shards_path=args.shards,
+        output_root=args.output_root,
+        immutable_workspace=not args.no_immutable_workspace,
+        snapshot_root=args.snapshot_root,
+        source_root=args.source_root,
+        workspace_label=args.workspace_label,
+        walltime=args.walltime,
+        run_name=args.run_name,
+        run_id=args.run_id,
+        run_description=args.run_description,
+        run_goal=args.run_goal,
     )
     if not args.print_only:
         subprocess.run(plan["sbatch_argv"], check=True)
@@ -705,6 +745,10 @@ def build_parser() -> argparse.ArgumentParser:
     full_answer_run_shard.add_argument("--shards", type=Path, required=True)
     full_answer_run_shard.add_argument("--shard-id", type=int, required=True)
     full_answer_run_shard.add_argument("--output-root", type=Path, default=None)
+    full_answer_run_shard.add_argument("--run-id", default=None)
+    full_answer_run_shard.add_argument("--run-name", default=None)
+    full_answer_run_shard.add_argument("--run-description", default=None)
+    full_answer_run_shard.add_argument("--run-goal", default=None)
     full_answer_run_shard.add_argument(
         "--list",
         action="store_true",
@@ -721,6 +765,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     full_answer_aggregate.add_argument("--run-root", type=Path, required=True)
     full_answer_aggregate.set_defaults(func=_cmd_aggregate_full_answer_shards)
+
+    full_answer_launch = subparsers.add_parser(
+        "launch-full-answer-shards",
+        help="Render or submit a SLURM array for full-answer trace shards",
+    )
+    full_answer_launch.add_argument(
+        "--cluster", choices=["ascend", "cardinal"], default="ascend"
+    )
+    full_answer_launch.add_argument("--trajectory", type=Path, required=True)
+    full_answer_launch.add_argument("--trace-specs", type=Path, required=True)
+    full_answer_launch.add_argument("--shards", type=Path, required=True)
+    full_answer_launch.add_argument("--output-root", type=Path, required=True)
+    full_answer_launch.add_argument("--no-immutable-workspace", action="store_true")
+    full_answer_launch.add_argument(
+        "--snapshot-root", type=Path, default=DEFAULT_SNAPSHOT_ROOT
+    )
+    full_answer_launch.add_argument("--source-root", type=Path, default=REPO_ROOT)
+    full_answer_launch.add_argument("--workspace-label", default=None)
+    full_answer_launch.add_argument("--walltime", default=None)
+    full_answer_launch.add_argument("--run-name", default=None)
+    full_answer_launch.add_argument("--run-id", default=None)
+    full_answer_launch.add_argument("--run-description", default=None)
+    full_answer_launch.add_argument("--run-goal", default=None)
+    full_answer_launch.add_argument("--print-only", action="store_true")
+    full_answer_launch.set_defaults(func=_cmd_launch_full_answer_shards)
 
     full_answer_trajectory = subparsers.add_parser(
         "run-full-answer-trajectory",

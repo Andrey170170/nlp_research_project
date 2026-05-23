@@ -13,6 +13,7 @@ from .config import (
     REPO_ROOT,
     recommended_output_root,
 )
+from .full_answer.schemas import load_shards
 from .io_utils import read_json
 from .scenarios import (
     RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM,
@@ -64,6 +65,17 @@ SBATCH_FULL_ANSWER_TRAJECTORY_SCRIPTS: dict[str, Path] = {
     / "slurm"
     / "exact_trace_bench"
     / "full_answer_prepare.cardinal.sbatch",
+}
+
+SBATCH_FULL_ANSWER_TRACE_SCRIPTS: dict[str, Path] = {
+    "ascend": REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "full_answer_trace.ascend.sbatch",
+    "cardinal": REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "full_answer_trace.cardinal.sbatch",
 }
 
 GOAL_BY_TIER: dict[str, str] = {
@@ -536,6 +548,120 @@ def render_full_answer_trajectory_plan(
         "fixture_name": fixture_name,
         "trajectory_id": trajectory_id,
         "run_name": resolved_run_name,
+        "workspace_root": str(workspace),
+        "library_workspace_root": None
+        if library_workspace is None
+        else str(library_workspace),
+        "immutable_workspace": immutable_workspace,
+        "sbatch_script": str(launch_script_path),
+        "sbatch_argv": command_parts,
+        "sbatch_command": shlex.join(command_parts),
+    }
+
+
+def render_full_answer_shard_plan(
+    *,
+    cluster: str,
+    trajectory_path: Path,
+    trace_specs_path: Path,
+    shards_path: Path,
+    output_root: Path,
+    immutable_workspace: bool = True,
+    snapshot_root: Path = DEFAULT_SNAPSHOT_ROOT,
+    source_root: Path = REPO_ROOT,
+    workspace_label: str | None = None,
+    walltime: str | None = None,
+    run_name: str | None = None,
+    run_id: str | None = None,
+    run_description: str | None = None,
+    run_goal: str | None = None,
+) -> dict[str, Any]:
+    if cluster not in SBATCH_FULL_ANSWER_TRACE_SCRIPTS:
+        raise ValueError(f"Unsupported full-answer trace cluster: {cluster!r}")
+    shards_payload = load_shards(shards_path)
+    shards = shards_payload.get("shards")
+    if not isinstance(shards, list) or not shards:
+        raise ValueError(f"No shards found in {shards_path}")
+    shard_count = len(shards)
+    array_range = f"0-{shard_count - 1}"
+
+    workspace = resolve_launch_workspace(
+        immutable=immutable_workspace,
+        snapshot_root=snapshot_root,
+        source_root=source_root,
+        label=workspace_label,
+    ).resolve()
+    library_workspace = sibling_library_root(workspace)
+    source_root = source_root.resolve()
+    script_path = SBATCH_FULL_ANSWER_TRACE_SCRIPTS[cluster].resolve()
+    launch_script_path = _path_in_workspace(
+        script_path, workspace=workspace, source_root=source_root
+    )
+    launch_trajectory = _path_in_workspace(
+        trajectory_path, workspace=workspace, source_root=source_root
+    )
+    launch_trace_specs = _path_in_workspace(
+        trace_specs_path, workspace=workspace, source_root=source_root
+    )
+    launch_shards = _path_in_workspace(
+        shards_path, workspace=workspace, source_root=source_root
+    )
+
+    resolved_run_name = _normalize_free_text(run_name) or f"full answer trace {cluster}"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    resolved_run_id = (
+        _normalize_run_id(run_id)
+        if run_id
+        else f"{timestamp}_{_slugify_run_name(resolved_run_name)}"
+    )
+    resolved_output_root = (output_root.resolve() / resolved_run_id).resolve()
+    if resolved_output_root.exists():
+        raise ValueError(
+            f"Launch output root already exists: {resolved_output_root}. "
+            "Resume mode is not implemented."
+        )
+    export_parts = [
+        "ALL",
+        f"TRAJECTORY_PATH={launch_trajectory}",
+        f"TRACE_SPECS_PATH={launch_trace_specs}",
+        f"SHARDS_PATH={launch_shards}",
+        f"OUTPUT_ROOT={resolved_output_root}",
+        f"WORKSPACE_ROOT={workspace}",
+        f"LIB_WORKSPACE_ROOT={library_workspace or ''}",
+    ]
+    script_args: list[str] = [
+        "--run-id",
+        resolved_run_id,
+        "--run-name",
+        resolved_run_name,
+    ]
+    if run_description:
+        script_args.extend(
+            ["--run-description", _normalize_free_text(run_description) or ""]
+        )
+    if run_goal:
+        script_args.extend(["--run-goal", _normalize_free_text(run_goal) or ""])
+    command_parts = [
+        "sbatch",
+        *([f"--time={walltime}"] if walltime else []),
+        f"--job-name={_slugify_run_name(resolved_run_name)}",
+        f"--array={array_range}",
+        f"--export={','.join(export_parts)}",
+        str(launch_script_path),
+        *script_args,
+    ]
+    return {
+        "cluster": cluster,
+        "trajectory_path": str(launch_trajectory),
+        "trace_specs_path": str(launch_trace_specs),
+        "shards_path": str(launch_shards),
+        "output_root": str(resolved_output_root),
+        "shard_count": shard_count,
+        "array_range": array_range,
+        "run_id": resolved_run_id,
+        "run_name": resolved_run_name,
+        "run_description": _normalize_free_text(run_description),
+        "run_goal": _normalize_free_text(run_goal),
         "workspace_root": str(workspace),
         "library_workspace_root": None
         if library_workspace is None

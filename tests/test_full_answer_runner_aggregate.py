@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import builtins
+import argparse
 import subprocess
 import sys
 from pathlib import Path
@@ -8,9 +10,13 @@ from pathlib import Path
 from nlp_research_project.exact_trace_bench.full_answer.aggregate import (
     aggregate_shards,
 )
+from nlp_research_project.exact_trace_bench import cli as full_answer_cli
 from nlp_research_project.exact_trace_bench.full_answer.runner import (
     dry_run_shard,
+    forced_target_payload,
     list_shard_specs,
+    load_shard_inputs,
+    reconstruct_prefix_token_ids,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -108,6 +114,7 @@ def test_dry_run_shard_writes_expected_files_and_metadata(tmp_path: Path) -> Non
         "token_id": 202,
         "token_text": "7",
         "target_mode": "frozen_target_only",
+        "attribution_targets": [202],
     }
     assert trace["selection_reasons"] == ["numeric"]
     assert trace["prefix_token_count"] == 3
@@ -218,3 +225,87 @@ def test_cli_dry_run_requires_output_root(tmp_path: Path) -> None:
     )
     assert proc.returncode != 0
     assert "--output-root" in proc.stderr
+
+
+def test_cli_real_shard_exits_nonzero_on_error_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    monkeypatch.setattr(
+        "nlp_research_project.exact_trace_bench.full_answer.runner.run_real_shard",
+        lambda **kwargs: {"status": "error", "shard_dir": "x"},
+    )
+    args = argparse.Namespace(
+        trajectory=trajectory_path,
+        trace_specs=specs_path,
+        shards=shards_path,
+        shard_id=0,
+        output_root=tmp_path / "run",
+        list=False,
+        dry_run=False,
+        run_id=None,
+        run_name=None,
+        run_description=None,
+        run_goal=None,
+    )
+    try:
+        full_answer_cli._cmd_run_full_answer_shard(args)
+    except RuntimeError as exc:
+        assert "full-answer shard failed" in str(exc)
+    else:
+        raise AssertionError("expected non-ok shard status to fail the CLI")
+
+
+def test_real_shard_requires_slurm_before_heavy_imports(
+    tmp_path: Path, monkeypatch
+) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+    monkeypatch.delenv("EXACT_TRACE_ALLOW_LOCAL_GPU", raising=False)
+    real_import = builtins.__import__
+
+    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name in {
+            "torch",
+            "trace_pipeline",
+            "circuit_utils",
+            "trace_pipeline_chunked",
+            "circuit_tracer",
+        }:
+            raise AssertionError(f"heavy import attempted: {name}")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    try:
+        from nlp_research_project.exact_trace_bench.full_answer.runner import (
+            run_real_shard,
+        )
+
+        run_real_shard(
+            trajectory_path=trajectory_path,
+            trace_specs_path=specs_path,
+            shards_path=shards_path,
+            shard_id=0,
+            output_root=tmp_path / "run",
+        )
+    except RuntimeError as exc:
+        assert "SLURM_JOB_ID" in str(exc)
+    else:
+        raise AssertionError("expected SLURM guard to fail before heavy imports")
+
+
+def test_prefix_reconstruction_and_forced_target_payload(tmp_path: Path) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    trajectory, specs, _ = load_shard_inputs(
+        trajectory_path=trajectory_path,
+        trace_specs_path=specs_path,
+        shards_path=shards_path,
+        shard_id=0,
+    )
+    assert reconstruct_prefix_token_ids(trajectory, specs[0]) == [101, 102, 201]
+    assert forced_target_payload(specs[0]) == {
+        "token_id": 202,
+        "token_text": "7",
+        "target_mode": "frozen_target_only",
+        "attribution_targets": [202],
+    }
