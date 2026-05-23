@@ -18,6 +18,18 @@ from .config import (
 )
 from .extract import run_full_extraction
 from .fixtures import describe_fixture_tiers
+from .full_answer.schemas import (
+    build_trace_specs,
+    load_trace_specs,
+    load_trajectory,
+    write_shards,
+    write_trace_selection,
+    write_trace_specs,
+)
+from .full_answer.aggregate import aggregate_shards
+from .full_answer.runner import dry_run_shard, list_shard_specs, print_shard_specs
+from .full_answer.selection import parse_indices_csv, select_tokens
+from .full_answer.sharding import build_lpt_shards
 from .graph_compare import compare_artifact_dirs
 from .io_utils import ensure_dir
 from .jobs import render_fixture_prep_plan, render_launch_plan
@@ -508,11 +520,157 @@ def _cmd_submit_preset(args: argparse.Namespace) -> None:
     print(json.dumps({"preset": args.preset, "plans": plans}, indent=2))
 
 
+def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
+    for flag_name, value in (
+        ("--max-feature-nodes", args.max_feature_nodes),
+        ("--max-edges", args.max_edges),
+    ):
+        if value is not None and value <= 0:
+            raise ValueError(f"{flag_name} must be positive")
+    trajectory = load_trajectory(args.trajectory)
+    selection_modes = set(args.select or [])
+    selection = select_tokens(
+        trajectory,
+        explicit_indices=parse_indices_csv(args.indices),
+        uniform_every_k=args.every_k,
+        include_numeric="numeric" in selection_modes,
+        include_final_answer="final-answer" in selection_modes,
+        high_surprisal_top_k=args.high_surprisal_top_k,
+    )
+    graph_overrides = {
+        key: value
+        for key, value in {
+            "max_feature_nodes": args.max_feature_nodes,
+            "max_edges": args.max_edges,
+            "exact_trace_internal_dtype": args.exact_trace_internal_dtype,
+        }.items()
+        if value is not None
+    }
+    specs = build_trace_specs(
+        trajectory,
+        selection,
+        graph_knob_overrides=graph_overrides,
+    )
+    ensure_dir(args.output_dir)
+    selection_path = args.output_dir / "trace_selection.json"
+    specs_path = args.output_dir / "trace_specs.jsonl"
+    write_trace_selection(selection_path, selection)
+    write_trace_specs(specs_path, specs)
+    print(f"Wrote {selection_path}")
+    print(f"Wrote {specs_path}")
+
+
+def _cmd_build_full_answer_shards(args: argparse.Namespace) -> None:
+    specs = load_trace_specs(args.trace_specs)
+    shards = build_lpt_shards(
+        specs,
+        shard_count=args.shard_count,
+        trace_specs_file=args.trace_specs,
+    )
+    write_shards(args.output, shards)
+    print(f"Wrote {args.output}")
+
+
+def _cmd_run_full_answer_shard(args: argparse.Namespace) -> None:
+    if args.list:
+        rows = list_shard_specs(
+            trajectory_path=args.trajectory,
+            trace_specs_path=args.trace_specs,
+            shards_path=args.shards,
+            shard_id=args.shard_id,
+        )
+        print_shard_specs(rows)
+        return
+    if args.dry_run:
+        if args.output_root is None:
+            raise ValueError("--output-root is required with --dry-run")
+        result = dry_run_shard(
+            trajectory_path=args.trajectory,
+            trace_specs_path=args.trace_specs,
+            shards_path=args.shards,
+            shard_id=args.shard_id,
+            output_root=args.output_root,
+        )
+        print(json.dumps(result, indent=2))
+        return
+    raise NotImplementedError("real full-answer tracing not implemented yet")
+
+
+def _cmd_aggregate_full_answer_shards(args: argparse.Namespace) -> None:
+    print(json.dumps(aggregate_shards(args.run_root), indent=2))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Exact trace benchmark harness helpers"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    full_answer_trace_specs = subparsers.add_parser(
+        "build-full-answer-trace-specs",
+        help="Select generated tokens and write full-answer trace specs",
+    )
+    full_answer_trace_specs.add_argument("--trajectory", type=Path, required=True)
+    full_answer_trace_specs.add_argument(
+        "--select",
+        action="append",
+        choices=["final-answer", "numeric"],
+        default=[],
+        help="Selection heuristic to include; repeatable",
+    )
+    full_answer_trace_specs.add_argument(
+        "--indices",
+        default=None,
+        help="Comma-separated generated-token indices to trace",
+    )
+    full_answer_trace_specs.add_argument("--every-k", type=int, default=None)
+    full_answer_trace_specs.add_argument(
+        "--high-surprisal-top-k", type=int, default=None
+    )
+    full_answer_trace_specs.add_argument("--output-dir", type=Path, required=True)
+    full_answer_trace_specs.add_argument("--max-feature-nodes", type=int, default=None)
+    full_answer_trace_specs.add_argument("--max-edges", type=int, default=None)
+    full_answer_trace_specs.add_argument(
+        "--exact-trace-internal-dtype",
+        choices=["fp32", "fp64", "float32", "float64"],
+        default=None,
+    )
+    full_answer_trace_specs.set_defaults(func=_cmd_build_full_answer_trace_specs)
+
+    full_answer_shards = subparsers.add_parser(
+        "build-full-answer-shards",
+        help="Pack full-answer trace specs into deterministic LPT shards",
+    )
+    full_answer_shards.add_argument("--trace-specs", type=Path, required=True)
+    full_answer_shards.add_argument("--shard-count", type=int, required=True)
+    full_answer_shards.add_argument("--output", type=Path, required=True)
+    full_answer_shards.set_defaults(func=_cmd_build_full_answer_shards)
+
+    full_answer_run_shard = subparsers.add_parser(
+        "run-full-answer-shard",
+        help="List or dry-run one full-answer trace shard",
+    )
+    full_answer_run_shard.add_argument("--trajectory", type=Path, required=True)
+    full_answer_run_shard.add_argument("--trace-specs", type=Path, required=True)
+    full_answer_run_shard.add_argument("--shards", type=Path, required=True)
+    full_answer_run_shard.add_argument("--shard-id", type=int, required=True)
+    full_answer_run_shard.add_argument("--output-root", type=Path, default=None)
+    full_answer_run_shard.add_argument(
+        "--list",
+        action="store_true",
+        help="Print assigned specs without writing outputs",
+    )
+    full_answer_run_shard.add_argument(
+        "--dry-run", action="store_true", help="Write dry-run shard outputs"
+    )
+    full_answer_run_shard.set_defaults(func=_cmd_run_full_answer_shard)
+
+    full_answer_aggregate = subparsers.add_parser(
+        "aggregate-full-answer-shards",
+        help="Aggregate full-answer shard outputs",
+    )
+    full_answer_aggregate.add_argument("--run-root", type=Path, required=True)
+    full_answer_aggregate.set_defaults(func=_cmd_aggregate_full_answer_shards)
 
     build_scenarios = subparsers.add_parser(
         "build-scenarios",
