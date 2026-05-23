@@ -2661,6 +2661,115 @@ Optimization readout:
    telemetry does not indicate Phase 3 row transfer or denominator work as an
    important bottleneck.
 
+## Recent launch update — Phase 4 row-reduction fast comparison
+
+Purpose: validate the post-telemetry `phase4_row_reduction=gpu_v1` prototype and
+collect the finer refresh substage telemetry under the same post-commit code for
+the two normal fast prompts.
+
+Code state used at launch:
+
+- project repo commit: `3f662cf` — plumb Phase 4 row reduction scenarios,
+- paired library repo commit: `dd40750` — implement Phase 4 GPU row reduction
+  prototype,
+- project and library worktrees each had an untracked
+  `PHASE34_OPTIMIZATION_IDEAS.md` note file not used by the launch,
+- scenario file was a one-off untracked launch file:
+  `experiments/generated/exact_trace_bench/exact_trace_phase4_row_reduction_fast_cardinal_scenarios.json`.
+
+Launch metadata:
+
+- cluster: `cardinal`,
+- SLURM array job: `10341982`, array `0-3`, all tasks completed successfully,
+- run id / output bucket: `20260523_013047_phase4-row-reduction-fast`,
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260523_013047_phase4-row-reduction-fast`.
+
+Scenarios:
+
+- `828_base` with `phase4_row_reduction=off`,
+- `828_base` with `phase4_row_reduction=gpu_v1`,
+- `361_base` with `phase4_row_reduction=off`,
+- `361_base` with `phase4_row_reduction=gpu_v1`.
+
+Shared settings:
+
+- `max_steps=1`, `method=exact`, compact output,
+- `phase4_scheduler_mode=planner_v1`,
+- `phase4_scheduler_telemetry_detail=debug`,
+- `telemetry_max_events=250000`,
+- `plan_feature_batch_size=true`, `feature_batch_size_max=512`,
+- `decoder_chunk_size=4096`, decoder cache disabled,
+- `exact_trace_internal_dtype=fp32`.
+
+Top-level results:
+
+| Prompt | Row reduction | Scenario duration | Phase 4 wall | sacct MaxRSS | CUDA peak reserved |
+|---|---:|---:|---:|---:|---:|
+| `828_base` | `off` | `394.51 s` | `91.02 s` | `177.32 GiB` | `55.95 GiB` |
+| `828_base` | `gpu_v1` | `709.51 s` | `408.09 s` | `177.29 GiB` | `55.95 GiB` |
+| `361_base` | `off` | `656.55 s` | `190.54 s` | `280.66 GiB` | `71.72 GiB` |
+| `361_base` | `gpu_v1` | `1109.28 s` | `708.08 s` | `247.09 GiB` | `71.72 GiB` |
+
+Compact parity:
+
+- `gpu_v1` was exact against the same-prompt `off` baseline for both prompts:
+  - feature Jaccard `1.0`,
+  - edge Jaccard `1.0`,
+  - weighted-edge Jaccard `1.0`,
+  - retained edge order and weights were exactly equal.
+
+Phase 4 executor telemetry:
+
+| Prompt | Row reduction | GPU→CPU row bytes | Reported bytes saved | CPU staging | denominator | row-store write |
+|---|---:|---:|---:|---:|---:|---:|
+| `828_base` | `off` | `91.42 GiB` | `0.00 GiB` | `7.05 s` | `6.49 s` | `41.05 s` |
+| `828_base` | `gpu_v1` | `91.36 GiB` | `0.06 GiB` | `20.42 s` | `1.31 s` | `349.21 s` |
+| `361_base` | `off` | `159.52 GiB` | `0.00 GiB` | `18.50 s` | `15.55 s` | `77.04 s` |
+| `361_base` | `gpu_v1` | `159.42 GiB` | `0.10 GiB` | `35.24 s` | `2.03 s` | `591.10 s` |
+
+Interpretation:
+
+- The `gpu_v1` prototype is numerically correct but clearly slower and should
+  not be promoted.
+- It reduced denominator time substantially, but denominator savings were
+  overwhelmed by row-store write regression.
+- It saved only `0.06--0.10 GiB` of GPU→CPU transfer because the persistent
+  feature-row block dominates the row payload; denominator-input columns are a
+  tiny tail relative to `total_active_feats`.
+- The row-store write regression points at the feature-row CPU staging / file-
+  backed append path, not at frontier math. The likely issue is that `gpu_v1`
+  routes through `_FileBackedFeatureRowStore.append_rows` with a freshly copied
+  feature-row CPU tensor, while the `off` baseline uses the existing full-row CPU
+  staging path and then writes the row store much more cheaply.
+
+Refresh telemetry readout:
+
+| Prompt | Row reduction | Partial influence | accounted | unaccounted | transfer/cast/abs |
+|---|---:|---:|---:|---:|---:|
+| `828_base` | `off` | `28.06 s` | `27.46 s` | `0.34 s` | `19.68 s` |
+| `828_base` | `gpu_v1` | `28.53 s` | `28.01 s` | `0.24 s` | `20.62 s` |
+| `361_base` | `off` | `65.06 s` | `64.38 s` | `0.17 s` | `44.00 s` |
+| `361_base` | `gpu_v1` | `65.09 s` | `64.21 s` | `0.42 s` | `46.92 s` |
+
+The finer refresh telemetry worked: the previous large unaccounted partial-
+influence gap is mostly explained. The dominant measured refresh substage is now
+`transfer/cast/abs`, making it a concrete next refresh optimization target.
+
+Updated optimization readout:
+
+1. Treat current `gpu_v1` as a diagnostic / known-slow GPU-denominator prototype,
+   not as a speed candidate.
+2. The immediate Phase 4 speed work should target row-store write/staging:
+   - add append-side substage telemetry,
+   - use a reusable, contiguous feature-row CPU write buffer,
+   - only then reconsider a GPU-denominator backend.
+3. The refresh speed work should target transfer/cast/abs in
+   `compute_partial_feature_influences_streaming`, starting with a low-risk fused
+   transfer/cast helper plus in-place `abs_()` on owned GPU chunks.
+4. Planner preflight and Phase 3 replay remain separate optimization tracks; this
+   run primarily refines the Phase 4 executor and refresh priorities.
+
 ## Status of this note
 
 This file is descriptive, not normative.
