@@ -32,7 +32,11 @@ from .full_answer.selection import parse_indices_csv, select_tokens
 from .full_answer.sharding import build_lpt_shards
 from .graph_compare import compare_artifact_dirs
 from .io_utils import ensure_dir
-from .jobs import render_fixture_prep_plan, render_launch_plan
+from .jobs import (
+    render_fixture_prep_plan,
+    render_full_answer_trajectory_plan,
+    render_launch_plan,
+)
 from .phase0_replay_matrix_compare import compare_phase0_replay_matrix_to_json
 from .phase3_seed_bundle_compare import compare_phase3_seed_bundles_to_json
 from .presets import preset_names, run_preset
@@ -600,6 +604,52 @@ def _cmd_aggregate_full_answer_shards(args: argparse.Namespace) -> None:
     print(json.dumps(aggregate_shards(args.run_root), indent=2))
 
 
+def _cmd_run_full_answer_trajectory(args: argparse.Namespace) -> None:
+    from .full_answer.trajectory import generate_trajectory
+
+    trajectory = generate_trajectory(
+        prompt_path=args.prompt_path,
+        fixture_catalog=args.fixture_catalog,
+        fixture_name=args.fixture_name,
+        output=args.output,
+        trajectory_id=args.trajectory_id,
+        max_new_tokens=args.max_new_tokens,
+        temperature=args.temperature,
+        seed=args.seed,
+        include_prompt_text=args.include_prompt_text,
+    )
+    print(
+        json.dumps(
+            {"output": str(args.output), "trajectory_id": trajectory["trajectory_id"]},
+            indent=2,
+        )
+    )
+
+
+def _cmd_submit_full_answer_trajectory(args: argparse.Namespace) -> None:
+    plan = render_full_answer_trajectory_plan(
+        cluster=args.cluster,
+        prompt_path=args.prompt_path,
+        fixture_catalog=args.fixture_catalog,
+        fixture_name=args.fixture_name,
+        output=args.output,
+        trajectory_id=args.trajectory_id,
+        max_new_tokens=args.max_new_tokens,
+        temperature=args.temperature,
+        seed=args.seed,
+        include_prompt_text=args.include_prompt_text,
+        immutable_workspace=not args.no_immutable_workspace,
+        snapshot_root=args.snapshot_root,
+        source_root=args.source_root,
+        workspace_label=args.workspace_label,
+        walltime=args.walltime,
+        run_name=args.run_name,
+    )
+    if not args.print_only:
+        subprocess.run(plan["sbatch_argv"], check=True)
+    print(json.dumps(plan, indent=2))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Exact trace benchmark harness helpers"
@@ -671,6 +721,58 @@ def build_parser() -> argparse.ArgumentParser:
     )
     full_answer_aggregate.add_argument("--run-root", type=Path, required=True)
     full_answer_aggregate.set_defaults(func=_cmd_aggregate_full_answer_shards)
+
+    full_answer_trajectory = subparsers.add_parser(
+        "run-full-answer-trajectory",
+        help="SLURM-only: generate and freeze one full-answer trajectory JSON",
+    )
+    full_answer_trajectory.add_argument("--prompt-path", type=Path, default=None)
+    full_answer_trajectory.add_argument("--fixture-catalog", type=Path, default=None)
+    full_answer_trajectory.add_argument("--fixture-name", default=None)
+    full_answer_trajectory.add_argument("--output", type=Path, required=True)
+    full_answer_trajectory.add_argument("--trajectory-id", default=None)
+    full_answer_trajectory.add_argument("--max-new-tokens", type=int, required=True)
+    full_answer_trajectory.add_argument("--temperature", type=float, default=0.0)
+    full_answer_trajectory.add_argument("--seed", type=int, default=None)
+    full_answer_trajectory.add_argument("--include-prompt-text", action="store_true")
+    full_answer_trajectory.set_defaults(func=_cmd_run_full_answer_trajectory)
+
+    full_answer_trajectory_submit = subparsers.add_parser(
+        "submit-full-answer-trajectory",
+        help="Render or submit a SLURM job to prepare a full-answer trajectory",
+    )
+    full_answer_trajectory_submit.add_argument(
+        "--cluster", choices=["ascend", "cardinal"], default="ascend"
+    )
+    full_answer_trajectory_submit.add_argument("--prompt-path", type=Path, default=None)
+    full_answer_trajectory_submit.add_argument(
+        "--fixture-catalog", type=Path, default=None
+    )
+    full_answer_trajectory_submit.add_argument("--fixture-name", default=None)
+    full_answer_trajectory_submit.add_argument("--output", type=Path, required=True)
+    full_answer_trajectory_submit.add_argument("--trajectory-id", default=None)
+    full_answer_trajectory_submit.add_argument(
+        "--max-new-tokens", type=int, required=True
+    )
+    full_answer_trajectory_submit.add_argument("--temperature", type=float, default=0.0)
+    full_answer_trajectory_submit.add_argument("--seed", type=int, default=None)
+    full_answer_trajectory_submit.add_argument(
+        "--include-prompt-text", action="store_true"
+    )
+    full_answer_trajectory_submit.add_argument(
+        "--no-immutable-workspace", action="store_true"
+    )
+    full_answer_trajectory_submit.add_argument(
+        "--snapshot-root", type=Path, default=DEFAULT_SNAPSHOT_ROOT
+    )
+    full_answer_trajectory_submit.add_argument(
+        "--source-root", type=Path, default=REPO_ROOT
+    )
+    full_answer_trajectory_submit.add_argument("--workspace-label", default=None)
+    full_answer_trajectory_submit.add_argument("--walltime", default=None)
+    full_answer_trajectory_submit.add_argument("--run-name", default=None)
+    full_answer_trajectory_submit.add_argument("--print-only", action="store_true")
+    full_answer_trajectory_submit.set_defaults(func=_cmd_submit_full_answer_trajectory)
 
     build_scenarios = subparsers.add_parser(
         "build-scenarios",

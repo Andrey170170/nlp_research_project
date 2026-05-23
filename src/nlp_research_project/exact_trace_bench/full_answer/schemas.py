@@ -27,6 +27,8 @@ class Trajectory(TypedDict, total=False):
     prompt_token_count: int
     prompt_token_ids: list[int]
     generated_tokens: list[GeneratedToken]
+    prompt_text: str
+    fixture_metadata: dict[str, Any]
 
 
 class TraceSpec(TypedDict):
@@ -49,6 +51,11 @@ def load_trajectory(path: Path) -> Trajectory:
         raise ValueError(f"trajectory must be a JSON object: {path}")
     validate_trajectory(payload)
     return payload
+
+
+def write_trajectory(path: Path, trajectory: Trajectory) -> None:
+    validate_trajectory(trajectory)
+    write_json(path, cast(dict[str, Any], trajectory))
 
 
 def validate_trajectory(trajectory: Mapping[str, Any]) -> None:

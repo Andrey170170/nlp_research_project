@@ -59,6 +59,8 @@ def test_full_answer_cli_help_is_login_safe() -> None:
     assert run_cli("build-full-answer-shards", "--help").returncode == 0
     assert run_cli("run-full-answer-shard", "--help").returncode == 0
     assert run_cli("aggregate-full-answer-shards", "--help").returncode == 0
+    assert run_cli("run-full-answer-trajectory", "--help").returncode == 0
+    assert run_cli("submit-full-answer-trajectory", "--help").returncode == 0
 
 
 def test_full_answer_cli_writes_planning_artifacts(tmp_path: Path) -> None:
@@ -101,3 +103,35 @@ def test_full_answer_cli_writes_planning_artifacts(tmp_path: Path) -> None:
     )
     assert proc.returncode == 0, proc.stderr
     assert json.loads(shards_path.read_text(encoding="utf-8"))["schema_version"] == 1
+
+
+def test_full_answer_trajectory_print_only_plan_uses_snapshot_template(
+    tmp_path: Path,
+) -> None:
+    prompt_path = tmp_path / "prompt.txt"
+    prompt_path.write_text("Question: 1+1?", encoding="utf-8")
+    proc = run_cli(
+        "submit-full-answer-trajectory",
+        "--cluster",
+        "ascend",
+        "--prompt-path",
+        str(prompt_path),
+        "--output",
+        str(tmp_path / "trajectory.json"),
+        "--max-new-tokens",
+        "4",
+        "--snapshot-root",
+        str(tmp_path / "snapshots"),
+        "--workspace-label",
+        "test-full-answer",
+        "--print-only",
+    )
+    assert proc.returncode == 0, proc.stderr
+    plan = json.loads(proc.stdout)
+    assert plan["immutable_workspace"] is True
+    assert "test-full-answer" in plan["workspace_root"]
+    assert plan["sbatch_script"].endswith(
+        "slurm/exact_trace_bench/full_answer_prepare.ascend.sbatch"
+    )
+    assert "WORKSPACE_ROOT=" in plan["sbatch_command"]
+    assert "LIB_WORKSPACE_ROOT=" in plan["sbatch_command"]

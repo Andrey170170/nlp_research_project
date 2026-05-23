@@ -55,6 +55,17 @@ SBATCH_FIXTURE_PREP_SCRIPTS: dict[str, Path] = {
     / "prepare_weekend_prefix_fixtures.cardinal.sbatch",
 }
 
+SBATCH_FULL_ANSWER_TRAJECTORY_SCRIPTS: dict[str, Path] = {
+    "ascend": REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "full_answer_prepare.ascend.sbatch",
+    "cardinal": REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "full_answer_prepare.cardinal.sbatch",
+}
+
 GOAL_BY_TIER: dict[str, str] = {
     "fast": "Quick sanity sweep across base fixtures.",
     "anomaly": "Reproduce and monitor anomaly-focused fixtures.",
@@ -427,6 +438,103 @@ def render_fixture_prep_plan(
         "output_dir": str(resolved_output_dir),
         "decoder_chunk_size": decoder_chunk_size,
         "cross_batch_decoder_cache_bytes": cross_batch_decoder_cache_bytes,
+        "run_name": resolved_run_name,
+        "workspace_root": str(workspace),
+        "library_workspace_root": None
+        if library_workspace is None
+        else str(library_workspace),
+        "immutable_workspace": immutable_workspace,
+        "sbatch_script": str(launch_script_path),
+        "sbatch_argv": command_parts,
+        "sbatch_command": shlex.join(command_parts),
+    }
+
+
+def render_full_answer_trajectory_plan(
+    *,
+    cluster: str,
+    output: Path,
+    max_new_tokens: int,
+    prompt_path: Path | None = None,
+    fixture_catalog: Path | None = None,
+    fixture_name: str | None = None,
+    trajectory_id: str | None = None,
+    temperature: float = 0.0,
+    seed: int | None = None,
+    include_prompt_text: bool = False,
+    immutable_workspace: bool = True,
+    snapshot_root: Path = DEFAULT_SNAPSHOT_ROOT,
+    source_root: Path = REPO_ROOT,
+    workspace_label: str | None = None,
+    walltime: str | None = None,
+    run_name: str | None = None,
+) -> dict[str, Any]:
+    if cluster not in SBATCH_FULL_ANSWER_TRAJECTORY_SCRIPTS:
+        raise ValueError(f"Unsupported full-answer trajectory cluster: {cluster!r}")
+    if max_new_tokens <= 0:
+        raise ValueError("max_new_tokens must be positive")
+    if prompt_path is None and (fixture_catalog is None or fixture_name is None):
+        raise ValueError("provide prompt_path or fixture_catalog + fixture_name")
+
+    workspace = resolve_launch_workspace(
+        immutable=immutable_workspace,
+        snapshot_root=snapshot_root,
+        source_root=source_root,
+        label=workspace_label,
+    ).resolve()
+    library_workspace = sibling_library_root(workspace)
+    source_root = source_root.resolve()
+    script_path = SBATCH_FULL_ANSWER_TRAJECTORY_SCRIPTS[cluster].resolve()
+    launch_script_path = _path_in_workspace(
+        script_path,
+        workspace=workspace,
+        source_root=source_root,
+    )
+
+    export_parts = [
+        "ALL",
+        f"OUTPUT_TRAJECTORY={output.resolve()}",
+        f"MAX_NEW_TOKENS={max_new_tokens}",
+        f"TEMPERATURE={temperature}",
+        f"INCLUDE_PROMPT_TEXT={1 if include_prompt_text else 0}",
+        f"WORKSPACE_ROOT={workspace}",
+        f"LIB_WORKSPACE_ROOT={library_workspace or ''}",
+    ]
+    if prompt_path is not None:
+        export_parts.append(
+            f"PROMPT_PATH={_path_in_workspace(prompt_path, workspace=workspace, source_root=source_root)}"
+        )
+    if fixture_catalog is not None:
+        export_parts.append(
+            f"FIXTURE_CATALOG={_path_in_workspace(fixture_catalog, workspace=workspace, source_root=source_root)}"
+        )
+    if fixture_name is not None:
+        export_parts.append(f"FIXTURE_NAME={fixture_name}")
+    if trajectory_id is not None:
+        export_parts.append(f"TRAJECTORY_ID={trajectory_id}")
+    if seed is not None:
+        export_parts.append(f"SEED={seed}")
+    resolved_run_name = (
+        _normalize_free_text(run_name) or f"full answer trajectory {cluster}"
+    )
+    command_parts = [
+        "sbatch",
+        *([f"--time={walltime}"] if walltime else []),
+        f"--job-name={_slugify_run_name(resolved_run_name)}",
+        f"--export={','.join(export_parts)}",
+        str(launch_script_path),
+    ]
+    return {
+        "cluster": cluster,
+        "output": str(output.resolve()),
+        "max_new_tokens": max_new_tokens,
+        "temperature": temperature,
+        "seed": seed,
+        "include_prompt_text": include_prompt_text,
+        "prompt_path": None if prompt_path is None else str(prompt_path),
+        "fixture_catalog": None if fixture_catalog is None else str(fixture_catalog),
+        "fixture_name": fixture_name,
+        "trajectory_id": trajectory_id,
         "run_name": resolved_run_name,
         "workspace_root": str(workspace),
         "library_workspace_root": None
