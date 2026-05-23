@@ -46,6 +46,7 @@ EXACT_MODE_KNOB_KEYS = (
     "phase4_scheduler_telemetry_detail",
     "phase4_refresh_optimization",
     "phase4_row_executor",
+    "phase4_row_reduction",
     "cross_cluster_debug",
     "telemetry_max_events",
 )

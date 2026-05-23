@@ -2243,6 +2243,424 @@ Post-completion analysis checklist:
   count/time,
 - inspect CUDA peak reserved and sacct MaxRSS.
 
+Status / interpretation notes:
+
+- all 12 array tasks completed successfully (`COMPLETED 0:0`),
+- all compact comparisons checked were exact (`feature_jaccard=1.0`,
+  `edge_jaccard=1.0`, `weighted_edge_jaccard=1.0`):
+  - `active_encoder_cpu` vs baseline,
+  - `rowstore_fadvise` vs baseline,
+  - `active_encoder_cpu + rowstore_fadvise` vs baseline,
+  - corrected Phase-1-only cap vs combo,
+  - cache8g vs combo,
+- corrected Phase-1-only cap is now exact but should remain a fallback /
+  feasibility knob, not a speed optimization:
+  - `828_base`: `1149.68 s`, `-0.3%` vs combo,
+  - `361_base`: `1353.79 s`, `+3.4%` vs combo,
+- combo alone is exact but not clearly additive:
+  - `828_base`: `1153.25 s`, `-4.2%` vs baseline, but slower than
+    `active_encoder_cpu` alone (`865.37 s`) and `rowstore_fadvise` alone
+    (`963.96 s`),
+  - `361_base`: `1308.89 s`, `+3.7%` vs baseline and slower than
+    `rowstore_fadvise` alone (`1165.51 s`),
+- however, cache8g on top of the combo was the strongest result and remains exact:
+  - `828_base`: `755.48 s`, `-34.5%` vs combo, `-37.3%` vs baseline,
+  - `361_base`: `1162.06 s`, `-11.2%` vs combo, `-7.9%` vs baseline,
+  - cache telemetry showed useful hits and no evictions:
+    - `828_base`: hits/misses/evictions `500/145/0`, decoder loads
+      `2119 -> 1619`,
+    - `361_base`: hits/misses/evictions `485/145/0`, decoder loads
+      `3194 -> 2709`,
+- memory impact of cache8g was acceptable in this matrix:
+  - CUDA peak reserved increased from combo `10.81 -> 17.04 GiB` for `828_base`
+    and `14.68 -> 18.76 GiB` for `361_base`,
+  - sacct MaxRSS stayed close to combo (`181.21 -> 181.22 GiB` for `828_base`,
+    `287.56 -> 289.49 GiB` for `361_base`).
+
+Decision:
+
+- keep `active_encoder_cpu + rowstore_fadvise` available as an explicit combo,
+  especially because the strongest cache result was measured on top of it,
+- do **not** promote the combo alone as a standalone/default optimization yet,
+- carry forward cache8g as the next promising exact optimization path,
+- run a focused interaction check before simplifying the default candidate:
+  - `active_encoder_cpu + cache8g`,
+  - `rowstore_fadvise + cache8g`,
+  - `active_encoder_cpu + rowstore_fadvise + cache8g`.
+
+## Recent launch update — cache8g interaction matrix
+
+Purpose: focused follow-up to decide whether the cache8g candidate should carry
+`active_encoder_cpu`, `rowstore_fadvise`, or both. This intentionally re-runs the
+combo+cache8g case in the same array as the two ablations to reduce timing-noise
+ambiguity.
+
+Code state used at launch:
+
+- project repo commit: `391cc37` — `record next combo matrix launch`
+  - project worktree had uncommitted `EXPERIMENTS.md` interpretation notes and a
+    new generated scenario file included in the immutable launch snapshot,
+  - project worktree also had untracked `.tmp_exact_trace_extract_hybrid/`
+    extraction scratch files unrelated to the launch definition,
+- library repo commit: `493760d` — `decouple phase1 trace batch cap`
+  - library worktree was clean and ahead of origin by seven local commits.
+
+Scenario file:
+
+- `experiments/generated/exact_trace_bench/exact_trace_cache8g_interaction_ascend_scenarios.json`
+
+Launch metadata:
+
+- SLURM array job: `5148713` on cluster `ascend`, array indices `0-5`
+- initial scheduler status after submit: pending (`PD`)
+- run id / launch id: `20260430_004931_523439_cache8g-interaction-matrix`
+- run name: `cache8g interaction matrix`
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260430_004931_523439_cache8g-interaction-matrix`
+- immutable project snapshot:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260430_004931/nlp_research_project`
+- immutable library snapshot:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260430_004931/circuit-tracer_chunked`
+
+Scenarios:
+
+- `active_encoder_cpu + cache8g` for `828_base` and `361_base`,
+- `rowstore_fadvise + cache8g` for `828_base` and `361_base`,
+- `active_encoder_cpu + rowstore_fadvise + cache8g` for `828_base` and
+  `361_base`.
+
+Key settings:
+
+- all six scenarios use `cross_batch_decoder_cache_bytes=8589934592`,
+- `phase4_scheduler_mode=planner_v1`,
+- `attribution_batch_size=128`, `feature_batch_size=128`, `logit_batch_size=128`,
+- `decoder_chunk_size=2048`,
+- `exact_trace_internal_dtype=fp32`,
+- `phase1_trace_batch_policy=legacy`,
+- all optimization knobs remain explicit; no global defaults were changed.
+
+Pre-submit validation:
+
+- project lint passed for the touched exact-trace launcher/scenario plumbing,
+- scenario list loaded all 6 focused interaction scenarios,
+- project and sibling library git states were captured before immutable launch
+  snapshot creation.
+
+Post-completion analysis checklist:
+
+- compare all three cache8g variants within this matrix by prompt,
+- compare compact parity against previous exact baselines/combo outputs,
+- inspect decoder cache hits/misses/evictions/resident bytes and decoder load
+  count/time,
+- inspect CUDA peak reserved and sacct MaxRSS,
+- decide whether to keep both `active_encoder_cpu` and `rowstore_fadvise` in the
+  next cache8g candidate or simplify to one side of the interaction.
+
+Status / interpretation notes:
+
+- all 6 array tasks completed successfully (`COMPLETED 0:0`),
+- all compact comparisons checked were exact (`feature_jaccard=1.0`,
+  `edge_jaccard=1.0`, `weighted_edge_jaccard=1.0`):
+  - `rowstore_fadvise + cache8g` vs `active_encoder_cpu + cache8g`,
+  - `active_encoder_cpu + rowstore_fadvise + cache8g` vs
+    `active_encoder_cpu + cache8g`,
+  - rerun combo+cache8g vs the previous combo+cache8g run,
+- decoder-cache behavior was stable across the interaction matrix:
+  - `828_base`: hits/misses/evictions `500/145/0`, decoder loads `1619`,
+  - `361_base`: hits/misses/evictions `485/145/0`, decoder loads `2709`,
+  - no cache evictions in any scenario.
+
+Performance summary:
+
+| Prompt | Variant | Duration | Relative note | sacct MaxRSS | CUDA peak reserved |
+|---|---:|---:|---|---:|---:|
+| `828_base` | `active_encoder_cpu + cache8g` | `769.33 s` | reference | `181.69 GiB` | `17.04 GiB` |
+| `828_base` | `rowstore_fadvise + cache8g` | `840.70 s` | `+9.3%` vs active+cache | `173.18 GiB` | `17.04 GiB` |
+| `828_base` | `active_encoder_cpu + rowstore_fadvise + cache8g` | `752.86 s` | `-2.1%` vs active+cache | `181.20 GiB` | `17.04 GiB` |
+| `361_base` | `active_encoder_cpu + cache8g` | `1151.11 s` | reference | `289.50 GiB` | `18.76 GiB` |
+| `361_base` | `rowstore_fadvise + cache8g` | `1154.32 s` | `+0.3%` vs active+cache | `273.43 GiB` | `18.76 GiB` |
+| `361_base` | `active_encoder_cpu + rowstore_fadvise + cache8g` | `1327.76 s` | `+15.3%` vs active+cache | `289.70 GiB` | `18.76 GiB` |
+
+Decision:
+
+- The focused interaction check argues **against promoting the full
+  `active_encoder_cpu + rowstore_fadvise + cache8g` combo** as the default next
+  cache candidate:
+  - it is slightly fastest on `828_base`, but only by about `2%`,
+  - it substantially regresses `361_base` in the same matrix.
+- Preferred next general candidate: **`active_encoder_cpu + cache8g`**.
+  - It is exact, has stable cache telemetry, and is fastest or effectively tied
+    across both prompts.
+- Preferred memory-sensitive fallback: **`rowstore_fadvise + cache8g`**.
+  - It is exact and nearly tied on `361_base`, with lower sacct MaxRSS, but it is
+    clearly slower on `828_base`.
+- Keep the full combo available as an explicit scenario for context or
+  prompt-specific retests, but do not promote it before broader ablations.
+
+## Recent launch update — Wave 1 cache/chunk current-code re-sweep
+
+Purpose: repeat the most report-relevant cache/chunk sweep under the current
+post-fix exact path, because the codebase has changed substantially since the
+initial batch/chunk/cache sweeps. This run is intended to provide current-code
+comparative evidence and identify the new cache/chunk knee before broader prompt
+generalization or batch-size sweeps.
+
+Code state used at launch:
+
+- project repo commit: `391cc37` — `record next combo matrix launch`
+  - project worktree had uncommitted `EXPERIMENTS.md` updates and generated
+    scenario files included in the immutable launch snapshot,
+  - project worktree also had untracked `.tmp_exact_trace_extract_hybrid/`
+    extraction scratch files unrelated to the launch definition,
+- library repo commit: `493760d` — `decouple phase1 trace batch cap`
+  - library worktree was clean and ahead of origin by seven local commits.
+
+Scenario file:
+
+- `experiments/generated/exact_trace_bench/exact_trace_wave1_cache_chunk_resweep_ascend_scenarios.json`
+
+Launch metadata:
+
+- SLURM array job: `5155890` on cluster `ascend`, array indices `0-23`
+- initial scheduler status after submit: pending (`PD`)
+- run id / launch id: `20260430_181501_740541_wave1-cache-chunk-resweep`
+- run name: `wave1 cache chunk resweep`
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260430_181501_740541_wave1-cache-chunk-resweep`
+- immutable project snapshot:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260430_181501/nlp_research_project`
+- immutable library snapshot:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260430_181501/circuit-tracer_chunked`
+
+Matrix:
+
+- prompts: `828_base`, `361_base`,
+- fixed settings:
+  - `exact_encoder_residency=active_cpu`,
+  - `phase4_scheduler_mode=planner_v1`,
+  - `attribution_batch_size=128`, `feature_batch_size=128`,
+    `logit_batch_size=128`,
+  - `exact_trace_internal_dtype=fp32`,
+  - `phase1_trace_batch_policy=legacy`,
+  - `row_store_cache_control=off`,
+- swept settings:
+  - `decoder_chunk_size in {1024, 2048, 4096}`,
+  - `cross_batch_decoder_cache_bytes in {0, 4294967296, 8589934592, 12884901888}`.
+
+Pre-submit validation:
+
+- project lint passed for the touched exact-trace launcher/scenario plumbing,
+- scenario list loaded all 24 Wave 1 scenarios,
+- project and sibling library git states were captured before immutable launch
+  snapshot creation.
+
+Post-completion analysis checklist:
+
+- verify all 24 tasks complete and produce compact artifacts,
+- compare compact parity against cache0 baselines within each prompt/chunk where
+  meaningful,
+- tabulate duration, Phase 4 wall time, refresh count/elapsed, feature-batch
+  elapsed, decoder load count/time, cache hits/misses/evictions, CUDA peak
+  reserved, and sacct MaxRSS,
+- plot or summarize runtime vs cache size for each chunk size and prompt,
+- identify whether the cache knee is `4GiB`, `8GiB`, or `12GiB`,
+- identify whether `1024`, `2048`, or `4096` is the best chunk size under the
+  current code path,
+- decide Wave 2 batch-size sweep settings from the best current-code cache/chunk
+  region.
+
+Status / interpretation notes:
+
+- all 24 array tasks completed successfully (`COMPLETED 0:0`),
+- all scenario-level statuses were `success` and all compact artifacts were
+  produced,
+- cache size changes were exact **within a fixed decoder chunk size**:
+  - for every prompt/chunk pair, cache `{0, 4GiB, 8GiB, 12GiB}` had
+    `feature_jaccard=1.0`, `edge_jaccard=1.0`, and
+    `weighted_edge_jaccard=1.0` vs same-chunk cache0,
+- changing `decoder_chunk_size` produced small compact-output drift vs the
+  `c2048/cache0` reference, even with cache0:
+  - `828_base`, `c1024` vs `c2048`: edge Jaccard `0.999831`, weighted
+    `0.999593`,
+  - `828_base`, `c4096` vs `c2048`: edge Jaccard `0.998984`, weighted
+    `0.998955`,
+  - `361_base`, `c1024` vs `c2048`: edge Jaccard `0.999153`, weighted
+    `0.999104`,
+  - `361_base`, `c4096` vs `c2048`: edge Jaccard `0.997632`, weighted
+    `0.997695`,
+  - interpretation: cache residency is exact for a fixed chunking plan, but
+    chunk-size changes alter floating/replay ordering enough to slightly perturb
+    retained edge membership/weights. Treat chunk-size sweeps as a performance /
+    numerical-sensitivity ablation, not as exact-equivalent to the canonical
+    `c2048` output.
+
+Performance summary vs the in-matrix `active_encoder_cpu, c2048, cache0`
+baseline:
+
+| Prompt | Chunk | Cache | Duration | Δ vs `c2048/cache0` | sacct MaxRSS | CUDA peak reserved | Cache hits/misses/evictions |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `828_base` | `1024` | `0GiB` | `842.16 s` | `-11.4%` | `182.78 GiB` | `9.26 GiB` | `0/0/0` |
+| `828_base` | `1024` | `4GiB` | `1172.57 s` | `+23.4%` | `182.59 GiB` | `12.08 GiB` | `340/990/876` |
+| `828_base` | `1024` | `8GiB` | `1417.43 s` | `+49.2%` | `149.21 GiB` | `13.72 GiB` | `1040/290/0` |
+| `828_base` | `1024` | `12GiB` | `846.87 s` | `-10.9%` | `182.41 GiB` | `13.72 GiB` | `1040/290/0` |
+| `828_base` | `2048` | `0GiB` | `949.99 s` | reference | `148.06 GiB` | `10.81 GiB` | `0/0/0` |
+| `828_base` | `2048` | `4GiB` | `711.17 s` | `-25.1%` | `152.28 GiB` | `15.22 GiB` | `150/495/438` |
+| `828_base` | `2048` | `8GiB` | `752.90 s` | `-20.7%` | `181.13 GiB` | `17.04 GiB` | `500/145/0` |
+| `828_base` | `2048` | `12GiB` | `738.04 s` | `-22.3%` | `148.24 GiB` | `17.04 GiB` | `500/145/0` |
+| `828_base` | `4096` | `0GiB` | `663.70 s` | `-30.1%` | `147.52 GiB` | `15.32 GiB` | `0/0/0` |
+| `828_base` | `4096` | `4GiB` | `1093.92 s` | `+15.2%` | `149.73 GiB` | `19.54 GiB` | `111/297/263` |
+| `828_base` | `4096` | `8GiB` | `873.75 s` | `-8.0%` | `152.61 GiB` | `22.72 GiB` | `321/87/0` |
+| `828_base` | `4096` | `12GiB` | `649.91 s` | `-31.6%` | `147.53 GiB` | `22.72 GiB` | `321/87/0` |
+| `361_base` | `1024` | `0GiB` | `1254.90 s` | `+5.4%` | `283.59 GiB` | `14.64 GiB` | `0/0/0` |
+| `361_base` | `1024` | `4GiB` | `988.85 s` | `-17.0%` | `254.55 GiB` | `14.64 GiB` | `300/990/876` |
+| `361_base` | `1024` | `8GiB` | `1020.16 s` | `-14.3%` | `254.44 GiB` | `16.16 GiB` | `1000/290/0` |
+| `361_base` | `1024` | `12GiB` | `1002.26 s` | `-15.8%` | `254.41 GiB` | `16.16 GiB` | `1000/290/0` |
+| `361_base` | `2048` | `0GiB` | `1190.90 s` | reference | `256.50 GiB` | `14.68 GiB` | `0/0/0` |
+| `361_base` | `2048` | `4GiB` | `1405.11 s` | `+18.0%` | `256.27 GiB` | `17.12 GiB` | `135/495/438` |
+| `361_base` | `2048` | `8GiB` | `1156.32 s` | `-2.9%` | `287.25 GiB` | `18.76 GiB` | `485/145/0` |
+| `361_base` | `2048` | `12GiB` | `1295.58 s` | `+8.8%` | `258.02 GiB` | `18.76 GiB` | `485/145/0` |
+| `361_base` | `4096` | `0GiB` | `1496.50 s` | `+25.7%` | `291.83 GiB` | `19.17 GiB` | `0/0/0` |
+| `361_base` | `4096` | `4GiB` | `1641.72 s` | `+37.9%` | `258.50 GiB` | `21.77 GiB` | `111/297/263` |
+| `361_base` | `4096` | `8GiB` | `1050.46 s` | `-11.8%` | `258.42 GiB` | `24.35 GiB` | `321/87/0` |
+| `361_base` | `4096` | `12GiB` | `1153.73 s` | `-3.1%` | `258.44 GiB` | `24.35 GiB` | `321/87/0` |
+
+Current readout:
+
+- If strict compact equivalence to the canonical `c2048` output is required,
+  stay at `decoder_chunk_size=2048`; within that chunk size, cache changes are
+  exact.
+- For `c2048`, `cache8g` remains the safest general current-code candidate:
+  - exact vs `c2048/cache0`,
+  - `828_base`: `-20.7%`,
+  - `361_base`: `-2.9%`,
+  - no cache evictions,
+  - consistent with the preceding focused interaction matrix.
+- `c2048/cache4g` was fastest for `828_base` but regressed `361_base` and had
+  eviction churn, so it is not a good general default candidate.
+- `c4096/cache12g` was fastest for `828_base`, but `c4096` changes compact output
+  slightly vs `c2048` and uses more CUDA reserved memory; treat this as a
+  performance/numerical-sensitivity lead, not a drop-in exact replacement.
+- `c1024/cache4g` was fastest for `361_base`, but `c1024` also drifts slightly vs
+  `c2048` and the cache telemetry has eviction churn; treat as prompt-specific
+  ablation evidence rather than a general default.
+- The sweep is notably non-monotonic (e.g. some same-hit/miss cache sizes have
+  very different wall times), so the best-looking points should be replicated or
+  broadened across more prompts before making report-level default claims.
+
+## Recent launch update — Phase 3/4 broad telemetry on Cardinal
+
+Purpose: collect explicit Phase 3/4 transfer, row materialization, denominator,
+refresh, executor, and memory telemetry before selecting the next optimization
+prototype. This was a one-token exact trace profiling run, not a full-answer run.
+
+Code state used at launch:
+
+- project repo commits:
+  - `d27d5c9` — add Phase 3/4 telemetry scenario files,
+  - `979d815` — record Cardinal telemetry launch summary,
+- paired library repo commit: `bbb5d45` — instrument Phase 3 and Phase 4
+  telemetry.
+
+Launch metadata:
+
+- cluster: `cardinal`,
+- fast job: `10341405`, array `0-1`, completed successfully,
+- anomaly job: `10341406`, array `0`, completed successfully,
+- long-eval job: `10341407`, canceled after deciding late-prefix prompts were
+  not needed for the first optimization readout,
+- fast output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260523_001124_765837_phase34-telemetry-fast`,
+- anomaly output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260523_001126_360293_phase34-telemetry-anomaly`.
+
+Scenarios analyzed:
+
+- `828_base`, `361_base`, `94_base`, one traced token each,
+- `plan_feature_batch_size=true`, `feature_batch_size_max=512`,
+- `phase4_scheduler_mode=planner_v1`,
+- `phase4_scheduler_telemetry_detail=debug`,
+- `telemetry_max_events=250000`,
+- `exact_trace_internal_dtype=fp32`,
+- `decoder_chunk_size=4096`, decoder cache disabled,
+- no new algorithmic optimization backend enabled.
+
+All completed traces had `dropped_event_count=0`.
+
+Top-level timing:
+
+| Prompt | Total scenario duration | Planner preflight | Phase 3 | Phase 4 | Planner+P3+P4 |
+|---|---:|---:|---:|---:|---:|
+| `828_base` | `461.68 s` | `132.96 s` | `139.23 s` | `91.77 s` | `78.8%` |
+| `361_base` | `722.48 s` | `164.18 s` | `234.79 s` | `204.38 s` | `83.5%` |
+| `94_base` | `503.49 s` | `161.20 s` | `152.54 s` | `115.14 s` | `85.2%` |
+
+Phase 3 readout:
+
+| Prompt | Phase 3 wall | `compute_batch` | CPU staging | denominator | GPU→CPU row bytes |
+|---|---:|---:|---:|---:|---:|
+| `828_base` | `139.23 s` | `139.14 s` | `0.06 s` | `0.02 s` | `0.011 GiB` |
+| `361_base` | `234.79 s` | `234.38 s` | `0.10 s` | `0.30 s` | `0.019 GiB` |
+| `94_base` | `152.54 s` | `152.43 s` | `0.06 s` | `0.03 s` | `0.013 GiB` |
+
+Interpretation: Phase 3 is dominated by `compute_batch` / chunked replay. CPU
+row staging and denominator work are negligible for one-token base/anomaly runs.
+
+Phase 4 executor readout:
+
+| Prompt | Phase 4 wall | Feature-batch executor | Refresh | row-store write | GPU→CPU staging | denominator | compute_batch | GPU→CPU row bytes |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `828_base` | `91.77 s` | `61.12 s` | `30.57 s` | `41.25 s` | `6.88 s` | `6.43 s` | `6.27 s` | `91.42 GiB` |
+| `361_base` | `204.38 s` | `141.44 s` | `62.84 s` | `76.45 s` | `18.28 s` | `34.80 s` | `11.60 s` | `159.52 GiB` |
+| `94_base` | `115.14 s` | `72.50 s` | `42.56 s` | `47.90 s` | `10.38 s` | `6.06 s` | `7.92 s` | `102.91 GiB` |
+
+Within the Phase 4 feature-batch executor, row-store write is the largest single
+substage on all three prompts. `361_base` also has a large denominator cost. The
+instrumented row transfer volume is large even for one traced token.
+
+Refresh readout:
+
+| Prompt | Refresh total | Partial influence | rank/top-k | frontier plan | logical row reads |
+|---|---:|---:|---:|---:|---:|
+| `828_base` | `30.57 s` | `28.71 s` | `1.33 s` | `0.53 s` | `820.52 GiB` |
+| `361_base` | `62.84 s` | `60.30 s` | `1.97 s` | `0.56 s` | `1812.49 GiB` |
+| `94_base` | `42.56 s` | `40.71 s` | `1.32 s` | `0.52 s` | `1195.73 GiB` |
+
+Inside partial influence, the currently attributed read/normalization/matmul
+substage timing does not account for most of the elapsed time:
+
+- `828_base`: about `21.30 s` unaccounted within partial influence (`74%`),
+- `361_base`: about `38.89 s` unaccounted (`65%`),
+- `94_base`: about `30.05 s` unaccounted (`74%`).
+
+This points to streaming-loop/chunk orchestration/Python overhead or missing
+substage telemetry inside `compute_partial_feature_influences_streaming`, rather
+than only the named normalization/matmul kernels.
+
+Memory readout:
+
+| Prompt | active features | CUDA peak allocated | CUDA peak reserved | sacct MaxRSS |
+|---|---:|---:|---:|---:|
+| `828_base` | `2,993,606` | `44.37 GiB` | `55.95 GiB` | `~177.54 GiB` |
+| `361_base` | `5,223,836` | `57.66 GiB` | `71.72 GiB` | `~280.65 GiB` |
+| `94_base` | `3,370,036` | `46.93 GiB` | `58.63 GiB` | `~197.64 GiB` |
+
+Optimization readout:
+
+1. Highest-value Phase 4 prototype remains an opt-in GPU-resident row reduction
+   path. The evidence is strongest for avoiding GPU→CPU row materialization and
+   row-store writes in the Phase 4 feature-batch executor.
+2. Add finer refresh telemetry before changing refresh algorithms. The current
+   refresh partial-influence timing has large unaccounted overhead, so the next
+   refresh step should identify whether the cost is row-reader orchestration,
+   chunk planning, tensor allocation, scatter/indexing, Python loop overhead, or
+   another unmeasured site.
+3. Planner preflight is expensive (`133--164 s` here) and should be treated as a
+   separate optimization target for full-answer runs, especially if the planner
+   repeats per answer token.
+4. Phase 3 optimization is a separate compute/replay problem; the new transfer
+   telemetry does not indicate Phase 3 row transfer or denominator work as an
+   important bottleneck.
+
 ## Status of this note
 
 This file is descriptive, not normative.

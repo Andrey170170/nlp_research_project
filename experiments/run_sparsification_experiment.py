@@ -500,6 +500,13 @@ def build_command(
                     str(scenario["phase4_row_executor"]),
                 ]
             )
+        if scenario.get("phase4_row_reduction") is not None:
+            cmd.extend(
+                [
+                    "--phase4-row-reduction",
+                    str(scenario["phase4_row_reduction"]),
+                ]
+            )
         if scenario.get("cross_cluster_debug", False):
             cmd.append("--cross-cluster-debug")
         if scenario.get("telemetry_max_events") is not None:
