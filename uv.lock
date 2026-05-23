@@ -1546,7 +1546,7 @@ wheels = [
 [[package]]
 name = "research-project"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "accelerate" },
     { name = "circuit-tracer" },

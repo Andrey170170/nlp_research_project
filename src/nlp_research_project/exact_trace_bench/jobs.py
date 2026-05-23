@@ -27,23 +27,31 @@ from .workspace import (
 
 SBATCH_SCRIPTS: dict[tuple[str, str], Path] = {
     ("ascend", RESOURCE_PROFILE_STANDARD): REPO_ROOT
-    / "scripts"
+    / "slurm"
+    / "exact_trace_bench"
     / "trace_weekend_exact_chunked.ascend.sbatch",
     ("ascend", RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM): REPO_ROOT
-    / "scripts"
+    / "slurm"
+    / "exact_trace_bench"
     / "trace_weekend_exact_chunked_long_eval.ascend.sbatch",
     ("cardinal", RESOURCE_PROFILE_STANDARD): REPO_ROOT
-    / "scripts"
+    / "slurm"
+    / "exact_trace_bench"
     / "trace_weekend_exact_chunked.cardinal.sbatch",
     ("cardinal", RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM): REPO_ROOT
-    / "scripts"
+    / "slurm"
+    / "exact_trace_bench"
     / "trace_weekend_exact_chunked_long_eval.cardinal.sbatch",
 }
 
 SBATCH_FIXTURE_PREP_SCRIPTS: dict[str, Path] = {
-    "ascend": REPO_ROOT / "scripts" / "prepare_weekend_prefix_fixtures.ascend.sbatch",
+    "ascend": REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "prepare_weekend_prefix_fixtures.ascend.sbatch",
     "cardinal": REPO_ROOT
-    / "scripts"
+    / "slurm"
+    / "exact_trace_bench"
     / "prepare_weekend_prefix_fixtures.cardinal.sbatch",
 }
 

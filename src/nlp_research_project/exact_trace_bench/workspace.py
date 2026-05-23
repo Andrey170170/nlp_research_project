@@ -83,6 +83,46 @@ def _safe_git_head(source_root: Path) -> str | None:
     return proc.stdout.strip() or None
 
 
+def _safe_git_branch(source_root: Path) -> str | None:
+    try:
+        proc = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=source_root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.strip() or None
+
+
+def _safe_git_dirty_files(source_root: Path) -> list[str]:
+    try:
+        proc = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=source_root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return []
+    if proc.returncode != 0:
+        return []
+    return [line for line in proc.stdout.splitlines() if line.strip()]
+
+
+def _repo_state(source_root: Path) -> dict[str, Any]:
+    return {
+        "branch": _safe_git_branch(source_root),
+        "commit": _safe_git_head(source_root),
+        "dirty_files": _safe_git_dirty_files(source_root),
+    }
+
+
 def _make_read_only(path: Path) -> None:
     for root, dirs, files in os.walk(path):
         for directory in dirs:
@@ -179,6 +219,7 @@ def verify_import_paths(
     import sys
 
     workspace_root = workspace_root.resolve()
+    workspace_src = (workspace_root / "src").resolve()
     library_root = (
         library_root.resolve()
         if library_root is not None
@@ -191,18 +232,62 @@ def verify_import_paths(
         inserted_paths.append(str(library_root))
     sys.path.insert(0, str(workspace_root))
     inserted_paths.append(str(workspace_root))
+    sys.path.insert(0, str(workspace_src))
+    inserted_paths.append(str(workspace_src))
 
-    circuit_tracer = importlib.import_module("circuit_tracer")
-    trace_pipeline_chunked = importlib.import_module("trace_pipeline_chunked")
+    module_prefixes = (
+        "nlp_research_project",
+        "circuit_tracer",
+        "trace_pipeline_chunked",
+    )
+    saved_modules = {
+        name: module
+        for name, module in list(sys.modules.items())
+        if any(
+            name == prefix or name.startswith(f"{prefix}.")
+            for prefix in module_prefixes
+        )
+    }
+    for name in saved_modules:
+        sys.modules.pop(name, None)
+
+    try:
+        exact_trace_bench = importlib.import_module(
+            "nlp_research_project.exact_trace_bench"
+        )
+        exact_trace_bench_file = Path(exact_trace_bench.__file__).resolve()
+        try:
+            exact_trace_bench_file.relative_to(workspace_src)
+        except ValueError as exc:
+            raise ImportError(
+                "nlp_research_project.exact_trace_bench resolved outside workspace_root/src: "
+                f"{exact_trace_bench_file}"
+            ) from exc
+
+        circuit_tracer = importlib.import_module("circuit_tracer")
+        trace_pipeline_chunked = importlib.import_module("trace_pipeline_chunked")
+
+        circuit_tracer_file = str(Path(circuit_tracer.__file__).resolve())
+        trace_pipeline_chunked_file = str(
+            Path(trace_pipeline_chunked.__file__).resolve()
+        )
+    finally:
+        for name in list(sys.modules):
+            if any(
+                name == prefix or name.startswith(f"{prefix}.")
+                for prefix in module_prefixes
+            ):
+                sys.modules.pop(name, None)
+        sys.modules.update(saved_modules)
 
     return {
         "workspace_root": str(workspace_root),
+        "workspace_src": str(workspace_src),
         "library_root": None if library_root is None else str(library_root),
         "inserted_paths": inserted_paths,
-        "circuit_tracer_file": str(Path(circuit_tracer.__file__).resolve()),
-        "trace_pipeline_chunked_file": str(
-            Path(trace_pipeline_chunked.__file__).resolve()
-        ),
+        "exact_trace_bench_file": str(exact_trace_bench_file),
+        "circuit_tracer_file": circuit_tracer_file,
+        "trace_pipeline_chunked_file": trace_pipeline_chunked_file,
     }
 
 
@@ -240,6 +325,7 @@ def create_workspace_snapshot(
                 "source_path": str(source_path),
                 "snapshot_path": str(destination_path),
                 "git_head": _safe_git_head(source_path),
+                "repo_state": _repo_state(source_path),
             }
         )
 
@@ -249,6 +335,7 @@ def create_workspace_snapshot(
         "snapshot_root": str(project_snapshot_path),
         "snapshot_container_root": str(snapshot_path),
         "git_head": _safe_git_head(source_root),
+        "repo_state": _repo_state(source_root),
         "ignored_names": sorted(IGNORED_NAMES),
         "excluded_relative_dirs": [
             str(path) for path in sorted(PROJECT_EXCLUDED_RELATIVE_DIRS)

@@ -18,7 +18,7 @@ Use this README for orientation, `AGENTS.md` for durable operating rules, and
 | Editable dependency | `circuit-tracer = { path = "../circuit-tracer_chunked", editable = true }` |
 | Model stack | Gemma-3-1B-IT + GemmaScope-2 cross-layer transcoders |
 | Canonical exact-trace dtype | `exact_trace_internal_dtype=fp32` |
-| Current benchmark harness | `experiments/exact_trace_bench/` |
+| Current benchmark harness | `src/nlp_research_project/exact_trace_bench/` |
 | Scratch root | `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/` |
 
 Every serious run depends on **both** this repository and the sibling
@@ -74,27 +74,27 @@ created by uv.
 
 The canonical exact-bench harness lives at:
 
-- `experiments/exact_trace_bench/`
+- `src/nlp_research_project/exact_trace_bench/`
 - `docs/harness.md`
 
 Typical flow:
 
 ```bash
 # Inspect CLI options.
-uv run python -m experiments.exact_trace_bench --help
+uv run exact-trace-bench --help
 
 # Generate current scenario configs.
-uv run python -m experiments.exact_trace_bench build-scenarios --all-tiers --all-clusters
+uv run exact-trace-bench build-scenarios --all-tiers --all-clusters
 
 # Render a launch plan before submitting.
-uv run python -m experiments.exact_trace_bench launch-plan \
+uv run exact-trace-bench launch-plan \
   --cluster ascend \
   --scenarios-file experiments/generated/exact_trace_bench/exact_trace_bench_fast_ascend_scenarios.json \
   --immutable-workspace
 ```
 
 Submit GPU/model-loading work only via SLURM. Preset helpers and wrapper scripts
-are documented in `experiments/exact_trace_bench/README.md`.
+are documented in `src/nlp_research_project/exact_trace_bench/README.md`.
 
 Run placement convention:
 
@@ -124,9 +124,11 @@ Important entry points:
 - `trace_pipeline.py` — older multi-prompt tracing pipeline.
 - `evaluate.py` / `analyze.py` — earlier correctness evaluation and analysis.
 - `circuit_utils.py` — compact graph metrics and `.npz` utilities.
-- `experiments/exact_trace_bench/` — current benchmark setup/extraction/compare
+- `src/nlp_research_project/exact_trace_bench/` — current benchmark setup/extraction/compare
   harness.
-- `scripts/` — SLURM submission scripts and wrappers.
+- `slurm/exact_trace_bench/` — canonical exact-bench SLURM templates used by
+  the CLI.
+- `scripts/archive/` — historical scripts/wrappers; not current launch templates.
 - `tests/` — lightweight local checks where possible; GPU/model tests must be
   marked or run through SLURM.
 

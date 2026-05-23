@@ -1,7 +1,7 @@
 # Generated experiment configs
 
 Status: Scenario provenance index
-Last updated: 2026-05-18
+Last updated: 2026-05-23
 
 This directory mixes current exact-bench templates with historical one-off launch
 configs. Treat this README as the first routing check before copying a JSON file
@@ -9,7 +9,7 @@ for a new run.
 
 ## Current canonical exact-bench templates
 
-Use these for ordinary `experiments.exact_trace_bench` launches:
+Use these for ordinary `uv run exact-trace-bench ...` launches:
 
 - `exact_trace_bench/exact_trace_bench_fast_ascend_scenarios.json`
 - `exact_trace_bench/exact_trace_bench_fast_cardinal_scenarios.json`
@@ -21,7 +21,7 @@ Use these for ordinary `experiments.exact_trace_bench` launches:
 Regenerate them with:
 
 ```bash
-uv run python -m experiments.exact_trace_bench build-scenarios --all-tiers --all-clusters
+uv run exact-trace-bench build-scenarios --all-tiers --all-clusters
 ```
 
 Canonical rows should keep only ordinary fixture/source metadata, batch sizes,
@@ -56,7 +56,7 @@ loads Gemma/GemmaScope machinery. The exact-bench helper renders/submits the
 appropriate cluster script:
 
 ```bash
-uv run python -m experiments.exact_trace_bench submit-fixture-prep \
+uv run exact-trace-bench submit-fixture-prep \
   --cluster cardinal \
   --no-immutable-workspace \
   --print-only
@@ -68,7 +68,7 @@ Remove `--print-only` to submit. The underlying fixture-prep command remains
 After the catalog exists, generate Wave 0 scenario files on a login node:
 
 ```bash
-uv run python -m experiments.exact_trace_bench build-wave0-scenarios \
+uv run exact-trace-bench build-wave0-scenarios \
   --all-tiers \
   --all-clusters \
   --fixture-catalog experiments/generated/exact_trace_wave0_fixtures/fixture_catalog.json
@@ -89,7 +89,7 @@ These configs still write under the normal `{cluster}/{tier}` scratch roots; use
 After Wave 0 completes, build the pinned baseline registry from the scratch roots:
 
 ```bash
-uv run python -m experiments.exact_trace_bench build-baseline-registry \
+uv run exact-trace-bench build-baseline-registry \
   --run-id wave0-baseline-20260520-01 \
   --all-clusters \
   --all-tiers \

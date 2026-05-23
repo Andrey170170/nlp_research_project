@@ -13,7 +13,7 @@ EXPERIMENTS_DIR = PROJECT_ROOT / "experiments"
 if str(EXPERIMENTS_DIR) not in sys.path:
     sys.path.insert(0, str(EXPERIMENTS_DIR))
 
-from experiments.exact_trace_bench import phase0_replay_matrix_compare as matrix_compare  # noqa: E402
+from nlp_research_project.exact_trace_bench import phase0_replay_matrix_compare as matrix_compare  # noqa: E402
 
 
 def _mkdirs(tmp_path: Path) -> dict[str, Path]:

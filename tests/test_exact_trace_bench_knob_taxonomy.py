@@ -1,20 +1,26 @@
 from __future__ import annotations
 
 import sys
+import importlib
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from experiments.exact_trace_bench.scenarios import (  # noqa: E402
+from nlp_research_project.exact_trace_bench.scenarios import (  # noqa: E402
     ADVANCED_PUBLIC_TUNING_KEYS,
     DEBUG_REPLAY_PUBLIC_KEYS,
     DEPRECATED_COMPAT_KEYS,
     EXACT_MODE_KNOB_KEYS,
+    RESOURCE_PROFILE_STANDARD,
     SCENARIO_TIERS,
     STABLE_PUBLIC_SCENARIO_KEYS,
     TELEMETRY_KEYS,
+    WAVE2A_PHASE1_VARIANTS,
+    WAVE2B_PHASE4_VARIANTS,
+    WAVE2C_ROW_ENCODER_LEGACY_DEFAULTS,
+    WAVE2C_ROW_ENCODER_VARIANTS,
     WAVE0_CANONICAL_ANOMALY_FIXTURES,
     WAVE0_CANONICAL_FAST_FIXTURES,
     WAVE0_CANONICAL_LATE_FIXTURES,
@@ -24,6 +30,9 @@ from experiments.exact_trace_bench.scenarios import (  # noqa: E402
     WAVE4_GENERALIZATION_VARIANTS,
     build_tier_config,
     build_wave0_baseline_config,
+    build_wave2a_phase1_config,
+    build_wave2b_phase4_config,
+    build_wave2c_row_encoder_config,
     build_wave3_interaction_confirmation_config,
     build_wave4_generalization_config,
 )
@@ -31,6 +40,100 @@ from experiments.run_sparsification_experiment import build_command  # noqa: E40
 
 
 CLUSTERS = ("ascend", "cardinal")
+
+SCENARIO_PUBLIC_IMPORTS = (
+    "ADVANCED_PUBLIC_TUNING_KEYS",
+    "DEBUG_REPLAY_PUBLIC_KEYS",
+    "DEPRECATED_COMPAT_KEYS",
+    "EXACT_MODE_KNOB_KEYS",
+    "RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM",
+    "RESOURCE_PROFILE_STANDARD",
+    "SCENARIO_TIERS",
+    "STABLE_PUBLIC_SCENARIO_KEYS",
+    "TELEMETRY_KEYS",
+    "WAVE2A_PHASE1_TIERS",
+    "WAVE2B_PHASE4_TIERS",
+    "WAVE2C_ROW_ENCODER_TIERS",
+    "WAVE3_INTERACTION_CONFIRMATION_TIERS",
+    "WAVE4_GENERALIZATION_TIERS",
+    "build_tier_config",
+    "build_wave0_baseline_config",
+    "build_wave2a_phase1_config",
+    "build_wave2b_phase4_config",
+    "build_wave2c_row_encoder_config",
+    "build_wave3_interaction_confirmation_config",
+    "build_wave4_generalization_config",
+    "scenario_file_name",
+    "wave0_scenario_file_name",
+    "wave2a_phase1_scenario_file_name",
+    "wave2b_phase4_scenario_file_name",
+    "wave2c_row_encoder_scenario_file_name",
+    "wave3_interaction_confirmation_scenario_file_name",
+    "wave4_generalization_scenario_file_name",
+    "write_all_tiers",
+    "write_tier_config",
+    "write_wave0_baseline_config",
+    "write_wave2a_phase1_config",
+    "write_wave2b_phase4_config",
+    "write_wave2c_row_encoder_config",
+    "write_wave3_interaction_confirmation_config",
+    "write_wave4_generalization_config",
+)
+
+CANONICAL_TIER_SUMMARIES = {
+    ("fast", "ascend"): {
+        "stage": "exact_trace_bench_fast",
+        "resource_profile": "standard",
+        "fixtures": ("828_base", "361_base"),
+        "names": (
+            "ascend_fast_828_base_b128_c2048_cache0g",
+            "ascend_fast_361_base_b128_c2048_cache0g",
+        ),
+    },
+    ("fast", "cardinal"): {
+        "stage": "exact_trace_bench_fast",
+        "resource_profile": "standard",
+        "fixtures": ("828_base", "361_base"),
+        "names": (
+            "cardinal_fast_828_base_b128_c4096_cache0g",
+            "cardinal_fast_361_base_b128_c4096_cache0g",
+        ),
+    },
+    ("anomaly", "ascend"): {
+        "stage": "exact_trace_bench_anomaly",
+        "resource_profile": "standard",
+        "fixtures": ("94_base",),
+        "names": ("ascend_anomaly_94_base_b256_c4096_cache0g",),
+    },
+    ("anomaly", "cardinal"): {
+        "stage": "exact_trace_bench_anomaly",
+        "resource_profile": "standard",
+        "fixtures": ("94_base",),
+        "names": ("cardinal_anomaly_94_base_b256_c4096_cache0g",),
+    },
+    ("long_eval", "ascend"): {
+        "stage": "exact_trace_bench_long_eval",
+        "resource_profile": "long_eval_high_mem",
+        "fixtures": ("361_late", "828_late", "94_late", "361_late"),
+        "names": (
+            "ascend_long_eval_no_cache_361_late_b128_c2048_cache0g",
+            "ascend_long_eval_no_cache_828_late_b128_c2048_cache0g",
+            "ascend_long_eval_no_cache_94_late_b128_c2048_cache0g",
+            "ascend_long_eval_cache_probe_361_late_b128_c2048_cache8g",
+        ),
+    },
+    ("long_eval", "cardinal"): {
+        "stage": "exact_trace_bench_long_eval",
+        "resource_profile": "long_eval_high_mem",
+        "fixtures": ("361_late", "828_late", "94_late", "361_late"),
+        "names": (
+            "cardinal_long_eval_no_cache_361_late_b256_c4096_cache0g",
+            "cardinal_long_eval_no_cache_828_late_b256_c4096_cache0g",
+            "cardinal_long_eval_no_cache_94_late_b256_c4096_cache0g",
+            "cardinal_long_eval_cache_probe_361_late_b256_c4096_cache8g",
+        ),
+    },
+}
 
 DISALLOWED_CANONICAL_COMMAND_FLAGS = {
     "--cross-cluster-debug",
@@ -89,6 +192,24 @@ def _fake_wave0_catalog() -> dict[str, dict]:
     return catalog
 
 
+def test_scenario_package_reexports_public_generation_surface() -> None:
+    import nlp_research_project.exact_trace_bench.scenarios as scenarios
+
+    assert set(SCENARIO_PUBLIC_IMPORTS).issubset(set(scenarios.__all__))
+    for name in SCENARIO_PUBLIC_IMPORTS:
+        assert hasattr(scenarios, name), name
+
+
+def test_legacy_experiments_scenarios_namespace_still_forwards() -> None:
+    scenarios = importlib.import_module("experiments.exact_trace_bench.scenarios")
+
+    assert getattr(scenarios, "build_tier_config")(
+        tier="fast", cluster="ascend"
+    ) == build_tier_config(tier="fast", cluster="ascend")
+    assert callable(getattr(scenarios, "build_wave0_baseline_config"))
+    assert getattr(scenarios, "RESOURCE_PROFILE_STANDARD") == RESOURCE_PROFILE_STANDARD
+
+
 def test_exact_mode_knobs_are_classified_without_duplicates() -> None:
     classified_keys = (
         STABLE_PUBLIC_SCENARIO_KEYS
@@ -121,6 +242,36 @@ def test_canonical_exact_bench_defaults_are_stable() -> None:
         assert defaults["phase4_refresh_optimization"] == "off"
         assert defaults["phase4_row_executor"] == "batched"
         assert defaults["telemetry_max_events"] is None
+
+
+def test_canonical_generated_payload_summaries_are_stable() -> None:
+    seen_resource_profiles = set()
+    for tier, cluster, payload in _canonical_payloads():
+        expected = CANONICAL_TIER_SUMMARIES[(tier, cluster)]
+        metadata = payload["metadata"]
+        seen_resource_profiles.add(metadata["resource_profile"])
+
+        assert metadata["tier"] == tier
+        assert metadata["cluster"] == cluster
+        assert metadata["stage"] == expected["stage"]
+        assert metadata["resource_profile"] == expected["resource_profile"]
+        assert payload["defaults"]["exact_trace_internal_dtype"] == "fp32"
+
+        scenario_summary = tuple(
+            (scenario["name"], scenario["fixture_name"])
+            for scenario in payload["scenarios"]
+        )
+        assert len(expected["names"]) == len(expected["fixtures"])
+        assert scenario_summary == tuple(zip(expected["names"], expected["fixtures"]))
+
+        for scenario in payload["scenarios"]:
+            assert scenario["stage"] == expected["stage"]
+            assert scenario["cluster"] == cluster
+            assert scenario["resource_profile"] == expected["resource_profile"]
+            assert "baseline_check" not in scenario
+            assert not any(key in scenario for key in DEBUG_REPLAY_PUBLIC_KEYS)
+
+    assert seen_resource_profiles == {"standard", "long_eval_high_mem"}
 
 
 def test_canonical_scenario_rows_keep_resource_knobs_explicit() -> None:
@@ -233,6 +384,99 @@ def test_wave0_commands_do_not_enable_debug_or_replay_knobs() -> None:
             assert "--exact-trace-internal-dtype" in command
             assert "--decoder-chunk-size" in command
             assert "--cross-batch-decoder-cache-bytes" in command
+
+
+def test_wave2_scenarios_preserve_variants_and_baseline_checks() -> None:
+    catalog = _fake_wave0_catalog()
+    expected_builders = (
+        (
+            build_wave2a_phase1_config,
+            "wave2a",
+            "phase1_variant",
+            {variant["label"] for variant in WAVE2A_PHASE1_VARIANTS},
+            len(WAVE2A_PHASE1_VARIANTS),
+        ),
+        (
+            build_wave2b_phase4_config,
+            "wave2b",
+            "phase4_variant",
+            {variant["label"] for variant in WAVE2B_PHASE4_VARIANTS},
+            len(WAVE2B_PHASE4_VARIANTS),
+        ),
+        (
+            build_wave2c_row_encoder_config,
+            "wave2c",
+            "row_encoder_variant",
+            {variant["label"] for variant in WAVE2C_ROW_ENCODER_VARIANTS},
+            len(WAVE2C_ROW_ENCODER_VARIANTS),
+        ),
+    )
+
+    for (
+        builder,
+        wave,
+        variant_key,
+        expected_variants,
+        variants_per_fixture,
+    ) in expected_builders:
+        payload = builder(tier="fast", cluster="ascend", catalog_by_name=catalog)
+        assert payload["metadata"]["wave"] == wave
+        assert payload["metadata"]["resource_profile"] == RESOURCE_PROFILE_STANDARD
+        assert len(payload["scenarios"]) == (
+            len(WAVE0_CANONICAL_FAST_FIXTURES) * variants_per_fixture
+        )
+        assert {
+            scenario[variant_key] for scenario in payload["scenarios"]
+        } == expected_variants
+
+        for scenario in payload["scenarios"]:
+            assert scenario["baseline_check"] == {
+                "enabled": True,
+                "mode": "metrics",
+                "registry_key": f"wave0/{scenario['fixture_name']}/ascend/fast/fp32_default",
+                "baseline_required": True,
+                "thresholds": None,
+            }
+
+    wave2b = build_wave2b_phase4_config(
+        tier="anomaly",
+        cluster="cardinal",
+        catalog_by_name=catalog,
+    )
+    assert wave2b["metadata"]["resource_profile"] == RESOURCE_PROFILE_STANDARD
+    assert len(wave2b["scenarios"]) == (
+        len(WAVE0_CANONICAL_ANOMALY_FIXTURES) * len(WAVE2B_PHASE4_VARIANTS)
+    )
+    assert {
+        scenario["phase1_trace_batch_policy"] for scenario in wave2b["scenarios"]
+    } == {"legacy"}
+
+    wave2c_baseline = next(
+        scenario
+        for scenario in build_wave2c_row_encoder_config(
+            tier="fast",
+            cluster="ascend",
+            catalog_by_name=catalog,
+        )["scenarios"]
+        if scenario["row_encoder_variant"] == "legacy_default"
+    )
+    for key, value in WAVE2C_ROW_ENCODER_LEGACY_DEFAULTS.items():
+        assert wave2c_baseline[key] == value
+
+
+def test_wave2_rejects_long_eval_tier() -> None:
+    catalog = _fake_wave0_catalog()
+    for builder in (
+        build_wave2a_phase1_config,
+        build_wave2b_phase4_config,
+        build_wave2c_row_encoder_config,
+    ):
+        try:
+            builder(tier="long_eval", cluster="ascend", catalog_by_name=catalog)
+        except ValueError as exc:
+            assert "long_eval" in str(exc)
+        else:
+            raise AssertionError(f"{builder.__name__} accepted long_eval")
 
 
 def test_wave3_interaction_scenarios_default_and_optional_variants() -> None:

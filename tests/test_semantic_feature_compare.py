@@ -12,7 +12,7 @@ EXPERIMENTS_DIR = PROJECT_ROOT / "experiments"
 if str(EXPERIMENTS_DIR) not in sys.path:
     sys.path.insert(0, str(EXPERIMENTS_DIR))
 
-from experiments.exact_trace_bench.semantic_feature_compare import (  # noqa: E402
+from nlp_research_project.exact_trace_bench.semantic_feature_compare import (  # noqa: E402
     compare_semantic_feature_descriptors,
 )
 

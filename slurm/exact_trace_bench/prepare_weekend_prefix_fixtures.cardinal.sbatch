@@ -28,9 +28,7 @@ export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export PYTHONUNBUFFERED=1
 export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-$SLURM_SUBMIT_DIR/.venv}"
-if [[ -d "$LIB_WORKSPACE_ROOT" ]]; then
-    export PYTHONPATH="$LIB_WORKSPACE_ROOT${PYTHONPATH:+:$PYTHONPATH}"
-fi
+export PYTHONPATH="$WORKSPACE_ROOT/src:$WORKSPACE_ROOT:$LIB_WORKSPACE_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 CACHE_ARGS=()
 if [[ -n "$CROSS_BATCH_DECODER_CACHE_BYTES" ]]; then
@@ -52,7 +50,7 @@ echo "UV project env: ${UV_PROJECT_ENVIRONMENT}"
 echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-unset}"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
 
-uv run python -u experiments/prepare_weekend_prefix_fixtures.py \
+uv run --no-sync python -u experiments/prepare_weekend_prefix_fixtures.py \
     --target-spec-file "${TARGET_SPEC_FILE}" \
     --output-dir "${OUTPUT_DIR}" \
     --decoder-chunk-size "${DECODER_CHUNK_SIZE}" \

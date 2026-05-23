@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 DEFAULT_SCRATCH_ROOT = Path("/fs/scratch/PAS3272/kopanev.1/exact_trace_bench")
 DEFAULT_GENERATED_DIR = REPO_ROOT / "experiments" / "generated" / "exact_trace_bench"

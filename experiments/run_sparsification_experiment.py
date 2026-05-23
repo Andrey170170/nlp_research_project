@@ -12,10 +12,12 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+SRC_ROOT = REPO_ROOT / "src"
+for path in (REPO_ROOT, SRC_ROOT):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
-from experiments.exact_trace_bench.baselines import (  # noqa: E402
+from nlp_research_project.exact_trace_bench.baselines import (  # noqa: E402
     BASELINE_DISABLED,
     build_scenario_metrics_row,
     load_baseline_registry,
@@ -25,7 +27,7 @@ from experiments.exact_trace_bench.baselines import (  # noqa: E402
     validate_baseline_entry,
     write_scenario_metrics,
 )
-from experiments.exact_trace_bench.io_utils import write_csv  # noqa: E402
+from nlp_research_project.exact_trace_bench.io_utils import write_csv  # noqa: E402
 
 
 DEFAULT_SCENARIOS = (

@@ -1,7 +1,7 @@
 # Current Execution Plan — Post-Consolidation Cleanup
 
 Status: Current scratch roadmap
-Last updated: 2026-05-20
+Last updated: 2026-05-22
 
 ## Problem statement
 
@@ -16,6 +16,68 @@ driven by Phase-3 gradient differences, with later stages amplifying those
 differences enough to affect compact circuit outputs. We should keep the
 debug/replay machinery for future verification and regression tests, but it no
 longer needs to dominate the public workflow.
+
+## Current two-track plan after Wave 4
+
+Wave 0--4 established a stable exact-trace baseline and promoted
+`plan_feature_batch_size=true` as the safest broad finalist. Full-answer exact
+tracing is still too expensive without better orchestration and deeper Phase 3/4
+optimization, so the next work splits into two tracks.
+
+### Track 1 — within-trace optimization
+
+Primary workspace:
+
+- project worktree: `../worktrees_opt/nlp_research_project_optimization`
+  on branch `harness-cleanup-fullanswer`
+- library worktree: `../worktrees_opt/circuit-tracer_chunked`
+  on branch `opt-phase34-gpu-residency`
+
+Most implementation should happen in the sibling library. This track can begin
+before harness cleanup is finished because it primarily targets trace internals:
+
+- Phase 3/4 transfer and synchronization profiling,
+- GPU-resident row reductions / row-L1 computations,
+- Phase 3 to Phase 4 handoff residency,
+- planner v2 building on `plan_feature_batch_size=true`,
+- eventual opt-in knobs for SLURM validation through this project harness.
+
+### Track 2 — full-answer / multi-token tracing harness
+
+This should wait for the Phase-0 harness cleanup below. The intended shape is:
+
+1. freeze a generated answer trajectory,
+2. build token-position trace specs against that frozen trajectory,
+3. pack token positions into cost-balanced shards,
+4. have each SLURM task load model/CLTs once and trace several assigned tokens,
+5. aggregate per-token compact graphs, target probabilities/ranks, and timings.
+
+The first useful mode should support selected-token tracing before all-token
+full-answer tracing:
+
+- final answer tokens,
+- numeric tokens,
+- high-surprisal tokens,
+- uniform every-k tokens,
+- explicit token index list.
+
+### Phase 0 cleanup requirement before Track 2
+
+Do a broader harness cleanup, not just a small scenario-file split:
+
+1. Inventory root `scripts/` and classify each as current launcher, current
+   wrapper, historical provenance, or removable stale script.
+2. Keep the canonical exact-bench launchers explicit:
+   `trace_weekend_exact_chunked*.sbatch`, fixture prep launchers, and the
+   `exact_trace_bench_*` wrappers.
+3. Move or archive stale one-off launchers/comparison scripts so they do not look
+   like current templates.
+4. Split `experiments/exact_trace_bench/scenarios.py` into wave/domain modules
+   while preserving generated scenario semantics.
+5. Add contract tests around scenario JSON schema, baseline key coverage, launch
+   env propagation, immutable workspace behavior, and run metadata propagation.
+6. Clarify generated artifact policy in `experiments/generated/README.md` and the
+   harness docs.
 
 ## Current baseline to preserve
 

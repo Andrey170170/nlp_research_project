@@ -8,9 +8,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from experiments.exact_trace_bench import baselines  # noqa: E402
-from experiments.exact_trace_bench.config import base_trace_defaults  # noqa: E402
-from experiments.exact_trace_bench.jobs import render_fixture_prep_plan  # noqa: E402
+from nlp_research_project.exact_trace_bench import baselines  # noqa: E402
+from nlp_research_project.exact_trace_bench.config import base_trace_defaults  # noqa: E402
+from nlp_research_project.exact_trace_bench.jobs import render_fixture_prep_plan  # noqa: E402
 from experiments.run_sparsification_experiment import run_scenario  # noqa: E402
 
 

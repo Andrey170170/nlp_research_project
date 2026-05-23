@@ -31,13 +31,13 @@ so the benchmark can run against frozen project + library code together.
 Run via module entrypoint (recommended):
 
 ```bash
-uv run python -m experiments.exact_trace_bench --help
+uv run exact-trace-bench --help
 ```
 
 ### 1) Generate scenario configs
 
 ```bash
-uv run python -m experiments.exact_trace_bench build-scenarios --all-tiers --all-clusters
+uv run exact-trace-bench build-scenarios --all-tiers --all-clusters
 ```
 
 Writes JSON configs to:
@@ -53,7 +53,7 @@ Fixture preparation loads the model and must run inside SLURM. Use the helper to
 render or submit a cluster job:
 
 ```bash
-uv run python -m experiments.exact_trace_bench submit-fixture-prep \
+uv run exact-trace-bench submit-fixture-prep \
   --cluster cardinal \
   --no-immutable-workspace \
   --print-only
@@ -67,7 +67,7 @@ Defaults target the expanded Wave 0 corpus:
 After the fixture catalog exists, generate Wave 0 scenarios with:
 
 ```bash
-uv run python -m experiments.exact_trace_bench build-wave0-scenarios \
+uv run exact-trace-bench build-wave0-scenarios \
   --all-tiers \
   --all-clusters \
   --fixture-catalog experiments/generated/exact_trace_wave0_fixtures/fixture_catalog.json
@@ -128,7 +128,7 @@ concatenate `scenario_metrics.csv` files.
 Build a registry from completed Wave 0 runs with:
 
 ```bash
-uv run python -m experiments.exact_trace_bench build-baseline-registry \
+uv run exact-trace-bench build-baseline-registry \
   --run-id wave0-baseline-20260520-01 \
   --all-clusters \
   --all-tiers \
@@ -138,7 +138,7 @@ uv run python -m experiments.exact_trace_bench build-baseline-registry \
 ### 1.5) Render a scratch-backed launch plan
 
 ```bash
-uv run python -m experiments.exact_trace_bench launch-plan \
+uv run exact-trace-bench launch-plan \
   --cluster ascend \
   --scenarios-file experiments/generated/exact_trace_bench/exact_trace_bench_fast_ascend_scenarios.json \
   --immutable-workspace
@@ -154,7 +154,7 @@ This prints an `sbatch` command that uses:
 You can attach run metadata for later extraction/disambiguation:
 
 ```bash
-uv run python -m experiments.exact_trace_bench launch-plan \
+uv run exact-trace-bench launch-plan \
   --cluster ascend \
   --scenarios-file experiments/generated/exact_trace_bench/exact_trace_bench_fast_ascend_scenarios.json \
   --run-name "ascend fast sanity" \
@@ -193,32 +193,34 @@ Preset meanings:
 CLI form:
 
 ```bash
-uv run python -m experiments.exact_trace_bench submit-preset --preset fast-ascend
-uv run python -m experiments.exact_trace_bench submit-preset --preset full-all
+uv run exact-trace-bench submit-preset --preset fast-ascend
+uv run exact-trace-bench submit-preset --preset full-all
 ```
 
 Preset submissions also populate sensible default run metadata (name,
 description, goal) even if you do not pass explicit metadata flags.
 
-Wrapper scripts:
+Historical wrapper scripts are archived for provenance only:
 
 ```bash
-scripts/exact_trace_bench_fast_ascend.sh
-scripts/exact_trace_bench_fast_cardinal.sh
-scripts/exact_trace_bench_full_ascend.sh
-scripts/exact_trace_bench_full_cardinal.sh
-scripts/exact_trace_bench_fast_all.sh
-scripts/exact_trace_bench_full_all.sh
+scripts/archive/exact_trace_bench_fast_ascend.sh
+scripts/archive/exact_trace_bench_fast_cardinal.sh
+scripts/archive/exact_trace_bench_full_ascend.sh
+scripts/archive/exact_trace_bench_full_cardinal.sh
+scripts/archive/exact_trace_bench_fast_all.sh
+scripts/archive/exact_trace_bench_full_all.sh
 ```
 
-All preset submitters default to immutable workspace snapshots. Add
+Prefer the CLI form above for new runs. The archived wrappers call
+`uv run exact-trace-bench submit-preset ...` if you need compatibility.
+Preset submitters default to immutable workspace snapshots. Add
 `--no-immutable-workspace` if you intentionally want to run against the live tree,
 or `--print-only` to inspect the generated plans without calling `sbatch`.
 
 ### 2) Extract benchmark tables
 
 ```bash
-uv run python -m experiments.exact_trace_bench extract \
+uv run exact-trace-bench extract \
   --input-root /fs/scratch/PAS3272/kopanev.1/exact_trace_bench \
   --output-dir experiments/extracted/exact_trace_bench \
   --logs-dir /path/to/benchmark/slurm/logs
@@ -236,7 +238,7 @@ If `--logs-dir` is omitted, SLURM log parsing is skipped to avoid mixing unrelat
 ### 3) Compare compact outputs (prompt94-style)
 
 ```bash
-uv run python -m experiments.exact_trace_bench compare-compact \
+uv run exact-trace-bench compare-compact \
   /path/to/ascend/artifacts \
   /path/to/cardinal/artifacts \
   --output-json experiments/extracted/exact_trace_bench/prompt94_compare.json
@@ -245,7 +247,7 @@ uv run python -m experiments.exact_trace_bench compare-compact \
 ### 4) Create immutable workspace snapshot
 
 ```bash
-uv run python -m experiments.exact_trace_bench snapshot-workspace --print-path-only
+uv run exact-trace-bench snapshot-workspace --print-path-only
 ```
 
 This copies the project workspace plus the sibling `circuit-tracer_chunked`
@@ -263,7 +265,7 @@ such as:
 ### 5) Verify import resolution
 
 ```bash
-uv run python -m experiments.exact_trace_bench verify-imports \
+uv run exact-trace-bench verify-imports \
   --workspace-root /fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/<id>/nlp_research_project
 ```
 

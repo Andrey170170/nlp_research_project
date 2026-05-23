@@ -550,7 +550,7 @@ def build_baseline_registry_from_run_roots(
         "schema_version": 1,
         "registry_id": registry_id,
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "created_from": "experiments.exact_trace_bench build-baseline-registry",
+        "created_from": "nlp_research_project.exact_trace_bench build-baseline-registry",
         "source_roots": [str(root) for root in run_roots],
         "invalid_roots": invalid_roots,
         "duplicate_keys": duplicate_keys,

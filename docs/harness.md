@@ -5,11 +5,11 @@ Last updated: 2026-05-16
 
 The current exact-trace benchmark harness is centered on the package-style module:
 
-- `experiments/exact_trace_bench/`
+- `src/nlp_research_project/exact_trace_bench/`
 
 The detailed CLI reference remains in:
 
-- `experiments/exact_trace_bench/README.md`
+- `src/nlp_research_project/exact_trace_bench/README.md`
 
 This page records the current operating model and boundaries so old one-off
 scripts do not look like the canonical path.
@@ -17,12 +17,14 @@ scripts do not look like the canonical path.
 ## Canonical workflow
 
 1. Build or select scenarios under `experiments/generated/exact_trace_bench/`.
-2. Render or submit a launch plan through `experiments.exact_trace_bench`.
+2. Render or submit a launch plan through `nlp_research_project.exact_trace_bench`.
 3. Run GPU/model-loading work only inside SLURM jobs.
-4. Write artifacts to `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/`.
-5. Extract and compare compact outputs with the exact-bench extraction/comparison
+4. Let the CLI select templates from `slurm/exact_trace_bench/` and execute from
+   immutable workspace snapshots by default.
+5. Write artifacts to `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/`.
+6. Extract and compare compact outputs with the exact-bench extraction/comparison
    helpers.
-6. Record baseline-changing results in root `EXPERIMENTS.md` and append structured
+7. Record baseline-changing results in root `EXPERIMENTS.md` and append structured
    records under `experiments/logs/`.
 
 ## Current fixture/tier convention
@@ -105,5 +107,9 @@ Old generated scenarios and configs containing `matched_debug`, weekend benchmar
 names, or pre-consolidation branch assumptions are provenance artifacts. They may
 remain useful for reconstructing old runs, but should not be copied as templates
 for new scenarios without checking current defaults.
+
+Old executable entrypoints live under `scripts/archive/`. Current exact-bench
+templates live under `slurm/exact_trace_bench/` and should normally be reached
+through `uv run exact-trace-bench ...`, not direct root scripts.
 
 See `experiments/generated/README.md` for the current generated-config index.

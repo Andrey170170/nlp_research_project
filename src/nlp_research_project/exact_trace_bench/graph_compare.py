@@ -372,7 +372,7 @@ def compare_artifact_dirs(
             }
         )
 
-    summary = {
+    summary: dict[str, Any] = {
         "left_artifacts": str(left_artifacts),
         "right_artifacts": str(right_artifacts),
         "shared_completion_count": len(shared_completion_keys),

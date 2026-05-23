@@ -341,6 +341,6 @@ Structured record:
 | Append-only event/run records | `experiments/logs/YYYY-MM.jsonl` |
 | Old long-form narratives | `docs/history/` |
 | Current workflow policy | `AGENTS.md` |
-| Current exact-bench harness usage | `docs/harness.md` and `experiments/exact_trace_bench/README.md` |
+| Current exact-bench harness usage | `docs/harness.md` and `src/nlp_research_project/exact_trace_bench/README.md` |
 | Current cleanup plan | `docs/current_project_roadmap.md` |
 | Durable design/spec tradeoffs | Current specs linked from `docs/README.md` |

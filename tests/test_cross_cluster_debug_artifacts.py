@@ -160,8 +160,8 @@ def run_checks() -> None:
 
 
 def run_launcher_and_extractor_roundtrip_checks() -> None:
-    from experiments.exact_trace_bench.scenarios import _select_exact_mode_knobs
-    from experiments.exact_trace_bench.extract import build_benchmark_index_row
+    from nlp_research_project.exact_trace_bench.scenarios import _select_exact_mode_knobs
+    from nlp_research_project.exact_trace_bench.extract import build_benchmark_index_row
     from experiments.extract_benchmark_index import build_row
     from experiments.run_sparsification_experiment import build_command
 

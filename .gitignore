@@ -13,6 +13,7 @@ experiments/traces/
 experiments/explore/
 experiments/extracted/
 experiments/figures/
+experiments/generated/
 logs/
 .env
 docs/

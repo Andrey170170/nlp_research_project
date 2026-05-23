@@ -89,9 +89,9 @@ Update rules:
 
 Current harness:
 
-- module: `experiments/exact_trace_bench/`
+- module: `src/nlp_research_project/exact_trace_bench/`
 - overview: `docs/harness.md`
-- CLI help: `uv run python -m experiments.exact_trace_bench --help`
+- CLI help: `uv run exact-trace-bench --help`
 
 Scratch outputs should be organized by cluster and tier only:
 
