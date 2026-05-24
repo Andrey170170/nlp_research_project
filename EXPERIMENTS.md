@@ -2770,6 +2770,94 @@ Updated optimization readout:
 4. Planner preflight and Phase 3 replay remain separate optimization tracks; this
    run primarily refines the Phase 4 executor and refresh priorities.
 
+## Recent launch update — staged `gpu_v1` row-reduction retest
+
+Purpose: retest `phase4_row_reduction=gpu_v1` after replacing the slow first
+prototype with reusable feature-row CPU staging plus append-side substage
+telemetry. The mode name stayed `gpu_v1`; this run validates the staged
+implementation before promoting it as the default exact compact row-reduction
+path.
+
+Code state used at launch:
+
+- project repo commit: `e701145` — record Phase 4 row reduction fast run,
+- paired library repo base commit: `dd40750` — implement Phase 4 GPU row
+  reduction prototype,
+- library worktree had uncommitted staged-`gpu_v1` changes in
+  `circuit_tracer/attribution/attribute_nnsight.py` and
+  `tests/test_chunked_decoder_optimizations.py`,
+- one-off scenario file remained untracked:
+  `experiments/generated/exact_trace_bench/exact_trace_phase4_row_reduction_fast_cardinal_scenarios.json`.
+
+Launch metadata:
+
+- cluster: `cardinal`,
+- SLURM array job: `10343945`, array `0-3`, all tasks completed successfully,
+- run id / output bucket: `20260523_035823_phase4-row-reduction-staged-fast`,
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260523_035823_phase4-row-reduction-staged-fast`.
+
+Top-level results:
+
+| Prompt | Row reduction | Scenario duration | Phase 4 wall | sacct MaxRSS | CUDA peak reserved |
+|---|---:|---:|---:|---:|---:|
+| `828_base` | `off` | `395.73 s` | `94.07 s` | `177.36 GiB` | `55.95 GiB` |
+| `828_base` | staged `gpu_v1` | `375.97 s` | `73.23 s` | `177.34 GiB` | `55.95 GiB` |
+| `361_base` | `off` | `583.17 s` | `179.38 s` | `247.48 GiB` | `71.72 GiB` |
+| `361_base` | staged `gpu_v1` | `543.19 s` | `138.18 s` | `247.47 GiB` | `71.72 GiB` |
+
+Compact parity:
+
+- staged `gpu_v1` was exact against the same-run `off` baseline for both prompts:
+  - feature Jaccard `1.0`,
+  - edge Jaccard `1.0`,
+  - weighted-edge Jaccard `1.0`,
+  - retained edge order matched,
+  - max retained-edge weight difference was `0.0`.
+
+Phase 4 executor telemetry:
+
+| Prompt | Row reduction | GPU→CPU row bytes | Reported bytes saved | CPU staging | denominator | row-store write |
+|---|---:|---:|---:|---:|---:|---:|
+| `828_base` | `off` | `91.42 GiB` | `0.00 GiB` | `9.26 s` | `6.44 s` | `41.35 s` |
+| `828_base` | staged `gpu_v1` | `91.36 GiB` | `0.06 GiB` | `7.12 s` | `1.21 s` | `23.91 s` |
+| `361_base` | `off` | `159.52 GiB` | `0.00 GiB` | `12.22 s` | `13.00 s` | `75.26 s` |
+| `361_base` | staged `gpu_v1` | `159.42 GiB` | `0.10 GiB` | `12.06 s` | `2.01 s` | `43.78 s` |
+
+Append substage telemetry:
+
+| Prompt | Row reduction | append total | NumPy conversion | `pwrite` | denominator copy |
+|---|---:|---:|---:|---:|---:|
+| `828_base` | `off` | `41.18 s` | `16.00 s` | `25.18 s` | `0.002 s` |
+| `828_base` | staged `gpu_v1` | `23.91 s` | `0.0002 s` | `23.90 s` | `0.003 s` |
+| `361_base` | `off` | `74.97 s` | `26.90 s` | `48.07 s` | `0.002 s` |
+| `361_base` | staged `gpu_v1` | `43.78 s` | `0.0002 s` | `43.78 s` | `0.003 s` |
+
+Interpretation:
+
+- The staged `gpu_v1` fix removed the catastrophic first-prototype row-store
+  regression and is now a real speedup on both fast prompts:
+  - `828_base`: `-19.76 s` total, `-20.85 s` Phase 4 wall,
+  - `361_base`: `-39.98 s` total, `-41.20 s` Phase 4 wall.
+- The win is not from transfer-byte reduction, which remains tiny
+  (`0.06--0.10 GiB` saved), but from:
+  - reusable feature-row CPU staging eliminating the large NumPy conversion tax
+    in the append path,
+  - GPU-side denominator reduction (`6.44 -> 1.21 s` on `828_base`,
+    `13.00 -> 2.01 s` on `361_base`),
+  - preserving exact compact output.
+- The remaining row-store append cost is now almost entirely `pwrite`, making
+  file-backed write throughput the next row-store optimization target.
+
+Decision:
+
+- Promote staged `phase4_row_reduction=gpu_v1` to the default exact compact path,
+  keeping `phase4_row_reduction=off` available as the CPU-reference fallback.
+- Next speed targets:
+  1. row-store `pwrite` cost / file-backed append throughput,
+  2. refresh `transfer/cast/abs` cost in
+     `compute_partial_feature_influences_streaming`.
+
 ## Status of this note
 
 This file is descriptive, not normative.

@@ -63,7 +63,7 @@ _PHASE4_ROW_EXECUTOR_EFFECTIVE_BY_MODE: dict[str, str] = {
 
 _PHASE4_ROW_REDUCTION_VERSION_BY_MODE: dict[str, str] = {
     "off": "off_v1",
-    "gpu_v1": "gpu_v1",
+    "gpu_v1": "gpu_v1_staged",
 }
 
 _PHASE4_ROW_REDUCTION_EFFECTIVE_BY_MODE: dict[str, str] = {
@@ -465,7 +465,7 @@ def extract_compact_chunked_attribution(
     phase4_scheduler_telemetry_detail: str = "normal",
     phase4_refresh_optimization: str = "off",
     phase4_row_executor: str = "batched",
-    phase4_row_reduction: str = "off",
+    phase4_row_reduction: str = "gpu_v1",
 ) -> dict[str, Any]:
     gc.collect()
     if torch.cuda.is_available():
@@ -786,7 +786,7 @@ def trace_completion_compact_chunked(
     phase4_scheduler_telemetry_detail: str = "normal",
     phase4_refresh_optimization: str = "off",
     phase4_row_executor: str = "batched",
-    phase4_row_reduction: str = "off",
+    phase4_row_reduction: str = "gpu_v1",
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
     fixture_name: str | None = None,
@@ -3156,8 +3156,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--phase4-row-reduction",
         type=parse_phase4_row_reduction,
-        default="off",
-        help="Phase-4 row-reduction backend (off or GPU compact transfer prototype)",
+        default="gpu_v1",
+        help="Phase-4 row-reduction backend (gpu_v1 staged path by default; off for CPU reference)",
     )
     parser.add_argument(
         "--cross-cluster-debug",
