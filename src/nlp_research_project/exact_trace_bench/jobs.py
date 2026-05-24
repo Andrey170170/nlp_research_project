@@ -67,12 +67,18 @@ SBATCH_FULL_ANSWER_TRAJECTORY_SCRIPTS: dict[str, Path] = {
     / "full_answer_prepare.cardinal.sbatch",
 }
 
-SBATCH_FULL_ANSWER_TRACE_SCRIPTS: dict[str, Path] = {
-    "ascend": REPO_ROOT
+FULL_ANSWER_TRACE_RESOURCE_PROFILES: tuple[str, ...] = ("standard", "quad")
+
+SBATCH_FULL_ANSWER_TRACE_SCRIPTS: dict[tuple[str, str], Path] = {
+    ("ascend", "standard"): REPO_ROOT
     / "slurm"
     / "exact_trace_bench"
     / "full_answer_trace.ascend.sbatch",
-    "cardinal": REPO_ROOT
+    ("ascend", "quad"): REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "full_answer_trace_quad.ascend.sbatch",
+    ("cardinal", "standard"): REPO_ROOT
     / "slurm"
     / "exact_trace_bench"
     / "full_answer_trace.cardinal.sbatch",
@@ -181,6 +187,38 @@ def _resolve_resource_profile(scenarios_file: Path) -> str:
             "Scenarios file mixes multiple resource profiles; split it or set metadata.resource_profile"
         )
     return next(iter(scenario_profiles))
+
+
+def _validate_array_range(array_range: str, *, item_count: int) -> str:
+    normalized = array_range.strip()
+    if not normalized:
+        raise ValueError("array_range cannot be empty")
+    if item_count <= 0:
+        raise ValueError("item_count must be positive")
+
+    for part in normalized.split(","):
+        range_part = part.strip()
+        if not range_part:
+            raise ValueError(f"Invalid empty array range component in {array_range!r}")
+        if "%" in range_part:
+            range_part, throttle = range_part.split("%", maxsplit=1)
+            if not throttle.isdigit() or int(throttle) <= 0:
+                raise ValueError(f"Invalid array throttle in {array_range!r}")
+        if "-" in range_part:
+            start_text, end_text = range_part.split("-", maxsplit=1)
+        else:
+            start_text = end_text = range_part
+        if not start_text.isdigit() or not end_text.isdigit():
+            raise ValueError(f"Invalid array range component {part!r}")
+        start = int(start_text)
+        end = int(end_text)
+        if start > end:
+            raise ValueError(f"Array range start exceeds end in {part!r}")
+        if start < 0 or end >= item_count:
+            raise ValueError(
+                f"Array range {part!r} is outside available shard ids 0-{item_count - 1}"
+            )
+    return normalized
 
 
 def _scenario_count(scenarios_file: Path) -> int:
@@ -562,10 +600,12 @@ def render_full_answer_trajectory_plan(
 def render_full_answer_shard_plan(
     *,
     cluster: str,
+    resource_profile: str = "standard",
     trajectory_path: Path,
     trace_specs_path: Path,
     shards_path: Path,
     output_root: Path,
+    array_range: str | None = None,
     immutable_workspace: bool = True,
     snapshot_root: Path = DEFAULT_SNAPSHOT_ROOT,
     source_root: Path = REPO_ROOT,
@@ -576,14 +616,22 @@ def render_full_answer_shard_plan(
     run_description: str | None = None,
     run_goal: str | None = None,
 ) -> dict[str, Any]:
-    if cluster not in SBATCH_FULL_ANSWER_TRACE_SCRIPTS:
-        raise ValueError(f"Unsupported full-answer trace cluster: {cluster!r}")
+    script_key = (cluster, resource_profile)
+    if script_key not in SBATCH_FULL_ANSWER_TRACE_SCRIPTS:
+        raise ValueError(
+            "Unsupported full-answer trace launch profile: "
+            f"cluster={cluster!r}, resource_profile={resource_profile!r}"
+        )
     shards_payload = load_shards(shards_path)
     shards = shards_payload.get("shards")
     if not isinstance(shards, list) or not shards:
         raise ValueError(f"No shards found in {shards_path}")
     shard_count = len(shards)
-    array_range = f"0-{shard_count - 1}"
+    resolved_array_range = (
+        _validate_array_range(array_range, item_count=shard_count)
+        if array_range is not None
+        else f"0-{shard_count - 1}"
+    )
 
     workspace = resolve_launch_workspace(
         immutable=immutable_workspace,
@@ -593,7 +641,7 @@ def render_full_answer_shard_plan(
     ).resolve()
     library_workspace = sibling_library_root(workspace)
     source_root = source_root.resolve()
-    script_path = SBATCH_FULL_ANSWER_TRACE_SCRIPTS[cluster].resolve()
+    script_path = SBATCH_FULL_ANSWER_TRACE_SCRIPTS[script_key].resolve()
     launch_script_path = _path_in_workspace(
         script_path, workspace=workspace, source_root=source_root
     )
@@ -645,7 +693,7 @@ def render_full_answer_shard_plan(
         "sbatch",
         *([f"--time={walltime}"] if walltime else []),
         f"--job-name={_slugify_run_name(resolved_run_name)}",
-        f"--array={array_range}",
+        f"--array={resolved_array_range}",
         f"--export={','.join(export_parts)}",
         str(launch_script_path),
         *script_args,
@@ -657,7 +705,8 @@ def render_full_answer_shard_plan(
         "shards_path": str(launch_shards),
         "output_root": str(resolved_output_root),
         "shard_count": shard_count,
-        "array_range": array_range,
+        "array_range": resolved_array_range,
+        "resource_profile": resource_profile,
         "run_id": resolved_run_id,
         "run_name": resolved_run_name,
         "run_description": _normalize_free_text(run_description),

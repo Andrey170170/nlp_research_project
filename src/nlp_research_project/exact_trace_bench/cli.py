@@ -671,10 +671,12 @@ def _cmd_submit_full_answer_trajectory(args: argparse.Namespace) -> None:
 def _cmd_launch_full_answer_shards(args: argparse.Namespace) -> None:
     plan = render_full_answer_shard_plan(
         cluster=args.cluster,
+        resource_profile=args.trace_resource_profile,
         trajectory_path=args.trajectory,
         trace_specs_path=args.trace_specs,
         shards_path=args.shards,
         output_root=args.output_root,
+        array_range=args.array_range,
         immutable_workspace=not args.no_immutable_workspace,
         snapshot_root=args.snapshot_root,
         source_root=args.source_root,
@@ -773,10 +775,21 @@ def build_parser() -> argparse.ArgumentParser:
     full_answer_launch.add_argument(
         "--cluster", choices=["ascend", "cardinal"], default="ascend"
     )
+    full_answer_launch.add_argument(
+        "--trace-resource-profile",
+        choices=["standard", "quad"],
+        default="standard",
+        help="SLURM template/profile for full-answer trace shards",
+    )
     full_answer_launch.add_argument("--trajectory", type=Path, required=True)
     full_answer_launch.add_argument("--trace-specs", type=Path, required=True)
     full_answer_launch.add_argument("--shards", type=Path, required=True)
     full_answer_launch.add_argument("--output-root", type=Path, required=True)
+    full_answer_launch.add_argument(
+        "--array-range",
+        default=None,
+        help="Optional SLURM array range subset, e.g. 0-39",
+    )
     full_answer_launch.add_argument("--no-immutable-workspace", action="store_true")
     full_answer_launch.add_argument(
         "--snapshot-root", type=Path, default=DEFAULT_SNAPSHOT_ROOT

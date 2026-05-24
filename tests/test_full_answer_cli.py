@@ -218,6 +218,69 @@ def test_full_answer_shard_print_only_plan_uses_snapshot_paths(tmp_path: Path) -
     assert "--run-goal" in plan["sbatch_command"]
 
 
+def test_full_answer_shard_plan_supports_quad_partial_array(tmp_path: Path) -> None:
+    input_dir = (
+        PROJECT_ROOT
+        / "experiments"
+        / "generated"
+        / "exact_trace_bench"
+        / "unit_full_answer_quad"
+    )
+    input_dir.mkdir(parents=True, exist_ok=True)
+    trajectory_path = input_dir / "trajectory.json"
+    specs_path = input_dir / "trace_specs.jsonl"
+    shards_path = input_dir / "shards.json"
+    trajectory_path.write_text(json.dumps(tiny_trajectory()), encoding="utf-8")
+    specs_path.write_text("", encoding="utf-8")
+    shards_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "trace_specs_file": str(specs_path),
+                "cost_model": "prefix_token_count_lpt_v1",
+                "shards": [
+                    {"shard_id": i, "estimated_cost_sum": 0, "spec_indices": []}
+                    for i in range(40)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    proc = run_cli(
+        "launch-full-answer-shards",
+        "--cluster",
+        "ascend",
+        "--trace-resource-profile",
+        "quad",
+        "--array-range",
+        "0-39",
+        "--trajectory",
+        str(trajectory_path),
+        "--trace-specs",
+        str(specs_path),
+        "--shards",
+        str(shards_path),
+        "--output-root",
+        str(tmp_path / "runs"),
+        "--snapshot-root",
+        str(tmp_path / "snapshots"),
+        "--workspace-label",
+        "test-quad-shards",
+        "--run-id",
+        "unit-quad-run",
+        "--print-only",
+    )
+    assert proc.returncode == 0, proc.stderr
+    plan = json.loads(proc.stdout)
+    assert plan["resource_profile"] == "quad"
+    assert plan["array_range"] == "0-39"
+    assert plan["sbatch_script"].endswith(
+        "slurm/exact_trace_bench/full_answer_trace_quad.ascend.sbatch"
+    )
+    assert "--array=0-39" in plan["sbatch_command"]
+
+
 def test_full_answer_shard_plan_rejects_existing_output_root(tmp_path: Path) -> None:
     trajectory_path = tmp_path / "trajectory.json"
     trace_specs_path = tmp_path / "trace_specs.jsonl"
