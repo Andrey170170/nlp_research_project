@@ -2858,6 +2858,85 @@ Decision:
   2. refresh `transfer/cast/abs` cost in
      `compute_partial_feature_influences_streaming`.
 
+## Recent launch update — memmap row-store / fused refresh negative result
+
+Purpose: validate two follow-up speedups after staged `gpu_v1` became the
+default: replacing row-store `pwrite` with writable memmap assignment, and
+replacing refresh split transfer/cast/abs with `to(..., copy=True)` plus
+in-place `abs_()` on the fresh tensor.
+
+Code state used at launch:
+
+- project repo commit: `38f2320` — promote Phase 4 row reduction default,
+- paired library repo commit: `fca780a` — optimize row-store writes and refresh
+  prep,
+- one-off scenario file remained untracked:
+  `experiments/generated/exact_trace_bench/exact_trace_phase4_row_reduction_fast_cardinal_scenarios.json`.
+
+Launch metadata:
+
+- cluster: `cardinal`,
+- SLURM array job: `10401464`, array `0-3`, all tasks completed successfully,
+- run id / output bucket: `20260523_214653_phase4-memmap-refresh-fast`,
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260523_214653_phase4-memmap-refresh-fast`.
+
+Top-level results:
+
+| Prompt | Row reduction | Scenario duration | Phase 4 wall | sacct MaxRSS | CUDA peak reserved |
+|---|---:|---:|---:|---:|---:|
+| `828_base` | `off` | `452.51 s` | `154.07 s` | `177.32 GiB` | `55.95 GiB` |
+| `828_base` | `gpu_v1` | `373.10 s` | `127.94 s` | `144.19 GiB` | `55.95 GiB` |
+| `361_base` | `off` | `686.55 s` | `273.10 s` | `247.49 GiB` | `71.72 GiB` |
+| `361_base` | `gpu_v1` | `650.77 s` | `242.47 s` | `247.47 GiB` | `71.72 GiB` |
+
+Compact parity:
+
+- `gpu_v1` remained exact against the same-run `off` baseline for both prompts:
+  feature Jaccard `1.0`, edge Jaccard `1.0`, weighted-edge Jaccard `1.0`,
+  retained edge order matched, and max retained-edge weight difference was `0.0`.
+
+Comparison against the prior staged-`gpu_v1` run:
+
+| Prompt | Prior staged `gpu_v1` Phase 4 | memmap/fused Phase 4 | Regression |
+|---|---:|---:|---:|
+| `828_base` | `73.23 s` | `127.94 s` | `+54.72 s` |
+| `361_base` | `138.18 s` | `242.47 s` | `+104.29 s` |
+
+Row-store append readout:
+
+| Prompt | Prior staged `gpu_v1` append (`pwrite`) | memmap assignment append | Regression |
+|---|---:|---:|---:|
+| `828_base` | `23.91 s` | `64.90 s` | `+41.00 s` |
+| `361_base` | `43.78 s` | `115.28 s` | `+71.50 s` |
+
+All feature batches used `row_store_append_write_backend=memmap_assign` in the
+new run. On this Cardinal filesystem/node setup, writable memmap assignment was
+substantially slower than the direct `os.pwrite` path.
+
+Refresh readout:
+
+| Prompt | Prior staged `gpu_v1` transfer/cast/abs | fused prep transfer/cast/abs | Regression |
+|---|---:|---:|---:|
+| `828_base` | `23.27 s` | `32.47 s` | `+9.20 s` |
+| `361_base` | `47.72 s` | `70.10 s` | `+22.38 s` |
+
+The fused `to(device=..., dtype=..., copy=True)` plus `abs_()` path also regressed
+the refresh hot path, likely because the forced fresh copy cost outweighed any
+benefit from combining transfer/cast before `abs_()`.
+
+Decision:
+
+- Treat commit `fca780a` as a negative experiment and revert it.
+- Keep the promoted staged `gpu_v1` default from `1edc940` / `38f2320`.
+- Do not pursue writable memmap assignment as the row-store write optimization on
+  this setup.
+- Do not pursue the forced-copy fused refresh prep path as implemented.
+- Future row-store work should look at file placement/preallocation or other
+  `pwrite`-compatible approaches rather than memmap assignment.
+- Future refresh work should prefer prepared-chunk caching or active-row
+  algorithmic changes over this forced-copy fused prep path.
+
 ## Status of this note
 
 This file is descriptive, not normative.
