@@ -463,6 +463,17 @@ def build_command(
                     str(scenario["row_store_cache_control"]),
                 ]
             )
+        if scenario.get("row_store_temp_root_policy") is not None:
+            cmd.extend(
+                [
+                    "--row-store-temp-root-policy",
+                    str(scenario["row_store_temp_root_policy"]),
+                ]
+            )
+        if scenario.get("row_store_temp_root") is not None:
+            cmd.extend(["--row-store-temp-root", str(scenario["row_store_temp_root"])])
+        if scenario.get("row_store_preallocate", False):
+            cmd.append("--row-store-preallocate")
         if scenario.get("exact_encoder_residency") is not None:
             cmd.extend(
                 [

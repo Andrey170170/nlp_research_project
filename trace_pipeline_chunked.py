@@ -91,6 +91,11 @@ _ROW_STORE_CACHE_CONTROLS = {
     "fadvise_dontneed_after_append_v1",
 }
 
+_ROW_STORE_TEMP_ROOT_POLICIES = {
+    "default",
+    "env_node_local",
+}
+
 _EXACT_ENCODER_RESIDENCY_MODES = {
     "lazy",
     "active_cpu",
@@ -242,6 +247,24 @@ def parse_row_store_cache_control(value: str) -> str:
     if normalized is None:
         raise argparse.ArgumentTypeError(
             f"Expected one of {{off, fadvise_dontneed_after_append_v1}}, got: {value!r}"
+        )
+    return normalized
+
+
+def _normalize_row_store_temp_root_policy(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _ROW_STORE_TEMP_ROOT_POLICIES:
+        return None
+    return normalized
+
+
+def parse_row_store_temp_root_policy(value: str) -> str:
+    normalized = _normalize_row_store_temp_root_policy(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{default, env_node_local}}, got: {value!r}"
         )
     return normalized
 
@@ -466,6 +489,9 @@ def extract_compact_chunked_attribution(
     phase4_refresh_optimization: str = "off",
     phase4_row_executor: str = "batched",
     phase4_row_reduction: str = "gpu_v1",
+    row_store_temp_root_policy: str = "default",
+    row_store_temp_root: str | None = None,
+    row_store_preallocate: bool = False,
 ) -> dict[str, Any]:
     gc.collect()
     if torch.cuda.is_available():
@@ -522,6 +548,9 @@ def extract_compact_chunked_attribution(
         phase4_refresh_optimization=phase4_refresh_optimization,
         phase4_row_executor=phase4_row_executor,
         phase4_row_reduction=phase4_row_reduction,
+        row_store_temp_root_policy=row_store_temp_root_policy,
+        row_store_temp_root=row_store_temp_root,
+        row_store_preallocate=row_store_preallocate,
         compact_output=True,
     )
 
@@ -787,6 +816,9 @@ def trace_completion_compact_chunked(
     phase4_refresh_optimization: str = "off",
     phase4_row_executor: str = "batched",
     phase4_row_reduction: str = "gpu_v1",
+    row_store_temp_root_policy: str = "default",
+    row_store_temp_root: str | None = None,
+    row_store_preallocate: bool = False,
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
     fixture_name: str | None = None,
@@ -930,6 +962,9 @@ def trace_completion_compact_chunked(
             phase4_refresh_optimization=phase4_refresh_optimization,
             phase4_row_executor=phase4_row_executor,
             phase4_row_reduction=phase4_row_reduction,
+            row_store_temp_root_policy=row_store_temp_root_policy,
+            row_store_temp_root=row_store_temp_root,
+            row_store_preallocate=row_store_preallocate,
         )
         attribution_seconds = time.perf_counter() - attribution_start
 
@@ -2035,6 +2070,12 @@ def trace_completion_compact_chunked(
         "row_store_cache_controls_effective_observed": (
             unique_row_store_cache_controls_effective
         ),
+        "row_store_temp_root_policy": row_store_temp_root_policy,
+        "row_store_temp_root_policy_requested": row_store_temp_root_policy,
+        "row_store_temp_root": row_store_temp_root,
+        "row_store_temp_root_requested": row_store_temp_root,
+        "row_store_preallocate": row_store_preallocate,
+        "row_store_preallocate_requested": row_store_preallocate,
         "exact_encoder_residency": exact_encoder_residency,
         "exact_encoder_residency_requested": (
             observed_exact_encoder_residency_requested[-1]
@@ -2602,6 +2643,12 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "row_store_cache_control": args.row_store_cache_control,
         "row_store_cache_control_requested": args.row_store_cache_control,
         "row_store_cache_control_effective": args.row_store_cache_control,
+        "row_store_temp_root_policy": args.row_store_temp_root_policy,
+        "row_store_temp_root_policy_requested": args.row_store_temp_root_policy,
+        "row_store_temp_root": args.row_store_temp_root,
+        "row_store_temp_root_requested": args.row_store_temp_root,
+        "row_store_preallocate": args.row_store_preallocate,
+        "row_store_preallocate_requested": args.row_store_preallocate,
         "exact_encoder_residency": args.exact_encoder_residency,
         "exact_encoder_residency_requested": args.exact_encoder_residency,
         "exact_encoder_residency_effective": args.exact_encoder_residency,
@@ -2833,6 +2880,9 @@ def run_pipeline(args: argparse.Namespace) -> None:
                         "phase4_refresh_optimization": args.phase4_refresh_optimization,
                         "phase4_row_executor": args.phase4_row_executor,
                         "phase4_row_reduction": args.phase4_row_reduction,
+                        "row_store_temp_root_policy": args.row_store_temp_root_policy,
+                        "row_store_temp_root": args.row_store_temp_root,
+                        "row_store_preallocate": args.row_store_preallocate,
                     }
                     if not args.save_raw
                     else {}
@@ -3104,6 +3154,22 @@ if __name__ == "__main__":
         type=parse_row_store_cache_control,
         default="off",
         help=("Row-store cache-control mode (off or fadvise_dontneed_after_append_v1)"),
+    )
+    parser.add_argument(
+        "--row-store-temp-root-policy",
+        type=parse_row_store_temp_root_policy,
+        default="default",
+        help="Row-store temp-root policy (default or env_node_local)",
+    )
+    parser.add_argument(
+        "--row-store-temp-root",
+        default=None,
+        help="Optional explicit row-store temp root path",
+    )
+    parser.add_argument(
+        "--row-store-preallocate",
+        action="store_true",
+        help="Enable row-store file preallocation",
     )
     parser.add_argument(
         "--exact-encoder-residency",
