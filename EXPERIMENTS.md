@@ -2937,6 +2937,156 @@ Decision:
 - Future refresh work should prefer prepared-chunk caching or active-row
   algorithmic changes over this forced-copy fused prep path.
 
+## Recent launch update — row-store placement / preallocation confirmation
+
+Purpose: validate whether the compact row-store temp-root controls and best-effort
+file preallocation improve the staged `phase4_row_reduction=gpu_v1` default on
+Cardinal fast prompts.
+
+Code state used for the row-store placement run:
+
+- project repo commit: `4b6831b` — plan and plumb row-store placement controls,
+- paired library repo commit: `37809dd` — add row-store placement controls,
+- one-off scenario file remained untracked:
+  `experiments/generated/exact_trace_bench/exact_trace_row_store_placement_fast_cardinal_scenarios.json`.
+
+Launch metadata:
+
+- cluster: `cardinal`,
+- SLURM array job: `10421168`, array `0-5`, all tasks completed successfully,
+- run id / output bucket: `20260524_181526_row-store-placement-fast`,
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260524_181526_row-store-placement-fast`.
+
+Result summary:
+
+- `row_store_temp_root_policy=env_node_local` selected `/tmp`, matching the
+  effective default placement on Cardinal. Placement alone is therefore not a
+  useful optimization on this setup.
+- `row_store_preallocate=true` succeeded and improved the fast prompts in this
+  first run:
+  - `828_base`: scenario duration `377.54 s -> 345.12 s`, Phase 4
+    `79.26 s -> 76.01 s`, row-store write `32.56 s -> 27.94 s`,
+  - `361_base`: scenario duration `589.32 s -> 578.63 s`, Phase 4
+    `162.38 s -> 155.67 s`, row-store write `49.56 s -> 45.33 s`.
+- Preallocation sizes were approximately `98.1 GB` for `828_base` and
+  `171.2 GB` for `361_base` in that matrix.
+
+Decision after this run: treat preallocation as promising, but require a crossed
+confirmation with decoder cache settings before making it the default.
+
+## Recent launch update — preallocation / decoder-cache confirmation
+
+Purpose: confirm `row_store_preallocate=true` and test interaction with
+`cross_batch_decoder_cache_bytes=8GiB` on the staged `gpu_v1` default path for
+`828_base` and `361_base`.
+
+Launch metadata:
+
+- cluster: `cardinal`,
+- SLURM array job: `10423564`, array `0-7`, all tasks completed successfully,
+- run id / output bucket: `20260524_214904_prealloc-cache8g-fast`,
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260524_214904_prealloc-cache8g-fast`,
+- one-off scenario file remained untracked:
+  `experiments/generated/exact_trace_bench/exact_trace_prealloc_cache8g_fast_cardinal_scenarios.json`.
+
+Important provenance note:
+
+- This launch was accidentally submitted directly with
+  `scripts/trace_weekend_exact_chunked.cardinal.sbatch`, not through the
+  immutable snapshot launch-plan path. The jobs were pending while later
+  default-off refresh-cache/direct-accumulation metadata plumbing was added, so
+  the artifacts reflect the live worktree at execution time rather than a frozen
+  submission snapshot.
+- The results are useful as current-code measurements, but do not count as
+  promotion-quality immutable-snapshot evidence. Future performance/parity jobs
+  must use `--immutable-workspace` / `workspace_snapshots/`.
+
+Top-level results:
+
+| Prompt | Decoder cache | Preallocate | Scenario duration | Phase 3 wall | Phase 4 wall | sacct MaxRSS | CUDA peak reserved |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `828_base` | `0` | off | `450.89 s` | `140.20 s` | `85.94 s` | `181.7 GiB` | `55.95 GiB` |
+| `828_base` | `0` | on | `417.70 s` | `141.02 s` | `78.68 s` | `181.8 GiB` | `55.95 GiB` |
+| `828_base` | `8 GiB` | off | `319.44 s` | `121.06 s` | `80.86 s` | `139.3 GiB` | `61.00 GiB` |
+| `828_base` | `8 GiB` | on | `308.68 s` | `121.11 s` | `75.87 s` | `139.4 GiB` | `61.00 GiB` |
+| `361_base` | `0` | off | `612.27 s` | `233.99 s` | `181.24 s` | `253.2 GiB` | `71.72 GiB` |
+| `361_base` | `0` | on | `585.76 s` | `234.91 s` | `155.73 s` | `253.2 GiB` | `71.72 GiB` |
+| `361_base` | `8 GiB` | off | `556.06 s` | `185.34 s` | `195.36 s` | `256.4 GiB` | `61.36 GiB` |
+| `361_base` | `8 GiB` | on | `546.28 s` | `185.42 s` | `178.55 s` | `250.4 GiB` | `61.36 GiB` |
+
+Observed deltas versus each prompt's `cache0/prealloc0` baseline:
+
+- `828_base`:
+  - prealloc only: `-33.19 s` total (`-7.4%`), Phase 4 `-7.26 s`,
+  - cache8g only: `-131.45 s` total (`-29.2%`), Phase 4 `-5.08 s`,
+  - cache8g + prealloc: `-142.21 s` total (`-31.5%`), Phase 4 `-10.07 s`.
+- `361_base`:
+  - prealloc only: `-26.51 s` total (`-4.3%`), Phase 4 `-25.51 s`,
+  - cache8g only: `-56.21 s` total (`-9.2%`), but Phase 4 `+14.12 s`,
+  - cache8g + prealloc: `-65.99 s` total (`-10.8%`), Phase 4 `-2.69 s`.
+
+Preallocation status:
+
+- succeeded in all prealloc scenarios,
+- selected temp root `/tmp`,
+- allocated approximately `91.4 GiB` for `828_base` and `159.4 GiB` for
+  `361_base` in this confirmation matrix.
+
+Compact parity:
+
+- `row_store_preallocate=true` was bitwise stable within both decoder-cache
+  settings for both prompts: all compact `.npz` arrays matched exactly against
+  the matching prealloc-off scenario.
+- `cache8g` was not bitwise-identical to `cache0`: active features, generated
+  token, and logprob matched, but retained edge arrays/order differed with small
+  weight deltas:
+  - `828_base`: max retained-edge abs diff about `7.20e-6`,
+  - `361_base`: max retained-edge abs diff about `3.75e-6`.
+
+Decision:
+
+- `row_store_preallocate=true` looks like a safe speed win and should be promoted
+  only after rerunning from an immutable snapshot or after recording why this
+  current-code mutable launch is acceptable.
+- Do not promote `cache8g` as an exact-parity default based on this matrix; it is
+  fast, but it changes retained-edge ordering/weights at the few-e-6 level.
+- All future performance/parity runs must go through the immutable snapshot
+  launch-plan path to avoid live-worktree drift while queued.
+
+## Recent implementation update — prepared refresh cache and direct active-row accumulation
+
+Purpose: implement the next two opt-in refresh-path candidates after the row-store
+preallocation work:
+
+1. `phase4_refresh_prepared_chunk_cache_bytes`: a row-store cache for prepared
+   refresh chunks after read/device/dtype/abs, default `0` (disabled),
+2. `phase4_refresh_active_row_accumulation=direct_v1`: direct accumulation over
+   active row subranges to avoid zero-filled full chunks, default `zero_fill`.
+
+Implementation status:
+
+- library changes are currently in the optimization worktree and will be paired
+  with a project plumbing commit,
+- project CLI/scenario plumbing exposes:
+  - `--phase4-refresh-prepared-chunk-cache-bytes`,
+  - `--phase4-refresh-active-row-accumulation {zero_fill,direct_v1}`,
+- defaults preserve prior behavior.
+
+Local validation already run:
+
+- library: `uv run ruff check circuit_tracer/graph.py circuit_tracer/attribution/attribute.py circuit_tracer/attribution/attribute_nnsight.py tests/test_partial_influences.py tests/test_attribute_nnsight_telemetry.py`,
+- library: `uv run pytest tests/test_partial_influences.py tests/test_attribute_nnsight_telemetry.py tests/test_chunked_decoder_optimizations.py -q` -> `188 passed`,
+- project: `uv run ruff check trace_pipeline_chunked.py experiments/run_sparsification_experiment.py experiments/exact_trace_bench/scenarios.py`,
+- project scenario listing against the prealloc/cache8g scenario file succeeded.
+
+Required next validation:
+
+- launch a new immutable-snapshot Cardinal fast matrix covering baseline
+  `phase4_refresh_optimization=v1` zero-fill, prepared-cache only, direct-only,
+  and prepared+direct variants before interpreting performance or parity.
+
 ## Status of this note
 
 This file is descriptive, not normative.

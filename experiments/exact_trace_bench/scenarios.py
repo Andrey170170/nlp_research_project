@@ -38,6 +38,8 @@ EXACT_MODE_KNOB_KEYS = (
     "phase4_anomaly_debug",
     "phase4_refresh_policy",
     "phase4_refresh_interval_multiplier",
+    "phase4_refresh_prepared_chunk_cache_bytes",
+    "phase4_refresh_active_row_accumulation",
     "phase4_ranker",
     "row_store_cache_control",
     "row_store_temp_root_policy",

@@ -66,6 +66,25 @@ When updating project guidance:
   that relative path, so library state must be treated as part of the experiment
   definition.
 
+### Immutable launch snapshots
+
+For any non-trivial SLURM experiment, launch from an immutable workspace snapshot,
+not directly from a live worktree. Use the exact-trace-bench snapshot / launch-plan
+helpers so the submitted job sees a frozen project + sibling library pair:
+
+- create or render launches with `--immutable-workspace` / the preset default,
+- verify the launch plan's `workspace_root` and `library_workspace_root` point
+  under `workspace_snapshots/`,
+- submit the `sbatch_argv` from the launch plan rather than hand-editing a direct
+  `sbatch` command from the mutable worktree,
+- if hand submission is unavoidable, explicitly set `WORKSPACE_ROOT` and
+  `LIB_WORKSPACE_ROOT` to the snapshot paths and record why.
+
+Do not submit performance or parity jobs against a mutable worktree: queued jobs
+can start after later edits and silently validate the wrong code. Direct mutable
+launches are only acceptable for tiny disposable smoke checks, and must be labeled
+as such in the run description.
+
 Important:
 
 - do **not** blindly recreate or wipe the optimization worktree,

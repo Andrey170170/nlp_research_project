@@ -81,6 +81,11 @@ _PHASE4_REFRESH_POLICIES = {
     "deferred_v1",
 }
 
+_PHASE4_REFRESH_ACTIVE_ROW_ACCUMULATION_MODES = {
+    "zero_fill",
+    "direct_v1",
+}
+
 _PHASE4_RANKERS = {
     "argsort",
     "topk_v1",
@@ -212,6 +217,48 @@ def parse_phase4_refresh_interval_multiplier(value: str) -> int:
     normalized = _normalize_phase4_refresh_interval_multiplier(value)
     if normalized is None:
         raise argparse.ArgumentTypeError(f"Expected a positive integer, got: {value!r}")
+    return normalized
+
+
+def _normalize_non_negative_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        try:
+            parsed = int(normalized)
+        except ValueError:
+            return None
+        return parsed if parsed >= 0 else None
+    return None
+
+
+def parse_non_negative_int(value: str) -> int:
+    normalized = _normalize_non_negative_int(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected a non-negative integer, got: {value!r}"
+        )
+    return normalized
+
+
+def _normalize_phase4_refresh_active_row_accumulation(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _PHASE4_REFRESH_ACTIVE_ROW_ACCUMULATION_MODES:
+        return None
+    return normalized
+
+
+def parse_phase4_refresh_active_row_accumulation(value: str) -> str:
+    normalized = _normalize_phase4_refresh_active_row_accumulation(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{zero_fill, direct_v1}}, got: {value!r}"
+        )
     return normalized
 
 
@@ -480,6 +527,8 @@ def extract_compact_chunked_attribution(
     telemetry_max_events: int | None = None,
     phase4_refresh_policy: str = "standard",
     phase4_refresh_interval_multiplier: int = 1,
+    phase4_refresh_prepared_chunk_cache_bytes: int = 0,
+    phase4_refresh_active_row_accumulation: str = "zero_fill",
     phase4_ranker: str = "argsort",
     row_store_cache_control: str = "off",
     exact_encoder_residency: str = "lazy",
@@ -539,6 +588,8 @@ def extract_compact_chunked_attribution(
         telemetry_max_events=telemetry_max_events,
         phase4_refresh_policy=phase4_refresh_policy,
         phase4_refresh_interval_multiplier=phase4_refresh_interval_multiplier,
+        phase4_refresh_prepared_chunk_cache_bytes=phase4_refresh_prepared_chunk_cache_bytes,
+        phase4_refresh_active_row_accumulation=phase4_refresh_active_row_accumulation,
         phase4_ranker=phase4_ranker,
         row_store_cache_control=row_store_cache_control,
         exact_encoder_residency=exact_encoder_residency,
@@ -807,6 +858,8 @@ def trace_completion_compact_chunked(
     telemetry_max_events: int | None = None,
     phase4_refresh_policy: str = "standard",
     phase4_refresh_interval_multiplier: int = 1,
+    phase4_refresh_prepared_chunk_cache_bytes: int = 0,
+    phase4_refresh_active_row_accumulation: str = "zero_fill",
     phase4_ranker: str = "argsort",
     row_store_cache_control: str = "off",
     exact_encoder_residency: str = "lazy",
@@ -878,6 +931,13 @@ def trace_completion_compact_chunked(
     observed_phase4_refresh_policies_effective: list[str] = []
     observed_phase4_refresh_interval_multipliers_requested: list[int] = []
     observed_phase4_refresh_interval_multipliers_effective: list[int] = []
+    observed_phase4_refresh_prepared_chunk_cache_bytes_requested: list[int] = []
+    observed_phase4_refresh_prepared_chunk_cache_bytes_effective: list[int] = []
+    observed_phase4_refresh_prepared_chunk_cache_enabled: list[bool] = []
+    observed_phase4_refresh_active_row_accumulation_requested: list[str] = []
+    observed_phase4_refresh_active_row_accumulation_effective: list[str] = []
+    observed_phase4_refresh_active_row_accumulation_fallback_reasons: list[str] = []
+    observed_phase4_refresh_active_row_accumulation_applicable: list[bool] = []
     observed_phase4_rankers_requested: list[str] = []
     observed_phase4_rankers_effective: list[str] = []
     observed_row_store_cache_controls_requested: list[str] = []
@@ -953,6 +1013,8 @@ def trace_completion_compact_chunked(
             telemetry_max_events=telemetry_max_events,
             phase4_refresh_policy=phase4_refresh_policy,
             phase4_refresh_interval_multiplier=phase4_refresh_interval_multiplier,
+            phase4_refresh_prepared_chunk_cache_bytes=phase4_refresh_prepared_chunk_cache_bytes,
+            phase4_refresh_active_row_accumulation=phase4_refresh_active_row_accumulation,
             phase4_ranker=phase4_ranker,
             row_store_cache_control=row_store_cache_control,
             exact_encoder_residency=exact_encoder_residency,
@@ -1101,6 +1163,97 @@ def trace_completion_compact_chunked(
         )
         observed_phase4_refresh_interval_multipliers_effective.append(
             resolved_phase4_refresh_interval_multiplier_effective
+        )
+
+        resolved_phase4_refresh_prepared_chunk_cache_bytes_requested = (
+            _normalize_non_negative_int(
+                compact_result.get(
+                    "phase4_refresh_prepared_chunk_cache_bytes_requested"
+                )
+            )
+            if compact_result.get("phase4_refresh_prepared_chunk_cache_bytes_requested")
+            is not None
+            else None
+        )
+        if resolved_phase4_refresh_prepared_chunk_cache_bytes_requested is None:
+            resolved_phase4_refresh_prepared_chunk_cache_bytes_requested = (
+                _normalize_non_negative_int(
+                    compact_result.get("phase4_refresh_prepared_chunk_cache_bytes")
+                )
+                if compact_result.get("phase4_refresh_prepared_chunk_cache_bytes")
+                is not None
+                else phase4_refresh_prepared_chunk_cache_bytes
+            )
+        if resolved_phase4_refresh_prepared_chunk_cache_bytes_requested is None:
+            resolved_phase4_refresh_prepared_chunk_cache_bytes_requested = 0
+        observed_phase4_refresh_prepared_chunk_cache_bytes_requested.append(
+            resolved_phase4_refresh_prepared_chunk_cache_bytes_requested
+        )
+        resolved_phase4_refresh_prepared_chunk_cache_bytes_effective = (
+            _normalize_non_negative_int(
+                compact_result.get(
+                    "phase4_refresh_prepared_chunk_cache_bytes_effective"
+                )
+            )
+            if compact_result.get("phase4_refresh_prepared_chunk_cache_bytes_effective")
+            is not None
+            else None
+        )
+        if resolved_phase4_refresh_prepared_chunk_cache_bytes_effective is None:
+            resolved_phase4_refresh_prepared_chunk_cache_bytes_effective = (
+                resolved_phase4_refresh_prepared_chunk_cache_bytes_requested
+            )
+        observed_phase4_refresh_prepared_chunk_cache_bytes_effective.append(
+            resolved_phase4_refresh_prepared_chunk_cache_bytes_effective
+        )
+        observed_phase4_refresh_prepared_chunk_cache_enabled.append(
+            bool(
+                compact_result.get(
+                    "phase4_refresh_prepared_chunk_cache_enabled",
+                    resolved_phase4_refresh_prepared_chunk_cache_bytes_effective > 0,
+                )
+            )
+        )
+
+        resolved_phase4_refresh_active_row_accumulation_requested = (
+            _normalize_phase4_refresh_active_row_accumulation(
+                compact_result.get("phase4_refresh_active_row_accumulation_requested")
+            )
+            or _normalize_phase4_refresh_active_row_accumulation(
+                compact_result.get("phase4_refresh_active_row_accumulation")
+            )
+            or phase4_refresh_active_row_accumulation
+        )
+        observed_phase4_refresh_active_row_accumulation_requested.append(
+            resolved_phase4_refresh_active_row_accumulation_requested
+        )
+        resolved_phase4_refresh_active_row_accumulation_effective = (
+            _normalize_phase4_refresh_active_row_accumulation(
+                compact_result.get("phase4_refresh_active_row_accumulation_effective")
+            )
+            or _normalize_phase4_refresh_active_row_accumulation(
+                compact_result.get("phase4_refresh_active_row_accumulation")
+            )
+            or resolved_phase4_refresh_active_row_accumulation_requested
+        )
+        observed_phase4_refresh_active_row_accumulation_effective.append(
+            resolved_phase4_refresh_active_row_accumulation_effective
+        )
+        resolved_phase4_refresh_active_row_accumulation_fallback_reason = (
+            compact_result.get("phase4_refresh_active_row_accumulation_fallback_reason")
+        )
+        if isinstance(
+            resolved_phase4_refresh_active_row_accumulation_fallback_reason, str
+        ):
+            observed_phase4_refresh_active_row_accumulation_fallback_reasons.append(
+                resolved_phase4_refresh_active_row_accumulation_fallback_reason
+            )
+        observed_phase4_refresh_active_row_accumulation_applicable.append(
+            bool(
+                compact_result.get(
+                    "phase4_refresh_active_row_accumulation_applicable", True
+                )
+            )
         )
 
         resolved_phase4_ranker_requested = (
@@ -1704,6 +1857,19 @@ def trace_completion_compact_chunked(
             "phase4_refresh_interval_multiplier": resolved_phase4_refresh_interval_multiplier_effective,
             "phase4_refresh_interval_multiplier_requested": resolved_phase4_refresh_interval_multiplier_requested,
             "phase4_refresh_interval_multiplier_effective": resolved_phase4_refresh_interval_multiplier_effective,
+            "phase4_refresh_prepared_chunk_cache_bytes": resolved_phase4_refresh_prepared_chunk_cache_bytes_effective,
+            "phase4_refresh_prepared_chunk_cache_bytes_requested": resolved_phase4_refresh_prepared_chunk_cache_bytes_requested,
+            "phase4_refresh_prepared_chunk_cache_bytes_effective": resolved_phase4_refresh_prepared_chunk_cache_bytes_effective,
+            "phase4_refresh_prepared_chunk_cache_enabled": observed_phase4_refresh_prepared_chunk_cache_enabled[
+                -1
+            ],
+            "phase4_refresh_active_row_accumulation": resolved_phase4_refresh_active_row_accumulation_effective,
+            "phase4_refresh_active_row_accumulation_requested": resolved_phase4_refresh_active_row_accumulation_requested,
+            "phase4_refresh_active_row_accumulation_effective": resolved_phase4_refresh_active_row_accumulation_effective,
+            "phase4_refresh_active_row_accumulation_fallback_reason": resolved_phase4_refresh_active_row_accumulation_fallback_reason,
+            "phase4_refresh_active_row_accumulation_applicable": observed_phase4_refresh_active_row_accumulation_applicable[
+                -1
+            ],
             "phase4_ranker": resolved_phase4_ranker_effective,
             "phase4_ranker_requested": resolved_phase4_ranker_requested,
             "phase4_ranker_effective": resolved_phase4_ranker_effective,
@@ -1815,6 +1981,18 @@ def trace_completion_compact_chunked(
     )
     unique_phase4_refresh_interval_multipliers_effective = sorted(
         set(observed_phase4_refresh_interval_multipliers_effective)
+    )
+    unique_phase4_refresh_prepared_chunk_cache_bytes_requested = sorted(
+        set(observed_phase4_refresh_prepared_chunk_cache_bytes_requested)
+    )
+    unique_phase4_refresh_prepared_chunk_cache_bytes_effective = sorted(
+        set(observed_phase4_refresh_prepared_chunk_cache_bytes_effective)
+    )
+    unique_phase4_refresh_active_row_accumulation_requested = sorted(
+        set(observed_phase4_refresh_active_row_accumulation_requested)
+    )
+    unique_phase4_refresh_active_row_accumulation_effective = sorted(
+        set(observed_phase4_refresh_active_row_accumulation_effective)
     )
     unique_phase4_rankers_requested = sorted(set(observed_phase4_rankers_requested))
     unique_phase4_rankers_effective = sorted(set(observed_phase4_rankers_effective))
@@ -2039,6 +2217,60 @@ def trace_completion_compact_chunked(
         ),
         "phase4_refresh_interval_multipliers_effective_observed": (
             unique_phase4_refresh_interval_multipliers_effective
+        ),
+        "phase4_refresh_prepared_chunk_cache_bytes": phase4_refresh_prepared_chunk_cache_bytes,
+        "phase4_refresh_prepared_chunk_cache_bytes_requested": (
+            observed_phase4_refresh_prepared_chunk_cache_bytes_requested[-1]
+            if observed_phase4_refresh_prepared_chunk_cache_bytes_requested
+            else phase4_refresh_prepared_chunk_cache_bytes
+        ),
+        "phase4_refresh_prepared_chunk_cache_bytes_effective": (
+            observed_phase4_refresh_prepared_chunk_cache_bytes_effective[-1]
+            if observed_phase4_refresh_prepared_chunk_cache_bytes_effective
+            else phase4_refresh_prepared_chunk_cache_bytes
+        ),
+        "phase4_refresh_prepared_chunk_cache_bytes_requested_observed": (
+            unique_phase4_refresh_prepared_chunk_cache_bytes_requested
+        ),
+        "phase4_refresh_prepared_chunk_cache_bytes_effective_observed": (
+            unique_phase4_refresh_prepared_chunk_cache_bytes_effective
+        ),
+        "phase4_refresh_prepared_chunk_cache_enabled": (
+            observed_phase4_refresh_prepared_chunk_cache_enabled[-1]
+            if observed_phase4_refresh_prepared_chunk_cache_enabled
+            else phase4_refresh_prepared_chunk_cache_bytes > 0
+        ),
+        "phase4_refresh_active_row_accumulation": phase4_refresh_active_row_accumulation,
+        "phase4_refresh_active_row_accumulation_requested": (
+            observed_phase4_refresh_active_row_accumulation_requested[-1]
+            if observed_phase4_refresh_active_row_accumulation_requested
+            else phase4_refresh_active_row_accumulation
+        ),
+        "phase4_refresh_active_row_accumulation_effective": (
+            observed_phase4_refresh_active_row_accumulation_effective[-1]
+            if observed_phase4_refresh_active_row_accumulation_effective
+            else phase4_refresh_active_row_accumulation
+        ),
+        "phase4_refresh_active_row_accumulation_requested_observed": (
+            unique_phase4_refresh_active_row_accumulation_requested
+        ),
+        "phase4_refresh_active_row_accumulation_effective_observed": (
+            unique_phase4_refresh_active_row_accumulation_effective
+        ),
+        "phase4_refresh_active_row_accumulation_fallback_reason": (
+            observed_phase4_refresh_active_row_accumulation_fallback_reasons[-1]
+            if observed_phase4_refresh_active_row_accumulation_fallback_reasons
+            else None
+        ),
+        "phase4_refresh_active_row_accumulation_fallback_reasons_observed": (
+            sorted(
+                set(observed_phase4_refresh_active_row_accumulation_fallback_reasons)
+            )
+        ),
+        "phase4_refresh_active_row_accumulation_applicable": (
+            observed_phase4_refresh_active_row_accumulation_applicable[-1]
+            if observed_phase4_refresh_active_row_accumulation_applicable
+            else True
         ),
         "phase4_ranker": phase4_ranker,
         "phase4_ranker_requested": (
@@ -2537,6 +2769,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
         or args.phase4_scheduler_debug
         or args.phase4_scheduler_telemetry_detail != "normal"
         or args.phase4_refresh_optimization != "off"
+        or args.phase4_refresh_prepared_chunk_cache_bytes != 0
+        or args.phase4_refresh_active_row_accumulation != "zero_fill"
         or args.phase4_row_executor != "batched"
         or args.phase4_row_reduction != "off"
     ):
@@ -2637,6 +2871,15 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "phase4_refresh_interval_multiplier": args.phase4_refresh_interval_multiplier,
         "phase4_refresh_interval_multiplier_requested": args.phase4_refresh_interval_multiplier,
         "phase4_refresh_interval_multiplier_effective": args.phase4_refresh_interval_multiplier,
+        "phase4_refresh_prepared_chunk_cache_bytes": args.phase4_refresh_prepared_chunk_cache_bytes,
+        "phase4_refresh_prepared_chunk_cache_bytes_requested": args.phase4_refresh_prepared_chunk_cache_bytes,
+        "phase4_refresh_prepared_chunk_cache_bytes_effective": args.phase4_refresh_prepared_chunk_cache_bytes,
+        "phase4_refresh_prepared_chunk_cache_enabled": args.phase4_refresh_prepared_chunk_cache_bytes
+        > 0,
+        "phase4_refresh_active_row_accumulation": args.phase4_refresh_active_row_accumulation,
+        "phase4_refresh_active_row_accumulation_requested": args.phase4_refresh_active_row_accumulation,
+        "phase4_refresh_active_row_accumulation_effective": args.phase4_refresh_active_row_accumulation,
+        "phase4_refresh_active_row_accumulation_applicable": True,
         "phase4_ranker": args.phase4_ranker,
         "phase4_ranker_requested": args.phase4_ranker,
         "phase4_ranker_effective": args.phase4_ranker,
@@ -2871,6 +3114,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
                         "cross_cluster_debug": args.cross_cluster_debug,
                         "phase4_refresh_policy": args.phase4_refresh_policy,
                         "phase4_refresh_interval_multiplier": args.phase4_refresh_interval_multiplier,
+                        "phase4_refresh_prepared_chunk_cache_bytes": args.phase4_refresh_prepared_chunk_cache_bytes,
+                        "phase4_refresh_active_row_accumulation": args.phase4_refresh_active_row_accumulation,
                         "phase4_ranker": args.phase4_ranker,
                         "row_store_cache_control": args.row_store_cache_control,
                         "exact_encoder_residency": args.exact_encoder_residency,
@@ -3142,6 +3387,18 @@ if __name__ == "__main__":
         type=parse_phase4_refresh_interval_multiplier,
         default=1,
         help="Positive integer multiplier for Phase-4 refresh interval",
+    )
+    parser.add_argument(
+        "--phase4-refresh-prepared-chunk-cache-bytes",
+        type=parse_non_negative_int,
+        default=0,
+        help="Optional Phase-4 refresh prepared-chunk cache budget in bytes (0 disables)",
+    )
+    parser.add_argument(
+        "--phase4-refresh-active-row-accumulation",
+        type=parse_phase4_refresh_active_row_accumulation,
+        default="zero_fill",
+        help="Phase-4 refresh active-row accumulation mode (zero_fill or direct_v1)",
     )
     parser.add_argument(
         "--phase4-ranker",

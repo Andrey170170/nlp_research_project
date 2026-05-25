@@ -454,6 +454,20 @@ def build_command(
                     str(scenario["phase4_refresh_interval_multiplier"]),
                 ]
             )
+        if scenario.get("phase4_refresh_prepared_chunk_cache_bytes") is not None:
+            cmd.extend(
+                [
+                    "--phase4-refresh-prepared-chunk-cache-bytes",
+                    str(scenario["phase4_refresh_prepared_chunk_cache_bytes"]),
+                ]
+            )
+        if scenario.get("phase4_refresh_active_row_accumulation") is not None:
+            cmd.extend(
+                [
+                    "--phase4-refresh-active-row-accumulation",
+                    str(scenario["phase4_refresh_active_row_accumulation"]),
+                ]
+            )
         if scenario.get("phase4_ranker") is not None:
             cmd.extend(["--phase4-ranker", str(scenario["phase4_ranker"])])
         if scenario.get("row_store_cache_control") is not None:
