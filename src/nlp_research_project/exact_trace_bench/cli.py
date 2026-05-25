@@ -35,6 +35,7 @@ from .full_answer.temporal import (
     DEFAULT_WINDOWS,
     analyze_full_answer_temporal,
 )
+from .full_answer.temporal_plots import plot_full_answer_temporal
 from .graph_compare import compare_artifact_dirs
 from .io_utils import ensure_dir
 from .jobs import (
@@ -636,6 +637,18 @@ def _cmd_run_full_answer_shard(args: argparse.Namespace) -> None:
 
 def _cmd_aggregate_full_answer_shards(args: argparse.Namespace) -> None:
     print(json.dumps(aggregate_shards(args.run_root), indent=2))
+
+
+def _cmd_plot_full_answer_temporal(args: argparse.Namespace) -> None:
+    print(
+        json.dumps(
+            plot_full_answer_temporal(
+                analysis_dir=args.analysis_dir,
+                output_dir=args.output_dir,
+            ),
+            indent=2,
+        )
+    )
 
 
 def _cmd_run_full_answer_trajectory(args: argparse.Namespace) -> None:
@@ -1371,6 +1384,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Only analyze the sorted generated-index prefix for smoke tests",
     )
     analyze_temporal.set_defaults(func=_cmd_analyze_full_answer_temporal)
+
+    plot_temporal = subparsers.add_parser(
+        "plot-full-answer-temporal",
+        help="Plot temporal graph evolution summaries from analyze-full-answer-temporal",
+    )
+    plot_temporal.add_argument("--analysis-dir", type=Path, required=True)
+    plot_temporal.add_argument("--output-dir", type=Path, required=True)
+    plot_temporal.set_defaults(func=_cmd_plot_full_answer_temporal)
 
     compare_phase3 = subparsers.add_parser(
         "compare-phase3-seed-bundles",

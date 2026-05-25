@@ -10,6 +10,9 @@ import pytest
 from nlp_research_project.exact_trace_bench.full_answer.temporal import (
     analyze_full_answer_temporal,
 )
+from nlp_research_project.exact_trace_bench.full_answer.temporal_plots import (
+    plot_full_answer_temporal,
+)
 
 
 @dataclass
@@ -115,3 +118,43 @@ def test_temporal_analyzer_rejects_step_path_mismatch(tmp_path: Path) -> None:
             windows=[2],
             lags=[1],
         )
+
+
+def test_temporal_plots_write_manifest_and_pngs(tmp_path: Path) -> None:
+    run_root = tmp_path / "run"
+    for index, step in {
+        0: _step(0, [(0, 0, 1), (0, 0, 2)]),
+        1: _step(1, [(0, 0, 1), (0, 0, 3)]),
+        2: _step(2, [(0, 0, 1), (0, 0, 3)]),
+    }.items():
+        _write_graph(
+            run_root / "shards" / "shard_000" / f"token_{index:06d}" / "graph.npz",
+            step,
+        )
+    analysis_dir = tmp_path / "analysis"
+    analyze_full_answer_temporal(
+        run_root=run_root, output_dir=analysis_dir, windows=[2], lags=[1, 2]
+    )
+
+    plot_dir = tmp_path / "plots"
+    manifest = plot_full_answer_temporal(
+        analysis_dir=analysis_dir,
+        output_dir=plot_dir,
+    )
+
+    manifest_path = plot_dir / "plot_manifest.json"
+    assert manifest_path.exists()
+    assert json.loads(manifest_path.read_text())["analysis_dir"] == str(analysis_dir)
+    expected = {
+        "adjacent_jaccards.png",
+        "adjacent_churn_rates.png",
+        "weighted_churn_mass.png",
+        "lag_jaccards.png",
+        "rolling_core_sizes.png",
+        "rolling_union_churn.png",
+    }
+    assert {Path(path).name for path in manifest["generated_files"]} == expected
+    for name in expected:
+        path = plot_dir / name
+        assert path.exists()
+        assert path.stat().st_size > 0
