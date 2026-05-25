@@ -86,6 +86,10 @@ def test_temporal_analyzer_adjacent_and_rolling_metrics(tmp_path: Path) -> None:
     assert adjacent[0]["features_entered"] == 1
     assert adjacent[0]["features_exited"] == 1
     assert adjacent[0]["all_edge_weighted_jaccard"] < 1.0
+    assert adjacent[0]["positionless_feature_jaccard"] == pytest.approx(1 / 3)
+    assert "all_edge_top128_weighted_jaccard" in adjacent[0]
+    assert "all_edge_core80_shared_mass_fraction_a" in adjacent[0]
+    assert "layer_flow_weighted_jaccard" in adjacent[0]
     assert adjacent[1]["feature_jaccard"] == 1.0
 
     rolling = [
@@ -94,6 +98,8 @@ def test_temporal_analyzer_adjacent_and_rolling_metrics(tmp_path: Path) -> None:
     ]
     assert len(rolling) == 2
     assert rolling[0]["feature_union_size"] == 3
+    assert rolling[0]["positionless_feature_union_size"] == 3
+    assert "all_edge_persistence50_mass_fraction" in rolling[0]
     assert rolling[0]["feature_intersection_core_size"] == 1
     assert rolling[1]["feature_intersection_core_size"] == 2
     assert rolling[1]["feature_union_entered"] == 0
@@ -104,6 +110,30 @@ def test_temporal_analyzer_adjacent_and_rolling_metrics(tmp_path: Path) -> None:
         for line in (out_dir / "lag_pairs.jsonl").read_text().splitlines()
     ]
     assert [row["lag"] for row in lag_rows] == [1, 1, 2]
+
+    for name in (
+        "token_timeline.jsonl",
+        "cumulative_core.jsonl",
+        "layer_flow_by_token.jsonl",
+    ):
+        assert (out_dir / name).exists()
+        assert (out_dir / name).read_text().strip()
+    timeline = [
+        json.loads(line)
+        for line in (out_dir / "token_timeline.jsonl").read_text().splitlines()
+    ]
+    assert timeline[0]["phase_bin"] == "early"
+    cumulative = [
+        json.loads(line)
+        for line in (out_dir / "cumulative_core.jsonl").read_text().splitlines()
+    ]
+    assert "positionless_feature_persistence100_core_size" in cumulative[-1]
+    layer_flow = [
+        json.loads(line)
+        for line in (out_dir / "layer_flow_by_token.jsonl").read_text().splitlines()
+    ]
+    assert "mass_fraction" in layer_flow[0]
+    assert "global_core_summary" in summary
 
 
 def test_temporal_analyzer_rejects_step_path_mismatch(tmp_path: Path) -> None:
@@ -152,6 +182,12 @@ def test_temporal_plots_write_manifest_and_pngs(tmp_path: Path) -> None:
         "lag_jaccards.png",
         "rolling_core_sizes.png",
         "rolling_union_churn.png",
+        "edge_core_stability.png",
+        "positionless_feature_reuse.png",
+        "layer_flow_stability.png",
+        "layer_flow_heatmaps.png",
+        "global_core_churn.png",
+        "answer_phase_timeline.png",
     }
     assert {Path(path).name for path in manifest["generated_files"]} == expected
     for name in expected:

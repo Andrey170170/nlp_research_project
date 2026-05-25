@@ -201,6 +201,114 @@ def _plot_rolling_union_churn(rows: list[dict[str, Any]], output_dir: Path) -> P
     return _save(fig, output_dir / "rolling_union_churn.png")
 
 
+def _plot_edge_core_stability(rows: list[dict[str, Any]], output_dir: Path) -> Path:
+    fig, ax = plt.subplots(figsize=(10, 5))
+    _plot_lines(
+        ax,
+        rows,
+        x_key="generated_index_b",
+        y_keys=(
+            "all_edge_core50_jaccard",
+            "all_edge_core80_jaccard",
+            "all_edge_core95_jaccard",
+        ),
+        title="Adjacent all-edge mass-core stability",
+        ylabel="Jaccard",
+    )
+    return _save(fig, output_dir / "edge_core_stability.png")
+
+
+def _plot_positionless_feature_reuse(
+    rows: list[dict[str, Any]], output_dir: Path
+) -> Path:
+    fig, ax = plt.subplots(figsize=(10, 5))
+    _plot_lines(
+        ax,
+        rows,
+        x_key="generated_index_b",
+        y_keys=(
+            "feature_jaccard",
+            "positionless_feature_jaccard",
+            "shifted_position_reuse_fraction_a",
+        ),
+        title="Positionless feature reuse",
+        ylabel="Fraction",
+    )
+    return _save(fig, output_dir / "positionless_feature_reuse.png")
+
+
+def _plot_layer_flow_stability(rows: list[dict[str, Any]], output_dir: Path) -> Path:
+    fig, ax = plt.subplots(figsize=(10, 5))
+    _plot_lines(
+        ax,
+        rows,
+        x_key="generated_index_b",
+        y_keys=(
+            "layer_flow_weighted_jaccard",
+            "layer_flow_logit_mass_fraction_a",
+            "layer_flow_logit_mass_fraction_b",
+        ),
+        title="Layer-flow stability",
+        ylabel="Fraction",
+    )
+    return _save(fig, output_dir / "layer_flow_stability.png")
+
+
+def _plot_layer_flow_heatmaps(rows: list[dict[str, Any]], output_dir: Path) -> Path:
+    labels = sorted(
+        {f"{r['source_layer']}->{r['target_kind']}:{r['target_layer']}" for r in rows}
+    )
+    xs = sorted({int(r["generated_index"]) for r in rows})
+    matrix = [[0.0 for _ in xs] for _ in labels]
+    x_index = {x: i for i, x in enumerate(xs)}
+    y_index = {label: i for i, label in enumerate(labels)}
+    for r in rows:
+        label = f"{r['source_layer']}->{r['target_kind']}:{r['target_layer']}"
+        matrix[y_index[label]][x_index[int(r["generated_index"])]] = float(
+            r.get("mass_fraction") or 0.0
+        )
+    fig, ax = plt.subplots(figsize=(10, max(4, 0.3 * len(labels))))
+    ax.imshow(matrix or [[0.0]], aspect="auto", interpolation="nearest")
+    ax.set_title("Layer-flow mass fractions")
+    ax.set_xlabel("generated_index")
+    ax.set_ylabel("source->target bucket")
+    ax.set_xticks(range(len(xs)))
+    ax.set_xticklabels([str(x) for x in xs], rotation=90)
+    ax.set_yticks(range(len(labels)))
+    ax.set_yticklabels(labels, fontsize="x-small")
+    return _save(fig, output_dir / "layer_flow_heatmaps.png")
+
+
+def _plot_global_core_churn(rows: list[dict[str, Any]], output_dir: Path) -> Path:
+    fig, ax = plt.subplots(figsize=(10, 5))
+    _plot_lines(
+        ax,
+        rows,
+        x_key="generated_index",
+        y_keys=(
+            "feature_persistence50_core_size",
+            "positionless_feature_persistence50_core_size",
+            "all_edge_persistence50_core_size",
+        ),
+        title="Cumulative global core sizes",
+        ylabel="Core size",
+    )
+    return _save(fig, output_dir / "global_core_churn.png")
+
+
+def _plot_answer_phase_timeline(rows: list[dict[str, Any]], output_dir: Path) -> Path:
+    fig, ax = plt.subplots(figsize=(10, 2.5))
+    xs = _values(rows, "generated_index")
+    ys = _values(rows, "phase_fraction")
+    ax_any: Any = ax
+    ax_any.plot(xs, ys, marker="o")
+    ax.set_title("Answer phase timeline")
+    ax.set_xlabel("generated_index")
+    ax.set_ylabel("phase_fraction")
+    ax.grid(True, alpha=0.3)
+    return _save(fig, output_dir / "answer_phase_timeline.png")
+
+
 def plot_full_answer_temporal(
     *, analysis_dir: Path, output_dir: Path
 ) -> dict[str, Any]:
@@ -208,6 +316,9 @@ def plot_full_answer_temporal(
     summary = read_json(analysis_dir / "temporal_summary.json")
     adjacent = _rows(analysis_dir / "adjacent_pairs.jsonl")
     rolling = _rows(analysis_dir / "rolling_windows.jsonl")
+    cumulative = _rows(analysis_dir / "cumulative_core.jsonl")
+    timeline = _rows(analysis_dir / "token_timeline.jsonl")
+    layer_flows = _rows(analysis_dir / "layer_flow_by_token.jsonl")
 
     generated = [
         _plot_adjacent_jaccards(adjacent, output_dir),
@@ -216,6 +327,12 @@ def plot_full_answer_temporal(
         _plot_lag_jaccards(summary, output_dir),
         _plot_rolling_core_sizes(rolling, output_dir),
         _plot_rolling_union_churn(rolling, output_dir),
+        _plot_edge_core_stability(adjacent, output_dir),
+        _plot_positionless_feature_reuse(adjacent, output_dir),
+        _plot_layer_flow_stability(adjacent, output_dir),
+        _plot_layer_flow_heatmaps(layer_flows, output_dir),
+        _plot_global_core_churn(cumulative, output_dir),
+        _plot_answer_phase_timeline(timeline, output_dir),
     ]
     manifest = {
         "analysis_dir": str(analysis_dir),
