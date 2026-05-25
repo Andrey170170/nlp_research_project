@@ -3067,8 +3067,8 @@ preallocation work:
 
 Implementation status:
 
-- library changes are currently in the optimization worktree and will be paired
-  with a project plumbing commit,
+- paired library repo commit: `40c3fa4` — add Phase 4 refresh cache controls,
+- project repo commit: `161a2cc` — plumb refresh cache controls,
 - project CLI/scenario plumbing exposes:
   - `--phase4-refresh-prepared-chunk-cache-bytes`,
   - `--phase4-refresh-active-row-accumulation {zero_fill,direct_v1}`,
@@ -3086,6 +3086,21 @@ Required next validation:
 - launch a new immutable-snapshot Cardinal fast matrix covering baseline
   `phase4_refresh_optimization=v1` zero-fill, prepared-cache only, direct-only,
   and prepared+direct variants before interpreting performance or parity.
+
+Launch submitted for that validation:
+
+- cluster: `cardinal`,
+- SLURM array job: `10427067`, array `0-7`, pending at submission check,
+- run id / output bucket: `20260525_refresh-cache-direct-fast`,
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260525_refresh-cache-direct-fast`,
+- immutable snapshot root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260525_024359_refresh_cache_direct`,
+- snapshot manifest pins project `161a2cc12255aef6f38b1dee9d782e92493a6be1`
+  and library `40c3fa40b8a1945347098d88448fe33774bbd0b4`,
+- one-off scenario file remains untracked in the live worktree but was copied into
+  the immutable snapshot:
+  `experiments/generated/exact_trace_bench/exact_trace_refresh_cache_direct_fast_cardinal_scenarios.json`.
 
 ## Status of this note
 
