@@ -30,6 +30,11 @@ from .full_answer.aggregate import aggregate_shards
 from .full_answer.runner import dry_run_shard, list_shard_specs, print_shard_specs
 from .full_answer.selection import parse_indices_csv, select_tokens
 from .full_answer.sharding import build_lpt_shards
+from .full_answer.temporal import (
+    DEFAULT_LAGS,
+    DEFAULT_WINDOWS,
+    analyze_full_answer_temporal,
+)
 from .graph_compare import compare_artifact_dirs
 from .io_utils import ensure_dir
 from .jobs import (
@@ -386,6 +391,17 @@ def _cmd_compare_compact(args: argparse.Namespace) -> None:
         ensure_dir(args.output_json.parent)
         args.output_json.write_text(json.dumps(summary, indent=2), encoding="utf-8")
         print(f"Wrote comparison summary to {args.output_json}")
+    print(json.dumps(summary, indent=2))
+
+
+def _cmd_analyze_full_answer_temporal(args: argparse.Namespace) -> None:
+    summary = analyze_full_answer_temporal(
+        run_root=args.run_root,
+        output_dir=args.output_dir,
+        windows=args.window or list(DEFAULT_WINDOWS),
+        lags=args.lag or list(DEFAULT_LAGS),
+        max_tokens=args.max_tokens,
+    )
     print(json.dumps(summary, indent=2))
 
 
@@ -1327,6 +1343,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional output path for comparison JSON",
     )
     compare_compact.set_defaults(func=_cmd_compare_compact)
+
+    analyze_temporal = subparsers.add_parser(
+        "analyze-full-answer-temporal",
+        help="Analyze temporal graph evolution for a full-answer compact run",
+    )
+    analyze_temporal.add_argument("--run-root", type=Path, required=True)
+    analyze_temporal.add_argument("--output-dir", type=Path, required=True)
+    analyze_temporal.add_argument(
+        "--window",
+        type=int,
+        action="append",
+        default=None,
+        help="Rolling window size; repeatable (default: 5, 10, 25)",
+    )
+    analyze_temporal.add_argument(
+        "--lag",
+        type=int,
+        action="append",
+        default=None,
+        help="Lag for pair comparisons; repeatable (default: 1, 2, 4, 8, 16, 32)",
+    )
+    analyze_temporal.add_argument(
+        "--max-tokens",
+        type=int,
+        default=None,
+        help="Only analyze the sorted generated-index prefix for smoke tests",
+    )
+    analyze_temporal.set_defaults(func=_cmd_analyze_full_answer_temporal)
 
     compare_phase3 = subparsers.add_parser(
         "compare-phase3-seed-bundles",

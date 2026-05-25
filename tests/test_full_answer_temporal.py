@@ -1,0 +1,117 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from nlp_research_project.exact_trace_bench.full_answer.temporal import (
+    analyze_full_answer_temporal,
+)
+
+
+@dataclass
+class SimpleStep:
+    step_idx: int
+    row_idx: np.ndarray
+    col_idx: np.ndarray
+    weights: np.ndarray
+    feature_ids: np.ndarray
+    token_text: str
+    logprob: float | None
+    n_features: int
+
+
+def _step(index: int, feature_ids: list[tuple[int, int, int]]) -> SimpleStep:
+    # Feature 0 is stable; feature 1 varies. Include one feature edge and one
+    # logit edge so the all-edge view exercises logit targets.
+    return SimpleStep(
+        step_idx=index,
+        row_idx=np.asarray([1, len(feature_ids)], dtype=np.int32),
+        col_idx=np.asarray([0, 0], dtype=np.int32),
+        weights=np.asarray([1.0, 2.0 + index], dtype=np.float32),
+        feature_ids=np.asarray(feature_ids, dtype=np.int64),
+        token_text=f"tok{index}",
+        logprob=None,
+        n_features=len(feature_ids),
+    )
+
+
+def _write_graph(path: Path, step: SimpleStep) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        path,
+        row_idx=step.row_idx,
+        col_idx=step.col_idx,
+        weights=step.weights,
+        feature_ids=step.feature_ids,
+        token_text=np.array(step.token_text),
+        logprob=np.array(np.nan),
+        n_features=np.array(step.n_features, dtype=np.int32),
+        step_idx=np.array(step.step_idx, dtype=np.int32),
+    )
+
+
+def test_temporal_analyzer_adjacent_and_rolling_metrics(tmp_path: Path) -> None:
+    run_root = tmp_path / "run"
+    steps = {
+        0: _step(0, [(0, 0, 1), (0, 0, 2)]),
+        1: _step(1, [(0, 0, 1), (0, 0, 3)]),
+        2: _step(2, [(0, 0, 1), (0, 0, 3)]),
+    }
+    for index, step in steps.items():
+        _write_graph(
+            run_root / "shards" / "shard_000" / f"token_{index:06d}" / "graph.npz",
+            step,
+        )
+
+    out_dir = tmp_path / "out"
+    summary = analyze_full_answer_temporal(
+        run_root=run_root, output_dir=out_dir, windows=[2], lags=[1, 2]
+    )
+
+    assert summary["token_count"] == 3
+    assert summary["missing_indices"] == []
+    adjacent = [
+        json.loads(line)
+        for line in (out_dir / "adjacent_pairs.jsonl").read_text().splitlines()
+    ]
+    assert len(adjacent) == 2
+    assert adjacent[0]["feature_jaccard"] == pytest.approx(1 / 3)
+    assert adjacent[0]["features_entered"] == 1
+    assert adjacent[0]["features_exited"] == 1
+    assert adjacent[0]["all_edge_weighted_jaccard"] < 1.0
+    assert adjacent[1]["feature_jaccard"] == 1.0
+
+    rolling = [
+        json.loads(line)
+        for line in (out_dir / "rolling_windows.jsonl").read_text().splitlines()
+    ]
+    assert len(rolling) == 2
+    assert rolling[0]["feature_union_size"] == 3
+    assert rolling[0]["feature_intersection_core_size"] == 1
+    assert rolling[1]["feature_intersection_core_size"] == 2
+    assert rolling[1]["feature_union_entered"] == 0
+    assert rolling[1]["feature_union_exited"] == 1
+
+    lag_rows = [
+        json.loads(line)
+        for line in (out_dir / "lag_pairs.jsonl").read_text().splitlines()
+    ]
+    assert [row["lag"] for row in lag_rows] == [1, 1, 2]
+
+
+def test_temporal_analyzer_rejects_step_path_mismatch(tmp_path: Path) -> None:
+    run_root = tmp_path / "run"
+    graph_path = run_root / "shards" / "shard_000" / "token_000000" / "graph.npz"
+    _write_graph(graph_path, _step(7, [(0, 0, 1), (0, 0, 2)]))
+
+    with pytest.raises(ValueError, match="does not match path index"):
+        analyze_full_answer_temporal(
+            run_root=run_root,
+            output_dir=tmp_path / "out",
+            windows=[2],
+            lags=[1],
+        )
