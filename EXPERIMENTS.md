@@ -3102,6 +3102,62 @@ Launch submitted for that validation:
   the immutable snapshot:
   `experiments/generated/exact_trace_bench/exact_trace_refresh_cache_direct_fast_cardinal_scenarios.json`.
 
+Completion results:
+
+- SLURM array job `10427067`, array `0-7`, completed successfully with
+  `ExitCode 0:0` for all tasks.
+- Snapshot provenance remains pinned to project `161a2cc` and library `40c3fa4`.
+
+Top-level results:
+
+| Prompt | Variant | Scenario duration | Phase 3 wall | Phase 4 wall | Refresh total | Feature-batch total | sacct MaxRSS | CUDA peak reserved |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `828_base` | zero-fill baseline | `439.94 s` | `140.13 s` | `95.39 s` | `54.47 s` | `40.85 s` | `271.9 GiB` | `55.95 GiB` |
+| `828_base` | prepared8g | `353.72 s` | `141.35 s` | `89.90 s` | `49.54 s` | `40.26 s` | `239.4 GiB` | `55.95 GiB` |
+| `828_base` | direct | `430.44 s` | `141.02 s` | `73.09 s` | `29.31 s` | `43.68 s` | `181.7 GiB` | `55.95 GiB` |
+| `828_base` | prepared8g + direct | `328.08 s` | `140.49 s` | `68.04 s` | `25.05 s` | `42.92 s` | `192.6 GiB` | `55.95 GiB` |
+| `361_base` | zero-fill baseline | `678.06 s` | `234.63 s` | `247.56 s` | `167.55 s` | `79.92 s` | `358.6 GiB` | `71.72 GiB` |
+| `361_base` | prepared8g | `660.93 s` | `234.56 s` | `235.81 s` | `165.23 s` | `70.50 s` | `239.4 GiB` | `71.72 GiB` |
+| `361_base` | direct | `578.72 s` | `234.07 s` | `149.15 s` | `61.66 s` | `87.40 s` | `253.3 GiB` | `71.72 GiB` |
+| `361_base` | prepared8g + direct | `581.60 s` | `233.71 s` | `144.31 s` | `58.10 s` | `86.12 s` | `336.2 GiB` | `71.72 GiB` |
+
+Compact parity:
+
+- All variants were bitwise-identical to the same-prompt zero-fill baseline in
+  the saved compact `.npz` outputs: `prepared8g`, `direct`, and
+  `prepared8g + direct` matched for both `828_base` and `361_base`.
+
+Refresh-path telemetry readout:
+
+| Prompt | Variant | refresh read | refresh matmul/direct | zero-fill allocation | transfer/cast/abs | rows touched |
+|---|---:|---:|---:|---:|---:|---:|
+| `828_base` | zero-fill baseline | `1.18 s` | `6.98 s` | `11.83 s` | `18.92 s` | `57,183` |
+| `828_base` | prepared8g | `18.07 s` | `6.10 s` | `11.07 s` | `0.00 s` | `57,183` |
+| `828_base` | direct | `2.84 s` | `5.24 s` | `0.00 s` | `18.83 s` | `57,183` |
+| `828_base` | prepared8g + direct | `18.13 s` | `4.65 s` | `0.00 s` | `0.00 s` | `57,183` |
+| `361_base` | zero-fill baseline | `6.19 s` | `15.81 s` | `65.84 s` | `45.84 s` | `60,978` |
+| `361_base` | prepared8g | `52.67 s` | `16.31 s` | `60.61 s` | `0.00 s` | `60,978` |
+| `361_base` | direct | `2.71 s` | `15.87 s` | `0.00 s` | `39.87 s` | `60,978` |
+| `361_base` | prepared8g + direct | `44.54 s` | `10.53 s` | `0.00 s` | `0.00 s` | `60,978` |
+
+Interpretation:
+
+- `direct_v1` is the clear refresh-path win. It removes full-chunk zero-fill
+  allocation and cuts Phase 4 wall time substantially while preserving exact
+  compact outputs:
+  - `828_base`: Phase 4 `95.39 s -> 73.09 s`, refresh `54.47 s -> 29.31 s`,
+  - `361_base`: Phase 4 `247.56 s -> 149.15 s`, refresh `167.55 s -> 61.66 s`.
+- `prepared8g` alone is exact but not clearly useful as implemented. It removes
+  solver transfer/cast/abs time, but prepared row reads are much slower because
+  the current prepared reader prepares/caches CPU tensors on this path:
+  - `828_base`: refresh read `1.18 s -> 18.07 s`,
+  - `361_base`: refresh read `6.19 s -> 52.67 s`.
+- `prepared8g + direct` remains exact and produces the fastest Phase 4 wall in
+  this matrix, but the prepared-cache contribution is ambiguous: it adds large
+  read time while eliminating transfer/cast/abs. Treat `direct_v1` as the safer
+  promotion candidate; treat prepared-cache as needing redesign or more targeted
+  tuning before promotion.
+
 ## Status of this note
 
 This file is descriptive, not normative.
