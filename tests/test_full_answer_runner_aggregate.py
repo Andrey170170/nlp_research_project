@@ -12,6 +12,7 @@ from nlp_research_project.exact_trace_bench.full_answer.aggregate import (
 )
 from nlp_research_project.exact_trace_bench import cli as full_answer_cli
 from nlp_research_project.exact_trace_bench.full_answer.runner import (
+    _attribute_performance_kwargs,
     dry_run_shard,
     forced_target_payload,
     list_shard_specs,
@@ -131,6 +132,40 @@ def test_list_mode_returns_specs_without_writing_token_dirs(tmp_path: Path) -> N
     )
     assert [row["generated_index"] for row in rows] == [0]
     assert not (tmp_path / "shards").exists()
+
+
+def test_attribute_performance_kwargs_forward_safe_knobs() -> None:
+    kwargs = _attribute_performance_kwargs(
+        {
+            "row_subchunk_size": 128,
+            "plan_feature_batch_size": True,
+            "feature_batch_size_max": 512,
+            "phase4_scheduler_mode": "planner_v1",
+            "phase4_scheduler_telemetry_detail": "debug",
+            "phase4_refresh_optimization": "v1",
+            "phase4_refresh_prepared_chunk_cache_bytes": 0,
+            "phase4_refresh_active_row_accumulation": "direct_v1",
+            "phase4_row_executor": "streaming_v1",
+            "phase4_row_reduction": "gpu_v1",
+            "row_store_preallocate": True,
+            "decoder_chunk_size": 256,
+            "cross_batch_decoder_cache_bytes": 8589934592,
+            "feature_batch_size": None,
+        }
+    )
+    assert kwargs == {
+        "row_subchunk_size": 128,
+        "plan_feature_batch_size": True,
+        "feature_batch_size_max": 512,
+        "phase4_scheduler_mode": "planner_v1",
+        "phase4_scheduler_telemetry_detail": "debug",
+        "phase4_refresh_optimization": "v1",
+        "phase4_refresh_prepared_chunk_cache_bytes": 0,
+        "phase4_refresh_active_row_accumulation": "direct_v1",
+        "phase4_row_executor": "streaming_v1",
+        "phase4_row_reduction": "gpu_v1",
+        "row_store_preallocate": True,
+    }
 
 
 def test_aggregate_handles_dry_run_rows(tmp_path: Path) -> None:

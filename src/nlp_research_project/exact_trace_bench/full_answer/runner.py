@@ -284,6 +284,26 @@ def _model_load_knobs(specs: list[TraceSpec]) -> dict[str, Any]:
     }
 
 
+def _attribute_performance_kwargs(knobs: Mapping[str, Any]) -> dict[str, Any]:
+    keys = (
+        "row_subchunk_size",
+        "plan_feature_batch_size",
+        "feature_batch_size_max",
+        "feature_batch_target_reserved_fraction",
+        "feature_batch_min_free_fraction",
+        "feature_batch_probe_batches",
+        "phase4_scheduler_mode",
+        "phase4_scheduler_telemetry_detail",
+        "phase4_refresh_optimization",
+        "phase4_refresh_prepared_chunk_cache_bytes",
+        "phase4_refresh_active_row_accumulation",
+        "phase4_row_executor",
+        "phase4_row_reduction",
+        "row_store_preallocate",
+    )
+    return {key: knobs[key] for key in keys if key in knobs and knobs[key] is not None}
+
+
 def run_real_shard(
     *,
     trajectory_path: Path,
@@ -394,6 +414,7 @@ def run_real_shard(
                 exact_trace_internal_dtype=str(
                     knobs.get("exact_trace_internal_dtype", "fp32")
                 ),
+                **_attribute_performance_kwargs(knobs),
                 compact_output=True,
             )
             step = compact_result_to_step_data(
