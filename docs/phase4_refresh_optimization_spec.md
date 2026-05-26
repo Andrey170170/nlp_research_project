@@ -259,11 +259,46 @@ This strategy is successful when:
 
 ## 12. Current recommendation
 
-The next implementation phase should target **the append/writeback path only**,
-while preserving the cheap read path.
+The next implementation phase should prioritize the validated narrow wins and
+avoid broad read-path rewrites.
 
 Best current move:
 
-- fix writeback residency,
-- do not broaden the change into read-path replacement,
-- push two-tier/scheduler/index ideas into the later optimization pile.
+- keep `phase4_row_reduction=gpu_v1` as the default compact exact backend,
+- promoted performance default after the final bookkeeping/cleanup pass:
+  `phase4_row_reduction=gpu_v1`,
+  `phase4_refresh_optimization=v1`,
+  `phase4_refresh_active_row_accumulation=direct_v1`,
+  `row_store_preallocate=true`, and
+  `cross_batch_decoder_cache_bytes=8GiB`,
+- keep a clear strict-exact fallback with decoder cache disabled (`cache0`) for
+  bitwise-retained-edge reproducibility,
+- document `cross_batch_decoder_cache_bytes=8GiB` as near-exact, not
+  bitwise-retained-edge exact: decoder chunk fingerprints are exact and token /
+  logprob / active features remain stable, but retained edge cutoffs can shift;
+  in the broader matched-base validation, positional max retained-weight drift was
+  up to `7.20e-6` and edge Jaccard ranged from `0.955799` to `0.998801`,
+- retire the current exact-range prepared refresh cache as a promotion candidate:
+  telemetry at `8GiB` showed poor hit rates, large too-large skips, and high miss
+  preparation cost; the final `0/8/32/64GiB` direct-mode tuning matrix preserved
+  exact outputs but did not produce robust hit-rate or Phase 4 improvements across
+  both prompts. Do not include `phase4_refresh_prepared_chunk_cache_bytes>0` in
+  promotion or interaction matrices,
+- only revisit prepared refresh reuse as a chunk-aligned/windowed design in a
+  later storage/scheduler redesign,
+- the interaction run showed the leading bitwise-exact strict candidate is
+  `phase4_refresh_active_row_accumulation=direct_v1` plus
+  `row_store_preallocate=true` with decoder cache disabled:
+  - `828_base`: total `457.10 s -> 424.32 s` (`-7.2%`), Phase 4
+    `117.12 s -> 89.26 s`,
+  - `361_base`: total `729.83 s -> 557.24 s` (`-23.6%`), Phase 4
+    `250.23 s -> 132.42 s`,
+  - compact outputs matched baseline bitwise,
+- the broader matched-base validation supports the performance default:
+  - strict cache0 candidate remained bitwise exact on all five fixtures and
+    improved Phase 4 on all five, though `613_base` regressed end-to-end,
+  - performance cache8g candidate improved end-to-end time on all five fixtures
+    (`-12.8%` to `-36.1%`, mean `-23.1%`) and lowered artifact RSS snapshots,
+- default / scenario plumbing has been updated while preserving explicit flags for
+  strict fallbacks (`cache0`, refresh optimization off / zero-fill, no row-store
+  preallocation) and for the CPU row-reduction reference.

@@ -528,19 +528,19 @@ def extract_compact_chunked_attribution(
     phase4_refresh_policy: str = "standard",
     phase4_refresh_interval_multiplier: int = 1,
     phase4_refresh_prepared_chunk_cache_bytes: int = 0,
-    phase4_refresh_active_row_accumulation: str = "zero_fill",
+    phase4_refresh_active_row_accumulation: str = "direct_v1",
     phase4_ranker: str = "argsort",
     row_store_cache_control: str = "off",
     exact_encoder_residency: str = "lazy",
     phase4_scheduler_mode: str = "locality",
     phase4_scheduler_debug: bool = False,
     phase4_scheduler_telemetry_detail: str = "normal",
-    phase4_refresh_optimization: str = "off",
+    phase4_refresh_optimization: str = "v1",
     phase4_row_executor: str = "batched",
     phase4_row_reduction: str = "gpu_v1",
     row_store_temp_root_policy: str = "default",
     row_store_temp_root: str | None = None,
-    row_store_preallocate: bool = False,
+    row_store_preallocate: bool = True,
 ) -> dict[str, Any]:
     gc.collect()
     if torch.cuda.is_available():
@@ -859,19 +859,19 @@ def trace_completion_compact_chunked(
     phase4_refresh_policy: str = "standard",
     phase4_refresh_interval_multiplier: int = 1,
     phase4_refresh_prepared_chunk_cache_bytes: int = 0,
-    phase4_refresh_active_row_accumulation: str = "zero_fill",
+    phase4_refresh_active_row_accumulation: str = "direct_v1",
     phase4_ranker: str = "argsort",
     row_store_cache_control: str = "off",
     exact_encoder_residency: str = "lazy",
     phase4_scheduler_mode: str = "locality",
     phase4_scheduler_debug: bool = False,
     phase4_scheduler_telemetry_detail: str = "normal",
-    phase4_refresh_optimization: str = "off",
+    phase4_refresh_optimization: str = "v1",
     phase4_row_executor: str = "batched",
     phase4_row_reduction: str = "gpu_v1",
     row_store_temp_root_policy: str = "default",
     row_store_temp_root: str | None = None,
-    row_store_preallocate: bool = False,
+    row_store_preallocate: bool = True,
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
     fixture_name: str | None = None,
@@ -3284,8 +3284,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--cross-batch-decoder-cache-bytes",
         type=int,
-        default=None,
-        help="Optional Phase-4 cross-batch decoder cache budget in bytes",
+        default=8589934592,
+        help=(
+            "Phase-4 cross-batch decoder cache budget in bytes "
+            "(default 8589934592; set 0 for strict cache0 fallback)"
+        ),
     )
     parser.add_argument(
         "--chunked-feature-replay-window",
@@ -3392,12 +3395,15 @@ if __name__ == "__main__":
         "--phase4-refresh-prepared-chunk-cache-bytes",
         type=parse_non_negative_int,
         default=0,
-        help="Optional Phase-4 refresh prepared-chunk cache budget in bytes (0 disables)",
+        help=(
+            "Experimental/retired Phase-4 refresh prepared-chunk cache budget "
+            "in bytes (default 0 disables)"
+        ),
     )
     parser.add_argument(
         "--phase4-refresh-active-row-accumulation",
         type=parse_phase4_refresh_active_row_accumulation,
-        default="zero_fill",
+        default="direct_v1",
         help="Phase-4 refresh active-row accumulation mode (zero_fill or direct_v1)",
     )
     parser.add_argument(
@@ -3425,8 +3431,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--row-store-preallocate",
-        action="store_true",
-        help="Enable row-store file preallocation",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable row-store file preallocation (default; use --no-row-store-preallocate to disable)",
     )
     parser.add_argument(
         "--exact-encoder-residency",
@@ -3467,8 +3474,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--phase4-refresh-optimization",
         type=parse_phase4_refresh_optimization,
-        default="off",
-        help="Phase-4 refresh optimization mode (off, v1)",
+        default="v1",
+        help="Phase-4 refresh optimization mode (default v1; use off for reference path)",
     )
     parser.add_argument(
         "--phase4-row-executor",

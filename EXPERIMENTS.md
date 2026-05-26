@@ -3158,6 +3158,321 @@ Interpretation:
   promotion candidate; treat prepared-cache as needing redesign or more targeted
   tuning before promotion.
 
+## Recent launch update — decoder-cache fingerprints and prepared-cache telemetry
+
+Purpose: resolve two follow-up questions after the immutable refresh-cache/direct
+run:
+
+1. whether `cross_batch_decoder_cache_bytes=8GiB` changes decoder chunks or only
+   downstream floating-point/cutoff behavior,
+2. why `phase4_refresh_prepared_chunk_cache_bytes=8GiB` was exact but not a clear
+   speed win.
+
+Implementation / launch metadata:
+
+- added opt-in `--decoder-cache-fingerprint-check` to write
+  `decoder_cache_fingerprint.json` with uncached/cache-miss/cache-hit decoder
+  chunk hashes,
+- added prepared-cache hit/miss/eviction/store/prepare telemetry to
+  `phase4.refresh` events,
+- cluster: `cardinal`,
+- SLURM array job: `10433656`, array `0-9`, all tasks completed successfully,
+- run id / output bucket: `20260525_decoder-prepared-diagnostics-fast`,
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260525_decoder-prepared-diagnostics-fast`,
+- immutable snapshot root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260525_171739_decoder_prepared_diagnostics`,
+- one-off scenario file remains untracked in the live worktree but was copied into
+  the immutable snapshot:
+  `experiments/generated/exact_trace_bench/exact_trace_decoder_prepared_diagnostics_fast_cardinal_scenarios.json`.
+
+Decoder-cache findings:
+
+- sampled decoder chunks were bitwise-identical for both cache budgets:
+  - cache0 diagnostic: `9/9` chunks exact, max abs diff `0.0`,
+  - cache8g diagnostic: `9/9` chunks exact, max abs diff `0.0`,
+  - cache0 vs cache8g sampled decoder chunk hashes had no mismatches,
+- full compact outputs still differed for `828_base` cache0 vs cache8g:
+  - active features, generated token, and logprob matched exactly,
+  - retained edge arrays/order differed near the cutoff,
+  - max retained-edge weight diff was about `7.20e-6`,
+  - edge Jaccard was `0.9329`, weighted edge Jaccard `0.9343`.
+
+Interpretation / decision:
+
+- The decoder cache does not appear to corrupt or stale-load decoder chunks. The
+  observed drift is best treated as ordinary GPU fp32 execution/memory-residency
+  sensitivity that perturbs tiny values near the retained-edge cutoff.
+- Operational decision: `cross_batch_decoder_cache_bytes=8GiB` is acceptable as a
+  **near-exact / cutoff-sensitive speed option**, but it should not be documented
+  as bitwise-retained-edge exact against cache0.
+
+Prepared-cache telemetry findings:
+
+| Prompt | Mode | Prepared cache | Phase 4 wall | Refresh total | Row read | Transfer/cast/abs | Prepared hits / misses | Store skips too large | Max prepared cache |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `828_base` | `direct_v1` | off | `70.10 s` | `27.56 s` | `1.15 s` | `18.76 s` | n/a | n/a | n/a |
+| `828_base` | `direct_v1` | `8GiB` | `83.64 s` | `36.22 s` | `25.44 s` | `0.00 s` | `5 / 29` | `26` | `1.04 GiB` |
+| `361_base` | `direct_v1` | off | `143.17 s` | `63.24 s` | `2.64 s` | `41.16 s` | n/a | n/a | n/a |
+| `361_base` | `direct_v1` | `8GiB` | `142.88 s` | `62.54 s` | `45.09 s` | `0.00 s` | `2 / 129` | `41` | `4.65 GiB` |
+
+Additional prepared-cache facts:
+
+- Prepared-cache variants remained bitwise-identical to their no-prepared-cache
+  counterparts in saved compact `.npz` outputs for both zero-fill and `direct_v1`.
+- The current exact-range prepared cache has poor hit rates and often cannot store
+  large ranges within an 8GiB budget.
+- It mostly trades GPU transfer/cast/abs time for expensive prepared-read miss
+  time and cache bookkeeping.
+
+Decision:
+
+- Keep `phase4_refresh_active_row_accumulation=direct_v1` as the leading safe
+  promotion candidate.
+- Do not promote the current `phase4_refresh_prepared_chunk_cache_bytes=8GiB`
+  default.
+- Run one final narrow, immutable tuning matrix with `direct_v1` only and larger
+  prepared-cache budgets (`0`, `8GiB`, `32GiB`, `64GiB`) on `828_base` and
+  `361_base`. If larger budgets do not materially improve hit rate and Phase 4
+  wall time, retire the exact-range prepared-cache direction and only revisit it
+  as a chunk-aligned/windowed redesign.
+
+Launch submitted for that final tuning pass:
+
+- cluster: `cardinal`,
+- SLURM array job: `10433824`, array `0-7`, running at submission check,
+- run id / output bucket: `20260525_prepared-cache-size-direct-fast`,
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260525_prepared-cache-size-direct-fast`,
+- immutable snapshot root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260525_174655_prepared_cache_size_direct`,
+- one-off scenario file remains untracked in the live worktree but was copied into
+  the immutable snapshot:
+  `experiments/generated/exact_trace_bench/exact_trace_prepared_cache_size_direct_fast_cardinal_scenarios.json`.
+
+Completion results:
+
+- SLURM array job `10433824`, array `0-7`, completed successfully with
+  `ExitCode 0:0` for all tasks.
+- All prepared-cache budgets were bitwise-identical to the `cache0` `direct_v1`
+  compact `.npz` output for the same prompt.
+
+Top-level direct-mode budget results:
+
+| Prompt | Prepared cache | Scenario duration | Phase 4 wall | Refresh total | Feature-batch total | Row read | Transfer/cast/abs | Hits / misses | Store skips too large | Max prepared cache |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `828_base` | `0` | `338.07 s` | `72.04 s` | `32.16 s` | `39.81 s` | `1.23 s` | `22.94 s` | n/a | n/a | n/a |
+| `828_base` | `8 GiB` | `422.02 s` | `81.26 s` | `35.55 s` | `45.62 s` | `24.28 s` | `0.00 s` | `5 / 29` | `26` | `1.04 GiB` |
+| `828_base` | `32 GiB` | `424.62 s` | `89.61 s` | `42.93 s` | `46.59 s` | `31.51 s` | `0.00 s` | `1 / 33` | `5` | `21.07 GiB` |
+| `828_base` | `64 GiB` | `428.29 s` | `88.08 s` | `39.70 s` | `48.29 s` | `28.06 s` | `0.00 s` | `1 / 33` | `0` | `43.30 GiB` |
+| `361_base` | `0` | `667.05 s` | `158.57 s` | `65.34 s` | `93.14 s` | `3.58 s` | `41.88 s` | n/a | n/a | n/a |
+| `361_base` | `8 GiB` | `642.53 s` | `157.47 s` | `72.66 s` | `84.71 s` | `53.02 s` | `0.00 s` | `2 / 129` | `41` | `4.65 GiB` |
+| `361_base` | `32 GiB` | `542.33 s` | `123.43 s` | `50.19 s` | `73.16 s` | `37.75 s` | `0.00 s` | `1 / 130` | `9` | `26.33 GiB` |
+| `361_base` | `64 GiB` | `570.08 s` | `142.70 s` | `72.38 s` | `70.24 s` | `56.75 s` | `0.00 s` | `2 / 129` | `5` | `63.97 GiB` |
+
+Interpretation:
+
+- Larger budgets did not fix the exact-range cache-granularity problem. Hit rates
+  remained very low (`1-5` hits out of `34` requests on `828_base`, `1-2` hits
+  out of `131` requests on `361_base`).
+- `828_base` regressed for every prepared-cache budget despite eliminating
+  transfer/cast/abs.
+- `361_base` had one favorable `32 GiB` point, but the improvement did not come
+  from meaningful reuse: hit rate was only `1/131`, and `64 GiB` regressed again.
+  Treat this as workload/run-shape noise or a non-general side effect rather than
+  a reliable cache win.
+
+Decision:
+
+- Retire the current exact-range prepared refresh cache as a promotion candidate.
+- Treat `phase4_refresh_prepared_chunk_cache_bytes>0` as retired for the current
+  optimization track. Do not include it in promotion or interaction matrices.
+- Keep the code path only as an experimental diagnostic gate until cleanup; remove
+  or hide it once the direct/preallocation/cache interaction path is settled.
+- If prepared refresh reuse is revisited later, use a chunk-aligned/windowed cache
+  or a broader storage/scheduler redesign; do not keep tuning exact
+  `(row_start,row_end)` prepared-cache budgets.
+
+Current good-speedup candidates after this sequence:
+
+- already default: `phase4_row_reduction=gpu_v1`, exact and faster than the CPU
+  reference row-reduction path,
+- promotion candidate: `phase4_refresh_active_row_accumulation=direct_v1`, exact
+  in immutable fast matrices and the clearest Phase 4 refresh win,
+- promotion candidate pending immutable confirmation: `row_store_preallocate=true`,
+  exact in the available mutable confirmation and promising for row-store write
+  time,
+- operational speed option: `cross_batch_decoder_cache_bytes=8GiB`, decoder chunks
+  fingerprint exactly but retained-edge output is near-exact/cutoff-sensitive
+  rather than bitwise identical.
+
+Next interaction test should cross the three non-default candidates above on
+`828_base` and `361_base` with `phase4_refresh_optimization=v1` and the default
+`gpu_v1` row reduction, to estimate total wall-time reduction and identify any
+bad interactions before promotion cleanup.
+
+## Recent launch update — direct / preallocation / decoder-cache interaction
+
+Purpose: measure composition and total wall-time reduction from the remaining
+useful speed knobs after retiring exact-range prepared refresh caching:
+
+- `phase4_refresh_active_row_accumulation=direct_v1`,
+- `row_store_preallocate=true`,
+- `cross_batch_decoder_cache_bytes=8GiB`.
+
+Launch metadata:
+
+- cluster: `cardinal`,
+- SLURM array job: `10434012`, array `0-15`, all tasks completed successfully,
+- run id / output bucket: `20260525_direct-prealloc-cache-interaction-fast`,
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260525_direct-prealloc-cache-interaction-fast`,
+- immutable snapshot root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260525_182026_direct_prealloc_cache_interaction`,
+- one-off scenario file remains untracked in the live worktree but was copied into
+  the immutable snapshot:
+  `experiments/generated/exact_trace_bench/exact_trace_interaction_direct_prealloc_cache_fast_cardinal_scenarios.json`.
+
+Top-level results relative to each prompt's exact baseline (`gpu_v1`,
+`phase4_refresh_optimization=v1`, no direct, no prealloc, cache0):
+
+| Prompt | direct_v1 | prealloc | cache8g | Scenario duration | Delta vs baseline | Phase 3 wall | Phase 4 wall | Refresh total | RSS artifact snapshot |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `828_base` | off | off | off | `457.10 s` | baseline | `141.77 s` | `117.12 s` | `70.26 s` | `228.38 GiB` |
+| `828_base` | on | off | off | `450.57 s` | `-6.53 s` / `-1.4%` | `142.25 s` | `96.39 s` | `38.58 s` | `140.55 GiB` |
+| `828_base` | off | on | off | `477.11 s` | `+20.01 s` / `+4.4%` | `143.76 s` | `116.49 s` | `64.85 s` | `228.33 GiB` |
+| `828_base` | on | on | off | `424.32 s` | `-32.78 s` / `-7.2%` | `142.95 s` | `89.26 s` | `41.11 s` | `140.59 GiB` |
+| `828_base` | off | off | on | `445.39 s` | `-11.71 s` / `-2.6%` | `121.96 s` | `113.55 s` | `65.17 s` | `205.09 GiB` |
+| `828_base` | on | off | on | `370.31 s` | `-86.79 s` / `-19.0%` | `121.76 s` | `78.56 s` | `33.72 s` | `124.94 GiB` |
+| `828_base` | off | on | on | `406.06 s` | `-51.04 s` / `-11.2%` | `121.34 s` | `89.86 s` | `45.08 s` | `205.10 GiB` |
+| `828_base` | on | on | on | `377.66 s` | `-79.44 s` / `-17.4%` | `121.82 s` | `80.85 s` | `34.89 s` | `124.95 GiB` |
+| `361_base` | off | off | off | `729.83 s` | baseline | `235.93 s` | `250.23 s` | `174.36 s` | `348.75 GiB` |
+| `361_base` | on | off | off | `643.85 s` | `-85.98 s` / `-11.8%` | `235.62 s` | `141.98 s` | `52.12 s` | `240.07 GiB` |
+| `361_base` | off | on | off | `711.44 s` | `-18.39 s` / `-2.5%` | `237.25 s` | `259.96 s` | `179.01 s` | `348.73 GiB` |
+| `361_base` | on | on | off | `557.24 s` | `-172.59 s` / `-23.6%` | `234.27 s` | `132.42 s` | `54.83 s` | `240.08 GiB` |
+| `361_base` | off | off | on | `745.80 s` | `+15.97 s` / `+2.2%` | `187.81 s` | `307.33 s` | `227.52 s` | `348.88 GiB` |
+| `361_base` | on | off | on | `573.35 s` | `-156.48 s` / `-21.4%` | `186.21 s` | `182.08 s` | `88.07 s` | `247.74 GiB` |
+| `361_base` | off | on | on | `695.12 s` | `-34.71 s` / `-4.8%` | `185.54 s` | `321.22 s` | `226.19 s` | `349.38 GiB` |
+| `361_base` | on | on | on | `538.35 s` | `-191.48 s` / `-26.2%` | `185.49 s` | `163.12 s` | `85.67 s` | `247.76 GiB` |
+
+Compact parity / exactness:
+
+- cache0 variants with `direct_v1`, `row_store_preallocate`, or both were
+  bitwise-identical to the same-prompt cache0 baseline in saved compact `.npz`
+  outputs.
+- cache8g variants retained identical active features / token / logprob but were
+  not bitwise-retained-edge exact, matching earlier diagnostics:
+  - `828_base`: max retained weight diff about `7.20e-6`,
+  - `361_base`: max retained weight diff about `3.75e-6`.
+
+Interpretation:
+
+- The best **bitwise-exact** combined setting is `direct_v1 +
+  row_store_preallocate=true` with cache0:
+  - `828_base`: total `457.10 s -> 424.32 s` (`-7.2%`), Phase 4
+    `117.12 s -> 89.26 s`,
+  - `361_base`: total `729.83 s -> 557.24 s` (`-23.6%`), Phase 4
+    `250.23 s -> 132.42 s`.
+- `direct_v1` drives the clear refresh/RSS win by removing zero-filled full-chunk
+  allocation and reducing refresh work.
+- Preallocation by itself is mixed, but when `direct_v1` is enabled it composes
+  positively on both prompts in the exact cache0 setting.
+- cache8g remains useful as a near-exact speed option because it cuts Phase 3
+  decoder loads (`828_base`: `1065 -> 831`; `361_base`: `1615 -> 1378`) and can
+  improve end-to-end runtime, but it can also worsen Phase 4 on `361_base`.
+- The best near-exact / cutoff-sensitive setting differed by prompt:
+  - `828_base`: `direct_v1 + cache8g` without preallocation was fastest
+    (`370.31 s`, `-19.0%`),
+  - `361_base`: all three knobs was fastest (`538.35 s`, `-26.2%`).
+
+Decision / next promotion path after user review:
+
+- Promote `phase4_refresh_active_row_accumulation=direct_v1` and
+  `row_store_preallocate=true` together as the strict bitwise-retained-edge
+  candidate, preserving cache0 fallback flags.
+- Treat `cross_batch_decoder_cache_bytes=8GiB` as part of the proposed
+  performance default candidate despite retained-edge few-e-6 cutoff-sensitive
+  drift. Keep documentation explicit that this mode is near-exact rather than
+  bitwise-retained-edge exact.
+- Before final default promotion, run broader matched-base validation of baseline
+  vs strict cache0 candidate vs cache8g performance candidate.
+
+## Recent launch update — broader default validation
+
+Purpose: validate whether the proposed performance default generalizes beyond
+the two fast fixtures used for the interaction matrix.
+
+Compared settings:
+
+- current baseline: `gpu_v1`, `zero_fill`, no row-store preallocation, cache0,
+- strict exact candidate: `gpu_v1`, `direct_v1`, row-store preallocation, cache0,
+- proposed performance default: `gpu_v1`, `direct_v1`, row-store preallocation,
+  cache8g.
+
+Fixture set: matched-debug base fixtures `828_base`, `613_base`, `999_base`,
+`1046_base`, `1075_base`.
+
+Launch metadata:
+
+- cluster: `cardinal`,
+- SLURM array job: `10434364`, array `0-14`, all tasks completed successfully
+  with `ExitCode 0:0`,
+- run id / output bucket: `20260525_broader-default-validation-fast`,
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260525_broader-default-validation-fast`,
+- immutable snapshot root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260525_190714_broader_default_validation`,
+- scenario file, copied into the immutable snapshot and left untracked in the live
+  worktree:
+  `experiments/generated/exact_trace_bench/exact_trace_broader_default_validation_fast_cardinal_scenarios.json`.
+
+Top-level timing / parity results relative to each prompt's current cache0
+baseline:
+
+| Prompt | Variant | Duration | Delta vs baseline | Phase 3 | Phase 4 | RSS artifact snapshot | Compact parity |
+|---|---|---:|---:|---:|---:|---:|---|
+| `1046_base` | strict cache0 | `331.80 s` | `-120.41 s` / `-26.6%` | `129.49 s` | `78.04 s` | `129.22 GiB` | bitwise exact |
+| `1046_base` | perf cache8g | `289.11 s` | `-163.10 s` / `-36.1%` | `108.79 s` | `73.82 s` | `115.77 GiB` | near-exact |
+| `1075_base` | strict cache0 | `402.27 s` | `-44.25 s` / `-9.9%` | `161.45 s` | `105.51 s` | `165.64 GiB` | bitwise exact |
+| `1075_base` | perf cache8g | `355.61 s` | `-90.91 s` / `-20.4%` | `131.79 s` | `95.40 s` | `140.18 GiB` | near-exact |
+| `613_base` | strict cache0 | `458.09 s` | `+27.95 s` / `+6.5%` | `136.30 s` | `101.74 s` | `133.29 GiB` | bitwise exact |
+| `613_base` | perf cache8g | `375.29 s` | `-54.85 s` / `-12.8%` | `107.40 s` | `83.12 s` | `112.87 GiB` | near-exact |
+| `828_base` | strict cache0 | `420.94 s` | `-64.38 s` / `-13.3%` | `141.18 s` | `74.86 s` | `140.50 GiB` | bitwise exact |
+| `828_base` | perf cache8g | `419.51 s` | `-65.81 s` / `-13.6%` | `121.40 s` | `85.35 s` | `124.98 GiB` | near-exact |
+| `999_base` | strict cache0 | `359.71 s` | `-133.14 s` / `-27.0%` | `146.45 s` | `86.73 s` | `148.01 GiB` | bitwise exact |
+| `999_base` | perf cache8g | `332.02 s` | `-160.83 s` / `-32.6%` | `123.92 s` | `80.81 s` | `130.32 GiB` | near-exact |
+
+Aggregate interpretation:
+
+- strict cache0 candidate was bitwise-identical to baseline for all five fixtures
+  and reduced Phase 4 for every fixture; end-to-end time improved on four of five
+  fixtures, with `613_base` regressing overall despite a small Phase 4 win.
+- performance cache8g candidate improved end-to-end time on all five fixtures
+  (`-12.8%` to `-36.1%`, mean `-23.1%`) and lowered the artifact RSS snapshot on
+  all five fixtures.
+- cache8g preserved token, logprob, active-feature count, and `feature_ids` for all
+  five fixtures, but changed retained-edge arrays as expected:
+  - edge Jaccard range: `0.955799` to `0.998801`,
+  - positional max retained-weight delta: up to `7.20e-6`,
+  - shared-edge max retained-weight delta: up to `7.08e-5` in this comparison.
+
+Decision:
+
+- The broader run supports promoting the performance default candidate for speed:
+  `gpu_v1 + phase4_refresh_optimization=v1 + direct_v1 +
+  row_store_preallocate + cache8g`.
+- Keep explicit documentation and fallback flags for strict cache0 when
+  bitwise-retained-edge reproducibility is required.
+
+Follow-up implementation status:
+
+- Default-promotion patch has been applied in the optimization project/library
+  worktree pair.
+- Strict fallbacks remain exposed: cache0, refresh optimization off / zero-fill,
+  no row-store preallocation, and CPU row-reduction reference.
+- Temporary decoder-cache fingerprint diagnostic CLI/scenario plumbing was removed;
+  core decoder-cache support and benchmark telemetry remain.
+
 ## Status of this note
 
 This file is descriptive, not normative.

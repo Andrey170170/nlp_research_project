@@ -61,12 +61,12 @@ CLUSTER_SETTINGS: dict[str, dict[str, Any]] = {
         "fast": {
             "batch": 128,
             "chunk": 2048,
-            "cache_gib": 0,
+            "cache_gib": 8,
         },
         "anomaly": {
             "batch": 256,
             "chunk": 4096,
-            "cache_gib": 0,
+            "cache_gib": 8,
         },
         "long_eval": {
             "runs": [
@@ -91,12 +91,12 @@ CLUSTER_SETTINGS: dict[str, dict[str, Any]] = {
         "fast": {
             "batch": 128,
             "chunk": 4096,
-            "cache_gib": 0,
+            "cache_gib": 8,
         },
         "anomaly": {
             "batch": 256,
             "chunk": 4096,
-            "cache_gib": 0,
+            "cache_gib": 8,
         },
         "long_eval": {
             "runs": [
