@@ -1,0 +1,74 @@
+{
+  "defaults": {
+    "completions": 1,
+    "temperature": 0.0,
+    "max_feature_nodes": 8192,
+    "max_edges": 20000,
+    "max_n_logits": 3,
+    "desired_logit_prob": 0.8,
+    "verbose_attribution": true,
+    "profile_attribution": true,
+    "profile_log_interval": 1,
+    "attribution_update_interval": 4,
+    "save_raw": false,
+    "no_offload": false,
+    "no_lazy_encoder": false,
+    "no_lazy_decoder": false,
+    "exact_trace_internal_dtype": "fp64",
+    "phase0_activation_threshold_compare_mode": "baseline",
+    "plan_feature_batch_size": false,
+    "auto_scale_feature_batch_size": false,
+    "feature_batch_size_max": null,
+    "feature_batch_target_reserved_fraction": 0.9,
+    "feature_batch_min_free_fraction": 0.05,
+    "feature_batch_probe_batches": 1,
+    "phase4_anomaly_debug": false,
+    "cross_cluster_debug": true,
+    "capture_phase0_donor_bundle": true,
+    "capture_phase3_seed_bundle": true,
+    "capture_phase3_gradient_bundle": true,
+    "capture_phase3_row_bundle": true,
+    "capture_feature_semantic_descriptors": true,
+    "semantic_descriptor_top_k": 2048,
+    "semantic_descriptor_dim": 64,
+    "telemetry_max_events": null,
+    "max_steps": 1,
+    "method": "exact"
+  },
+  "metadata": {
+    "cluster": "cardinal",
+    "stage": "exact_trace_bench_anomaly",
+    "tier": "anomaly",
+    "resource_profile": "standard",
+    "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly",
+    "run_name": "phase3 gradient donor capture 94_base cardinal",
+    "run_description": "Cardinal baseline donor capture with Phase-3 gradient and row bundles for 94_base.",
+    "run_goal": "Capture matched Phase-0, Phase-3 seed, gradient, and row bundles before the richer replay matrix.",
+    "notes": [
+      "Phase-3 gradient/row donor capture baseline for the next replay matrix.",
+      "Single-step 94_base run with cross_cluster_debug and exact_trace_internal_dtype=fp64.",
+      "Captures phase0 donor, phase3 seed, phase3 gradient, phase3 row, and feature semantic descriptor artifacts."
+    ]
+  },
+  "scenarios": [
+    {
+      "name": "cardinal_phase3_gradient_donor_capture_94_base_anomaly_b128_c2048_cache0g",
+      "stage": "exact_trace_bench_anomaly",
+      "cluster": "cardinal",
+      "resource_profile": "standard",
+      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly",
+      "fixture_name": "94_base",
+      "fixture_kind": "base",
+      "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/94_base/prompt.txt",
+      "prepared_prompt_meta_file": "experiments/generated/weekend_exact_chunked_fixtures/94_base/fixture_meta.json",
+      "gsm8k_indices": [
+        94
+      ],
+      "attribution_batch_size": 128,
+      "feature_batch_size": 128,
+      "logit_batch_size": 128,
+      "decoder_chunk_size": 2048,
+      "cross_batch_decoder_cache_bytes": 0
+    }
+  ]
+}

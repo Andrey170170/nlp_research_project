@@ -1,5 +1,8 @@
 # Next Exact Optimization Paths Spec
 
+Status: Current optimization option map
+Last updated: 2026-05-16
+
 ## 1. Problem statement
 
 The current exact compact path is validated and operational, but it is still too

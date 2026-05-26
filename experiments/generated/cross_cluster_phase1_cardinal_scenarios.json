@@ -1,0 +1,60 @@
+{
+  "defaults": {
+    "completions": 1,
+    "temperature": 0.0,
+    "max_feature_nodes": 8192,
+    "max_edges": 20000,
+    "max_n_logits": 3,
+    "desired_logit_prob": 0.8,
+    "verbose_attribution": true,
+    "profile_attribution": true,
+    "profile_log_interval": 1,
+    "attribution_update_interval": 4,
+    "save_raw": false,
+    "no_offload": false,
+    "no_lazy_encoder": false,
+    "no_lazy_decoder": false,
+    "max_steps": 1,
+    "method": "exact",
+    "internal_precision": "float64",
+    "cross_cluster_debug": true,
+    "telemetry_max_events": 50000
+  },
+  "metadata": {
+    "cluster": "cardinal",
+    "stage": "cross_cluster_phase1",
+    "notes": [
+      "Proposed paired Ascend/Cardinal Phase-1 rerun config; do not launch automatically.",
+      "Prompt 94 runs with both broad cross-cluster debug and legacy Phase-4 anomaly debug for maximum watchpoint coverage.",
+      "Prompt 828 is the fast control prompt and runs broad cross-cluster debug without the heavier Phase-4 anomaly shadow mode."
+    ]
+  },
+  "scenarios": [
+    {
+      "name": "cardinal_phase1_p0094_b256_c4096_cache0_fp64_xdbg_p4dbg",
+      "stage": "cross_cluster_phase1",
+      "cluster": "cardinal",
+      "gsm8k_indices": [94],
+      "attribution_batch_size": 256,
+      "feature_batch_size": 256,
+      "logit_batch_size": 256,
+      "decoder_chunk_size": 4096,
+      "cross_batch_decoder_cache_bytes": 0,
+      "phase4_anomaly_debug": true,
+      "method": "exact"
+    },
+    {
+      "name": "cardinal_phase1_p0828_b256_c4096_cache0_fp64_xdbg",
+      "stage": "cross_cluster_phase1",
+      "cluster": "cardinal",
+      "gsm8k_indices": [828],
+      "attribution_batch_size": 256,
+      "feature_batch_size": 256,
+      "logit_batch_size": 256,
+      "decoder_chunk_size": 4096,
+      "cross_batch_decoder_cache_bytes": 0,
+      "phase4_anomaly_debug": false,
+      "method": "exact"
+    }
+  ]
+}

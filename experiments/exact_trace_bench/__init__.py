@@ -1,15 +1,6 @@
-from .config import (
-    DEFAULT_EXTRACTED_DIR,
-    DEFAULT_FIXTURE_CATALOG,
-    DEFAULT_GENERATED_DIR,
-    DEFAULT_SCRATCH_ROOT,
-    base_trace_defaults,
-)
+"""Compatibility shim for the moved exact-trace benchmark package."""
 
-__all__ = [
-    "DEFAULT_EXTRACTED_DIR",
-    "DEFAULT_FIXTURE_CATALOG",
-    "DEFAULT_GENERATED_DIR",
-    "DEFAULT_SCRATCH_ROOT",
-    "base_trace_defaults",
-]
+from nlp_research_project import exact_trace_bench as _exact_trace_bench
+from nlp_research_project.exact_trace_bench import *  # noqa: F403
+
+__path__ = _exact_trace_bench.__path__

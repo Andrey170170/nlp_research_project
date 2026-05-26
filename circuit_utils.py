@@ -60,19 +60,138 @@ def extract_circuit_subgraph(
     return feat_block, logit_block, logit_start
 
 
+# NEW ── decoder-aware importance scoring ──────────────────────────────────
+def decoder_aware_feature_scores(
+    adj: torch.Tensor,
+    activation_values: torch.Tensor,
+    n_features: int,
+) -> torch.Tensor:
+    """Feature importance: s_i = a_i^2 * ||D_i||_F^2.
+
+    D_i is the downstream write vector for feature i — column i of the
+    feature-subgraph adjacency (feat→feat and feat→logit blocks).
+    ||D_i||_F^2 captures how broadly feature i writes downstream;
+    a_i^2 weights by firing strength.  Product ranks features by their
+    actual causal impact on the traced output.
+
+    Returns a (n_features,) float32 score tensor.
+    """
+    feat_block, logit_block, _ = extract_circuit_subgraph(adj, n_features)
+    fb = feat_block.float()
+    lb = logit_block.float()
+    d_norms_sq = fb.pow(2).sum(dim=0) + lb.pow(2).sum(dim=0)  # (F,)
+    a_sq = activation_values[:n_features].float().pow(2)       # (F,)
+    return a_sq * d_norms_sq
+
+
+# NEW
+def _sparsify_decoder_aware(
+    feat_block: torch.Tensor,
+    logit_block: torch.Tensor,
+    logit_start: int,
+    activation_values: torch.Tensor,
+    n_features: int,
+    max_edges: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Select edges by ranking features with s_i = a_i^2 * ||D_i||_F^2.
+
+    Features are sorted by score descending.  Their outgoing edges
+    (column non-zeros in the feature and logit blocks) are accumulated in
+    that order until the edge budget is exhausted.  If the top-scored
+    feature alone exceeds the budget, its edges are trimmed by absolute
+    weight.
+    """
+    fb = feat_block.float()
+    lb = logit_block.float()
+
+    d_norms_sq = fb.pow(2).sum(dim=0) + lb.pow(2).sum(dim=0)  # (F,)
+    a_sq = activation_values[:n_features].float().pow(2)       # (F,)
+    scores = a_sq * d_norms_sq                                  # (F,)
+
+    ranked = torch.argsort(scores, descending=True)
+
+    # Greedy budget: count non-zero outgoing edges per feature
+    nz_per_feat = (fb != 0).sum(dim=0) + (lb != 0).sum(dim=0)  # (F,)
+    cumsum = torch.cumsum(nz_per_feat[ranked].float(), dim=0)
+    n_keep = int((cumsum <= max_edges).sum().item())
+    n_keep = max(n_keep, 1)  # always include at least the top-scored feature
+
+    kept_feats = ranked[:n_keep]  # (n_keep,) original feature indices
+    keep_mask = torch.zeros(n_features, dtype=torch.bool)
+    keep_mask[kept_feats] = True
+    kept_col_order = torch.where(keep_mask)[0]  # stable original-index order
+
+    # Feature → feature edges
+    ff_r, ff_c = (fb[:, keep_mask] != 0).nonzero(as_tuple=True)
+    ff_col_orig = kept_col_order[ff_c]
+    ff_vals = fb[ff_r, ff_col_orig].abs()
+
+    # Feature → logit edges
+    fl_r, fl_c = (lb[:, keep_mask] != 0).nonzero(as_tuple=True)
+    fl_col_orig = kept_col_order[fl_c]
+    fl_vals = lb[fl_r, fl_col_orig].abs()
+
+    row_idx = torch.cat([ff_r, fl_r + logit_start]).to(torch.int32)
+    col_idx = torch.cat([ff_col_orig, fl_col_orig]).to(torch.int32)
+    vals = torch.cat([ff_vals, fl_vals])
+
+    # Trim to budget (handles single-feature overshoot)
+    if vals.numel() > max_edges:
+        _, top_idx = torch.topk(vals, k=max_edges, sorted=False)
+        row_idx = row_idx[top_idx]
+        col_idx = col_idx[top_idx]
+        vals = vals[top_idx]
+
+    if vals.numel() == 0:
+        return (
+            np.empty(0, dtype=np.int32),
+            np.empty(0, dtype=np.int32),
+            np.empty(0, dtype=np.float32),
+        )
+
+    total = float(vals.double().sum().item())
+    if total == 0:
+        return (
+            np.empty(0, dtype=np.int32),
+            np.empty(0, dtype=np.int32),
+            np.empty(0, dtype=np.float32),
+        )
+
+    norm_weights = (vals.double() / total).float().numpy()
+    return row_idx.numpy(), col_idx.numpy(), norm_weights
+# END NEW
+
+
 def sparsify_edges(
     adj: torch.Tensor,
     n_features: int,
     max_edges: int = MAX_EDGES,
+    activation_values: torch.Tensor | None = None,  # NEW
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Keep top-K feature-circuit edges by absolute weight, normalised.
+    """Select feature-circuit edges, normalised to sum=1.
 
-    Returns (row_idx, col_idx, weights) as numpy arrays — ready for
-    compact serialisation.  Row/col indices are in the *original*
-    adjacency matrix coordinate system.
+    When *activation_values* are provided uses the decoder-aware score
+        s_i = a_i^2 * ||D_i||_F^2
+    to rank features (D_i = downstream write vector = column i of the
+    feature-subgraph adjacency).  Edges are included in feature-score
+    order until the budget is reached.
+
+    Without activation_values falls back to top-K by absolute edge weight.
+
+    Returns (row_idx, col_idx, weights) in the *original* adjacency
+    matrix coordinate system.
     """
     feat_block, logit_block, logit_start = extract_circuit_subgraph(adj, n_features)
 
+    # NEW: dispatch to decoder-aware path when activations available
+    if activation_values is not None:
+        return _sparsify_decoder_aware(
+            feat_block, logit_block, logit_start,
+            activation_values, n_features, max_edges,
+        )
+    # END NEW
+
+    # Legacy path: top-K edges by absolute weight
     ff_flat = feat_block.abs().float().view(-1)
     fl_flat = logit_block.abs().float().view(-1)
     combined = torch.cat([ff_flat, fl_flat])
@@ -166,7 +285,10 @@ def step_from_pt(
     af = graph["active_features"]  # (F, 3): layer, pos, feat_idx
     n_features = af.shape[0]
 
-    row_idx, col_idx, weights = sparsify_edges(adj, n_features, max_edges=max_edges)
+    activation_values = graph.get("activation_values")  # NEW: (F,) bfloat16, may be absent
+    row_idx, col_idx, weights = sparsify_edges(
+        adj, n_features, max_edges=max_edges, activation_values=activation_values  # NEW
+    )
 
     feature_ids = af.numpy().astype(np.int64)
     del graph, adj

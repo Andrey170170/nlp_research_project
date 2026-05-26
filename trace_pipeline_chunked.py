@@ -128,6 +128,60 @@ def parse_exact_trace_internal_dtype(value: str) -> str:
     )
 
 
+def parse_phase0_activation_threshold_compare_mode(value: str) -> str:
+    normalized = value.strip().lower()
+    aliases = {
+        "baseline": "baseline",
+        "default": "baseline",
+        "bf16": "bf16",
+        "bfloat16": "bf16",
+        "fp32": "fp32",
+        "float32": "fp32",
+        "fp64": "fp64",
+        "float64": "fp64",
+    }
+    resolved = aliases.get(normalized)
+    if resolved is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{baseline, bf16, fp32, fp64}}, got: {value!r}"
+        )
+    return resolved
+
+
+def parse_phase0_replay_mode(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized in {"disabled", "donor_phase0"}:
+        return normalized
+    raise argparse.ArgumentTypeError(
+        f"Expected one of {{disabled, donor_phase0}}, got: {value!r}"
+    )
+
+
+def parse_phase0_donor_context_policy(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized in {"strict", "warn"}:
+        return normalized
+    raise argparse.ArgumentTypeError(
+        f"Expected one of {{strict, warn}}, got: {value!r}"
+    )
+
+
+def parse_phase3_replay_mode(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized in {"disabled", "donor"}:
+        return normalized
+    raise argparse.ArgumentTypeError(
+        f"Expected one of {{disabled, donor}}, got: {value!r}"
+    )
+
+
+def parse_phase3_replay_validation_policy(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized == "strict":
+        return normalized
+    raise argparse.ArgumentTypeError(f"Expected 'strict', got: {value!r}")
+
+
 def _normalize_phase1_trace_batch_policy(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
@@ -491,6 +545,389 @@ def normalize_requested_exact_trace_internal_dtype(value: Any) -> str | None:
     return parse_exact_trace_internal_dtype(value)
 
 
+def _to_numpy_seed_bundle_array(value: Any) -> base.np.ndarray:
+    if isinstance(value, torch.Tensor):
+        tensor = value.detach().cpu()
+        numpy_unsupported_float_dtypes = {
+            dtype
+            for dtype in (
+                torch.bfloat16,
+                getattr(torch, "float8_e4m3fn", None),
+                getattr(torch, "float8_e5m2", None),
+            )
+            if dtype is not None
+        }
+        if tensor.dtype in numpy_unsupported_float_dtypes:
+            tensor = tensor.to(dtype=torch.float32)
+        return tensor.numpy()
+    if isinstance(value, base.np.ndarray):
+        return value
+    if isinstance(value, (list, tuple)):
+        return base.np.asarray(value)
+    return base.np.asarray(value)
+
+
+def save_phase3_seed_bundle(
+    payload: dict[str, Any],
+    path: Path,
+) -> None:
+    status = payload.get("status")
+    planner_compute_dtype = payload.get("planner_compute_dtype")
+    influence_compute_dtype = payload.get("influence_compute_dtype")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    base.np.savez_compressed(
+        str(path),
+        active_features=_to_numpy_seed_bundle_array(payload.get("active_features", [])),
+        activation_values=_to_numpy_seed_bundle_array(
+            payload.get("activation_values", [])
+        ),
+        seed_feature_influences=_to_numpy_seed_bundle_array(
+            payload.get("seed_feature_influences", [])
+        ),
+        frontier_pre_locality=_to_numpy_seed_bundle_array(
+            payload.get("frontier_pre_locality", [])
+        ),
+        frontier_post_locality=_to_numpy_seed_bundle_array(
+            payload.get("frontier_post_locality", [])
+        ),
+        queue_size=base.np.array(payload.get("queue_size", 0), dtype=base.np.int64),
+        actual_max_feature_nodes=base.np.array(
+            payload.get("actual_max_feature_nodes", 0), dtype=base.np.int64
+        ),
+        total_active_features=base.np.array(
+            payload.get("total_active_features", 0), dtype=base.np.int64
+        ),
+        status=base.np.array("" if status is None else str(status)),
+        planner_compute_dtype=base.np.array(
+            "" if planner_compute_dtype is None else str(planner_compute_dtype)
+        ),
+        influence_compute_dtype=base.np.array(
+            "" if influence_compute_dtype is None else str(influence_compute_dtype)
+        ),
+    )
+
+
+def _optional_str_array(value: Any) -> base.np.ndarray:
+    if value is None:
+        return base.np.asarray("")
+    if isinstance(value, (list, tuple)):
+        return base.np.asarray([str(item) for item in value])
+    return base.np.asarray(str(value))
+
+
+def save_phase3_gradient_bundle(
+    payload: dict[str, Any],
+    path: Path,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    base.np.savez_compressed(
+        str(path),
+        schema_version=base.np.array(
+            payload.get("schema_version", 1), dtype=base.np.int64
+        ),
+        status=_optional_str_array(payload.get("status")),
+        capture_kind=_optional_str_array(payload.get("capture_kind")),
+        target_token_ids=_to_numpy_seed_bundle_array(
+            payload.get("target_token_ids", [])
+        ),
+        target_probabilities=_to_numpy_seed_bundle_array(
+            payload.get("target_probabilities", [])
+        ),
+        target_token_ids_hash=_optional_str_array(payload.get("target_token_ids_hash")),
+        target_probability_hash=_optional_str_array(
+            payload.get("target_probability_hash")
+        ),
+        active_feature_count=base.np.array(
+            payload.get("active_feature_count", 0), dtype=base.np.int64
+        ),
+        active_features_hash=_optional_str_array(payload.get("active_features_hash")),
+        activation_values_hash=_optional_str_array(
+            payload.get("activation_values_hash")
+        ),
+        gradients=_to_numpy_seed_bundle_array(payload.get("gradients", [])),
+        layer_mask=_to_numpy_seed_bundle_array(payload.get("layer_mask", [])),
+        batch_call_indices=_to_numpy_seed_bundle_array(
+            payload.get("batch_call_indices", [])
+        ),
+        per_layer_abs_sum=_to_numpy_seed_bundle_array(
+            payload.get("per_layer_abs_sum", [])
+        ),
+        per_layer_max_abs=_to_numpy_seed_bundle_array(
+            payload.get("per_layer_max_abs", [])
+        ),
+        per_layer_nonfinite_count=_to_numpy_seed_bundle_array(
+            payload.get("per_layer_nonfinite_count", [])
+        ),
+        per_layer_hashes=_optional_str_array(payload.get("per_layer_hashes", [])),
+        gradient_hash=_optional_str_array(payload.get("gradient_hash")),
+    )
+
+
+def save_phase3_row_bundle(
+    payload: dict[str, Any],
+    path: Path,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    base.np.savez_compressed(
+        str(path),
+        schema_version=base.np.array(
+            payload.get("schema_version", 1), dtype=base.np.int64
+        ),
+        status=_optional_str_array(payload.get("status")),
+        capture_kind=_optional_str_array(payload.get("capture_kind")),
+        target_token_ids=_to_numpy_seed_bundle_array(
+            payload.get("target_token_ids", [])
+        ),
+        target_probabilities=_to_numpy_seed_bundle_array(
+            payload.get("target_probabilities", [])
+        ),
+        target_token_ids_hash=_optional_str_array(payload.get("target_token_ids_hash")),
+        target_probability_hash=_optional_str_array(
+            payload.get("target_probability_hash")
+        ),
+        active_feature_count=base.np.array(
+            payload.get("active_feature_count", 0), dtype=base.np.int64
+        ),
+        active_features_hash=_optional_str_array(payload.get("active_features_hash")),
+        activation_values_hash=_optional_str_array(
+            payload.get("activation_values_hash")
+        ),
+        phase3_feature_rows=_to_numpy_seed_bundle_array(
+            payload.get("phase3_feature_rows", [])
+        ),
+        row_abs_sums=_to_numpy_seed_bundle_array(payload.get("row_abs_sums", [])),
+        feature_abs_sums=_to_numpy_seed_bundle_array(
+            payload.get("feature_abs_sums", [])
+        ),
+        error_abs_sums=_to_numpy_seed_bundle_array(payload.get("error_abs_sums", [])),
+        token_abs_sums=_to_numpy_seed_bundle_array(payload.get("token_abs_sums", [])),
+        total_active_features=base.np.array(
+            payload.get("total_active_features", 0), dtype=base.np.int64
+        ),
+        error_column_count=base.np.array(
+            payload.get("error_column_count", 0), dtype=base.np.int64
+        ),
+        token_column_count=base.np.array(
+            payload.get("token_column_count", 0), dtype=base.np.int64
+        ),
+        row_hash=_optional_str_array(payload.get("row_hash")),
+        row_abs_sum_hash=_optional_str_array(payload.get("row_abs_sum_hash")),
+    )
+
+
+def save_feature_semantic_descriptors(
+    payload: dict[str, Any],
+    path: Path,
+) -> None:
+    status = payload.get("status")
+    descriptor_version = payload.get("descriptor_version")
+    descriptor_kind = payload.get("descriptor_kind")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    base.np.savez_compressed(
+        str(path),
+        candidate_features=_to_numpy_seed_bundle_array(
+            payload.get("candidate_features", [])
+        ),
+        candidate_row_indices=_to_numpy_seed_bundle_array(
+            payload.get("candidate_row_indices", [])
+        ),
+        activation_value=_to_numpy_seed_bundle_array(
+            payload.get("activation_value", [])
+        ),
+        seed_influence=_to_numpy_seed_bundle_array(payload.get("seed_influence", [])),
+        seed_rank=_to_numpy_seed_bundle_array(payload.get("seed_rank", [])),
+        is_top_seed=_to_numpy_seed_bundle_array(payload.get("is_top_seed", [])),
+        is_frontier_pre=_to_numpy_seed_bundle_array(payload.get("is_frontier_pre", [])),
+        frontier_pre_rank=_to_numpy_seed_bundle_array(
+            payload.get("frontier_pre_rank", [])
+        ),
+        is_frontier_post=_to_numpy_seed_bundle_array(
+            payload.get("is_frontier_post", [])
+        ),
+        frontier_post_rank=_to_numpy_seed_bundle_array(
+            payload.get("frontier_post_rank", [])
+        ),
+        is_selected_phase4=_to_numpy_seed_bundle_array(
+            payload.get("is_selected_phase4", [])
+        ),
+        phase4_selected_rank=_to_numpy_seed_bundle_array(
+            payload.get("phase4_selected_rank", [])
+        ),
+        semantic_sketch=_to_numpy_seed_bundle_array(payload.get("semantic_sketch", [])),
+        status=base.np.array("" if status is None else str(status)),
+        descriptor_version=base.np.array(
+            "" if descriptor_version is None else str(descriptor_version)
+        ),
+        descriptor_kind=base.np.array(
+            "" if descriptor_kind is None else str(descriptor_kind)
+        ),
+        descriptor_dim=base.np.array(
+            payload.get("descriptor_dim", 0), dtype=base.np.int64
+        ),
+        semantic_descriptor_top_k=base.np.array(
+            payload.get("semantic_descriptor_top_k", 0), dtype=base.np.int64
+        ),
+        candidate_count=base.np.array(
+            payload.get("candidate_count", 0), dtype=base.np.int64
+        ),
+        total_active_features=base.np.array(
+            payload.get("total_active_features", 0), dtype=base.np.int64
+        ),
+        phase4_selection_available=base.np.array(
+            bool(payload.get("phase4_selection_available", False))
+        ),
+        seed_influence_available=base.np.array(
+            bool(payload.get("seed_influence_available", False))
+        ),
+    )
+
+
+def _normalize_dtype_name(value: Any) -> str:
+    if isinstance(value, torch.dtype):
+        return str(value).replace("torch.", "")
+    if value is None:
+        return ""
+    return str(value).replace("torch.", "").strip()
+
+
+def _to_optional_json_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list, tuple)):
+        return base.json.dumps(value, sort_keys=True, default=str)
+    return str(value)
+
+
+def _resolve_activation_values_with_bf16_sidecar(
+    payload: dict[str, Any],
+) -> tuple[base.np.ndarray, str, base.np.ndarray]:
+    activation_values_payload = payload.get("activation_values", [])
+    activation_values_dtype = _normalize_dtype_name(
+        payload.get("activation_values_dtype")
+    )
+    raw_uint16_payload = payload.get("activation_values_raw_uint16")
+
+    if isinstance(activation_values_payload, torch.Tensor):
+        activation_tensor = activation_values_payload.detach().cpu().contiguous()
+        resolved_dtype = activation_values_dtype or _normalize_dtype_name(
+            activation_tensor.dtype
+        )
+        if activation_tensor.dtype == torch.bfloat16:
+            raw_uint16 = activation_tensor.view(torch.uint16).numpy()
+            activation_values = activation_tensor.to(dtype=torch.float32).numpy()
+            return (
+                activation_values,
+                resolved_dtype or "bfloat16",
+                raw_uint16.astype(base.np.uint16, copy=False),
+            )
+        return (
+            _to_numpy_seed_bundle_array(activation_tensor),
+            resolved_dtype,
+            base.np.empty(0, dtype=base.np.uint16),
+        )
+
+    activation_values = _to_numpy_seed_bundle_array(activation_values_payload)
+    resolved_dtype = activation_values_dtype or str(activation_values.dtype)
+    if raw_uint16_payload is None:
+        return activation_values, resolved_dtype, base.np.empty(0, dtype=base.np.uint16)
+
+    raw_uint16_array = _to_numpy_seed_bundle_array(raw_uint16_payload).astype(
+        base.np.uint16,
+        copy=False,
+    )
+    return activation_values, resolved_dtype, raw_uint16_array
+
+
+def save_phase0_donor_bundle(
+    payload: dict[str, Any],
+    path: Path,
+) -> None:
+    status = payload.get("status")
+    schema_version = payload.get("schema_version", 0)
+    replay_kind = payload.get("replay_kind")
+    replayed_effective_state = bool(payload.get("replayed_effective_state", False))
+    replay_mode = payload.get("phase0_replay_mode")
+    activation_values, activation_values_dtype, activation_values_raw_uint16 = (
+        _resolve_activation_values_with_bf16_sidecar(payload)
+    )
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    base.np.savez_compressed(
+        str(path),
+        active_features=_to_numpy_seed_bundle_array(payload.get("active_features", [])),
+        activation_values=activation_values,
+        activation_values_dtype=base.np.array(activation_values_dtype),
+        activation_values_raw_uint16=activation_values_raw_uint16,
+        activation_matrix_shape=_to_numpy_seed_bundle_array(
+            payload.get("activation_matrix_shape", [])
+        ),
+        active_feature_count=base.np.array(
+            payload.get("active_feature_count", 0),
+            dtype=base.np.int64,
+        ),
+        active_feature_membership_hash_raw_order=base.np.array(
+            _to_optional_json_text(
+                payload.get("active_feature_membership_hash_raw_order")
+            )
+        ),
+        active_feature_membership_hash_canonical=base.np.array(
+            _to_optional_json_text(
+                payload.get("active_feature_membership_hash_canonical")
+            )
+        ),
+        active_feature_values_hash=base.np.array(
+            _to_optional_json_text(payload.get("active_feature_values_hash"))
+        ),
+        active_feature_layer_counts=_to_numpy_seed_bundle_array(
+            payload.get("active_feature_layer_counts", [])
+        ),
+        input_tokens=_to_numpy_seed_bundle_array(payload.get("input_tokens", [])),
+        input_token_count=base.np.array(
+            payload.get("input_token_count", 0),
+            dtype=base.np.int64,
+        ),
+        input_tokens_hash=base.np.array(
+            _to_optional_json_text(payload.get("input_tokens_hash"))
+        ),
+        target_token_ids=_to_numpy_seed_bundle_array(
+            payload.get("target_token_ids", [])
+        ),
+        target_count=base.np.array(payload.get("target_count", 0), dtype=base.np.int64),
+        target_token_ids_hash=base.np.array(
+            _to_optional_json_text(payload.get("target_token_ids_hash"))
+        ),
+        target_probabilities=_to_numpy_seed_bundle_array(
+            payload.get("target_probabilities", [])
+        ),
+        target_probability_hash=base.np.array(
+            _to_optional_json_text(payload.get("target_probability_hash"))
+        ),
+        target_logits=_to_numpy_seed_bundle_array(payload.get("target_logits", [])),
+        target_logit_hash=base.np.array(
+            _to_optional_json_text(payload.get("target_logit_hash"))
+        ),
+        clt_constants_hash=base.np.array(
+            _to_optional_json_text(payload.get("clt_constants_hash"))
+        ),
+        provenance=base.np.array(_to_optional_json_text(payload.get("provenance"))),
+        prompt_metadata=base.np.array(
+            _to_optional_json_text(payload.get("prompt_metadata"))
+        ),
+        target_metadata=base.np.array(
+            _to_optional_json_text(payload.get("target_metadata"))
+        ),
+        schema_version=base.np.array(int(schema_version), dtype=base.np.int64),
+        replay_kind=base.np.array("" if replay_kind is None else str(replay_kind)),
+        replayed_effective_state=base.np.array(replayed_effective_state),
+        phase0_replay_mode=base.np.array(
+            "" if replay_mode is None else str(replay_mode)
+        ),
+        status=base.np.array("" if status is None else str(status)),
+    )
+
+
 def extract_compact_chunked_attribution(
     model,
     prompt: str | torch.Tensor | list[int],
@@ -520,10 +957,26 @@ def extract_compact_chunked_attribution(
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
     exact_trace_internal_dtype: str = "fp32",
+    phase0_activation_threshold_compare_mode: str = "baseline",
     phase1_trace_batch_policy: str = "legacy",
     phase1_trace_batch_size_max: int | None = None,
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
+    capture_phase0_donor_bundle: bool = False,
+    phase0_donor_bundle: str | None = None,
+    phase0_replay_mode: str = "disabled",
+    phase0_donor_context_policy: str = "strict",
+    phase3_gradient_donor_bundle: str | None = None,
+    phase3_gradient_replay_mode: str = "disabled",
+    phase3_row_donor_bundle: str | None = None,
+    phase3_row_replay_mode: str = "disabled",
+    phase3_replay_validation_policy: str = "strict",
+    capture_phase3_seed_bundle: bool = False,
+    capture_phase3_gradient_bundle: bool = False,
+    capture_phase3_row_bundle: bool = False,
+    capture_feature_semantic_descriptors: bool = False,
+    semantic_descriptor_top_k: int = 2048,
+    semantic_descriptor_dim: int = 64,
     telemetry_max_events: int | None = None,
     phase4_refresh_policy: str = "standard",
     phase4_refresh_interval_multiplier: int = 1,
@@ -585,7 +1038,22 @@ def extract_compact_chunked_attribution(
         phase1_trace_batch_size_max=phase1_trace_batch_size_max,
         phase4_anomaly_debug=phase4_anomaly_debug,
         cross_cluster_debug=cross_cluster_debug,
+        capture_phase0_donor_bundle=capture_phase0_donor_bundle,
+        capture_phase3_seed_bundle=capture_phase3_seed_bundle,
+        capture_phase3_gradient_bundle=capture_phase3_gradient_bundle,
+        capture_phase3_row_bundle=capture_phase3_row_bundle,
+        capture_feature_semantic_descriptors=capture_feature_semantic_descriptors,
+        semantic_descriptor_top_k=semantic_descriptor_top_k,
+        semantic_descriptor_dim=semantic_descriptor_dim,
         telemetry_max_events=telemetry_max_events,
+        phase0_donor_bundle=phase0_donor_bundle,
+        phase0_replay_mode=phase0_replay_mode,
+        phase0_donor_context_policy=phase0_donor_context_policy,
+        phase3_gradient_donor_bundle=phase3_gradient_donor_bundle,
+        phase3_gradient_replay_mode=phase3_gradient_replay_mode,
+        phase3_row_donor_bundle=phase3_row_donor_bundle,
+        phase3_row_replay_mode=phase3_row_replay_mode,
+        phase3_replay_validation_policy=phase3_replay_validation_policy,
         phase4_refresh_policy=phase4_refresh_policy,
         phase4_refresh_interval_multiplier=phase4_refresh_interval_multiplier,
         phase4_refresh_prepared_chunk_cache_bytes=phase4_refresh_prepared_chunk_cache_bytes,
@@ -603,6 +1071,8 @@ def extract_compact_chunked_attribution(
         row_store_temp_root=row_store_temp_root,
         row_store_preallocate=row_store_preallocate,
         compact_output=True,
+        exact_trace_internal_dtype=exact_trace_internal_dtype,
+        phase0_activation_threshold_compare_mode=phase0_activation_threshold_compare_mode,
     )
 
 
@@ -616,15 +1086,21 @@ def compact_result_to_step_data(
 ) -> StepData:
     feature_feature_edges = compact_result["feature_feature_edges"]
     logit_feature_edges = compact_result["logit_feature_edges"]
-    feature_row_node_indices = compact_result["feature_row_node_indices"].to(
-        dtype=torch.int64
+    feature_row_node_indices = (
+        compact_result["feature_row_node_indices"].to(dtype=torch.int64).detach().cpu()
     )
-    logit_row_node_indices = compact_result["logit_row_node_indices"].to(
-        dtype=torch.int64
+    selected_features = (
+        compact_result["selected_features"].to(dtype=torch.int64).detach().cpu()
     )
-    selected_features = compact_result["selected_features"].to(dtype=torch.int64)
-    feature_ids = compact_result["active_features"].numpy().astype(base.np.int64)
+    active_features = (
+        compact_result["active_features"].to(dtype=torch.int64).detach().cpu()
+    )
+    feature_ids = active_features[selected_features].numpy().astype(base.np.int64)
     n_features = feature_ids.shape[0]
+    selected_feature_local_index = {
+        int(feature_idx): local_idx
+        for local_idx, feature_idx in enumerate(selected_features.tolist())
+    }
 
     ff_flat = feature_feature_edges.abs().float().reshape(-1)
     lf_flat = logit_feature_edges.abs().float().reshape(-1)
@@ -662,20 +1138,26 @@ def compact_result_to_step_data(
     rows: list[int] = []
     cols: list[int] = []
 
-    in_ff = topk_idx < ff_size
-    ff_idx = topk_idx[in_ff]
-    for flat_idx in ff_idx.tolist():
-        local_row = flat_idx // n_selected
-        local_col = flat_idx % n_selected
-        rows.append(int(feature_row_node_indices[local_row].item()))
-        cols.append(int(selected_features[local_col].item()))
+    for flat_idx in topk_idx.tolist():
+        if flat_idx < ff_size:
+            local_row = flat_idx // n_selected
+            local_col = flat_idx % n_selected
+            active_row = int(feature_row_node_indices[local_row].item())
+            try:
+                row = selected_feature_local_index[active_row]
+            except KeyError as exc:
+                raise ValueError(
+                    "compact feature row is not present in selected_features"
+                ) from exc
+            rows.append(row)
+            cols.append(int(local_col))
+            continue
 
-    lf_idx = (topk_idx[~in_ff] - ff_size).tolist()
-    for flat_idx in lf_idx:
-        local_row = flat_idx // n_selected
-        local_col = flat_idx % n_selected
-        rows.append(int(logit_row_node_indices[local_row].item()))
-        cols.append(int(selected_features[local_col].item()))
+        logit_flat_idx = flat_idx - ff_size
+        local_logit_row = logit_flat_idx // n_selected
+        local_col = logit_flat_idx % n_selected
+        rows.append(n_features + int(local_logit_row))
+        cols.append(int(local_col))
 
     return StepData(
         step_idx=step_idx,
@@ -851,10 +1333,26 @@ def trace_completion_compact_chunked(
     feature_batch_min_free_fraction: float = 0.05,
     feature_batch_probe_batches: int = 1,
     exact_trace_internal_dtype: str = "fp32",
+    phase0_activation_threshold_compare_mode: str = "baseline",
     phase1_trace_batch_policy: str = "legacy",
     phase1_trace_batch_size_max: int | None = None,
     phase4_anomaly_debug: bool = False,
     cross_cluster_debug: bool = False,
+    capture_phase0_donor_bundle: bool = False,
+    phase0_donor_bundle: str | None = None,
+    phase0_replay_mode: str = "disabled",
+    phase0_donor_context_policy: str = "strict",
+    phase3_gradient_donor_bundle: str | None = None,
+    phase3_gradient_replay_mode: str = "disabled",
+    phase3_row_donor_bundle: str | None = None,
+    phase3_row_replay_mode: str = "disabled",
+    phase3_replay_validation_policy: str = "strict",
+    capture_phase3_seed_bundle: bool = False,
+    capture_phase3_gradient_bundle: bool = False,
+    capture_phase3_row_bundle: bool = False,
+    capture_feature_semantic_descriptors: bool = False,
+    semantic_descriptor_top_k: int = 2048,
+    semantic_descriptor_dim: int = 64,
     telemetry_max_events: int | None = None,
     phase4_refresh_policy: str = "standard",
     phase4_refresh_interval_multiplier: int = 1,
@@ -964,6 +1462,21 @@ def trace_completion_compact_chunked(
     cross_cluster_debug_artifacts_captured = False
     resolved_dtype_map_artifact: dict[str, Any] | None = None
     resolved_exact_trace_internal_dtype_requested: str | None = None
+    phase0_donor_bundle_statuses: list[str] = []
+    phase0_donor_bundle_captured_count = 0
+    phase0_replay_statuses: list[str] = []
+    phase0_replay_validation_warning_counts: list[int] = []
+    phase0_replay_dtype_roundtrip_losses: list[bool] = []
+    phase3_gradient_replay_statuses: list[str] = []
+    phase3_row_replay_statuses: list[str] = []
+    phase3_seed_bundle_statuses: list[str] = []
+    phase3_seed_bundle_captured_count = 0
+    phase3_gradient_bundle_statuses: list[str] = []
+    phase3_gradient_bundle_captured_count = 0
+    phase3_row_bundle_statuses: list[str] = []
+    phase3_row_bundle_captured_count = 0
+    feature_semantic_descriptor_statuses: list[str] = []
+    feature_semantic_descriptor_captured_count = 0
 
     candidate_stop_ids = [tokenizer.eos_token_id, tokenizer.pad_token_id]
     end_of_turn = tokenizer.convert_tokens_to_ids("<end_of_turn>")
@@ -1006,10 +1519,26 @@ def trace_completion_compact_chunked(
             feature_batch_min_free_fraction=feature_batch_min_free_fraction,
             feature_batch_probe_batches=feature_batch_probe_batches,
             exact_trace_internal_dtype=exact_trace_internal_dtype,
+            phase0_activation_threshold_compare_mode=phase0_activation_threshold_compare_mode,
             phase1_trace_batch_policy=phase1_trace_batch_policy,
             phase1_trace_batch_size_max=phase1_trace_batch_size_max,
             phase4_anomaly_debug=phase4_anomaly_debug,
             cross_cluster_debug=cross_cluster_debug,
+            capture_phase0_donor_bundle=capture_phase0_donor_bundle,
+            phase0_donor_bundle=phase0_donor_bundle,
+            phase0_replay_mode=phase0_replay_mode,
+            phase0_donor_context_policy=phase0_donor_context_policy,
+            phase3_gradient_donor_bundle=phase3_gradient_donor_bundle,
+            phase3_gradient_replay_mode=phase3_gradient_replay_mode,
+            phase3_row_donor_bundle=phase3_row_donor_bundle,
+            phase3_row_replay_mode=phase3_row_replay_mode,
+            phase3_replay_validation_policy=phase3_replay_validation_policy,
+            capture_phase3_seed_bundle=capture_phase3_seed_bundle,
+            capture_phase3_gradient_bundle=capture_phase3_gradient_bundle,
+            capture_phase3_row_bundle=capture_phase3_row_bundle,
+            capture_feature_semantic_descriptors=capture_feature_semantic_descriptors,
+            semantic_descriptor_top_k=semantic_descriptor_top_k,
+            semantic_descriptor_dim=semantic_descriptor_dim,
             telemetry_max_events=telemetry_max_events,
             phase4_refresh_policy=phase4_refresh_policy,
             phase4_refresh_interval_multiplier=phase4_refresh_interval_multiplier,
@@ -1781,6 +2310,183 @@ def trace_completion_compact_chunked(
                 )
             )
 
+        phase0_replay_metadata_payload = compact_result.get("phase0_replay_metadata")
+        if isinstance(phase0_replay_metadata_payload, dict):
+            replay_dtype_metadata = phase0_replay_metadata_payload.get("dtype_metadata")
+            replay_warnings_payload = phase0_replay_metadata_payload.get(
+                "validation_warnings"
+            )
+            replay_warning_list = (
+                [str(item) for item in replay_warnings_payload]
+                if isinstance(replay_warnings_payload, list)
+                else []
+            )
+            phase0_replay_mode_effective = str(
+                phase0_replay_metadata_payload.get("mode", phase0_replay_mode)
+            )
+            phase0_replay_status = str(
+                phase0_replay_metadata_payload.get("status", "unknown")
+            )
+            phase0_replay_donor_bundle_path_effective = (
+                phase0_replay_metadata_payload.get("donor_bundle_path")
+                or phase0_donor_bundle
+            )
+            phase0_replay_context_policy_effective = str(
+                phase0_replay_metadata_payload.get(
+                    "context_policy", phase0_donor_context_policy
+                )
+            )
+            phase0_replay_validation_warning_count = int(
+                phase0_replay_metadata_payload.get(
+                    "validation_warning_count",
+                    len(replay_warning_list),
+                )
+            )
+            phase0_replay_dtype_roundtrip_loss = bool(
+                replay_dtype_metadata.get("dtype_roundtrip_loss", False)
+                if isinstance(replay_dtype_metadata, dict)
+                else False
+            )
+        else:
+            replay_warnings_payload = compact_result.get(
+                "phase0_replay_validation_warnings"
+            )
+            replay_warning_list = (
+                [str(item) for item in replay_warnings_payload]
+                if isinstance(replay_warnings_payload, list)
+                else []
+            )
+            phase0_replay_mode_effective = str(
+                compact_result.get("phase0_replay_mode", phase0_replay_mode)
+            )
+            phase0_replay_status = str(
+                compact_result.get(
+                    "phase0_replay_status",
+                    "disabled" if phase0_replay_mode == "disabled" else "unknown",
+                )
+            )
+            phase0_replay_donor_bundle_path_effective = compact_result.get(
+                "phase0_replay_donor_bundle_path",
+                phase0_donor_bundle,
+            )
+            phase0_replay_context_policy_effective = str(
+                compact_result.get(
+                    "phase0_replay_context_policy",
+                    phase0_donor_context_policy,
+                )
+            )
+            phase0_replay_validation_warning_count = int(
+                compact_result.get(
+                    "phase0_replay_validation_warning_count",
+                    len(replay_warning_list),
+                )
+            )
+            phase0_replay_dtype_roundtrip_loss = bool(
+                compact_result.get("phase0_replay_dtype_roundtrip_loss", False)
+            )
+
+        if phase0_replay_donor_bundle_path_effective is not None:
+            phase0_replay_donor_bundle_path_effective = str(
+                phase0_replay_donor_bundle_path_effective
+            )
+
+        phase0_replay_statuses.append(phase0_replay_status)
+        phase0_replay_validation_warning_counts.append(
+            phase0_replay_validation_warning_count
+        )
+        phase0_replay_dtype_roundtrip_losses.append(phase0_replay_dtype_roundtrip_loss)
+
+        phase3_gradient_replay_metadata = compact_result.get(
+            "phase3_gradient_replay_metadata"
+        )
+        if isinstance(phase3_gradient_replay_metadata, dict):
+            phase3_gradient_replay_mode_effective = str(
+                phase3_gradient_replay_metadata.get("mode", phase3_gradient_replay_mode)
+            )
+            phase3_gradient_replay_status = str(
+                phase3_gradient_replay_metadata.get("status", "unknown")
+            )
+            phase3_gradient_replay_donor_bundle_path_effective = (
+                phase3_gradient_replay_metadata.get("donor_bundle_path")
+                or phase3_gradient_donor_bundle
+            )
+            phase3_gradient_replay_error = phase3_gradient_replay_metadata.get("error")
+            phase3_gradient_replay_source = phase3_gradient_replay_metadata.get(
+                "source"
+            )
+            phase3_gradient_replay_note = phase3_gradient_replay_metadata.get("note")
+        else:
+            phase3_gradient_replay_mode_effective = str(
+                compact_result.get(
+                    "phase3_gradient_replay_mode", phase3_gradient_replay_mode
+                )
+            )
+            phase3_gradient_replay_status = str(
+                compact_result.get(
+                    "phase3_gradient_replay_status",
+                    "disabled"
+                    if phase3_gradient_replay_mode == "disabled"
+                    else "unknown",
+                )
+            )
+            phase3_gradient_replay_donor_bundle_path_effective = compact_result.get(
+                "phase3_gradient_replay_donor_bundle_path",
+                phase3_gradient_donor_bundle,
+            )
+            phase3_gradient_replay_error = compact_result.get(
+                "phase3_gradient_replay_error"
+            )
+            phase3_gradient_replay_source = compact_result.get(
+                "phase3_gradient_replay_source"
+            )
+            phase3_gradient_replay_note = compact_result.get(
+                "phase3_gradient_replay_note"
+            )
+        if phase3_gradient_replay_donor_bundle_path_effective is not None:
+            phase3_gradient_replay_donor_bundle_path_effective = str(
+                phase3_gradient_replay_donor_bundle_path_effective
+            )
+
+        phase3_row_replay_metadata = compact_result.get("phase3_row_replay_metadata")
+        if isinstance(phase3_row_replay_metadata, dict):
+            phase3_row_replay_mode_effective = str(
+                phase3_row_replay_metadata.get("mode", phase3_row_replay_mode)
+            )
+            phase3_row_replay_status = str(
+                phase3_row_replay_metadata.get("status", "unknown")
+            )
+            phase3_row_replay_donor_bundle_path_effective = (
+                phase3_row_replay_metadata.get("donor_bundle_path")
+                or phase3_row_donor_bundle
+            )
+            phase3_row_replay_error = phase3_row_replay_metadata.get("error")
+            phase3_row_replay_source = phase3_row_replay_metadata.get("source")
+            phase3_row_replay_note = phase3_row_replay_metadata.get("note")
+        else:
+            phase3_row_replay_mode_effective = str(
+                compact_result.get("phase3_row_replay_mode", phase3_row_replay_mode)
+            )
+            phase3_row_replay_status = str(
+                compact_result.get(
+                    "phase3_row_replay_status",
+                    "disabled" if phase3_row_replay_mode == "disabled" else "unknown",
+                )
+            )
+            phase3_row_replay_donor_bundle_path_effective = compact_result.get(
+                "phase3_row_replay_donor_bundle_path",
+                phase3_row_donor_bundle,
+            )
+            phase3_row_replay_error = compact_result.get("phase3_row_replay_error")
+            phase3_row_replay_source = compact_result.get("phase3_row_replay_source")
+            phase3_row_replay_note = compact_result.get("phase3_row_replay_note")
+        if phase3_row_replay_donor_bundle_path_effective is not None:
+            phase3_row_replay_donor_bundle_path_effective = str(
+                phase3_row_replay_donor_bundle_path_effective
+            )
+
+        phase3_gradient_replay_statuses.append(phase3_gradient_replay_status)
+        phase3_row_replay_statuses.append(phase3_row_replay_status)
+
         token_generation_start = time.perf_counter()
         token_result = base.generate_next_token(
             model, input_ids, temperature=temperature
@@ -1797,6 +2503,159 @@ def trace_completion_compact_chunked(
             logprob=token_result["token_logprob"],
             max_edges=max_edges,
         )
+
+        phase3_seed_bundle_path: Path | None = None
+        phase3_seed_bundle_status = "disabled"
+        phase3_seed_bundle_error: str | None = None
+        phase3_gradient_bundle_path: Path | None = None
+        phase3_gradient_bundle_status = "disabled"
+        phase3_gradient_bundle_error: str | None = None
+        phase3_row_bundle_path: Path | None = None
+        phase3_row_bundle_status = "disabled"
+        phase3_row_bundle_error: str | None = None
+
+        phase0_donor_bundle_path: Path | None = None
+        phase0_donor_bundle_status = "disabled"
+        phase0_donor_bundle_error: str | None = None
+        if capture_phase0_donor_bundle:
+            phase0_donor_bundle_path = (
+                completion_dir / f"step_{step_idx:03d}_phase0_donor_bundle.npz"
+            )
+            phase0_donor_bundle_payload = compact_result.get("phase0_donor_bundle")
+            if isinstance(phase0_donor_bundle_payload, dict):
+                payload_status = str(
+                    phase0_donor_bundle_payload.get("status", "captured")
+                )
+                try:
+                    save_phase0_donor_bundle(
+                        phase0_donor_bundle_payload,
+                        phase0_donor_bundle_path,
+                    )
+                    phase0_donor_bundle_status = (
+                        "captured"
+                        if payload_status == "captured"
+                        else f"captured_{payload_status}"
+                    )
+                    phase0_donor_bundle_captured_count += 1
+                except Exception as exc:
+                    phase0_donor_bundle_status = "save_failed"
+                    phase0_donor_bundle_error = f"{type(exc).__name__}: {exc}"
+            else:
+                phase0_donor_bundle_status = "missing_payload"
+        phase0_donor_bundle_statuses.append(phase0_donor_bundle_status)
+
+        if capture_phase3_seed_bundle:
+            phase3_seed_bundle_path = (
+                completion_dir / f"step_{step_idx:03d}_phase3_seed_bundle.npz"
+            )
+            phase3_seed_bundle_payload = compact_result.get("phase3_seed_bundle")
+            if isinstance(phase3_seed_bundle_payload, dict):
+                payload_status = str(
+                    phase3_seed_bundle_payload.get("status", "captured")
+                )
+                try:
+                    save_phase3_seed_bundle(
+                        phase3_seed_bundle_payload,
+                        phase3_seed_bundle_path,
+                    )
+                    phase3_seed_bundle_status = (
+                        "captured"
+                        if payload_status == "captured"
+                        else f"captured_{payload_status}"
+                    )
+                    phase3_seed_bundle_captured_count += 1
+                except Exception as exc:
+                    phase3_seed_bundle_status = "save_failed"
+                    phase3_seed_bundle_error = f"{type(exc).__name__}: {exc}"
+            else:
+                phase3_seed_bundle_status = "missing_payload"
+        phase3_seed_bundle_statuses.append(phase3_seed_bundle_status)
+
+        if capture_phase3_gradient_bundle:
+            phase3_gradient_bundle_path = (
+                completion_dir / f"step_{step_idx:03d}_phase3_gradient_bundle.npz"
+            )
+            phase3_gradient_bundle_payload = compact_result.get(
+                "phase3_gradient_bundle"
+            )
+            if isinstance(phase3_gradient_bundle_payload, dict):
+                payload_status = str(
+                    phase3_gradient_bundle_payload.get("status", "captured")
+                )
+                try:
+                    save_phase3_gradient_bundle(
+                        phase3_gradient_bundle_payload,
+                        phase3_gradient_bundle_path,
+                    )
+                    phase3_gradient_bundle_status = (
+                        "captured"
+                        if payload_status == "captured"
+                        else f"captured_{payload_status}"
+                    )
+                    phase3_gradient_bundle_captured_count += 1
+                except Exception as exc:
+                    phase3_gradient_bundle_status = "save_failed"
+                    phase3_gradient_bundle_error = f"{type(exc).__name__}: {exc}"
+            else:
+                phase3_gradient_bundle_status = "missing_payload"
+        phase3_gradient_bundle_statuses.append(phase3_gradient_bundle_status)
+
+        if capture_phase3_row_bundle:
+            phase3_row_bundle_path = (
+                completion_dir / f"step_{step_idx:03d}_phase3_row_bundle.npz"
+            )
+            phase3_row_bundle_payload = compact_result.get("phase3_row_bundle")
+            if isinstance(phase3_row_bundle_payload, dict):
+                payload_status = str(
+                    phase3_row_bundle_payload.get("status", "captured")
+                )
+                try:
+                    save_phase3_row_bundle(
+                        phase3_row_bundle_payload,
+                        phase3_row_bundle_path,
+                    )
+                    phase3_row_bundle_status = (
+                        "captured"
+                        if payload_status == "captured"
+                        else f"captured_{payload_status}"
+                    )
+                    phase3_row_bundle_captured_count += 1
+                except Exception as exc:
+                    phase3_row_bundle_status = "save_failed"
+                    phase3_row_bundle_error = f"{type(exc).__name__}: {exc}"
+            else:
+                phase3_row_bundle_status = "missing_payload"
+        phase3_row_bundle_statuses.append(phase3_row_bundle_status)
+
+        feature_semantic_descriptor_path: Path | None = None
+        feature_semantic_descriptor_status = "disabled"
+        if capture_feature_semantic_descriptors:
+            feature_semantic_descriptor_path = (
+                completion_dir / f"step_{step_idx:03d}_feature_semantic_descriptors.npz"
+            )
+            feature_semantic_descriptor_payload = compact_result.get(
+                "feature_semantic_descriptors"
+            )
+            if isinstance(feature_semantic_descriptor_payload, dict):
+                payload_status = str(
+                    feature_semantic_descriptor_payload.get("status", "captured")
+                )
+                try:
+                    save_feature_semantic_descriptors(
+                        feature_semantic_descriptor_payload,
+                        feature_semantic_descriptor_path,
+                    )
+                    feature_semantic_descriptor_status = (
+                        "captured"
+                        if payload_status == "captured"
+                        else f"captured_{payload_status}"
+                    )
+                    feature_semantic_descriptor_captured_count += 1
+                except Exception:
+                    feature_semantic_descriptor_status = "save_failed"
+            else:
+                feature_semantic_descriptor_status = "missing_payload"
+        feature_semantic_descriptor_statuses.append(feature_semantic_descriptor_status)
 
         artifact_save_start = time.perf_counter()
         save_compact(step_data, completion_dir / f"step_{step_idx:03d}.npz")
@@ -1925,6 +2784,10 @@ def trace_completion_compact_chunked(
                 "phase4_feature_batch_elapsed_seconds_total"
             ),
             "telemetry_max_events": compact_result.get("telemetry_max_events"),
+            "phase0_activation_threshold_compare_mode": compact_result.get(
+                "phase0_activation_threshold_compare_mode",
+                phase0_activation_threshold_compare_mode,
+            ),
             "exact_trace_internal_dtype_requested": (
                 normalize_requested_exact_trace_internal_dtype(
                     compact_result.get("exact_trace_internal_dtype_requested")
@@ -1938,6 +2801,80 @@ def trace_completion_compact_chunked(
             "cross_cluster_debug_enabled": bool(
                 compact_result.get("cross_cluster_debug_enabled", cross_cluster_debug)
             ),
+            "phase0_replay_mode": phase0_replay_mode_effective,
+            "phase0_replay_status": phase0_replay_status,
+            "phase0_replay_donor_bundle_path": phase0_replay_donor_bundle_path_effective,
+            "phase0_replay_donor_context_policy": phase0_replay_context_policy_effective,
+            "phase0_replay_validation_warning_count": phase0_replay_validation_warning_count,
+            "phase0_replay_validation_warnings": replay_warning_list,
+            "phase0_replay_dtype_roundtrip_loss": phase0_replay_dtype_roundtrip_loss,
+            "phase0_replay_single_step_intended": bool(
+                phase0_replay_mode != "disabled"
+            ),
+            "phase0_replay_step_path_strategy": (
+                "single_fixed_donor_path_all_steps"
+                if phase0_replay_mode != "disabled"
+                else None
+            ),
+            "phase3_gradient_replay_mode": phase3_gradient_replay_mode_effective,
+            "phase3_gradient_replay_status": phase3_gradient_replay_status,
+            "phase3_gradient_replay_donor_bundle_path": (
+                phase3_gradient_replay_donor_bundle_path_effective
+            ),
+            "phase3_gradient_replay_error": phase3_gradient_replay_error,
+            "phase3_gradient_replay_source": phase3_gradient_replay_source,
+            "phase3_gradient_replay_note": phase3_gradient_replay_note,
+            "phase3_row_replay_mode": phase3_row_replay_mode_effective,
+            "phase3_row_replay_status": phase3_row_replay_status,
+            "phase3_row_replay_donor_bundle_path": (
+                phase3_row_replay_donor_bundle_path_effective
+            ),
+            "phase3_row_replay_error": phase3_row_replay_error,
+            "phase3_row_replay_source": phase3_row_replay_source,
+            "phase3_row_replay_note": phase3_row_replay_note,
+            "phase0_donor_bundle_capture_enabled": bool(capture_phase0_donor_bundle),
+            "phase0_donor_bundle_path": (
+                phase0_donor_bundle_path.name
+                if phase0_donor_bundle_path is not None
+                else None
+            ),
+            "phase0_donor_bundle_status": phase0_donor_bundle_status,
+            "phase0_donor_bundle_error": phase0_donor_bundle_error,
+            "phase3_seed_bundle_capture_enabled": bool(capture_phase3_seed_bundle),
+            "phase3_seed_bundle_path": (
+                phase3_seed_bundle_path.name
+                if phase3_seed_bundle_path is not None
+                else None
+            ),
+            "phase3_seed_bundle_status": phase3_seed_bundle_status,
+            "phase3_seed_bundle_error": phase3_seed_bundle_error,
+            "phase3_gradient_bundle_capture_enabled": bool(
+                capture_phase3_gradient_bundle
+            ),
+            "phase3_gradient_bundle_path": (
+                phase3_gradient_bundle_path.name
+                if phase3_gradient_bundle_path is not None
+                else None
+            ),
+            "phase3_gradient_bundle_status": phase3_gradient_bundle_status,
+            "phase3_gradient_bundle_error": phase3_gradient_bundle_error,
+            "phase3_row_bundle_capture_enabled": bool(capture_phase3_row_bundle),
+            "phase3_row_bundle_path": (
+                phase3_row_bundle_path.name
+                if phase3_row_bundle_path is not None
+                else None
+            ),
+            "phase3_row_bundle_status": phase3_row_bundle_status,
+            "phase3_row_bundle_error": phase3_row_bundle_error,
+            "feature_semantic_descriptor_capture_enabled": bool(
+                capture_feature_semantic_descriptors
+            ),
+            "feature_semantic_descriptor_path": (
+                feature_semantic_descriptor_path.name
+                if feature_semantic_descriptor_path is not None
+                else None
+            ),
+            "feature_semantic_descriptor_status": feature_semantic_descriptor_status,
         }
         step_records.append(step_record)
 
@@ -2111,9 +3048,38 @@ def trace_completion_compact_chunked(
         "exact_trace_internal_dtype_requested": (
             resolved_exact_trace_internal_dtype_requested or exact_trace_internal_dtype
         ),
+        "phase0_activation_threshold_compare_mode": (
+            phase0_activation_threshold_compare_mode
+        ),
+        "phase0_replay_mode": phase0_replay_mode,
+        "phase0_donor_bundle": phase0_donor_bundle,
+        "phase0_donor_context_policy": phase0_donor_context_policy,
+        "phase0_replay_single_step_intended": bool(phase0_replay_mode != "disabled"),
+        "phase0_replay_step_path_strategy": (
+            "single_fixed_donor_path_all_steps"
+            if phase0_replay_mode != "disabled"
+            else None
+        ),
+        "phase0_replay_multi_step_note": (
+            "single-step intended mode: donor bundle path is reused for each generated step"
+            if phase0_replay_mode != "disabled" and max_steps > 1
+            else None
+        ),
+        "phase3_gradient_replay_mode": phase3_gradient_replay_mode,
+        "phase3_gradient_donor_bundle": phase3_gradient_donor_bundle,
+        "phase3_row_replay_mode": phase3_row_replay_mode,
+        "phase3_row_donor_bundle": phase3_row_donor_bundle,
+        "phase3_replay_validation_policy": phase3_replay_validation_policy,
         "resolved_dtype_map": resolved_dtype_map_artifact,
         "phase4_anomaly_debug": phase4_anomaly_debug,
         "cross_cluster_debug": cross_cluster_debug,
+        "capture_phase0_donor_bundle": capture_phase0_donor_bundle,
+        "capture_phase3_seed_bundle": capture_phase3_seed_bundle,
+        "capture_phase3_gradient_bundle": capture_phase3_gradient_bundle,
+        "capture_phase3_row_bundle": capture_phase3_row_bundle,
+        "capture_feature_semantic_descriptors": capture_feature_semantic_descriptors,
+        "semantic_descriptor_top_k": semantic_descriptor_top_k,
+        "semantic_descriptor_dim": semantic_descriptor_dim,
         "telemetry_max_events": telemetry_max_events,
         "phase4_feature_batch_size_initial": initial_phase4_feature_batch_size,
         "phase4_feature_batch_sizes_observed": unique_phase4_feature_batch_sizes,
@@ -2695,6 +3661,111 @@ def trace_completion_compact_chunked(
         ),
         "cross_cluster_debug_batches_status": cross_cluster_debug_batches_status,
         "cross_cluster_debug_batches_count": int(cross_cluster_debug_batches_written),
+        "phase0_replay_status": (
+            phase0_replay_statuses[-1] if phase0_replay_statuses else None
+        ),
+        "phase0_replay_statuses_observed": sorted(set(phase0_replay_statuses)),
+        "phase0_replay_validation_warning_count": int(
+            phase0_replay_validation_warning_counts[-1]
+            if phase0_replay_validation_warning_counts
+            else 0
+        ),
+        "phase0_replay_validation_warning_count_max": int(
+            max(phase0_replay_validation_warning_counts)
+            if phase0_replay_validation_warning_counts
+            else 0
+        ),
+        "phase0_replay_dtype_roundtrip_loss": (
+            bool(phase0_replay_dtype_roundtrip_losses[-1])
+            if phase0_replay_dtype_roundtrip_losses
+            else False
+        ),
+        "phase0_replay_any_dtype_roundtrip_loss": bool(
+            any(phase0_replay_dtype_roundtrip_losses)
+        ),
+        "phase3_gradient_replay_status": (
+            phase3_gradient_replay_statuses[-1]
+            if phase3_gradient_replay_statuses
+            else None
+        ),
+        "phase3_gradient_replay_statuses_observed": sorted(
+            set(phase3_gradient_replay_statuses)
+        ),
+        "phase3_row_replay_status": (
+            phase3_row_replay_statuses[-1] if phase3_row_replay_statuses else None
+        ),
+        "phase3_row_replay_statuses_observed": sorted(set(phase3_row_replay_statuses)),
+        "phase0_donor_bundle_capture_enabled": bool(capture_phase0_donor_bundle),
+        "phase0_donor_bundle_captured_count": int(phase0_donor_bundle_captured_count),
+        "phase0_donor_bundle_status": (
+            phase0_donor_bundle_statuses[-1] if phase0_donor_bundle_statuses else None
+        ),
+        "phase0_donor_bundle_statuses_observed": sorted(
+            set(phase0_donor_bundle_statuses)
+        ),
+        "phase0_donor_bundle_path_template": (
+            "step_<idx>_phase0_donor_bundle.npz"
+            if capture_phase0_donor_bundle
+            else None
+        ),
+        "phase3_seed_bundle_capture_enabled": bool(capture_phase3_seed_bundle),
+        "phase3_seed_bundle_captured_count": int(phase3_seed_bundle_captured_count),
+        "phase3_seed_bundle_status": (
+            phase3_seed_bundle_statuses[-1] if phase3_seed_bundle_statuses else None
+        ),
+        "phase3_seed_bundle_statuses_observed": sorted(
+            set(phase3_seed_bundle_statuses)
+        ),
+        "phase3_seed_bundle_path_template": (
+            "step_<idx>_phase3_seed_bundle.npz" if capture_phase3_seed_bundle else None
+        ),
+        "phase3_gradient_bundle_capture_enabled": bool(capture_phase3_gradient_bundle),
+        "phase3_gradient_bundle_captured_count": int(
+            phase3_gradient_bundle_captured_count
+        ),
+        "phase3_gradient_bundle_status": (
+            phase3_gradient_bundle_statuses[-1]
+            if phase3_gradient_bundle_statuses
+            else None
+        ),
+        "phase3_gradient_bundle_statuses_observed": sorted(
+            set(phase3_gradient_bundle_statuses)
+        ),
+        "phase3_gradient_bundle_path_template": (
+            "step_<idx>_phase3_gradient_bundle.npz"
+            if capture_phase3_gradient_bundle
+            else None
+        ),
+        "phase3_row_bundle_capture_enabled": bool(capture_phase3_row_bundle),
+        "phase3_row_bundle_captured_count": int(phase3_row_bundle_captured_count),
+        "phase3_row_bundle_status": (
+            phase3_row_bundle_statuses[-1] if phase3_row_bundle_statuses else None
+        ),
+        "phase3_row_bundle_statuses_observed": sorted(set(phase3_row_bundle_statuses)),
+        "phase3_row_bundle_path_template": (
+            "step_<idx>_phase3_row_bundle.npz" if capture_phase3_row_bundle else None
+        ),
+        "feature_semantic_descriptor_capture_enabled": bool(
+            capture_feature_semantic_descriptors
+        ),
+        "feature_semantic_descriptor_top_k": int(semantic_descriptor_top_k),
+        "feature_semantic_descriptor_dim": int(semantic_descriptor_dim),
+        "feature_semantic_descriptor_captured_count": int(
+            feature_semantic_descriptor_captured_count
+        ),
+        "feature_semantic_descriptor_status": (
+            feature_semantic_descriptor_statuses[-1]
+            if feature_semantic_descriptor_statuses
+            else None
+        ),
+        "feature_semantic_descriptor_statuses_observed": sorted(
+            set(feature_semantic_descriptor_statuses)
+        ),
+        "feature_semantic_descriptor_path_template": (
+            "step_<idx>_feature_semantic_descriptors.npz"
+            if capture_feature_semantic_descriptors
+            else None
+        ),
         "resource_snapshot": base.capture_resource_snapshot(),
         "timing_summary": base.build_completion_timing_summary(
             completion_end_to_end_seconds=completion_end_to_end_seconds,
@@ -2751,6 +3822,76 @@ def run_pipeline(args: argparse.Namespace) -> None:
             "Cross-cluster debug currently supports only compact exact-chunked output. "
             "--save-raw is unsupported with --cross-cluster-debug."
         )
+    if args.capture_phase3_seed_bundle and args.save_raw:
+        raise ValueError(
+            "Phase-3 seed bundle capture supports only compact exact-chunked output. "
+            "--save-raw is unsupported with --capture-phase3-seed-bundle."
+        )
+    if args.capture_phase3_gradient_bundle and args.save_raw:
+        raise ValueError(
+            "Phase-3 gradient bundle capture supports only compact exact-chunked output. "
+            "--save-raw is unsupported with --capture-phase3-gradient-bundle."
+        )
+    if args.capture_phase3_row_bundle and args.save_raw:
+        raise ValueError(
+            "Phase-3 row bundle capture supports only compact exact-chunked output. "
+            "--save-raw is unsupported with --capture-phase3-row-bundle."
+        )
+    if args.capture_phase0_donor_bundle and args.save_raw:
+        raise ValueError(
+            "Phase-0 donor bundle capture supports only compact exact-chunked output. "
+            "--save-raw is unsupported with --capture-phase0-donor-bundle."
+        )
+    if args.capture_feature_semantic_descriptors and args.save_raw:
+        raise ValueError(
+            "Feature semantic descriptor capture supports only compact exact-chunked output. "
+            "--save-raw is unsupported with --capture-feature-semantic-descriptors."
+        )
+    if args.phase0_replay_mode != "disabled" and args.save_raw:
+        raise ValueError(
+            "Phase-0 donor replay supports only compact exact-chunked output. "
+            "--save-raw is unsupported when --phase0-replay-mode is enabled."
+        )
+    if args.phase0_replay_mode != "disabled" and not args.phase0_donor_bundle:
+        raise ValueError("--phase0-replay-mode requires --phase0-donor-bundle PATH")
+    if args.phase0_replay_mode == "disabled" and args.phase0_donor_bundle:
+        raise ValueError(
+            "--phase0-donor-bundle was provided while --phase0-replay-mode=disabled; "
+            "set --phase0-replay-mode donor_phase0 to enable replay"
+        )
+    if args.phase3_gradient_replay_mode != "disabled" and args.save_raw:
+        raise ValueError(
+            "Phase-3 gradient replay supports only compact exact-chunked output. "
+            "--save-raw is unsupported when --phase3-gradient-replay-mode is enabled."
+        )
+    if args.phase3_row_replay_mode != "disabled" and args.save_raw:
+        raise ValueError(
+            "Phase-3 row replay supports only compact exact-chunked output. "
+            "--save-raw is unsupported when --phase3-row-replay-mode is enabled."
+        )
+    if (
+        args.phase3_gradient_replay_mode != "disabled"
+        and not args.phase3_gradient_donor_bundle
+    ):
+        raise ValueError(
+            "--phase3-gradient-replay-mode requires --phase3-gradient-donor-bundle PATH"
+        )
+    if (
+        args.phase3_gradient_replay_mode == "disabled"
+        and args.phase3_gradient_donor_bundle
+    ):
+        raise ValueError(
+            "--phase3-gradient-donor-bundle was provided while "
+            "--phase3-gradient-replay-mode=disabled"
+        )
+    if args.phase3_row_replay_mode != "disabled" and not args.phase3_row_donor_bundle:
+        raise ValueError(
+            "--phase3-row-replay-mode requires --phase3-row-donor-bundle PATH"
+        )
+    if args.phase3_row_replay_mode == "disabled" and args.phase3_row_donor_bundle:
+        raise ValueError(
+            "--phase3-row-donor-bundle was provided while --phase3-row-replay-mode=disabled"
+        )
     if args.save_raw and args.exact_trace_internal_dtype != "fp32":
         raise ValueError(
             "The explicit internal precision contract is currently supported only for "
@@ -2778,6 +3919,12 @@ def run_pipeline(args: argparse.Namespace) -> None:
             "Exact-mode execution controls currently support only compact exact-chunked output. "
             "--save-raw/full-graph output is unsupported with non-default exact-path flags."
         )
+    if args.save_raw and args.phase0_activation_threshold_compare_mode != "baseline":
+        raise ValueError(
+            "Phase-0 activation threshold compare mode is currently supported only for "
+            "compact exact-chunked output. --save-raw/full-graph output must keep "
+            "--phase0-activation-threshold-compare-mode=baseline."
+        )
     if planner_enabled and args.save_raw:
         raise ValueError(
             "Phase-4 feature batch planner currently supports only compact exact-chunked output. "
@@ -2797,8 +3944,16 @@ def run_pipeline(args: argparse.Namespace) -> None:
         raise ValueError("feature_batch_min_free_fraction must be in [0, 1)")
     if args.feature_batch_probe_batches <= 0:
         raise ValueError("feature_batch_probe_batches must be > 0")
+    if args.semantic_descriptor_top_k <= 0:
+        raise ValueError("semantic_descriptor_top_k must be > 0")
+    if args.semantic_descriptor_dim <= 0:
+        raise ValueError("semantic_descriptor_dim must be > 0")
     if args.phase4_refresh_interval_multiplier <= 0:
         raise ValueError("phase4_refresh_interval_multiplier must be > 0")
+    if args.semantic_descriptor_top_k <= 0:
+        raise ValueError("semantic_descriptor_top_k must be > 0")
+    if args.semantic_descriptor_dim <= 0:
+        raise ValueError("semantic_descriptor_dim must be > 0")
     sparsification = build_sparsification_config(args)
     model = base.load_model(
         lazy_encoder=not args.no_lazy_encoder,
@@ -2859,6 +4014,30 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "feature_batch_probe_batches": args.feature_batch_probe_batches,
         "exact_trace_internal_dtype": args.exact_trace_internal_dtype,
         "exact_trace_internal_dtype_requested": args.exact_trace_internal_dtype,
+        "phase0_activation_threshold_compare_mode": (
+            args.phase0_activation_threshold_compare_mode
+        ),
+        "phase0_replay_mode": args.phase0_replay_mode,
+        "phase0_donor_bundle": args.phase0_donor_bundle,
+        "phase0_donor_context_policy": args.phase0_donor_context_policy,
+        "phase3_gradient_replay_mode": args.phase3_gradient_replay_mode,
+        "phase3_gradient_donor_bundle": args.phase3_gradient_donor_bundle,
+        "phase3_row_replay_mode": args.phase3_row_replay_mode,
+        "phase3_row_donor_bundle": args.phase3_row_donor_bundle,
+        "phase3_replay_validation_policy": args.phase3_replay_validation_policy,
+        "phase0_replay_single_step_intended": bool(
+            args.phase0_replay_mode != "disabled"
+        ),
+        "phase0_replay_step_path_strategy": (
+            "single_fixed_donor_path_all_steps"
+            if args.phase0_replay_mode != "disabled"
+            else None
+        ),
+        "phase0_replay_multi_step_note": (
+            "single-step intended mode: donor bundle path is reused for each generated step"
+            if args.phase0_replay_mode != "disabled" and args.max_steps > 1
+            else None
+        ),
         "phase1_trace_batch_policy": args.phase1_trace_batch_policy,
         "phase1_trace_batch_policy_requested": args.phase1_trace_batch_policy,
         "phase1_trace_batch_policy_effective": args.phase1_trace_batch_policy,
@@ -2903,6 +4082,13 @@ def run_pipeline(args: argparse.Namespace) -> None:
         ),
         "phase4_anomaly_debug": args.phase4_anomaly_debug,
         "cross_cluster_debug": args.cross_cluster_debug,
+        "capture_phase0_donor_bundle": args.capture_phase0_donor_bundle,
+        "capture_phase3_seed_bundle": args.capture_phase3_seed_bundle,
+        "capture_phase3_gradient_bundle": args.capture_phase3_gradient_bundle,
+        "capture_phase3_row_bundle": args.capture_phase3_row_bundle,
+        "capture_feature_semantic_descriptors": args.capture_feature_semantic_descriptors,
+        "semantic_descriptor_top_k": args.semantic_descriptor_top_k,
+        "semantic_descriptor_dim": args.semantic_descriptor_dim,
         "telemetry_max_events": args.telemetry_max_events,
         "phase4_scheduler_mode": args.phase4_scheduler_mode,
         "phase4_scheduler_requested_mode": args.phase4_scheduler_mode,
@@ -3109,9 +4295,39 @@ def run_pipeline(args: argparse.Namespace) -> None:
                 **(
                     {
                         "exact_trace_internal_dtype": args.exact_trace_internal_dtype,
+                        "phase0_activation_threshold_compare_mode": (
+                            args.phase0_activation_threshold_compare_mode
+                        ),
+                        "cross_cluster_debug": args.cross_cluster_debug,
+                        "capture_phase0_donor_bundle": args.capture_phase0_donor_bundle,
+                        "phase0_donor_bundle": args.phase0_donor_bundle,
+                        "phase0_replay_mode": args.phase0_replay_mode,
+                        "phase0_donor_context_policy": (
+                            args.phase0_donor_context_policy
+                        ),
+                        "phase3_gradient_donor_bundle": (
+                            args.phase3_gradient_donor_bundle
+                        ),
+                        "phase3_gradient_replay_mode": (
+                            args.phase3_gradient_replay_mode
+                        ),
+                        "phase3_row_donor_bundle": args.phase3_row_donor_bundle,
+                        "phase3_row_replay_mode": args.phase3_row_replay_mode,
+                        "phase3_replay_validation_policy": (
+                            args.phase3_replay_validation_policy
+                        ),
+                        "capture_phase3_seed_bundle": args.capture_phase3_seed_bundle,
+                        "capture_phase3_gradient_bundle": (
+                            args.capture_phase3_gradient_bundle
+                        ),
+                        "capture_phase3_row_bundle": args.capture_phase3_row_bundle,
+                        "capture_feature_semantic_descriptors": (
+                            args.capture_feature_semantic_descriptors
+                        ),
+                        "semantic_descriptor_top_k": args.semantic_descriptor_top_k,
+                        "semantic_descriptor_dim": args.semantic_descriptor_dim,
                         "phase1_trace_batch_policy": args.phase1_trace_batch_policy,
                         "phase1_trace_batch_size_max": args.phase1_trace_batch_size_max,
-                        "cross_cluster_debug": args.cross_cluster_debug,
                         "phase4_refresh_policy": args.phase4_refresh_policy,
                         "phase4_refresh_interval_multiplier": args.phase4_refresh_interval_multiplier,
                         "phase4_refresh_prepared_chunk_cache_bytes": args.phase4_refresh_prepared_chunk_cache_bytes,
@@ -3365,6 +4581,15 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
+        "--phase0-activation-threshold-compare-mode",
+        type=parse_phase0_activation_threshold_compare_mode,
+        default="baseline",
+        help=(
+            "Phase-0 JumpReLU activation/threshold compare mode "
+            "(baseline, bf16, fp32, or fp64)"
+        ),
+    )
+    parser.add_argument(
         "--phase1-trace-batch-policy",
         type=parse_phase1_trace_batch_policy,
         default="legacy",
@@ -3493,6 +4718,94 @@ if __name__ == "__main__":
         "--cross-cluster-debug",
         action="store_true",
         help="Enable broad scalar-only cross-cluster debug summary artifact (compact exact-chunked path only)",
+    )
+    parser.add_argument(
+        "--capture-phase3-seed-bundle",
+        action="store_true",
+        help="Save per-step Phase-3 seed bundle artifacts (compact exact-chunked path only)",
+    )
+    parser.add_argument(
+        "--capture-phase3-gradient-bundle",
+        action="store_true",
+        help="Save per-step Phase-3 gradient bundle artifacts (compact exact-chunked path only)",
+    )
+    parser.add_argument(
+        "--capture-phase3-row-bundle",
+        action="store_true",
+        help="Save per-step Phase-3 direct-row bundle artifacts (compact exact-chunked path only)",
+    )
+    parser.add_argument(
+        "--capture-phase0-donor-bundle",
+        action="store_true",
+        help=(
+            "Save per-step Phase-0 donor bundle artifacts (compact exact-chunked "
+            "path only)"
+        ),
+    )
+    parser.add_argument(
+        "--phase0-donor-bundle",
+        default=None,
+        help="Path to a Phase-0 donor bundle .npz for replay",
+    )
+    parser.add_argument(
+        "--phase0-replay-mode",
+        type=parse_phase0_replay_mode,
+        default="disabled",
+        help="Phase-0 replay mode: disabled or donor_phase0",
+    )
+    parser.add_argument(
+        "--phase0-donor-context-policy",
+        type=parse_phase0_donor_context_policy,
+        default="strict",
+        help="Donor/host context validation policy: strict or warn",
+    )
+    parser.add_argument(
+        "--phase3-gradient-donor-bundle",
+        default=None,
+        help="Path to a Phase-3 gradient donor bundle .npz for replay",
+    )
+    parser.add_argument(
+        "--phase3-gradient-replay-mode",
+        type=parse_phase3_replay_mode,
+        default="disabled",
+        help="Phase-3 gradient replay mode: disabled or donor",
+    )
+    parser.add_argument(
+        "--phase3-row-donor-bundle",
+        default=None,
+        help="Path to a Phase-3 row donor bundle .npz for replay",
+    )
+    parser.add_argument(
+        "--phase3-row-replay-mode",
+        type=parse_phase3_replay_mode,
+        default="disabled",
+        help="Phase-3 row replay mode: disabled or donor",
+    )
+    parser.add_argument(
+        "--phase3-replay-validation-policy",
+        type=parse_phase3_replay_validation_policy,
+        default="strict",
+        help="Phase-3 replay validation policy (currently strict only)",
+    )
+    parser.add_argument(
+        "--capture-feature-semantic-descriptors",
+        action="store_true",
+        help=(
+            "Save per-step bounded semantic descriptor artifacts for Phase-3 candidates "
+            "(compact exact-chunked path only)"
+        ),
+    )
+    parser.add_argument(
+        "--semantic-descriptor-top-k",
+        type=int,
+        default=2048,
+        help="Maximum number of candidate features to keep in semantic descriptor artifacts",
+    )
+    parser.add_argument(
+        "--semantic-descriptor-dim",
+        type=int,
+        default=64,
+        help="Semantic descriptor sketch width (number of float values per candidate)",
     )
     parser.add_argument(
         "--telemetry-max-events",

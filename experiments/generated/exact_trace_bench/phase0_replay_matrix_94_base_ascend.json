@@ -1,0 +1,97 @@
+{
+  "defaults": {
+    "completions": 1,
+    "temperature": 0.0,
+    "max_feature_nodes": 8192,
+    "max_edges": 20000,
+    "max_n_logits": 3,
+    "desired_logit_prob": 0.8,
+    "verbose_attribution": true,
+    "profile_attribution": true,
+    "profile_log_interval": 1,
+    "attribution_update_interval": 4,
+    "save_raw": false,
+    "no_offload": false,
+    "no_lazy_encoder": false,
+    "no_lazy_decoder": false,
+    "exact_trace_internal_dtype": "fp64",
+    "phase0_activation_threshold_compare_mode": "baseline",
+    "plan_feature_batch_size": false,
+    "auto_scale_feature_batch_size": false,
+    "feature_batch_size_max": null,
+    "feature_batch_target_reserved_fraction": 0.9,
+    "feature_batch_min_free_fraction": 0.05,
+    "feature_batch_probe_batches": 1,
+    "phase4_anomaly_debug": false,
+    "cross_cluster_debug": true,
+    "capture_phase0_donor_bundle": true,
+    "capture_phase3_seed_bundle": true,
+    "capture_feature_semantic_descriptors": true,
+    "semantic_descriptor_top_k": 2048,
+    "semantic_descriptor_dim": 64,
+    "phase0_replay_mode": "donor_phase0",
+    "phase0_donor_context_policy": "strict",
+    "telemetry_max_events": null,
+    "max_steps": 1,
+    "method": "exact"
+  },
+  "metadata": {
+    "cluster": "ascend",
+    "stage": "exact_trace_bench_anomaly",
+    "tier": "anomaly",
+    "resource_profile": "standard",
+    "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly",
+    "run_name": "phase0 replay matrix 94_base ascend",
+    "run_description": "Ascend self-replay plus Ascend host with Cardinal Phase-0 donor for 94_base.",
+    "run_goal": "Run same-cluster self-replay and cross-cluster donor replay in parallel for Phase-0 causality matrix.",
+    "notes": [
+      "Task 0: Ascend self-replay using Ascend donor bundle.",
+      "Task 1: Ascend host with Cardinal donor bundle.",
+      "Cross-swap interpretation is provisional until self-replay gates pass."
+    ]
+  },
+  "scenarios": [
+    {
+      "name": "ascend_phase0_self_replay_94_base_anomaly_b128_c2048_cache0g",
+      "stage": "exact_trace_bench_anomaly",
+      "cluster": "ascend",
+      "resource_profile": "standard",
+      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly",
+      "fixture_name": "94_base",
+      "fixture_kind": "base",
+      "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/94_base/prompt.txt",
+      "prepared_prompt_meta_file": "experiments/generated/weekend_exact_chunked_fixtures/94_base/fixture_meta.json",
+      "gsm8k_indices": [
+        94
+      ],
+      "attribution_batch_size": 128,
+      "feature_batch_size": 128,
+      "logit_batch_size": 128,
+      "decoder_chunk_size": 2048,
+      "cross_batch_decoder_cache_bytes": 0,
+      "phase0_donor_bundle": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260427_143849_028151_phase0-donor-capture-94-base-ascend/ascend_phase0_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000/step_000_phase0_donor_bundle.npz",
+      "donor_label": "ascend"
+    },
+    {
+      "name": "ascend_phase0_with_cardinal_donor_94_base_anomaly_b128_c2048_cache0g",
+      "stage": "exact_trace_bench_anomaly",
+      "cluster": "ascend",
+      "resource_profile": "standard",
+      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly",
+      "fixture_name": "94_base",
+      "fixture_kind": "base",
+      "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/94_base/prompt.txt",
+      "prepared_prompt_meta_file": "experiments/generated/weekend_exact_chunked_fixtures/94_base/fixture_meta.json",
+      "gsm8k_indices": [
+        94
+      ],
+      "attribution_batch_size": 128,
+      "feature_batch_size": 128,
+      "logit_batch_size": 128,
+      "decoder_chunk_size": 2048,
+      "cross_batch_decoder_cache_bytes": 0,
+      "phase0_donor_bundle": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260427_143849_120767_phase0-donor-capture-94-base-cardinal/cardinal_phase0_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000/step_000_phase0_donor_bundle.npz",
+      "donor_label": "cardinal"
+    }
+  ]
+}

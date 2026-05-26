@@ -149,6 +149,7 @@ def build_fixture_catalog(
     model,
     *,
     target_spec: dict[str, Any],
+    target_spec_file: Path = DEFAULT_TARGET_SPEC,
     output_dir: Path,
     max_new_tokens: int,
 ) -> dict[str, Any]:
@@ -158,7 +159,7 @@ def build_fixture_catalog(
 
     catalog: dict[str, Any] = {
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "target_spec_file": str(DEFAULT_TARGET_SPEC),
+        "target_spec_file": str(target_spec_file),
         "output_dir": str(output_dir),
         "fixtures": [],
     }
@@ -347,6 +348,7 @@ def main() -> None:
     catalog = build_fixture_catalog(
         model,
         target_spec=target_spec,
+        target_spec_file=args.target_spec_file,
         output_dir=output_dir,
         max_new_tokens=max_new_tokens,
     )

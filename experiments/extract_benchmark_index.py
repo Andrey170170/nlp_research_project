@@ -152,6 +152,47 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     cross_cluster_debug_batches_missing_paths: set[str] = set()
     cross_cluster_debug_batches_statuses: list[str] = []
     cross_cluster_debug_batches_manifest_counts: list[int] = []
+    phase0_donor_bundle_declared_paths: set[str] = set()
+    phase0_donor_bundle_existing_paths: set[str] = set()
+    phase0_donor_bundle_missing_paths: set[str] = set()
+    phase0_donor_bundle_statuses: list[str] = []
+    phase0_donor_bundle_capture_enabled_values: list[int] = []
+    phase0_replay_modes: list[str] = []
+    phase0_replay_statuses: list[str] = []
+    phase0_replay_donor_context_policies: list[str] = []
+    phase0_replay_donor_bundle_paths: list[str] = []
+    phase0_replay_validation_warning_counts_latest: list[int] = []
+    phase0_replay_validation_warning_counts_max: list[int] = []
+    phase0_replay_dtype_roundtrip_losses_latest: list[bool] = []
+    phase0_replay_dtype_roundtrip_losses_any: list[bool] = []
+    phase3_gradient_replay_modes: list[str] = []
+    phase3_gradient_replay_statuses: list[str] = []
+    phase3_gradient_replay_statuses_observed: list[str] = []
+    phase3_gradient_replay_donor_bundle_paths: list[str] = []
+    phase3_row_replay_modes: list[str] = []
+    phase3_row_replay_statuses: list[str] = []
+    phase3_row_replay_statuses_observed: list[str] = []
+    phase3_row_replay_donor_bundle_paths: list[str] = []
+    phase3_seed_bundle_declared_paths: set[str] = set()
+    phase3_seed_bundle_existing_paths: set[str] = set()
+    phase3_seed_bundle_missing_paths: set[str] = set()
+    phase3_seed_bundle_statuses: list[str] = []
+    phase3_seed_bundle_capture_enabled_values: list[int] = []
+    phase3_gradient_bundle_declared_paths: set[str] = set()
+    phase3_gradient_bundle_existing_paths: set[str] = set()
+    phase3_gradient_bundle_missing_paths: set[str] = set()
+    phase3_gradient_bundle_statuses: list[str] = []
+    phase3_gradient_bundle_capture_enabled_values: list[int] = []
+    phase3_row_bundle_declared_paths: set[str] = set()
+    phase3_row_bundle_existing_paths: set[str] = set()
+    phase3_row_bundle_missing_paths: set[str] = set()
+    phase3_row_bundle_statuses: list[str] = []
+    phase3_row_bundle_capture_enabled_values: list[int] = []
+    feature_semantic_descriptor_declared_paths: set[str] = set()
+    feature_semantic_descriptor_existing_paths: set[str] = set()
+    feature_semantic_descriptor_missing_paths: set[str] = set()
+    feature_semantic_descriptor_statuses: list[str] = []
+    feature_semantic_descriptor_capture_enabled_values: list[int] = []
     exact_trace_internal_dtype_requested_values: list[str] = []
     resolved_dtype_maps: list[dict[str, Any]] = []
     completion_timing_summary_count = 0
@@ -472,6 +513,357 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
         if batches_count is not None:
             cross_cluster_debug_batches_manifest_counts.append(batches_count)
 
+        phase0_donor_bundle_capture_enabled = manifest.get(
+            "phase0_donor_bundle_capture_enabled"
+        )
+        if isinstance(phase0_donor_bundle_capture_enabled, bool):
+            phase0_donor_bundle_capture_enabled_values.append(
+                int(phase0_donor_bundle_capture_enabled)
+            )
+        manifest_phase0_donor_bundle_status = manifest.get("phase0_donor_bundle_status")
+        if isinstance(manifest_phase0_donor_bundle_status, str):
+            phase0_donor_bundle_statuses.append(manifest_phase0_donor_bundle_status)
+        manifest_phase0_donor_bundle_statuses = manifest.get(
+            "phase0_donor_bundle_statuses_observed"
+        )
+        if isinstance(manifest_phase0_donor_bundle_statuses, list):
+            phase0_donor_bundle_statuses.extend(
+                status
+                for status in manifest_phase0_donor_bundle_statuses
+                if isinstance(status, str)
+            )
+
+        manifest_phase0_replay_mode = manifest.get("phase0_replay_mode")
+        if isinstance(manifest_phase0_replay_mode, str):
+            phase0_replay_modes.append(manifest_phase0_replay_mode)
+        manifest_phase0_replay_status = manifest.get("phase0_replay_status")
+        if isinstance(manifest_phase0_replay_status, str):
+            phase0_replay_statuses.append(manifest_phase0_replay_status)
+        manifest_phase0_replay_statuses = manifest.get(
+            "phase0_replay_statuses_observed"
+        )
+        if isinstance(manifest_phase0_replay_statuses, list):
+            phase0_replay_statuses.extend(
+                status
+                for status in manifest_phase0_replay_statuses
+                if isinstance(status, str)
+            )
+        manifest_phase0_replay_context_policy = manifest.get(
+            "phase0_donor_context_policy"
+        )
+        if isinstance(manifest_phase0_replay_context_policy, str):
+            phase0_replay_donor_context_policies.append(
+                manifest_phase0_replay_context_policy
+            )
+        manifest_phase0_replay_donor_bundle_path = manifest.get("phase0_donor_bundle")
+        if (
+            isinstance(manifest_phase0_replay_donor_bundle_path, str)
+            and manifest_phase0_replay_donor_bundle_path.strip()
+        ):
+            phase0_replay_donor_bundle_paths.append(
+                manifest_phase0_replay_donor_bundle_path.strip()
+            )
+        replay_warning_count = _to_int(
+            manifest.get("phase0_replay_validation_warning_count")
+        )
+        if replay_warning_count is not None:
+            phase0_replay_validation_warning_counts_latest.append(replay_warning_count)
+        replay_warning_count_max = _to_int(
+            manifest.get("phase0_replay_validation_warning_count_max")
+        )
+        if replay_warning_count_max is not None:
+            phase0_replay_validation_warning_counts_max.append(replay_warning_count_max)
+        replay_dtype_roundtrip_loss = manifest.get("phase0_replay_dtype_roundtrip_loss")
+        if isinstance(replay_dtype_roundtrip_loss, bool):
+            phase0_replay_dtype_roundtrip_losses_latest.append(
+                replay_dtype_roundtrip_loss
+            )
+        replay_any_dtype_roundtrip_loss = manifest.get(
+            "phase0_replay_any_dtype_roundtrip_loss"
+        )
+        if isinstance(replay_any_dtype_roundtrip_loss, bool):
+            phase0_replay_dtype_roundtrip_losses_any.append(
+                replay_any_dtype_roundtrip_loss
+            )
+
+        for key, sink in (
+            ("phase3_gradient_replay_mode", phase3_gradient_replay_modes),
+            ("phase3_gradient_replay_status", phase3_gradient_replay_statuses),
+            ("phase3_row_replay_mode", phase3_row_replay_modes),
+            ("phase3_row_replay_status", phase3_row_replay_statuses),
+        ):
+            value = manifest.get(key)
+            if isinstance(value, str):
+                sink.append(value)
+        for key, sink in (
+            (
+                "phase3_gradient_replay_statuses_observed",
+                phase3_gradient_replay_statuses_observed,
+            ),
+            (
+                "phase3_row_replay_statuses_observed",
+                phase3_row_replay_statuses_observed,
+            ),
+        ):
+            value = manifest.get(key)
+            if isinstance(value, list):
+                sink.extend(item for item in value if isinstance(item, str))
+        gradient_replay_path = manifest.get("phase3_gradient_replay_donor_bundle_path")
+        if (
+            not isinstance(gradient_replay_path, str)
+            or not gradient_replay_path.strip()
+        ):
+            gradient_replay_path = manifest.get("phase3_gradient_donor_bundle")
+        if isinstance(gradient_replay_path, str) and gradient_replay_path.strip():
+            phase3_gradient_replay_donor_bundle_paths.append(
+                gradient_replay_path.strip()
+            )
+        row_replay_path = manifest.get("phase3_row_replay_donor_bundle_path")
+        if not isinstance(row_replay_path, str) or not row_replay_path.strip():
+            row_replay_path = manifest.get("phase3_row_donor_bundle")
+        if isinstance(row_replay_path, str) and row_replay_path.strip():
+            phase3_row_replay_donor_bundle_paths.append(row_replay_path.strip())
+
+        phase3_seed_bundle_capture_enabled = manifest.get(
+            "phase3_seed_bundle_capture_enabled"
+        )
+        if isinstance(phase3_seed_bundle_capture_enabled, bool):
+            phase3_seed_bundle_capture_enabled_values.append(
+                int(phase3_seed_bundle_capture_enabled)
+            )
+        manifest_phase3_seed_bundle_status = manifest.get("phase3_seed_bundle_status")
+        if isinstance(manifest_phase3_seed_bundle_status, str):
+            phase3_seed_bundle_statuses.append(manifest_phase3_seed_bundle_status)
+        manifest_phase3_seed_bundle_statuses = manifest.get(
+            "phase3_seed_bundle_statuses_observed"
+        )
+        if isinstance(manifest_phase3_seed_bundle_statuses, list):
+            phase3_seed_bundle_statuses.extend(
+                status
+                for status in manifest_phase3_seed_bundle_statuses
+                if isinstance(status, str)
+            )
+
+        for bundle_name, statuses, enabled_values in (
+            (
+                "phase3_gradient_bundle",
+                phase3_gradient_bundle_statuses,
+                phase3_gradient_bundle_capture_enabled_values,
+            ),
+            (
+                "phase3_row_bundle",
+                phase3_row_bundle_statuses,
+                phase3_row_bundle_capture_enabled_values,
+            ),
+        ):
+            capture_enabled = manifest.get(f"{bundle_name}_capture_enabled")
+            if isinstance(capture_enabled, bool):
+                enabled_values.append(int(capture_enabled))
+            manifest_status = manifest.get(f"{bundle_name}_status")
+            if isinstance(manifest_status, str):
+                statuses.append(manifest_status)
+            manifest_statuses = manifest.get(f"{bundle_name}_statuses_observed")
+            if isinstance(manifest_statuses, list):
+                statuses.extend(
+                    status for status in manifest_statuses if isinstance(status, str)
+                )
+
+        feature_semantic_descriptor_capture_enabled = manifest.get(
+            "feature_semantic_descriptor_capture_enabled"
+        )
+        if isinstance(feature_semantic_descriptor_capture_enabled, bool):
+            feature_semantic_descriptor_capture_enabled_values.append(
+                int(feature_semantic_descriptor_capture_enabled)
+            )
+        manifest_feature_semantic_descriptor_status = manifest.get(
+            "feature_semantic_descriptor_status"
+        )
+        if isinstance(manifest_feature_semantic_descriptor_status, str):
+            feature_semantic_descriptor_statuses.append(
+                manifest_feature_semantic_descriptor_status
+            )
+        manifest_feature_semantic_descriptor_statuses = manifest.get(
+            "feature_semantic_descriptor_statuses_observed"
+        )
+        if isinstance(manifest_feature_semantic_descriptor_statuses, list):
+            feature_semantic_descriptor_statuses.extend(
+                status
+                for status in manifest_feature_semantic_descriptor_statuses
+                if isinstance(status, str)
+            )
+
+        manifest_steps = manifest.get("steps")
+        if isinstance(manifest_steps, list):
+            for step in manifest_steps:
+                if not isinstance(step, dict):
+                    continue
+                phase0_donor_bundle_ref = step.get("phase0_donor_bundle_path")
+                if (
+                    isinstance(phase0_donor_bundle_ref, str)
+                    and phase0_donor_bundle_ref.strip()
+                ):
+                    declared_phase0_donor_bundle_path = (
+                        completion_dir / phase0_donor_bundle_ref.strip()
+                    )
+                    relative_path = _relative_to_or_str(
+                        declared_phase0_donor_bundle_path,
+                        artifact_dir,
+                    )
+                    phase0_donor_bundle_declared_paths.add(relative_path)
+                    if declared_phase0_donor_bundle_path.exists():
+                        phase0_donor_bundle_existing_paths.add(relative_path)
+                    else:
+                        phase0_donor_bundle_missing_paths.add(relative_path)
+                step_phase0_donor_bundle_status = step.get("phase0_donor_bundle_status")
+                if isinstance(step_phase0_donor_bundle_status, str):
+                    phase0_donor_bundle_statuses.append(step_phase0_donor_bundle_status)
+                step_phase0_donor_bundle_enabled = step.get(
+                    "phase0_donor_bundle_capture_enabled"
+                )
+                if isinstance(step_phase0_donor_bundle_enabled, bool):
+                    phase0_donor_bundle_capture_enabled_values.append(
+                        int(step_phase0_donor_bundle_enabled)
+                    )
+                step_phase0_replay_mode = step.get("phase0_replay_mode")
+                if isinstance(step_phase0_replay_mode, str):
+                    phase0_replay_modes.append(step_phase0_replay_mode)
+                step_phase0_replay_status = step.get("phase0_replay_status")
+                if isinstance(step_phase0_replay_status, str):
+                    phase0_replay_statuses.append(step_phase0_replay_status)
+                step_phase0_replay_context_policy = step.get(
+                    "phase0_replay_donor_context_policy"
+                )
+                if isinstance(step_phase0_replay_context_policy, str):
+                    phase0_replay_donor_context_policies.append(
+                        step_phase0_replay_context_policy
+                    )
+                step_phase0_replay_donor_bundle_path = step.get(
+                    "phase0_replay_donor_bundle_path"
+                )
+                if (
+                    isinstance(step_phase0_replay_donor_bundle_path, str)
+                    and step_phase0_replay_donor_bundle_path.strip()
+                ):
+                    phase0_replay_donor_bundle_paths.append(
+                        step_phase0_replay_donor_bundle_path.strip()
+                    )
+                step_replay_warning_count = _to_int(
+                    step.get("phase0_replay_validation_warning_count")
+                )
+                if step_replay_warning_count is not None:
+                    phase0_replay_validation_warning_counts_latest.append(
+                        step_replay_warning_count
+                    )
+                step_replay_dtype_roundtrip_loss = step.get(
+                    "phase0_replay_dtype_roundtrip_loss"
+                )
+                if isinstance(step_replay_dtype_roundtrip_loss, bool):
+                    phase0_replay_dtype_roundtrip_losses_latest.append(
+                        step_replay_dtype_roundtrip_loss
+                    )
+                phase3_seed_bundle_ref = step.get("phase3_seed_bundle_path")
+                if (
+                    isinstance(phase3_seed_bundle_ref, str)
+                    and phase3_seed_bundle_ref.strip()
+                ):
+                    declared_phase3_seed_bundle_path = (
+                        completion_dir / phase3_seed_bundle_ref.strip()
+                    )
+                    relative_path = _relative_to_or_str(
+                        declared_phase3_seed_bundle_path,
+                        artifact_dir,
+                    )
+                    phase3_seed_bundle_declared_paths.add(relative_path)
+                    if declared_phase3_seed_bundle_path.exists():
+                        phase3_seed_bundle_existing_paths.add(relative_path)
+                    else:
+                        phase3_seed_bundle_missing_paths.add(relative_path)
+                step_phase3_seed_bundle_status = step.get("phase3_seed_bundle_status")
+                if isinstance(step_phase3_seed_bundle_status, str):
+                    phase3_seed_bundle_statuses.append(step_phase3_seed_bundle_status)
+                step_phase3_seed_bundle_enabled = step.get(
+                    "phase3_seed_bundle_capture_enabled"
+                )
+                if isinstance(step_phase3_seed_bundle_enabled, bool):
+                    phase3_seed_bundle_capture_enabled_values.append(
+                        int(step_phase3_seed_bundle_enabled)
+                    )
+
+                for (
+                    bundle_name,
+                    declared_paths,
+                    existing_paths,
+                    missing_paths,
+                    statuses,
+                    enabled_values,
+                ) in (
+                    (
+                        "phase3_gradient_bundle",
+                        phase3_gradient_bundle_declared_paths,
+                        phase3_gradient_bundle_existing_paths,
+                        phase3_gradient_bundle_missing_paths,
+                        phase3_gradient_bundle_statuses,
+                        phase3_gradient_bundle_capture_enabled_values,
+                    ),
+                    (
+                        "phase3_row_bundle",
+                        phase3_row_bundle_declared_paths,
+                        phase3_row_bundle_existing_paths,
+                        phase3_row_bundle_missing_paths,
+                        phase3_row_bundle_statuses,
+                        phase3_row_bundle_capture_enabled_values,
+                    ),
+                ):
+                    bundle_ref = step.get(f"{bundle_name}_path")
+                    if isinstance(bundle_ref, str) and bundle_ref.strip():
+                        declared_path = completion_dir / bundle_ref.strip()
+                        relative_path = _relative_to_or_str(declared_path, artifact_dir)
+                        declared_paths.add(relative_path)
+                        if declared_path.exists():
+                            existing_paths.add(relative_path)
+                        else:
+                            missing_paths.add(relative_path)
+                    step_status = step.get(f"{bundle_name}_status")
+                    if isinstance(step_status, str):
+                        statuses.append(step_status)
+                    step_enabled = step.get(f"{bundle_name}_capture_enabled")
+                    if isinstance(step_enabled, bool):
+                        enabled_values.append(int(step_enabled))
+
+                feature_semantic_descriptor_ref = step.get(
+                    "feature_semantic_descriptor_path"
+                )
+                if (
+                    isinstance(feature_semantic_descriptor_ref, str)
+                    and feature_semantic_descriptor_ref.strip()
+                ):
+                    declared_feature_semantic_descriptor_path = (
+                        completion_dir / feature_semantic_descriptor_ref.strip()
+                    )
+                    relative_path = _relative_to_or_str(
+                        declared_feature_semantic_descriptor_path,
+                        artifact_dir,
+                    )
+                    feature_semantic_descriptor_declared_paths.add(relative_path)
+                    if declared_feature_semantic_descriptor_path.exists():
+                        feature_semantic_descriptor_existing_paths.add(relative_path)
+                    else:
+                        feature_semantic_descriptor_missing_paths.add(relative_path)
+                step_feature_semantic_descriptor_status = step.get(
+                    "feature_semantic_descriptor_status"
+                )
+                if isinstance(step_feature_semantic_descriptor_status, str):
+                    feature_semantic_descriptor_statuses.append(
+                        step_feature_semantic_descriptor_status
+                    )
+                step_feature_semantic_descriptor_enabled = step.get(
+                    "feature_semantic_descriptor_capture_enabled"
+                )
+                if isinstance(step_feature_semantic_descriptor_enabled, bool):
+                    feature_semantic_descriptor_capture_enabled_values.append(
+                        int(step_feature_semantic_descriptor_enabled)
+                    )
+
         telemetry_event_count = _to_int(manifest.get("telemetry_event_count"))
         if telemetry_event_count is not None:
             telemetry_manifest_event_counts.append(telemetry_event_count)
@@ -750,6 +1142,37 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     )
     cross_cluster_debug_batches_missing_paths_sorted = sorted(
         cross_cluster_debug_batches_missing_paths
+    )
+    phase0_donor_bundle_existing_paths_sorted = sorted(
+        phase0_donor_bundle_existing_paths
+    )
+    phase0_donor_bundle_declared_paths_sorted = sorted(
+        phase0_donor_bundle_declared_paths
+    )
+    phase0_donor_bundle_missing_paths_sorted = sorted(phase0_donor_bundle_missing_paths)
+    phase3_seed_bundle_existing_paths_sorted = sorted(phase3_seed_bundle_existing_paths)
+    phase3_seed_bundle_declared_paths_sorted = sorted(phase3_seed_bundle_declared_paths)
+    phase3_seed_bundle_missing_paths_sorted = sorted(phase3_seed_bundle_missing_paths)
+    phase3_gradient_bundle_existing_paths_sorted = sorted(
+        phase3_gradient_bundle_existing_paths
+    )
+    phase3_gradient_bundle_declared_paths_sorted = sorted(
+        phase3_gradient_bundle_declared_paths
+    )
+    phase3_gradient_bundle_missing_paths_sorted = sorted(
+        phase3_gradient_bundle_missing_paths
+    )
+    phase3_row_bundle_existing_paths_sorted = sorted(phase3_row_bundle_existing_paths)
+    phase3_row_bundle_declared_paths_sorted = sorted(phase3_row_bundle_declared_paths)
+    phase3_row_bundle_missing_paths_sorted = sorted(phase3_row_bundle_missing_paths)
+    feature_semantic_descriptor_existing_paths_sorted = sorted(
+        feature_semantic_descriptor_existing_paths
+    )
+    feature_semantic_descriptor_declared_paths_sorted = sorted(
+        feature_semantic_descriptor_declared_paths
+    )
+    feature_semantic_descriptor_missing_paths_sorted = sorted(
+        feature_semantic_descriptor_missing_paths
     )
     resolved_dtype_map_latest = resolved_dtype_maps[-1] if resolved_dtype_maps else None
     max_active_features = max(
@@ -1034,6 +1457,16 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
     )
     all_phase4_planner_statuses = sorted(
         set(step_phase4_planner_statuses + manifest_phase4_planner_statuses)
+    )
+    phase0_replay_validation_warning_count_max_source = (
+        phase0_replay_validation_warning_counts_max
+        if phase0_replay_validation_warning_counts_max
+        else phase0_replay_validation_warning_counts_latest
+    )
+    phase0_replay_dtype_roundtrip_loss_any_source = (
+        phase0_replay_dtype_roundtrip_losses_any
+        if phase0_replay_dtype_roundtrip_losses_any
+        else phase0_replay_dtype_roundtrip_losses_latest
     )
 
     return {
@@ -1458,6 +1891,263 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
             if cross_cluster_debug_batches_manifest_counts
             else None
         ),
+        "phase0_donor_bundle_capture_enabled_fraction": (
+            round(
+                mean(
+                    [
+                        float(value)
+                        for value in phase0_donor_bundle_capture_enabled_values
+                    ]
+                ),
+                6,
+            )
+            if phase0_donor_bundle_capture_enabled_values
+            else None
+        ),
+        "phase0_donor_bundle_present": bool(phase0_donor_bundle_existing_paths_sorted),
+        "phase0_donor_bundle_manifest_declared_count": len(
+            phase0_donor_bundle_declared_paths_sorted
+        ),
+        "phase0_donor_bundle_file_count": len(
+            phase0_donor_bundle_existing_paths_sorted
+        ),
+        "phase0_donor_bundle_missing_file_count": len(
+            phase0_donor_bundle_missing_paths_sorted
+        ),
+        "phase0_donor_bundle_path_example": (
+            phase0_donor_bundle_existing_paths_sorted[0]
+            if phase0_donor_bundle_existing_paths_sorted
+            else phase0_donor_bundle_declared_paths_sorted[0]
+            if phase0_donor_bundle_declared_paths_sorted
+            else None
+        ),
+        "phase0_donor_bundle_status": (
+            phase0_donor_bundle_statuses[-1] if phase0_donor_bundle_statuses else None
+        ),
+        "phase0_donor_bundle_statuses_observed": sorted(
+            set(phase0_donor_bundle_statuses)
+        ),
+        "phase0_replay_mode": (
+            phase0_replay_modes[-1] if phase0_replay_modes else None
+        ),
+        "phase0_replay_modes_observed": sorted(set(phase0_replay_modes)),
+        "phase0_replay_status": (
+            phase0_replay_statuses[-1] if phase0_replay_statuses else None
+        ),
+        "phase0_replay_statuses_observed": sorted(set(phase0_replay_statuses)),
+        "phase0_replay_donor_context_policy": (
+            phase0_replay_donor_context_policies[-1]
+            if phase0_replay_donor_context_policies
+            else None
+        ),
+        "phase0_replay_donor_context_policies_observed": sorted(
+            set(phase0_replay_donor_context_policies)
+        ),
+        "phase0_replay_donor_bundle_path": (
+            phase0_replay_donor_bundle_paths[-1]
+            if phase0_replay_donor_bundle_paths
+            else None
+        ),
+        "phase0_replay_validation_warning_count": (
+            phase0_replay_validation_warning_counts_latest[-1]
+            if phase0_replay_validation_warning_counts_latest
+            else None
+        ),
+        "phase0_replay_validation_warning_count_max": (
+            max(phase0_replay_validation_warning_count_max_source)
+            if phase0_replay_validation_warning_count_max_source
+            else None
+        ),
+        "phase0_replay_dtype_roundtrip_loss": (
+            phase0_replay_dtype_roundtrip_losses_latest[-1]
+            if phase0_replay_dtype_roundtrip_losses_latest
+            else None
+        ),
+        "phase0_replay_any_dtype_roundtrip_loss": (
+            bool(any(phase0_replay_dtype_roundtrip_loss_any_source))
+            if phase0_replay_dtype_roundtrip_loss_any_source
+            else None
+        ),
+        "phase3_gradient_replay_mode": (
+            phase3_gradient_replay_modes[-1] if phase3_gradient_replay_modes else None
+        ),
+        "phase3_gradient_replay_modes_observed": sorted(
+            set(phase3_gradient_replay_modes)
+        ),
+        "phase3_gradient_replay_status": (
+            phase3_gradient_replay_statuses[-1]
+            if phase3_gradient_replay_statuses
+            else None
+        ),
+        "phase3_gradient_replay_statuses_observed": sorted(
+            set(
+                phase3_gradient_replay_statuses_observed
+                or phase3_gradient_replay_statuses
+            )
+        ),
+        "phase3_gradient_replay_donor_bundle_path": (
+            phase3_gradient_replay_donor_bundle_paths[-1]
+            if phase3_gradient_replay_donor_bundle_paths
+            else None
+        ),
+        "phase3_row_replay_mode": (
+            phase3_row_replay_modes[-1] if phase3_row_replay_modes else None
+        ),
+        "phase3_row_replay_modes_observed": sorted(set(phase3_row_replay_modes)),
+        "phase3_row_replay_status": (
+            phase3_row_replay_statuses[-1] if phase3_row_replay_statuses else None
+        ),
+        "phase3_row_replay_statuses_observed": sorted(
+            set(phase3_row_replay_statuses_observed or phase3_row_replay_statuses)
+        ),
+        "phase3_row_replay_donor_bundle_path": (
+            phase3_row_replay_donor_bundle_paths[-1]
+            if phase3_row_replay_donor_bundle_paths
+            else None
+        ),
+        "phase3_seed_bundle_capture_enabled_fraction": (
+            round(
+                mean(
+                    [
+                        float(value)
+                        for value in phase3_seed_bundle_capture_enabled_values
+                    ]
+                ),
+                6,
+            )
+            if phase3_seed_bundle_capture_enabled_values
+            else None
+        ),
+        "phase3_seed_bundle_present": bool(phase3_seed_bundle_existing_paths_sorted),
+        "phase3_seed_bundle_manifest_declared_count": len(
+            phase3_seed_bundle_declared_paths_sorted
+        ),
+        "phase3_seed_bundle_file_count": len(phase3_seed_bundle_existing_paths_sorted),
+        "phase3_seed_bundle_missing_file_count": len(
+            phase3_seed_bundle_missing_paths_sorted
+        ),
+        "phase3_seed_bundle_path_example": (
+            phase3_seed_bundle_existing_paths_sorted[0]
+            if phase3_seed_bundle_existing_paths_sorted
+            else phase3_seed_bundle_declared_paths_sorted[0]
+            if phase3_seed_bundle_declared_paths_sorted
+            else None
+        ),
+        "phase3_seed_bundle_status": (
+            phase3_seed_bundle_statuses[-1] if phase3_seed_bundle_statuses else None
+        ),
+        "phase3_seed_bundle_statuses_observed": sorted(
+            set(phase3_seed_bundle_statuses)
+        ),
+        "phase3_gradient_bundle_capture_enabled_fraction": (
+            round(
+                mean(
+                    [
+                        float(value)
+                        for value in phase3_gradient_bundle_capture_enabled_values
+                    ]
+                ),
+                6,
+            )
+            if phase3_gradient_bundle_capture_enabled_values
+            else None
+        ),
+        "phase3_gradient_bundle_present": bool(
+            phase3_gradient_bundle_existing_paths_sorted
+        ),
+        "phase3_gradient_bundle_manifest_declared_count": len(
+            phase3_gradient_bundle_declared_paths_sorted
+        ),
+        "phase3_gradient_bundle_file_count": len(
+            phase3_gradient_bundle_existing_paths_sorted
+        ),
+        "phase3_gradient_bundle_missing_file_count": len(
+            phase3_gradient_bundle_missing_paths_sorted
+        ),
+        "phase3_gradient_bundle_path_example": (
+            phase3_gradient_bundle_existing_paths_sorted[0]
+            if phase3_gradient_bundle_existing_paths_sorted
+            else phase3_gradient_bundle_declared_paths_sorted[0]
+            if phase3_gradient_bundle_declared_paths_sorted
+            else None
+        ),
+        "phase3_gradient_bundle_status": (
+            phase3_gradient_bundle_statuses[-1]
+            if phase3_gradient_bundle_statuses
+            else None
+        ),
+        "phase3_gradient_bundle_statuses_observed": sorted(
+            set(phase3_gradient_bundle_statuses)
+        ),
+        "phase3_row_bundle_capture_enabled_fraction": (
+            round(
+                mean(
+                    [float(value) for value in phase3_row_bundle_capture_enabled_values]
+                ),
+                6,
+            )
+            if phase3_row_bundle_capture_enabled_values
+            else None
+        ),
+        "phase3_row_bundle_present": bool(phase3_row_bundle_existing_paths_sorted),
+        "phase3_row_bundle_manifest_declared_count": len(
+            phase3_row_bundle_declared_paths_sorted
+        ),
+        "phase3_row_bundle_file_count": len(phase3_row_bundle_existing_paths_sorted),
+        "phase3_row_bundle_missing_file_count": len(
+            phase3_row_bundle_missing_paths_sorted
+        ),
+        "phase3_row_bundle_path_example": (
+            phase3_row_bundle_existing_paths_sorted[0]
+            if phase3_row_bundle_existing_paths_sorted
+            else phase3_row_bundle_declared_paths_sorted[0]
+            if phase3_row_bundle_declared_paths_sorted
+            else None
+        ),
+        "phase3_row_bundle_status": (
+            phase3_row_bundle_statuses[-1] if phase3_row_bundle_statuses else None
+        ),
+        "phase3_row_bundle_statuses_observed": sorted(set(phase3_row_bundle_statuses)),
+        "feature_semantic_descriptor_capture_enabled_fraction": (
+            round(
+                mean(
+                    [
+                        float(value)
+                        for value in feature_semantic_descriptor_capture_enabled_values
+                    ]
+                ),
+                6,
+            )
+            if feature_semantic_descriptor_capture_enabled_values
+            else None
+        ),
+        "feature_semantic_descriptor_present": bool(
+            feature_semantic_descriptor_existing_paths_sorted
+        ),
+        "feature_semantic_descriptor_manifest_declared_count": len(
+            feature_semantic_descriptor_declared_paths_sorted
+        ),
+        "feature_semantic_descriptor_file_count": len(
+            feature_semantic_descriptor_existing_paths_sorted
+        ),
+        "feature_semantic_descriptor_missing_file_count": len(
+            feature_semantic_descriptor_missing_paths_sorted
+        ),
+        "feature_semantic_descriptor_path_example": (
+            feature_semantic_descriptor_existing_paths_sorted[0]
+            if feature_semantic_descriptor_existing_paths_sorted
+            else feature_semantic_descriptor_declared_paths_sorted[0]
+            if feature_semantic_descriptor_declared_paths_sorted
+            else None
+        ),
+        "feature_semantic_descriptor_status": (
+            feature_semantic_descriptor_statuses[-1]
+            if feature_semantic_descriptor_statuses
+            else None
+        ),
+        "feature_semantic_descriptor_statuses_observed": sorted(
+            set(feature_semantic_descriptor_statuses)
+        ),
         "telemetry_present": bool(telemetry_existing_paths_sorted),
         "telemetry_manifest_declared_count": len(telemetry_declared_paths_sorted),
         "telemetry_file_count": len(telemetry_existing_paths_sorted),
@@ -1738,6 +2428,13 @@ def build_row(result_path: Path) -> dict[str, Any]:
         exact_trace_internal_dtype = scenario.get(
             "exact_trace_internal_dtype_requested"
         )
+    phase0_activation_threshold_compare_mode = run_config.get(
+        "phase0_activation_threshold_compare_mode"
+    )
+    if phase0_activation_threshold_compare_mode is None:
+        phase0_activation_threshold_compare_mode = scenario.get(
+            "phase0_activation_threshold_compare_mode"
+        )
 
     row = {
         "scenario_root": str(scenario_root),
@@ -1760,6 +2457,9 @@ def build_row(result_path: Path) -> dict[str, Any]:
         "logit_batch_size": scenario.get("logit_batch_size"),
         "decoder_chunk_size": scenario.get("decoder_chunk_size"),
         "exact_trace_internal_dtype": exact_trace_internal_dtype,
+        "phase0_activation_threshold_compare_mode": (
+            phase0_activation_threshold_compare_mode
+        ),
         "exact_trace_internal_dtype_contract_supported": run_config.get(
             "exact_trace_internal_dtype_contract_supported",
             not bool(save_raw),

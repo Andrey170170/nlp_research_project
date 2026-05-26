@@ -11,8 +11,25 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = REPO_ROOT / "src"
+for path in (REPO_ROOT, SRC_ROOT):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
+
+from nlp_research_project.exact_trace_bench.baselines import (  # noqa: E402
+    BASELINE_DISABLED,
+    build_scenario_metrics_row,
+    load_baseline_registry,
+    normalize_baseline_check,
+    resolve_baseline_entry,
+    run_baseline_comparison,
+    validate_baseline_entry,
+    write_scenario_metrics,
+)
+from nlp_research_project.exact_trace_bench.io_utils import write_csv  # noqa: E402
+
+
 DEFAULT_SCENARIOS = (
     Path(__file__).with_name("generated") / "sparsification_calibration_scenarios.json"
 )
@@ -246,6 +263,18 @@ def _summarize_artifacts(run_output_dir: Path) -> dict[str, Any]:
         for step in manifest.get("steps", [])
         if step.get("transcoder_diagnostics")
     ]
+    feature_semantic_descriptor_statuses = [
+        step.get("feature_semantic_descriptor_status")
+        for manifest in completion_manifests
+        for step in manifest.get("steps", [])
+        if isinstance(step.get("feature_semantic_descriptor_status"), str)
+    ]
+    feature_semantic_descriptor_paths = [
+        Path(path).parent / step.get("feature_semantic_descriptor_path")
+        for path, manifest in zip(completion_files, completion_manifests, strict=False)
+        for step in manifest.get("steps", [])
+        if isinstance(step.get("feature_semantic_descriptor_path"), str)
+    ]
 
     first_prompt_meta = prompt_metas[0] if prompt_metas else {}
     first_completion = completion_manifests[0] if completion_manifests else {}
@@ -273,6 +302,14 @@ def _summarize_artifacts(run_output_dir: Path) -> dict[str, Any]:
         "decoder_cache_eviction_count": max(cache_evictions)
         if cache_evictions
         else None,
+        "feature_semantic_descriptor_status": (
+            feature_semantic_descriptor_statuses[-1]
+            if feature_semantic_descriptor_statuses
+            else None
+        ),
+        "feature_semantic_descriptor_file_count": sum(
+            1 for path in feature_semantic_descriptor_paths if path.exists()
+        ),
         "resource_snapshot": first_completion.get("resource_snapshot"),
     }
 
@@ -339,6 +376,16 @@ def build_command(
             [
                 "--exact-trace-internal-dtype",
                 str(scenario["exact_trace_internal_dtype"]),
+            ]
+        )
+    if (
+        method != "old_patch"
+        and scenario.get("phase0_activation_threshold_compare_mode") is not None
+    ):
+        cmd.extend(
+            [
+                "--phase0-activation-threshold-compare-mode",
+                str(scenario["phase0_activation_threshold_compare_mode"]),
             ]
         )
 
@@ -534,6 +581,70 @@ def build_command(
             )
         if scenario.get("cross_cluster_debug", False):
             cmd.append("--cross-cluster-debug")
+        if scenario.get("capture_phase0_donor_bundle", False):
+            cmd.append("--capture-phase0-donor-bundle")
+        if scenario.get("phase0_donor_bundle") is not None:
+            cmd.extend(["--phase0-donor-bundle", str(scenario["phase0_donor_bundle"])])
+        if scenario.get("phase0_replay_mode") is not None:
+            cmd.extend(["--phase0-replay-mode", str(scenario["phase0_replay_mode"])])
+        if scenario.get("phase0_donor_context_policy") is not None:
+            cmd.extend(
+                [
+                    "--phase0-donor-context-policy",
+                    str(scenario["phase0_donor_context_policy"]),
+                ]
+            )
+        if scenario.get("phase3_gradient_donor_bundle") is not None:
+            cmd.extend(
+                [
+                    "--phase3-gradient-donor-bundle",
+                    str(scenario["phase3_gradient_donor_bundle"]),
+                ]
+            )
+        if scenario.get("phase3_gradient_replay_mode") is not None:
+            cmd.extend(
+                [
+                    "--phase3-gradient-replay-mode",
+                    str(scenario["phase3_gradient_replay_mode"]),
+                ]
+            )
+        if scenario.get("phase3_row_donor_bundle") is not None:
+            cmd.extend(
+                ["--phase3-row-donor-bundle", str(scenario["phase3_row_donor_bundle"])]
+            )
+        if scenario.get("phase3_row_replay_mode") is not None:
+            cmd.extend(
+                ["--phase3-row-replay-mode", str(scenario["phase3_row_replay_mode"])]
+            )
+        if scenario.get("phase3_replay_validation_policy") is not None:
+            cmd.extend(
+                [
+                    "--phase3-replay-validation-policy",
+                    str(scenario["phase3_replay_validation_policy"]),
+                ]
+            )
+        if scenario.get("capture_phase3_seed_bundle", False):
+            cmd.append("--capture-phase3-seed-bundle")
+        if scenario.get("capture_phase3_gradient_bundle", False):
+            cmd.append("--capture-phase3-gradient-bundle")
+        if scenario.get("capture_phase3_row_bundle", False):
+            cmd.append("--capture-phase3-row-bundle")
+        if scenario.get("capture_feature_semantic_descriptors", False):
+            cmd.append("--capture-feature-semantic-descriptors")
+        if scenario.get("semantic_descriptor_top_k") is not None:
+            cmd.extend(
+                [
+                    "--semantic-descriptor-top-k",
+                    str(scenario["semantic_descriptor_top_k"]),
+                ]
+            )
+        if scenario.get("semantic_descriptor_dim") is not None:
+            cmd.extend(
+                [
+                    "--semantic-descriptor-dim",
+                    str(scenario["semantic_descriptor_dim"]),
+                ]
+            )
         if scenario.get("telemetry_max_events") is not None:
             cmd.extend(
                 ["--telemetry-max-events", str(scenario["telemetry_max_events"])]
@@ -567,6 +678,10 @@ def run_scenario(
     *,
     env: dict[str, str],
     run_metadata: dict[str, str | None],
+    baseline_registry: dict[str, dict[str, Any]] | None = None,
+    baseline_registry_path: Path | None = None,
+    fail_on_baseline_missing: bool = False,
+    fail_on_validation_fail: bool = False,
     cross_batch_decoder_cache_bytes_override: int | None = None,
 ) -> dict[str, Any]:
     scenario_name = scenario["name"]
@@ -617,6 +732,57 @@ def run_scenario(
     if timeout_minutes is not None:
         result["timeout_minutes"] = timeout_minutes
 
+    baseline_check = {}
+    baseline_entry = None
+    try:
+        baseline_check = normalize_baseline_check(effective_scenario)
+        baseline_check, baseline_entry = resolve_baseline_entry(
+            baseline_check,
+            registry=baseline_registry,
+            registry_path=baseline_registry_path,
+        )
+        if baseline_entry is not None:
+            baseline_check = validate_baseline_entry(
+                baseline_entry,
+                status=baseline_check,
+            )
+    except Exception as exc:  # noqa: BLE001 - keep failure in scenario artifacts
+        baseline_check = {
+            **BASELINE_DISABLED,
+            "enabled": True,
+            "status": "baseline_invalid",
+            "passed": False,
+            "failure_reasons": [str(exc)],
+        }
+
+    if (
+        baseline_check.get("enabled")
+        and baseline_check.get("baseline_required", True)
+        and baseline_check.get("status") in {"baseline_missing", "baseline_invalid"}
+    ):
+        result["status"] = "baseline_invalid"
+        result["returncode"] = None
+        result["duration_seconds"] = 0.0
+        result["log_path"] = str(log_path)
+        result["baseline_check"] = baseline_check
+        row = build_scenario_metrics_row(
+            scenario=effective_scenario,
+            result=result,
+            baseline_status=baseline_check,
+        )
+        write_scenario_metrics(
+            scenario_root,
+            row,
+            baseline_status=baseline_check,
+        )
+        (scenario_root / "result.json").write_text(json.dumps(result, indent=2))
+        if fail_on_baseline_missing:
+            raise RuntimeError(
+                f"Required baseline invalid for scenario {scenario_name}: "
+                f"{baseline_check.get('failure_reasons')}"
+            )
+        return result
+
     start = time.time()
     with log_path.open("w", encoding="utf-8") as log_file:
         log_file.write(f"Scenario: {scenario_name}\n")
@@ -660,7 +826,50 @@ def run_scenario(
     )
     result["profiling_summary"] = _extract_benchmark_metrics(log_path)
     result["artifact_summary"] = _summarize_artifacts(run_output_dir)
+
+    comparison_metrics: dict[str, Any] = {}
+    if baseline_check.get("enabled"):
+        if result["status"] != "success":
+            baseline_check["status"] = "skipped_trace_failed"
+            baseline_check["passed"] = False
+            failure_reasons = baseline_check.setdefault("failure_reasons", [])
+            if isinstance(failure_reasons, list):
+                failure_reasons.append(f"trace status was {result['status']}")
+        elif baseline_check.get("status") in {"baseline_missing", "baseline_invalid"}:
+            baseline_check["passed"] = False
+        else:
+            baseline_check, comparison_metrics = run_baseline_comparison(
+                scenario_root=scenario_root,
+                current_artifacts=run_output_dir,
+                baseline_check=baseline_check,
+                baseline_entry=baseline_entry,
+            )
+    else:
+        baseline_check = dict(BASELINE_DISABLED)
+
+    result["baseline_check"] = baseline_check
+    row = build_scenario_metrics_row(
+        scenario=effective_scenario,
+        result=result,
+        baseline_status=baseline_check,
+        comparison_metrics=comparison_metrics,
+    )
+    write_scenario_metrics(
+        scenario_root,
+        row,
+        baseline_status=baseline_check,
+    )
     (scenario_root / "result.json").write_text(json.dumps(result, indent=2))
+    if (
+        fail_on_validation_fail
+        and baseline_check.get("enabled")
+        and baseline_check.get("passed") is False
+        and baseline_check.get("status") in {"gate_fail", "compare_error"}
+    ):
+        raise RuntimeError(
+            f"Baseline validation failed for scenario {scenario_name}: "
+            f"{baseline_check.get('failure_reasons')}"
+        )
     return result
 
 
@@ -734,9 +943,31 @@ def main() -> None:
         default=None,
         help="Optional free-text run goal",
     )
+    parser.add_argument(
+        "--baseline-registry",
+        type=Path,
+        default=None,
+        help="Optional pinned baseline registry used by scenario baseline_check blocks",
+    )
+    parser.add_argument(
+        "--fail-on-baseline-missing",
+        action="store_true",
+        help="Exit nonzero after writing artifacts if a required baseline is missing/invalid",
+    )
+    parser.add_argument(
+        "--fail-on-validation-fail",
+        action="store_true",
+        help="Exit nonzero after writing artifacts if a gate comparison fails",
+    )
     args = parser.parse_args()
 
     scenarios, metadata = load_scenarios(args.scenarios_file)
+    baseline_registry_path = args.baseline_registry
+    if baseline_registry_path is None and metadata.get("baseline_registry"):
+        baseline_registry_path = Path(str(metadata["baseline_registry"]))
+    baseline_registry = None
+    if baseline_registry_path is not None:
+        baseline_registry = load_baseline_registry(baseline_registry_path)
     run_metadata = {
         "run_id": _normalize_run_metadata_value(args.run_id)
         or _normalize_run_metadata_value(metadata.get("run_id")),
@@ -786,6 +1017,7 @@ def main() -> None:
         print(f"Run metadata: {json.dumps(run_metadata, indent=2)}")
 
     results = []
+    scenario_metric_rows: list[dict[str, Any]] = []
     for scenario in scenarios:
         name = scenario["name"]
         scenario_root = output_root if len(scenarios) == 1 else output_root / name
@@ -798,15 +1030,25 @@ def main() -> None:
             print(f"DRY RUN {name}: {shlex.join(cmd)}")
             continue
         print(f"\n{'=' * 80}\nRunning scenario: {name}\n{'=' * 80}")
-        results.append(
-            run_scenario(
-                output_root,
-                scenario,
-                env=env,
-                run_metadata=run_metadata,
-                cross_batch_decoder_cache_bytes_override=args.cross_batch_decoder_cache_bytes,
-            )
+        result = run_scenario(
+            output_root,
+            scenario,
+            env=env,
+            run_metadata=run_metadata,
+            baseline_registry=baseline_registry,
+            baseline_registry_path=baseline_registry_path,
+            fail_on_baseline_missing=args.fail_on_baseline_missing,
+            fail_on_validation_fail=args.fail_on_validation_fail,
+            cross_batch_decoder_cache_bytes_override=args.cross_batch_decoder_cache_bytes,
         )
+        results.append(result)
+        scenario_metrics_path = (
+            Path(result["output_dir"]).parent / "scenario_metrics.json"
+        )
+        if scenario_metrics_path.exists():
+            payload = json.loads(scenario_metrics_path.read_text())
+            if isinstance(payload.get("metrics"), dict):
+                scenario_metric_rows.append(payload["metrics"])
         print(
             f"Completed {name}: status={results[-1]['status']} duration={results[-1]['duration_seconds']:.2f}s"
         )
@@ -829,6 +1071,12 @@ def main() -> None:
     }
     summary_path = output_root / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2))
+    if (
+        args.scenario_index is None
+        and args.scenario_name is None
+        and scenario_metric_rows
+    ):
+        write_csv(output_root / "summary.csv", scenario_metric_rows)
     print(f"\nSummary written to {summary_path}")
 
 

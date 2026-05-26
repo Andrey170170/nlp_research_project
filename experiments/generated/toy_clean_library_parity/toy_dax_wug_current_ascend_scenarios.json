@@ -1,0 +1,68 @@
+{
+  "defaults": {
+    "completions": 1,
+    "temperature": 0.0,
+    "max_feature_nodes": 8192,
+    "max_edges": 20000,
+    "max_n_logits": 3,
+    "desired_logit_prob": 0.8,
+    "verbose_attribution": true,
+    "profile_attribution": true,
+    "profile_log_interval": 1,
+    "attribution_update_interval": 4,
+    "save_raw": false,
+    "no_offload": false,
+    "no_lazy_encoder": false,
+    "no_lazy_decoder": false,
+    "chunked_feature_replay_window": null,
+    "error_vector_prefetch_lookahead": null,
+    "stage_encoder_vecs_on_cpu": null,
+    "stage_error_vectors_on_cpu": null,
+    "row_subchunk_size": null,
+    "exact_trace_internal_dtype": "fp32",
+    "phase0_activation_threshold_compare_mode": "baseline",
+    "plan_feature_batch_size": false,
+    "auto_scale_feature_batch_size": false,
+    "feature_batch_size_max": null,
+    "feature_batch_target_reserved_fraction": 0.9,
+    "feature_batch_min_free_fraction": 0.05,
+    "feature_batch_probe_batches": 1,
+    "phase4_anomaly_debug": false,
+    "phase4_scheduler_mode": "locality",
+    "phase4_scheduler_debug": false,
+    "phase4_scheduler_telemetry_detail": "normal",
+    "phase4_refresh_optimization": "off",
+    "phase4_row_executor": "batched",
+    "cross_cluster_debug": false,
+    "telemetry_max_events": null,
+    "max_steps": 1,
+    "method": "exact"
+  },
+  "metadata": {
+    "cluster": "ascend",
+    "stage": "toy_clean_library_parity_current",
+    "tier": "fast",
+    "resource_profile": "standard",
+    "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast",
+    "notes": [
+      "One-step toy logic prompt for clean-library parity checks.",
+      "Current fork/chunked side of clean-vs-current comparison."
+    ]
+  },
+  "scenarios": [
+    {
+      "name": "toy_dax_wug_current_b128_c2048_cache0g",
+      "stage": "toy_clean_library_parity_current",
+      "cluster": "ascend",
+      "resource_profile": "standard",
+      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast",
+      "prepared_prompt_file": "experiments/generated/toy_clean_library_parity/dax_wug_prompt.txt",
+      "prepared_prompt_meta_file": "experiments/generated/toy_clean_library_parity/dax_wug_prompt_meta.json",
+      "attribution_batch_size": 128,
+      "feature_batch_size": 128,
+      "logit_batch_size": 128,
+      "decoder_chunk_size": 2048,
+      "cross_batch_decoder_cache_bytes": 0
+    }
+  ]
+}
