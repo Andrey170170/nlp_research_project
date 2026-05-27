@@ -366,13 +366,15 @@ def run_real_shard(
         trace = _trace_runtime_payload(spec=spec, shard_id=shard_id, metadata=metadata)
         trace["status"] = "running"
         trace["forced_target"] = forced_target_payload(spec)
-        trace["graph_path"] = str(graph_path)
         trace.update(_target_token_metadata(trajectory, spec))
         started = time.perf_counter()
         try:
             prefix_token_ids = reconstruct_prefix_token_ids(trajectory, spec)
             knobs = spec["graph_knobs"]
-            compact_result = attribute_nnsight(
+            save_raw_graph = bool(knobs.get("save_raw_graph", False))
+            raw_graph_path = token_dir / "graph.pt"
+            trace["graph_path"] = str(raw_graph_path if save_raw_graph else graph_path)
+            graph_result = attribute_nnsight(
                 prompt=torch.tensor(prefix_token_ids, dtype=torch.long),
                 model=model,
                 attribution_targets=torch.tensor(
@@ -395,15 +397,40 @@ def run_real_shard(
                 exact_trace_internal_dtype=str(
                     knobs.get("exact_trace_internal_dtype", "fp32")
                 ),
-                compact_output=True,
+                compact_output=not save_raw_graph,
             )
-            step = compact_result_to_step_data(
-                compact_result,
-                spec["generated_index"],
-                token_text=spec["target_token_text"],
-                max_edges=int(knobs.get("max_edges", 20000)),
-            )
-            circuit_utils.save_compact(step, graph_path)
+            if save_raw_graph:
+                raw_graph_path.parent.mkdir(parents=True, exist_ok=True)
+                graph_result.to_pt(str(raw_graph_path))
+                graph_summary: dict[str, Any] = {
+                    "saved": True,
+                    "graph_path": str(raw_graph_path),
+                    "format": "raw_graph_pt",
+                    "file_bytes": raw_graph_path.stat().st_size,
+                }
+                adjacency = getattr(graph_result, "adjacency_matrix", None)
+                if adjacency is not None:
+                    graph_summary["adjacency_shape"] = list(adjacency.shape)
+                    graph_summary["adjacency_dtype"] = str(adjacency.dtype)
+                active_features = getattr(graph_result, "active_features", None)
+                if active_features is not None:
+                    graph_summary["active_feature_count"] = int(
+                        active_features.shape[0]
+                    )
+                selected_features = getattr(graph_result, "selected_features", None)
+                if selected_features is not None:
+                    graph_summary["selected_feature_count"] = int(
+                        selected_features.numel()
+                    )
+            else:
+                step = compact_result_to_step_data(
+                    graph_result,
+                    spec["generated_index"],
+                    token_text=spec["target_token_text"],
+                    max_edges=int(knobs.get("max_edges", 20000)),
+                )
+                circuit_utils.save_compact(step, graph_path)
+                graph_summary = _graph_summary(step, graph_path)
             trace.update(
                 {
                     "status": "ok",
@@ -411,7 +438,7 @@ def run_real_shard(
                     "timings": {
                         "trace_seconds": time.perf_counter() - started,
                     },
-                    "graph_summary": _graph_summary(step, graph_path),
+                    "graph_summary": graph_summary,
                 }
             )
         except Exception as exc:  # pragma: no cover - exercised only in SLURM real mode
