@@ -61,6 +61,16 @@ _PHASE4_ROW_EXECUTOR_EFFECTIVE_BY_MODE: dict[str, str] = {
     "streaming_v1": "batched",
 }
 
+_PHASE4_ROW_REDUCTION_VERSION_BY_MODE: dict[str, str] = {
+    "off": "off_v1",
+    "gpu_v1": "gpu_v1_staged",
+}
+
+_PHASE4_ROW_REDUCTION_EFFECTIVE_BY_MODE: dict[str, str] = {
+    "off": "off",
+    "gpu_v1": "gpu_v1",
+}
+
 _PHASE1_TRACE_BATCH_POLICIES = {
     "legacy",
     "cap_effective_batches",
@@ -71,6 +81,11 @@ _PHASE4_REFRESH_POLICIES = {
     "deferred_v1",
 }
 
+_PHASE4_REFRESH_ACTIVE_ROW_ACCUMULATION_MODES = {
+    "zero_fill",
+    "direct_v1",
+}
+
 _PHASE4_RANKERS = {
     "argsort",
     "topk_v1",
@@ -79,6 +94,11 @@ _PHASE4_RANKERS = {
 _ROW_STORE_CACHE_CONTROLS = {
     "off",
     "fadvise_dontneed_after_append_v1",
+}
+
+_ROW_STORE_TEMP_ROOT_POLICIES = {
+    "default",
+    "env_node_local",
 }
 
 _EXACT_ENCODER_RESIDENCY_MODES = {
@@ -254,6 +274,48 @@ def parse_phase4_refresh_interval_multiplier(value: str) -> int:
     return normalized
 
 
+def _normalize_non_negative_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        try:
+            parsed = int(normalized)
+        except ValueError:
+            return None
+        return parsed if parsed >= 0 else None
+    return None
+
+
+def parse_non_negative_int(value: str) -> int:
+    normalized = _normalize_non_negative_int(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected a non-negative integer, got: {value!r}"
+        )
+    return normalized
+
+
+def _normalize_phase4_refresh_active_row_accumulation(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _PHASE4_REFRESH_ACTIVE_ROW_ACCUMULATION_MODES:
+        return None
+    return normalized
+
+
+def parse_phase4_refresh_active_row_accumulation(value: str) -> str:
+    normalized = _normalize_phase4_refresh_active_row_accumulation(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{zero_fill, direct_v1}}, got: {value!r}"
+        )
+    return normalized
+
+
 def _normalize_phase4_ranker(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
@@ -286,6 +348,24 @@ def parse_row_store_cache_control(value: str) -> str:
     if normalized is None:
         raise argparse.ArgumentTypeError(
             f"Expected one of {{off, fadvise_dontneed_after_append_v1}}, got: {value!r}"
+        )
+    return normalized
+
+
+def _normalize_row_store_temp_root_policy(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _ROW_STORE_TEMP_ROOT_POLICIES:
+        return None
+    return normalized
+
+
+def parse_row_store_temp_root_policy(value: str) -> str:
+    normalized = _normalize_row_store_temp_root_policy(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{default, env_node_local}}, got: {value!r}"
         )
     return normalized
 
@@ -406,6 +486,38 @@ def resolve_phase4_row_executor_effective(mode: Any) -> str | None:
     if normalized is None:
         return None
     return _PHASE4_ROW_EXECUTOR_EFFECTIVE_BY_MODE.get(normalized)
+
+
+def _normalize_phase4_row_reduction(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if normalized not in _PHASE4_ROW_REDUCTION_VERSION_BY_MODE:
+        return None
+    return normalized
+
+
+def parse_phase4_row_reduction(value: str) -> str:
+    normalized = _normalize_phase4_row_reduction(value)
+    if normalized is None:
+        raise argparse.ArgumentTypeError(
+            f"Expected one of {{off, gpu_v1}}, got: {value!r}"
+        )
+    return normalized
+
+
+def resolve_phase4_row_reduction_version(mode: Any) -> str | None:
+    normalized = _normalize_phase4_row_reduction(mode)
+    if normalized is None:
+        return None
+    return _PHASE4_ROW_REDUCTION_VERSION_BY_MODE.get(normalized)
+
+
+def resolve_phase4_row_reduction_effective(mode: Any) -> str | None:
+    normalized = _normalize_phase4_row_reduction(mode)
+    if normalized is None:
+        return None
+    return _PHASE4_ROW_REDUCTION_EFFECTIVE_BY_MODE.get(normalized)
 
 
 def resolve_phase4_scheduler_version(phase4_scheduler_mode: Any) -> str | None:
@@ -868,14 +980,20 @@ def extract_compact_chunked_attribution(
     telemetry_max_events: int | None = None,
     phase4_refresh_policy: str = "standard",
     phase4_refresh_interval_multiplier: int = 1,
+    phase4_refresh_prepared_chunk_cache_bytes: int = 0,
+    phase4_refresh_active_row_accumulation: str = "direct_v1",
     phase4_ranker: str = "argsort",
     row_store_cache_control: str = "off",
     exact_encoder_residency: str = "lazy",
     phase4_scheduler_mode: str = "locality",
     phase4_scheduler_debug: bool = False,
     phase4_scheduler_telemetry_detail: str = "normal",
-    phase4_refresh_optimization: str = "off",
+    phase4_refresh_optimization: str = "v1",
     phase4_row_executor: str = "batched",
+    phase4_row_reduction: str = "gpu_v1",
+    row_store_temp_root_policy: str = "default",
+    row_store_temp_root: str | None = None,
+    row_store_preallocate: bool = True,
 ) -> dict[str, Any]:
     gc.collect()
     if torch.cuda.is_available():
@@ -938,6 +1056,8 @@ def extract_compact_chunked_attribution(
         phase3_replay_validation_policy=phase3_replay_validation_policy,
         phase4_refresh_policy=phase4_refresh_policy,
         phase4_refresh_interval_multiplier=phase4_refresh_interval_multiplier,
+        phase4_refresh_prepared_chunk_cache_bytes=phase4_refresh_prepared_chunk_cache_bytes,
+        phase4_refresh_active_row_accumulation=phase4_refresh_active_row_accumulation,
         phase4_ranker=phase4_ranker,
         row_store_cache_control=row_store_cache_control,
         exact_encoder_residency=exact_encoder_residency,
@@ -946,6 +1066,10 @@ def extract_compact_chunked_attribution(
         phase4_scheduler_telemetry_detail=phase4_scheduler_telemetry_detail,
         phase4_refresh_optimization=phase4_refresh_optimization,
         phase4_row_executor=phase4_row_executor,
+        phase4_row_reduction=phase4_row_reduction,
+        row_store_temp_root_policy=row_store_temp_root_policy,
+        row_store_temp_root=row_store_temp_root,
+        row_store_preallocate=row_store_preallocate,
         compact_output=True,
         exact_trace_internal_dtype=exact_trace_internal_dtype,
         phase0_activation_threshold_compare_mode=phase0_activation_threshold_compare_mode,
@@ -1081,6 +1205,10 @@ def build_step_telemetry_records(
     phase4_row_executor_effective: str,
     phase4_row_executor_version_requested: str | None,
     phase4_row_executor_version_effective: str | None,
+    phase4_row_reduction_requested: str,
+    phase4_row_reduction_effective: str,
+    phase4_row_reduction_version_requested: str | None,
+    phase4_row_reduction_version_effective: str | None,
     events: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
@@ -1123,6 +1251,14 @@ def build_step_telemetry_records(
             "phase4_row_executor_version": phase4_row_executor_version_effective,
             "phase4_row_executor_version_requested": phase4_row_executor_version_requested,
             "phase4_row_executor_version_effective": phase4_row_executor_version_effective,
+            "phase4_row_reduction": phase4_row_reduction_effective,
+            "phase4_row_reduction_requested": phase4_row_reduction_requested,
+            "phase4_row_reduction_mode_requested": phase4_row_reduction_requested,
+            "phase4_row_reduction_effective": phase4_row_reduction_effective,
+            "phase4_row_reduction_mode_effective": phase4_row_reduction_effective,
+            "phase4_row_reduction_version": phase4_row_reduction_version_effective,
+            "phase4_row_reduction_version_requested": phase4_row_reduction_version_requested,
+            "phase4_row_reduction_version_effective": phase4_row_reduction_version_effective,
         }
         record.update(event)
         records.append(record)
@@ -1220,14 +1356,20 @@ def trace_completion_compact_chunked(
     telemetry_max_events: int | None = None,
     phase4_refresh_policy: str = "standard",
     phase4_refresh_interval_multiplier: int = 1,
+    phase4_refresh_prepared_chunk_cache_bytes: int = 0,
+    phase4_refresh_active_row_accumulation: str = "direct_v1",
     phase4_ranker: str = "argsort",
     row_store_cache_control: str = "off",
     exact_encoder_residency: str = "lazy",
     phase4_scheduler_mode: str = "locality",
     phase4_scheduler_debug: bool = False,
     phase4_scheduler_telemetry_detail: str = "normal",
-    phase4_refresh_optimization: str = "off",
+    phase4_refresh_optimization: str = "v1",
     phase4_row_executor: str = "batched",
+    phase4_row_reduction: str = "gpu_v1",
+    row_store_temp_root_policy: str = "default",
+    row_store_temp_root: str | None = None,
+    row_store_preallocate: bool = True,
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
     fixture_name: str | None = None,
@@ -1275,6 +1417,10 @@ def trace_completion_compact_chunked(
     observed_phase4_row_executor_effective: list[str] = []
     observed_phase4_row_executor_versions_requested: list[str] = []
     observed_phase4_row_executor_versions_effective: list[str] = []
+    observed_phase4_row_reduction_requested: list[str] = []
+    observed_phase4_row_reduction_effective: list[str] = []
+    observed_phase4_row_reduction_versions_requested: list[str] = []
+    observed_phase4_row_reduction_versions_effective: list[str] = []
     observed_phase1_trace_batch_policies_requested: list[str] = []
     observed_phase1_trace_batch_policies_effective: list[str] = []
     observed_phase1_trace_batch_size_max_requested: list[int | None] = []
@@ -1283,6 +1429,13 @@ def trace_completion_compact_chunked(
     observed_phase4_refresh_policies_effective: list[str] = []
     observed_phase4_refresh_interval_multipliers_requested: list[int] = []
     observed_phase4_refresh_interval_multipliers_effective: list[int] = []
+    observed_phase4_refresh_prepared_chunk_cache_bytes_requested: list[int] = []
+    observed_phase4_refresh_prepared_chunk_cache_bytes_effective: list[int] = []
+    observed_phase4_refresh_prepared_chunk_cache_enabled: list[bool] = []
+    observed_phase4_refresh_active_row_accumulation_requested: list[str] = []
+    observed_phase4_refresh_active_row_accumulation_effective: list[str] = []
+    observed_phase4_refresh_active_row_accumulation_fallback_reasons: list[str] = []
+    observed_phase4_refresh_active_row_accumulation_applicable: list[bool] = []
     observed_phase4_rankers_requested: list[str] = []
     observed_phase4_rankers_effective: list[str] = []
     observed_row_store_cache_controls_requested: list[str] = []
@@ -1389,6 +1542,8 @@ def trace_completion_compact_chunked(
             telemetry_max_events=telemetry_max_events,
             phase4_refresh_policy=phase4_refresh_policy,
             phase4_refresh_interval_multiplier=phase4_refresh_interval_multiplier,
+            phase4_refresh_prepared_chunk_cache_bytes=phase4_refresh_prepared_chunk_cache_bytes,
+            phase4_refresh_active_row_accumulation=phase4_refresh_active_row_accumulation,
             phase4_ranker=phase4_ranker,
             row_store_cache_control=row_store_cache_control,
             exact_encoder_residency=exact_encoder_residency,
@@ -1397,6 +1552,10 @@ def trace_completion_compact_chunked(
             phase4_scheduler_telemetry_detail=phase4_scheduler_telemetry_detail,
             phase4_refresh_optimization=phase4_refresh_optimization,
             phase4_row_executor=phase4_row_executor,
+            phase4_row_reduction=phase4_row_reduction,
+            row_store_temp_root_policy=row_store_temp_root_policy,
+            row_store_temp_root=row_store_temp_root,
+            row_store_preallocate=row_store_preallocate,
         )
         attribution_seconds = time.perf_counter() - attribution_start
 
@@ -1533,6 +1692,97 @@ def trace_completion_compact_chunked(
         )
         observed_phase4_refresh_interval_multipliers_effective.append(
             resolved_phase4_refresh_interval_multiplier_effective
+        )
+
+        resolved_phase4_refresh_prepared_chunk_cache_bytes_requested = (
+            _normalize_non_negative_int(
+                compact_result.get(
+                    "phase4_refresh_prepared_chunk_cache_bytes_requested"
+                )
+            )
+            if compact_result.get("phase4_refresh_prepared_chunk_cache_bytes_requested")
+            is not None
+            else None
+        )
+        if resolved_phase4_refresh_prepared_chunk_cache_bytes_requested is None:
+            resolved_phase4_refresh_prepared_chunk_cache_bytes_requested = (
+                _normalize_non_negative_int(
+                    compact_result.get("phase4_refresh_prepared_chunk_cache_bytes")
+                )
+                if compact_result.get("phase4_refresh_prepared_chunk_cache_bytes")
+                is not None
+                else phase4_refresh_prepared_chunk_cache_bytes
+            )
+        if resolved_phase4_refresh_prepared_chunk_cache_bytes_requested is None:
+            resolved_phase4_refresh_prepared_chunk_cache_bytes_requested = 0
+        observed_phase4_refresh_prepared_chunk_cache_bytes_requested.append(
+            resolved_phase4_refresh_prepared_chunk_cache_bytes_requested
+        )
+        resolved_phase4_refresh_prepared_chunk_cache_bytes_effective = (
+            _normalize_non_negative_int(
+                compact_result.get(
+                    "phase4_refresh_prepared_chunk_cache_bytes_effective"
+                )
+            )
+            if compact_result.get("phase4_refresh_prepared_chunk_cache_bytes_effective")
+            is not None
+            else None
+        )
+        if resolved_phase4_refresh_prepared_chunk_cache_bytes_effective is None:
+            resolved_phase4_refresh_prepared_chunk_cache_bytes_effective = (
+                resolved_phase4_refresh_prepared_chunk_cache_bytes_requested
+            )
+        observed_phase4_refresh_prepared_chunk_cache_bytes_effective.append(
+            resolved_phase4_refresh_prepared_chunk_cache_bytes_effective
+        )
+        observed_phase4_refresh_prepared_chunk_cache_enabled.append(
+            bool(
+                compact_result.get(
+                    "phase4_refresh_prepared_chunk_cache_enabled",
+                    resolved_phase4_refresh_prepared_chunk_cache_bytes_effective > 0,
+                )
+            )
+        )
+
+        resolved_phase4_refresh_active_row_accumulation_requested = (
+            _normalize_phase4_refresh_active_row_accumulation(
+                compact_result.get("phase4_refresh_active_row_accumulation_requested")
+            )
+            or _normalize_phase4_refresh_active_row_accumulation(
+                compact_result.get("phase4_refresh_active_row_accumulation")
+            )
+            or phase4_refresh_active_row_accumulation
+        )
+        observed_phase4_refresh_active_row_accumulation_requested.append(
+            resolved_phase4_refresh_active_row_accumulation_requested
+        )
+        resolved_phase4_refresh_active_row_accumulation_effective = (
+            _normalize_phase4_refresh_active_row_accumulation(
+                compact_result.get("phase4_refresh_active_row_accumulation_effective")
+            )
+            or _normalize_phase4_refresh_active_row_accumulation(
+                compact_result.get("phase4_refresh_active_row_accumulation")
+            )
+            or resolved_phase4_refresh_active_row_accumulation_requested
+        )
+        observed_phase4_refresh_active_row_accumulation_effective.append(
+            resolved_phase4_refresh_active_row_accumulation_effective
+        )
+        resolved_phase4_refresh_active_row_accumulation_fallback_reason = (
+            compact_result.get("phase4_refresh_active_row_accumulation_fallback_reason")
+        )
+        if isinstance(
+            resolved_phase4_refresh_active_row_accumulation_fallback_reason, str
+        ):
+            observed_phase4_refresh_active_row_accumulation_fallback_reasons.append(
+                resolved_phase4_refresh_active_row_accumulation_fallback_reason
+            )
+        observed_phase4_refresh_active_row_accumulation_applicable.append(
+            bool(
+                compact_result.get(
+                    "phase4_refresh_active_row_accumulation_applicable", True
+                )
+            )
         )
 
         resolved_phase4_ranker_requested = (
@@ -1849,6 +2099,75 @@ def trace_completion_compact_chunked(
                 resolved_phase4_row_executor_version_effective
             )
 
+        resolved_phase4_row_reduction_requested = (
+            _normalize_phase4_row_reduction(
+                compact_result.get("phase4_row_reduction_mode_requested")
+            )
+            or _normalize_phase4_row_reduction(
+                compact_result.get("phase4_row_reduction_requested")
+            )
+            or _normalize_phase4_row_reduction(
+                compact_result.get("phase4_row_reduction")
+            )
+            or phase4_row_reduction
+        )
+        observed_phase4_row_reduction_requested.append(
+            resolved_phase4_row_reduction_requested
+        )
+        resolved_phase4_row_reduction_effective = (
+            _normalize_phase4_row_reduction(
+                compact_result.get("phase4_row_reduction_mode_effective")
+            )
+            or _normalize_phase4_row_reduction(
+                compact_result.get("phase4_row_reduction_effective")
+            )
+            or resolve_phase4_row_reduction_effective(
+                resolved_phase4_row_reduction_requested
+            )
+            or resolved_phase4_row_reduction_requested
+        )
+        observed_phase4_row_reduction_effective.append(
+            resolved_phase4_row_reduction_effective
+        )
+        resolved_phase4_row_reduction_version_requested = compact_result.get(
+            "phase4_row_reduction_version_requested"
+        )
+        if not isinstance(resolved_phase4_row_reduction_version_requested, str):
+            resolved_phase4_row_reduction_version_requested = compact_result.get(
+                "phase4_row_reduction_version"
+            )
+        if not isinstance(resolved_phase4_row_reduction_version_requested, str):
+            resolved_phase4_row_reduction_version_requested = (
+                resolve_phase4_row_reduction_version(
+                    resolved_phase4_row_reduction_requested
+                )
+            )
+        if isinstance(resolved_phase4_row_reduction_version_requested, str):
+            observed_phase4_row_reduction_versions_requested.append(
+                resolved_phase4_row_reduction_version_requested
+            )
+        resolved_phase4_row_reduction_version_effective = compact_result.get(
+            "phase4_row_reduction_version_effective"
+        )
+        if not isinstance(resolved_phase4_row_reduction_version_effective, str):
+            resolved_phase4_row_reduction_version_effective = compact_result.get(
+                "phase4_row_reduction_effective_version"
+            )
+        if not isinstance(resolved_phase4_row_reduction_version_effective, str):
+            resolved_phase4_row_reduction_version_effective = compact_result.get(
+                "phase4_row_reduction_version"
+            )
+        if not isinstance(resolved_phase4_row_reduction_version_effective, str):
+            resolved_phase4_row_reduction_version_effective = (
+                resolve_phase4_row_reduction_version(
+                    resolved_phase4_row_reduction_effective
+                )
+            )
+        if isinstance(resolved_phase4_row_reduction_version_effective, str):
+            observed_phase4_row_reduction_versions_effective.append(
+                resolved_phase4_row_reduction_version_effective
+            )
+
         attribution_telemetry_summary = base.summarize_attribution_telemetry(
             compact_result.get("telemetry_summary")
         )
@@ -1892,6 +2211,10 @@ def trace_completion_compact_chunked(
             phase4_row_executor_effective=resolved_phase4_row_executor_effective,
             phase4_row_executor_version_requested=resolved_phase4_row_executor_version_requested,
             phase4_row_executor_version_effective=resolved_phase4_row_executor_version_effective,
+            phase4_row_reduction_requested=resolved_phase4_row_reduction_requested,
+            phase4_row_reduction_effective=resolved_phase4_row_reduction_effective,
+            phase4_row_reduction_version_requested=resolved_phase4_row_reduction_version_requested,
+            phase4_row_reduction_version_effective=resolved_phase4_row_reduction_version_effective,
             events=telemetry_events,
         )
         telemetry_events_written += base.append_jsonl_records(
@@ -2393,6 +2716,19 @@ def trace_completion_compact_chunked(
             "phase4_refresh_interval_multiplier": resolved_phase4_refresh_interval_multiplier_effective,
             "phase4_refresh_interval_multiplier_requested": resolved_phase4_refresh_interval_multiplier_requested,
             "phase4_refresh_interval_multiplier_effective": resolved_phase4_refresh_interval_multiplier_effective,
+            "phase4_refresh_prepared_chunk_cache_bytes": resolved_phase4_refresh_prepared_chunk_cache_bytes_effective,
+            "phase4_refresh_prepared_chunk_cache_bytes_requested": resolved_phase4_refresh_prepared_chunk_cache_bytes_requested,
+            "phase4_refresh_prepared_chunk_cache_bytes_effective": resolved_phase4_refresh_prepared_chunk_cache_bytes_effective,
+            "phase4_refresh_prepared_chunk_cache_enabled": observed_phase4_refresh_prepared_chunk_cache_enabled[
+                -1
+            ],
+            "phase4_refresh_active_row_accumulation": resolved_phase4_refresh_active_row_accumulation_effective,
+            "phase4_refresh_active_row_accumulation_requested": resolved_phase4_refresh_active_row_accumulation_requested,
+            "phase4_refresh_active_row_accumulation_effective": resolved_phase4_refresh_active_row_accumulation_effective,
+            "phase4_refresh_active_row_accumulation_fallback_reason": resolved_phase4_refresh_active_row_accumulation_fallback_reason,
+            "phase4_refresh_active_row_accumulation_applicable": observed_phase4_refresh_active_row_accumulation_applicable[
+                -1
+            ],
             "phase4_ranker": resolved_phase4_ranker_effective,
             "phase4_ranker_requested": resolved_phase4_ranker_requested,
             "phase4_ranker_effective": resolved_phase4_ranker_effective,
@@ -2583,6 +2919,18 @@ def trace_completion_compact_chunked(
     unique_phase4_refresh_interval_multipliers_effective = sorted(
         set(observed_phase4_refresh_interval_multipliers_effective)
     )
+    unique_phase4_refresh_prepared_chunk_cache_bytes_requested = sorted(
+        set(observed_phase4_refresh_prepared_chunk_cache_bytes_requested)
+    )
+    unique_phase4_refresh_prepared_chunk_cache_bytes_effective = sorted(
+        set(observed_phase4_refresh_prepared_chunk_cache_bytes_effective)
+    )
+    unique_phase4_refresh_active_row_accumulation_requested = sorted(
+        set(observed_phase4_refresh_active_row_accumulation_requested)
+    )
+    unique_phase4_refresh_active_row_accumulation_effective = sorted(
+        set(observed_phase4_refresh_active_row_accumulation_effective)
+    )
     unique_phase4_rankers_requested = sorted(set(observed_phase4_rankers_requested))
     unique_phase4_rankers_effective = sorted(set(observed_phase4_rankers_effective))
     unique_row_store_cache_controls_requested = sorted(
@@ -2641,6 +2989,18 @@ def trace_completion_compact_chunked(
     )
     unique_phase4_row_executor_versions_effective = sorted(
         set(observed_phase4_row_executor_versions_effective)
+    )
+    unique_phase4_row_reduction_requested = sorted(
+        set(observed_phase4_row_reduction_requested)
+    )
+    unique_phase4_row_reduction_effective = sorted(
+        set(observed_phase4_row_reduction_effective)
+    )
+    unique_phase4_row_reduction_versions_requested = sorted(
+        set(observed_phase4_row_reduction_versions_requested)
+    )
+    unique_phase4_row_reduction_versions_effective = sorted(
+        set(observed_phase4_row_reduction_versions_effective)
     )
     completion_end_to_end_seconds = time.perf_counter() - trace_start_perf
     if cross_cluster_debug and not cross_cluster_debug_artifacts_captured:
@@ -2824,6 +3184,60 @@ def trace_completion_compact_chunked(
         "phase4_refresh_interval_multipliers_effective_observed": (
             unique_phase4_refresh_interval_multipliers_effective
         ),
+        "phase4_refresh_prepared_chunk_cache_bytes": phase4_refresh_prepared_chunk_cache_bytes,
+        "phase4_refresh_prepared_chunk_cache_bytes_requested": (
+            observed_phase4_refresh_prepared_chunk_cache_bytes_requested[-1]
+            if observed_phase4_refresh_prepared_chunk_cache_bytes_requested
+            else phase4_refresh_prepared_chunk_cache_bytes
+        ),
+        "phase4_refresh_prepared_chunk_cache_bytes_effective": (
+            observed_phase4_refresh_prepared_chunk_cache_bytes_effective[-1]
+            if observed_phase4_refresh_prepared_chunk_cache_bytes_effective
+            else phase4_refresh_prepared_chunk_cache_bytes
+        ),
+        "phase4_refresh_prepared_chunk_cache_bytes_requested_observed": (
+            unique_phase4_refresh_prepared_chunk_cache_bytes_requested
+        ),
+        "phase4_refresh_prepared_chunk_cache_bytes_effective_observed": (
+            unique_phase4_refresh_prepared_chunk_cache_bytes_effective
+        ),
+        "phase4_refresh_prepared_chunk_cache_enabled": (
+            observed_phase4_refresh_prepared_chunk_cache_enabled[-1]
+            if observed_phase4_refresh_prepared_chunk_cache_enabled
+            else phase4_refresh_prepared_chunk_cache_bytes > 0
+        ),
+        "phase4_refresh_active_row_accumulation": phase4_refresh_active_row_accumulation,
+        "phase4_refresh_active_row_accumulation_requested": (
+            observed_phase4_refresh_active_row_accumulation_requested[-1]
+            if observed_phase4_refresh_active_row_accumulation_requested
+            else phase4_refresh_active_row_accumulation
+        ),
+        "phase4_refresh_active_row_accumulation_effective": (
+            observed_phase4_refresh_active_row_accumulation_effective[-1]
+            if observed_phase4_refresh_active_row_accumulation_effective
+            else phase4_refresh_active_row_accumulation
+        ),
+        "phase4_refresh_active_row_accumulation_requested_observed": (
+            unique_phase4_refresh_active_row_accumulation_requested
+        ),
+        "phase4_refresh_active_row_accumulation_effective_observed": (
+            unique_phase4_refresh_active_row_accumulation_effective
+        ),
+        "phase4_refresh_active_row_accumulation_fallback_reason": (
+            observed_phase4_refresh_active_row_accumulation_fallback_reasons[-1]
+            if observed_phase4_refresh_active_row_accumulation_fallback_reasons
+            else None
+        ),
+        "phase4_refresh_active_row_accumulation_fallback_reasons_observed": (
+            sorted(
+                set(observed_phase4_refresh_active_row_accumulation_fallback_reasons)
+            )
+        ),
+        "phase4_refresh_active_row_accumulation_applicable": (
+            observed_phase4_refresh_active_row_accumulation_applicable[-1]
+            if observed_phase4_refresh_active_row_accumulation_applicable
+            else True
+        ),
         "phase4_ranker": phase4_ranker,
         "phase4_ranker_requested": (
             observed_phase4_rankers_requested[-1]
@@ -2854,6 +3268,12 @@ def trace_completion_compact_chunked(
         "row_store_cache_controls_effective_observed": (
             unique_row_store_cache_controls_effective
         ),
+        "row_store_temp_root_policy": row_store_temp_root_policy,
+        "row_store_temp_root_policy_requested": row_store_temp_root_policy,
+        "row_store_temp_root": row_store_temp_root,
+        "row_store_temp_root_requested": row_store_temp_root,
+        "row_store_preallocate": row_store_preallocate,
+        "row_store_preallocate_requested": row_store_preallocate,
         "exact_encoder_residency": exact_encoder_residency,
         "exact_encoder_residency_requested": (
             observed_exact_encoder_residency_requested[-1]
@@ -3117,6 +3537,74 @@ def trace_completion_compact_chunked(
         ),
         "phase4_row_executor_versions_effective_observed": (
             unique_phase4_row_executor_versions_effective
+        ),
+        "phase4_row_reduction": phase4_row_reduction,
+        "phase4_row_reduction_requested": (
+            observed_phase4_row_reduction_requested[-1]
+            if observed_phase4_row_reduction_requested
+            else phase4_row_reduction
+        ),
+        "phase4_row_reduction_mode_requested": (
+            observed_phase4_row_reduction_requested[-1]
+            if observed_phase4_row_reduction_requested
+            else phase4_row_reduction
+        ),
+        "phase4_row_reduction_effective": (
+            observed_phase4_row_reduction_effective[-1]
+            if observed_phase4_row_reduction_effective
+            else resolve_phase4_row_reduction_effective(phase4_row_reduction)
+            or phase4_row_reduction
+        ),
+        "phase4_row_reduction_mode_effective": (
+            observed_phase4_row_reduction_effective[-1]
+            if observed_phase4_row_reduction_effective
+            else resolve_phase4_row_reduction_effective(phase4_row_reduction)
+            or phase4_row_reduction
+        ),
+        "phase4_row_reduction_version": (
+            observed_phase4_row_reduction_versions_effective[-1]
+            if observed_phase4_row_reduction_versions_effective
+            else resolve_phase4_row_reduction_version(
+                resolve_phase4_row_reduction_effective(phase4_row_reduction)
+                or phase4_row_reduction
+            )
+        ),
+        "phase4_row_reduction_version_requested": (
+            observed_phase4_row_reduction_versions_requested[-1]
+            if observed_phase4_row_reduction_versions_requested
+            else resolve_phase4_row_reduction_version(phase4_row_reduction)
+        ),
+        "phase4_row_reduction_version_effective": (
+            observed_phase4_row_reduction_versions_effective[-1]
+            if observed_phase4_row_reduction_versions_effective
+            else resolve_phase4_row_reduction_version(
+                resolve_phase4_row_reduction_effective(phase4_row_reduction)
+                or phase4_row_reduction
+            )
+        ),
+        "phase4_row_reduction_effective_version": (
+            observed_phase4_row_reduction_versions_effective[-1]
+            if observed_phase4_row_reduction_versions_effective
+            else resolve_phase4_row_reduction_version(
+                resolve_phase4_row_reduction_effective(phase4_row_reduction)
+                or phase4_row_reduction
+            )
+        ),
+        "phase4_row_reduction_modes_observed": unique_phase4_row_reduction_effective,
+        "phase4_row_reduction_modes_requested_observed": (
+            unique_phase4_row_reduction_requested
+        ),
+        "phase4_row_reduction_modes_effective_observed": (
+            unique_phase4_row_reduction_effective
+        ),
+        "phase4_row_reduction_versions_observed": (
+            unique_phase4_row_reduction_versions_effective
+        ),
+        "phase4_row_reduction_versions_requested_observed": (
+            unique_phase4_row_reduction_versions_requested
+        ),
+        "phase4_row_reduction_versions_effective_observed": (
+            unique_phase4_row_reduction_versions_effective
         ),
         "sparsification": (
             {
@@ -3422,7 +3910,10 @@ def run_pipeline(args: argparse.Namespace) -> None:
         or args.phase4_scheduler_debug
         or args.phase4_scheduler_telemetry_detail != "normal"
         or args.phase4_refresh_optimization != "off"
+        or args.phase4_refresh_prepared_chunk_cache_bytes != 0
+        or args.phase4_refresh_active_row_accumulation != "zero_fill"
         or args.phase4_row_executor != "batched"
+        or args.phase4_row_reduction != "off"
     ):
         raise ValueError(
             "Exact-mode execution controls currently support only compact exact-chunked output. "
@@ -3559,12 +4050,27 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "phase4_refresh_interval_multiplier": args.phase4_refresh_interval_multiplier,
         "phase4_refresh_interval_multiplier_requested": args.phase4_refresh_interval_multiplier,
         "phase4_refresh_interval_multiplier_effective": args.phase4_refresh_interval_multiplier,
+        "phase4_refresh_prepared_chunk_cache_bytes": args.phase4_refresh_prepared_chunk_cache_bytes,
+        "phase4_refresh_prepared_chunk_cache_bytes_requested": args.phase4_refresh_prepared_chunk_cache_bytes,
+        "phase4_refresh_prepared_chunk_cache_bytes_effective": args.phase4_refresh_prepared_chunk_cache_bytes,
+        "phase4_refresh_prepared_chunk_cache_enabled": args.phase4_refresh_prepared_chunk_cache_bytes
+        > 0,
+        "phase4_refresh_active_row_accumulation": args.phase4_refresh_active_row_accumulation,
+        "phase4_refresh_active_row_accumulation_requested": args.phase4_refresh_active_row_accumulation,
+        "phase4_refresh_active_row_accumulation_effective": args.phase4_refresh_active_row_accumulation,
+        "phase4_refresh_active_row_accumulation_applicable": True,
         "phase4_ranker": args.phase4_ranker,
         "phase4_ranker_requested": args.phase4_ranker,
         "phase4_ranker_effective": args.phase4_ranker,
         "row_store_cache_control": args.row_store_cache_control,
         "row_store_cache_control_requested": args.row_store_cache_control,
         "row_store_cache_control_effective": args.row_store_cache_control,
+        "row_store_temp_root_policy": args.row_store_temp_root_policy,
+        "row_store_temp_root_policy_requested": args.row_store_temp_root_policy,
+        "row_store_temp_root": args.row_store_temp_root,
+        "row_store_temp_root_requested": args.row_store_temp_root,
+        "row_store_preallocate": args.row_store_preallocate,
+        "row_store_preallocate_requested": args.row_store_preallocate,
         "exact_encoder_residency": args.exact_encoder_residency,
         "exact_encoder_residency_requested": args.exact_encoder_residency,
         "exact_encoder_residency_effective": args.exact_encoder_residency,
@@ -3676,6 +4182,32 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "phase4_row_executor_effective_version": resolve_phase4_row_executor_version(
             resolve_phase4_row_executor_effective(args.phase4_row_executor)
             or args.phase4_row_executor
+        ),
+        "phase4_row_reduction": args.phase4_row_reduction,
+        "phase4_row_reduction_requested": args.phase4_row_reduction,
+        "phase4_row_reduction_mode_requested": args.phase4_row_reduction,
+        "phase4_row_reduction_effective": (
+            resolve_phase4_row_reduction_effective(args.phase4_row_reduction)
+            or args.phase4_row_reduction
+        ),
+        "phase4_row_reduction_mode_effective": (
+            resolve_phase4_row_reduction_effective(args.phase4_row_reduction)
+            or args.phase4_row_reduction
+        ),
+        "phase4_row_reduction_version": resolve_phase4_row_reduction_version(
+            resolve_phase4_row_reduction_effective(args.phase4_row_reduction)
+            or args.phase4_row_reduction
+        ),
+        "phase4_row_reduction_version_requested": resolve_phase4_row_reduction_version(
+            args.phase4_row_reduction
+        ),
+        "phase4_row_reduction_version_effective": resolve_phase4_row_reduction_version(
+            resolve_phase4_row_reduction_effective(args.phase4_row_reduction)
+            or args.phase4_row_reduction
+        ),
+        "phase4_row_reduction_effective_version": resolve_phase4_row_reduction_version(
+            resolve_phase4_row_reduction_effective(args.phase4_row_reduction)
+            or args.phase4_row_reduction
         ),
         "prepared_prompt_file": args.prepared_prompt_file,
         "prepared_prompt_meta_file": args.prepared_prompt_meta_file,
@@ -3798,6 +4330,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
                         "phase1_trace_batch_size_max": args.phase1_trace_batch_size_max,
                         "phase4_refresh_policy": args.phase4_refresh_policy,
                         "phase4_refresh_interval_multiplier": args.phase4_refresh_interval_multiplier,
+                        "phase4_refresh_prepared_chunk_cache_bytes": args.phase4_refresh_prepared_chunk_cache_bytes,
+                        "phase4_refresh_active_row_accumulation": args.phase4_refresh_active_row_accumulation,
                         "phase4_ranker": args.phase4_ranker,
                         "row_store_cache_control": args.row_store_cache_control,
                         "exact_encoder_residency": args.exact_encoder_residency,
@@ -3806,6 +4340,10 @@ def run_pipeline(args: argparse.Namespace) -> None:
                         "phase4_scheduler_telemetry_detail": args.phase4_scheduler_telemetry_detail,
                         "phase4_refresh_optimization": args.phase4_refresh_optimization,
                         "phase4_row_executor": args.phase4_row_executor,
+                        "phase4_row_reduction": args.phase4_row_reduction,
+                        "row_store_temp_root_policy": args.row_store_temp_root_policy,
+                        "row_store_temp_root": args.row_store_temp_root,
+                        "row_store_preallocate": args.row_store_preallocate,
                     }
                     if not args.save_raw
                     else {}
@@ -3962,8 +4500,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--cross-batch-decoder-cache-bytes",
         type=int,
-        default=None,
-        help="Optional Phase-4 cross-batch decoder cache budget in bytes",
+        default=8589934592,
+        help=(
+            "Phase-4 cross-batch decoder cache budget in bytes "
+            "(default 8589934592; set 0 for strict cache0 fallback)"
+        ),
     )
     parser.add_argument(
         "--chunked-feature-replay-window",
@@ -4076,6 +4617,21 @@ if __name__ == "__main__":
         help="Positive integer multiplier for Phase-4 refresh interval",
     )
     parser.add_argument(
+        "--phase4-refresh-prepared-chunk-cache-bytes",
+        type=parse_non_negative_int,
+        default=0,
+        help=(
+            "Experimental/retired Phase-4 refresh prepared-chunk cache budget "
+            "in bytes (default 0 disables)"
+        ),
+    )
+    parser.add_argument(
+        "--phase4-refresh-active-row-accumulation",
+        type=parse_phase4_refresh_active_row_accumulation,
+        default="direct_v1",
+        help="Phase-4 refresh active-row accumulation mode (zero_fill or direct_v1)",
+    )
+    parser.add_argument(
         "--phase4-ranker",
         type=parse_phase4_ranker,
         default="argsort",
@@ -4086,6 +4642,23 @@ if __name__ == "__main__":
         type=parse_row_store_cache_control,
         default="off",
         help=("Row-store cache-control mode (off or fadvise_dontneed_after_append_v1)"),
+    )
+    parser.add_argument(
+        "--row-store-temp-root-policy",
+        type=parse_row_store_temp_root_policy,
+        default="default",
+        help="Row-store temp-root policy (default or env_node_local)",
+    )
+    parser.add_argument(
+        "--row-store-temp-root",
+        default=None,
+        help="Optional explicit row-store temp root path",
+    )
+    parser.add_argument(
+        "--row-store-preallocate",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable row-store file preallocation (default; use --no-row-store-preallocate to disable)",
     )
     parser.add_argument(
         "--exact-encoder-residency",
@@ -4126,14 +4699,20 @@ if __name__ == "__main__":
     parser.add_argument(
         "--phase4-refresh-optimization",
         type=parse_phase4_refresh_optimization,
-        default="off",
-        help="Phase-4 refresh optimization mode (off, v1)",
+        default="v1",
+        help="Phase-4 refresh optimization mode (default v1; use off for reference path)",
     )
     parser.add_argument(
         "--phase4-row-executor",
         type=parse_phase4_row_executor,
         default="batched",
         help="Phase-4 row execution mode (batched, streaming_v1)",
+    )
+    parser.add_argument(
+        "--phase4-row-reduction",
+        type=parse_phase4_row_reduction,
+        default="gpu_v1",
+        help="Phase-4 row-reduction backend (gpu_v1 staged path by default; off for CPU reference)",
     )
     parser.add_argument(
         "--cross-cluster-debug",

@@ -501,6 +501,20 @@ def build_command(
                     str(scenario["phase4_refresh_interval_multiplier"]),
                 ]
             )
+        if scenario.get("phase4_refresh_prepared_chunk_cache_bytes") is not None:
+            cmd.extend(
+                [
+                    "--phase4-refresh-prepared-chunk-cache-bytes",
+                    str(scenario["phase4_refresh_prepared_chunk_cache_bytes"]),
+                ]
+            )
+        if scenario.get("phase4_refresh_active_row_accumulation") is not None:
+            cmd.extend(
+                [
+                    "--phase4-refresh-active-row-accumulation",
+                    str(scenario["phase4_refresh_active_row_accumulation"]),
+                ]
+            )
         if scenario.get("phase4_ranker") is not None:
             cmd.extend(["--phase4-ranker", str(scenario["phase4_ranker"])])
         if scenario.get("row_store_cache_control") is not None:
@@ -510,6 +524,17 @@ def build_command(
                     str(scenario["row_store_cache_control"]),
                 ]
             )
+        if scenario.get("row_store_temp_root_policy") is not None:
+            cmd.extend(
+                [
+                    "--row-store-temp-root-policy",
+                    str(scenario["row_store_temp_root_policy"]),
+                ]
+            )
+        if scenario.get("row_store_temp_root") is not None:
+            cmd.extend(["--row-store-temp-root", str(scenario["row_store_temp_root"])])
+        if scenario.get("row_store_preallocate", False):
+            cmd.append("--row-store-preallocate")
         if scenario.get("exact_encoder_residency") is not None:
             cmd.extend(
                 [
@@ -545,6 +570,13 @@ def build_command(
                 [
                     "--phase4-row-executor",
                     str(scenario["phase4_row_executor"]),
+                ]
+            )
+        if scenario.get("phase4_row_reduction") is not None:
+            cmd.extend(
+                [
+                    "--phase4-row-reduction",
+                    str(scenario["phase4_row_reduction"]),
                 ]
             )
         if scenario.get("cross_cluster_debug", False):

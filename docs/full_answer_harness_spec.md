@@ -192,6 +192,7 @@ One JSON object per selected generated token:
   "trace_id": "traj828_tok000017",
   "trajectory_id": "...",
   "generated_index": 17,
+  "target_position": 140,
   "prefix_token_count": 140,
   "target_token_id": 12345,
   "target_token_text": "42",
@@ -206,8 +207,12 @@ One JSON object per selected generated token:
 }
 ```
 
-Initial `estimated_cost` is `prefix_token_count`. Later revisions may use timing
-history or active-feature estimates.
+`target_position` is the absolute token position of the selected generated token
+(`prompt_token_count + generated_index`). In the current independent-prefix trace
+mode it is numerically equal to `prefix_token_count`, because the traced prefix is
+`prompt + y_0 ... y_{k-1}` and the target token is `y_k`. Initial
+`estimated_cost` is `prefix_token_count`. Later revisions may use timing history
+or active-feature estimates.
 
 #### `shards.json`
 

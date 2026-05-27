@@ -27,6 +27,7 @@ from .full_answer.schemas import (
     write_trace_specs,
 )
 from .full_answer.aggregate import aggregate_shards
+from .full_answer.audit import audit_prefix_views
 from .full_answer.runner import dry_run_shard, list_shard_specs, print_shard_specs
 from .full_answer.selection import parse_indices_csv, select_tokens
 from .full_answer.sharding import build_lpt_shards
@@ -543,12 +544,30 @@ def _cmd_submit_preset(args: argparse.Namespace) -> None:
 
 
 def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
+    positive_int_flags = (
+        ("--decoder-chunk-size", args.decoder_chunk_size),
+        ("--attribution-batch-size", args.attribution_batch_size),
+        ("--feature-batch-size", args.feature_batch_size),
+        ("--logit-batch-size", args.logit_batch_size),
+        ("--feature-batch-size-max", args.feature_batch_size_max),
+        ("--row-subchunk-size", args.row_subchunk_size),
+    )
     for flag_name, value in (
         ("--max-feature-nodes", args.max_feature_nodes),
         ("--max-edges", args.max_edges),
+        *positive_int_flags,
     ):
         if value is not None and value <= 0:
             raise ValueError(f"{flag_name} must be positive")
+    for flag_name, value in (
+        ("--cross-batch-decoder-cache-bytes", args.cross_batch_decoder_cache_bytes),
+        (
+            "--phase4-refresh-prepared-chunk-cache-bytes",
+            args.phase4_refresh_prepared_chunk_cache_bytes,
+        ),
+    ):
+        if value is not None and value < 0:
+            raise ValueError(f"{flag_name} must be non-negative")
     trajectory = load_trajectory(args.trajectory)
     selection_modes = set(args.select or [])
     selection = select_tokens(
@@ -565,6 +584,24 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
             "max_feature_nodes": args.max_feature_nodes,
             "max_edges": args.max_edges,
             "exact_trace_internal_dtype": args.exact_trace_internal_dtype,
+            "decoder_chunk_size": args.decoder_chunk_size,
+            "cross_batch_decoder_cache_bytes": args.cross_batch_decoder_cache_bytes,
+            "attribution_batch_size": args.attribution_batch_size,
+            "feature_batch_size": args.feature_batch_size,
+            "logit_batch_size": args.logit_batch_size,
+            "phase4_refresh_optimization": args.phase4_refresh_optimization,
+            "phase4_refresh_active_row_accumulation": args.phase4_refresh_active_row_accumulation,
+            "phase4_row_reduction": args.phase4_row_reduction,
+            "row_store_preallocate": args.row_store_preallocate,
+            "phase4_refresh_prepared_chunk_cache_bytes": args.phase4_refresh_prepared_chunk_cache_bytes,
+            "phase4_row_executor": args.phase4_row_executor,
+            "phase4_scheduler_mode": args.phase4_scheduler_mode,
+            "phase4_scheduler_telemetry_detail": args.phase4_scheduler_telemetry_detail,
+            "plan_feature_batch_size": args.plan_feature_batch_size,
+            "feature_batch_size_max": args.feature_batch_size_max,
+            "row_subchunk_size": args.row_subchunk_size,
+            "verbose_attribution": args.verbose_attribution,
+            "profile_attribution": args.profile_attribution,
         }.items()
         if value is not None
     }
@@ -637,6 +674,19 @@ def _cmd_run_full_answer_shard(args: argparse.Namespace) -> None:
 
 def _cmd_aggregate_full_answer_shards(args: argparse.Namespace) -> None:
     print(json.dumps(aggregate_shards(args.run_root), indent=2))
+
+
+def _cmd_audit_full_answer_prefix_views(args: argparse.Namespace) -> None:
+    print(
+        json.dumps(
+            audit_prefix_views(
+                trajectory_path=args.trajectory,
+                run_root=args.run_root,
+                output_dir=args.output_dir,
+            ),
+            indent=2,
+        )
+    )
 
 
 def _cmd_plot_full_answer_temporal(args: argparse.Namespace) -> None:
@@ -751,10 +801,94 @@ def build_parser() -> argparse.ArgumentParser:
     full_answer_trace_specs.add_argument("--output-dir", type=Path, required=True)
     full_answer_trace_specs.add_argument("--max-feature-nodes", type=int, default=None)
     full_answer_trace_specs.add_argument("--max-edges", type=int, default=None)
+    full_answer_trace_specs.add_argument("--decoder-chunk-size", type=int, default=None)
+    full_answer_trace_specs.add_argument(
+        "--cross-batch-decoder-cache-bytes", type=int, default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--attribution-batch-size", type=int, default=None
+    )
+    full_answer_trace_specs.add_argument("--feature-batch-size", type=int, default=None)
+    full_answer_trace_specs.add_argument("--logit-batch-size", type=int, default=None)
     full_answer_trace_specs.add_argument(
         "--exact-trace-internal-dtype",
         choices=["fp32", "fp64", "float32", "float64"],
         default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--phase4-refresh-optimization", choices=["off", "v1"], default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--phase4-refresh-active-row-accumulation",
+        choices=["zero_fill", "direct_v1"],
+        default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--phase4-row-reduction", choices=["off", "gpu_v1"], default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--row-store-preallocate",
+        dest="row_store_preallocate",
+        action="store_true",
+        default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--no-row-store-preallocate",
+        dest="row_store_preallocate",
+        action="store_false",
+    )
+    full_answer_trace_specs.add_argument(
+        "--phase4-refresh-prepared-chunk-cache-bytes", type=int, default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--phase4-row-executor", choices=["batched", "streaming_v1"], default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--phase4-scheduler-mode",
+        choices=["locality", "planner_v1", "planner_v2", "legacy"],
+        default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--phase4-scheduler-telemetry-detail",
+        choices=["summary", "normal", "debug"],
+        default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--plan-feature-batch-size",
+        dest="plan_feature_batch_size",
+        action="store_true",
+        default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--no-plan-feature-batch-size",
+        dest="plan_feature_batch_size",
+        action="store_false",
+    )
+    full_answer_trace_specs.add_argument(
+        "--feature-batch-size-max", type=int, default=None
+    )
+    full_answer_trace_specs.add_argument("--row-subchunk-size", type=int, default=None)
+    full_answer_trace_specs.add_argument(
+        "--verbose-attribution",
+        dest="verbose_attribution",
+        action="store_true",
+        default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--no-verbose-attribution",
+        dest="verbose_attribution",
+        action="store_false",
+    )
+    full_answer_trace_specs.add_argument(
+        "--profile-attribution",
+        dest="profile_attribution",
+        action="store_true",
+        default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--no-profile-attribution",
+        dest="profile_attribution",
+        action="store_false",
     )
     full_answer_trace_specs.set_defaults(func=_cmd_build_full_answer_trace_specs)
 
@@ -796,6 +930,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     full_answer_aggregate.add_argument("--run-root", type=Path, required=True)
     full_answer_aggregate.set_defaults(func=_cmd_aggregate_full_answer_shards)
+
+    full_answer_audit = subparsers.add_parser(
+        "audit-full-answer-prefix-views",
+        help="Login-safe audit of full-answer independent-prefix trace artifacts",
+    )
+    full_answer_audit.add_argument("--trajectory", type=Path, required=True)
+    full_answer_audit.add_argument("--run-root", type=Path, required=True)
+    full_answer_audit.add_argument("--output-dir", type=Path, default=None)
+    full_answer_audit.set_defaults(func=_cmd_audit_full_answer_prefix_views)
 
     full_answer_launch = subparsers.add_parser(
         "launch-full-answer-shards",

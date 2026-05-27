@@ -61,6 +61,7 @@ def test_full_answer_cli_help_is_login_safe() -> None:
     assert run_cli("build-full-answer-shards", "--help").returncode == 0
     assert run_cli("run-full-answer-shard", "--help").returncode == 0
     assert run_cli("aggregate-full-answer-shards", "--help").returncode == 0
+    assert run_cli("audit-full-answer-prefix-views", "--help").returncode == 0
     assert run_cli("run-full-answer-trajectory", "--help").returncode == 0
     assert run_cli("submit-full-answer-trajectory", "--help").returncode == 0
     assert run_cli("launch-full-answer-shards", "--help").returncode == 0
@@ -94,6 +95,16 @@ def test_full_answer_cli_writes_planning_artifacts(tmp_path: Path) -> None:
         (out_dir / "trace_specs.jsonl").read_text(encoding="utf-8").splitlines()
     )
     assert len(specs_lines) == 2
+    knobs = json.loads(specs_lines[0])["graph_knobs"]
+    assert knobs["verbose_attribution"] is False
+    assert knobs["profile_attribution"] is False
+    assert knobs["decoder_chunk_size"] == 256
+    assert knobs["cross_batch_decoder_cache_bytes"] == 8589934592
+    assert knobs["phase4_row_reduction"] == "gpu_v1"
+    assert knobs["phase4_refresh_optimization"] == "v1"
+    assert knobs["phase4_refresh_active_row_accumulation"] == "direct_v1"
+    assert knobs["row_store_preallocate"] is True
+    assert knobs["phase4_refresh_prepared_chunk_cache_bytes"] == 0
 
     shards_path = tmp_path / "shards.json"
     proc = run_cli(
@@ -107,6 +118,65 @@ def test_full_answer_cli_writes_planning_artifacts(tmp_path: Path) -> None:
     )
     assert proc.returncode == 0, proc.stderr
     assert json.loads(shards_path.read_text(encoding="utf-8"))["schema_version"] == 1
+
+
+def test_full_answer_trace_spec_perf_knob_overrides(tmp_path: Path) -> None:
+    trajectory_path = tmp_path / "trajectory.json"
+    out_dir = tmp_path / "out"
+    trajectory_path.write_text(json.dumps(tiny_trajectory()), encoding="utf-8")
+
+    proc = run_cli(
+        "build-full-answer-trace-specs",
+        "--trajectory",
+        str(trajectory_path),
+        "--indices",
+        "0",
+        "--output-dir",
+        str(out_dir),
+        "--decoder-chunk-size",
+        "128",
+        "--cross-batch-decoder-cache-bytes",
+        "0",
+        "--phase4-refresh-optimization",
+        "off",
+        "--phase4-refresh-active-row-accumulation",
+        "zero_fill",
+        "--phase4-row-reduction",
+        "off",
+        "--no-row-store-preallocate",
+        "--phase4-refresh-prepared-chunk-cache-bytes",
+        "0",
+        "--phase4-row-executor",
+        "streaming_v1",
+        "--phase4-scheduler-mode",
+        "planner_v1",
+        "--phase4-scheduler-telemetry-detail",
+        "debug",
+        "--plan-feature-batch-size",
+        "--feature-batch-size-max",
+        "64",
+        "--row-subchunk-size",
+        "32",
+        "--verbose-attribution",
+        "--profile-attribution",
+    )
+    assert proc.returncode == 0, proc.stderr
+    spec = json.loads((out_dir / "trace_specs.jsonl").read_text(encoding="utf-8"))
+    knobs = spec["graph_knobs"]
+    assert knobs["decoder_chunk_size"] == 128
+    assert knobs["cross_batch_decoder_cache_bytes"] == 0
+    assert knobs["phase4_refresh_optimization"] == "off"
+    assert knobs["phase4_refresh_active_row_accumulation"] == "zero_fill"
+    assert knobs["phase4_row_reduction"] == "off"
+    assert knobs["row_store_preallocate"] is False
+    assert knobs["phase4_row_executor"] == "streaming_v1"
+    assert knobs["phase4_scheduler_mode"] == "planner_v1"
+    assert knobs["phase4_scheduler_telemetry_detail"] == "debug"
+    assert knobs["plan_feature_batch_size"] is True
+    assert knobs["feature_batch_size_max"] == 64
+    assert knobs["row_subchunk_size"] == 32
+    assert knobs["verbose_attribution"] is True
+    assert knobs["profile_attribution"] is True
 
 
 def test_full_answer_trajectory_print_only_plan_uses_snapshot_template(

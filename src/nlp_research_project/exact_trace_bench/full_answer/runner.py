@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
+import hashlib
 import json
 import os
 import time
 import traceback
+from pathlib import Path
 from typing import Any, Mapping, cast
 
 from ..io_utils import ensure_dir, write_json, write_jsonl
@@ -46,7 +47,38 @@ def load_shard_inputs(
     for spec in selected:
         if spec["trajectory_id"] != trajectory_id:
             raise ValueError("trace spec trajectory_id does not match trajectory")
+        validate_trace_spec_against_trajectory(trajectory, spec)
     return cast(dict[str, Any], trajectory), selected, shard
+
+
+def validate_trace_spec_against_trajectory(
+    trajectory: Mapping[str, Any], spec: TraceSpec
+) -> None:
+    """Fail before attribution if position metadata diverges from the prefix."""
+    prompt_token_count = trajectory.get("prompt_token_count")
+    generated_tokens = trajectory.get("generated_tokens")
+    if not isinstance(prompt_token_count, int) or prompt_token_count < 0:
+        raise ValueError("trajectory prompt_token_count must be a non-negative int")
+    if not isinstance(generated_tokens, list):
+        raise ValueError("trajectory generated_tokens must be a list")
+    generated_index = spec["generated_index"]
+    if generated_index < 0 or generated_index >= len(generated_tokens):
+        raise ValueError(f"generated_index out of bounds: {generated_index}")
+    expected_position = prompt_token_count + generated_index
+    if spec["target_position"] != expected_position:
+        raise ValueError(
+            "trace spec target_position does not match "
+            "prompt_token_count + generated_index "
+            f"({spec['target_position']} != {expected_position})"
+        )
+    token = generated_tokens[generated_index]
+    if not isinstance(token, Mapping):
+        raise ValueError("trajectory generated token row must be an object")
+    if token.get("absolute_token_position") != expected_position:
+        raise ValueError(
+            "trajectory generated token absolute_token_position does not match "
+            "prompt_token_count + generated_index"
+        )
 
 
 def list_shard_specs(
@@ -65,7 +97,8 @@ def print_shard_specs(rows: list[dict[str, Any]]) -> None:
     for row in rows:
         print(
             f"shard={row['shard_id']} generated_index={row['generated_index']} "
-            f"trace_id={row['trace_id']} target={row['target_token_id']} "
+            f"target_position={row['target_position']} trace_id={row['trace_id']} "
+            f"target={row['target_token_id']} "
             f"text={row['target_token_text']!r} cost={row['estimated_cost']}"
         )
 
@@ -94,6 +127,7 @@ def dry_run_shard(
         "trace_specs_file": str(trace_specs_path),
         "shards_file": str(shards_path),
         "token_count": len(specs),
+        "target_positions": [spec["target_position"] for spec in specs],
     }
     write_json(root / "shard.json", shard_payload)
     rows: list[dict[str, Any]] = []
@@ -134,7 +168,34 @@ def reconstruct_prefix_token_ids(
             "trace spec prefix_token_count does not match reconstructed prefix "
             f"({spec['prefix_token_count']} != {len(prefix)})"
         )
+    if spec["target_position"] != len(prefix):
+        raise ValueError(
+            "trace spec target_position does not match reconstructed target "
+            f"position ({spec['target_position']} != {len(prefix)})"
+        )
     return prefix
+
+
+def _hash_token_ids(token_ids: list[int]) -> str:
+    payload = json.dumps(
+        [int(token_id) for token_id in token_ids], separators=(",", ":")
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def prefix_view_metadata(
+    trajectory: Mapping[str, Any], spec: TraceSpec, prefix_token_ids: list[int]
+) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "mode": "independent_prefix",
+        "trajectory_id": trajectory["trajectory_id"],
+        "trace_id": spec["trace_id"],
+        "target_position": spec["target_position"],
+        "prefix_token_count": spec["prefix_token_count"],
+        "target_token_ids": [spec["target_token_id"]],
+        "prefix_token_ids_sha256": _hash_token_ids(prefix_token_ids),
+    }
 
 
 def forced_target_payload(spec: TraceSpec) -> dict[str, Any]:
@@ -178,6 +239,7 @@ def _shard_record(
     shards_path: Path,
     token_count: int,
     metadata: Mapping[str, Any],
+    target_positions: list[int] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "schema_version": 1,
@@ -187,6 +249,7 @@ def _shard_record(
         "trace_specs_file": str(trace_specs_path),
         "shards_file": str(shards_path),
         "token_count": token_count,
+        "target_positions": target_positions or [],
     }
     payload.update(metadata)
     return payload
@@ -285,6 +348,26 @@ def _model_load_knobs(specs: list[TraceSpec]) -> dict[str, Any]:
     }
 
 
+def _attribute_performance_kwargs(knobs: Mapping[str, Any]) -> dict[str, Any]:
+    keys = (
+        "row_subchunk_size",
+        "plan_feature_batch_size",
+        "feature_batch_size_max",
+        "feature_batch_target_reserved_fraction",
+        "feature_batch_min_free_fraction",
+        "feature_batch_probe_batches",
+        "phase4_scheduler_mode",
+        "phase4_scheduler_telemetry_detail",
+        "phase4_refresh_optimization",
+        "phase4_refresh_prepared_chunk_cache_bytes",
+        "phase4_refresh_active_row_accumulation",
+        "phase4_row_executor",
+        "phase4_row_reduction",
+        "row_store_preallocate",
+    )
+    return {key: knobs[key] for key in keys if key in knobs and knobs[key] is not None}
+
+
 def run_real_shard(
     *,
     trajectory_path: Path,
@@ -332,6 +415,7 @@ def run_real_shard(
             shards_path=shards_path,
             token_count=len(specs),
             metadata=metadata,
+            target_positions=[spec["target_position"] for spec in specs],
         ),
     )
 
@@ -370,6 +454,8 @@ def run_real_shard(
         started = time.perf_counter()
         try:
             prefix_token_ids = reconstruct_prefix_token_ids(trajectory, spec)
+            prefix_metadata = prefix_view_metadata(trajectory, spec, prefix_token_ids)
+            trace["prefix_view_metadata"] = prefix_metadata
             knobs = spec["graph_knobs"]
             save_raw_graph = bool(knobs.get("save_raw_graph", False))
             raw_graph_path = token_dir / "graph.pt"
@@ -380,6 +466,7 @@ def run_real_shard(
                 attribution_targets=torch.tensor(
                     [spec["target_token_id"]], dtype=torch.long
                 ),
+                prefix_view_metadata=prefix_metadata,
                 max_n_logits=1,
                 desired_logit_prob=1.0,
                 batch_size=int(knobs.get("attribution_batch_size", 256)),
@@ -397,6 +484,7 @@ def run_real_shard(
                 exact_trace_internal_dtype=str(
                     knobs.get("exact_trace_internal_dtype", "fp32")
                 ),
+                **_attribute_performance_kwargs(knobs),
                 compact_output=not save_raw_graph,
             )
             if save_raw_graph:
@@ -466,6 +554,7 @@ def run_real_shard(
             shards_path=shards_path,
             token_count=len(specs),
             metadata=metadata,
+            target_positions=[spec["target_position"] for spec in specs],
         ),
     )
     return {"shard_dir": str(root), "token_count": len(rows), "status": final_status}
@@ -477,6 +566,7 @@ def _summary_row(spec: TraceSpec, *, shard_id: int) -> dict[str, Any]:
         "trace_id": spec["trace_id"],
         "trajectory_id": spec["trajectory_id"],
         "generated_index": spec["generated_index"],
+        "target_position": spec["target_position"],
         "prefix_token_count": spec["prefix_token_count"],
         "target_token_id": spec["target_token_id"],
         "target_token_text": spec["target_token_text"],

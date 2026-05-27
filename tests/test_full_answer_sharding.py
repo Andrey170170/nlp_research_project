@@ -9,6 +9,7 @@ def _spec(index: int, cost: int) -> dict:
         "trace_id": f"trace_{index}",
         "trajectory_id": "traj",
         "generated_index": index,
+        "target_position": cost,
         "prefix_token_count": cost,
         "target_token_id": 100 + index,
         "target_token_text": str(index),

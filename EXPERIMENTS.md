@@ -1,7 +1,7 @@
 # Experiments inventory
 
 Status: Current compact index and interpretation summary
-Last updated: 2026-05-21
+Last updated: 2026-05-27
 
 This file is the readable front page for experiment provenance. It should stay
 small enough to edit by hand.
@@ -89,6 +89,138 @@ Near-term cleanup focus:
 | historical `matched_debug` artifacts | Old matched-debug campaign outputs/configs | Historical only; do not use as an ordinary bucket |
 
 ## Recent durable decisions
+
+### 2026-05-27 — Prefix-view validation starting point
+
+The trajectory-batching Phase-1 seam is now committed and SLURM-validated:
+full-answer traces pass explicit `prefix_view_metadata` into the sibling
+attribution path, where it is validated before attribution without changing graph
+math.
+
+Commits:
+
+- project: `20e9625` (`Forward full-answer prefix views`),
+- sibling library: `469687f` (`Validate full-answer prefix views`).
+
+Validation run:
+
+- job: Cardinal `10690579_[0]`, completed in `00:06:07`,
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/full-answer-828-prefix-view-validation-20260527`,
+- target: `828_base_full_answer_20260523_02`, generated index `0`, token
+  `Here`, target position / prefix length `73`,
+- trace time: `304.89s`, status `ok`,
+- `trace.json` records `prefix_view_metadata` with mode `independent_prefix`,
+  target token ID `8291`, and prefix-token SHA256
+  `29b69e3c31366bb2c455f4b719a453c8499b6eafd76df2ae0662cfb143f7a805`.
+
+Comparison result:
+
+- exact compact match against Cardinal Wave-1 cache8g, Cardinal Wave-0 cache0,
+  and the prior baseline-parameter full-answer run,
+- feature Jaccard `1.0`, edge Jaccard `1.0`, weighted-edge Jaccard `1.0`,
+  all-edge-weighted Jaccard `1.0`.
+
+Decision: use `20e9625` + sibling `469687f` as the starting point for
+trajectory-level optimization. Future shared-Phase-0 or row-reuse prototypes must
+preserve this prefix-view contract and reject target/prefix/hash mismatches
+before attribution.
+
+### 2026-05-26 — Full-answer optimized-default Cardinal smoke
+
+After merging the full-answer harness into `opt-phase34-gpu-residency`, a
+one-token `828_base` full-answer smoke validated that the optimized trace knobs
+are emitted in specs, forwarded by the runner, and executable on Cardinal.
+
+Run:
+
+- project worktree commit: `0c39a7b`, sibling library commit: `6445795`,
+- job: Cardinal `10438978_[0]`, completed in `00:06:30`,
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/full-answer-828-smoke-perf-default-20260526`,
+- target: `828_base_full_answer_20260523_02`, generated index `0`, token
+  `Here`, prefix length `73`,
+- trace time: `330.82s`, status `ok`, graph saved as `graph.npz`.
+
+Validated knobs:
+
+- `exact_trace_internal_dtype=fp32`,
+- `cross_batch_decoder_cache_bytes=8589934592`,
+- `phase4_row_reduction=gpu_v1`,
+- `phase4_refresh_optimization=v1`,
+- `phase4_refresh_active_row_accumulation=direct_v1`,
+- `row_store_preallocate=true`,
+- `verbose_attribution=false`, `profile_attribution=false`.
+
+Interpretation:
+
+- Treat this as a successful plumbing/performance smoke, not a new bitwise
+  baseline.
+- The best same-cluster historical comparison found so far is an older Cardinal
+  Wave-1 cache8g single-token compact artifact: feature Jaccard `0.998536`,
+  edge Jaccard `0.693050`, weighted-edge Jaccard `0.816245`, and
+  all-edge-weighted Jaccard `0.999173`.
+- Newer Cardinal performance-validation artifacts with millions of stored
+  features are not comparable compact baselines for this full-answer smoke.
+- Next 5x-class work remains trajectory-level reuse/batching, measured against
+  this merged full-answer performance path rather than the older pre-merge path.
+
+Follow-up baseline-parameter run:
+
+- job: Cardinal `10497418_[0]`, completed in `00:06:18`,
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/full-answer-828-baseline-params-20260526`,
+- matching compact/reference knobs: `max_edges=20000`,
+  `decoder_chunk_size=4096`, `cross_batch_decoder_cache_bytes=8589934592`,
+  `phase4_refresh_optimization=off`, `phase4_row_reduction=off`,
+  `row_store_preallocate=false`, `verbose_attribution=true`,
+  `profile_attribution=true`,
+- trace time: `320.61s`, status `ok`,
+- comparison against both Cardinal Wave-1 cache8g and Wave-0 cache0 `828_base`
+  compact baselines: feature Jaccard `1.0`, edge Jaccard `1.0`,
+  weighted-edge Jaccard `1.0`, all-edge-weighted Jaccard `1.0`.
+
+Decision: the full-answer harness path can reproduce the canonical Cardinal
+one-token compact baseline exactly when run with matching compact/resource knobs;
+the earlier optimized-default smoke's lower edge Jaccard was due to the smoke's
+smaller `max_edges=16384` cap and non-baseline performance knobs, not graph drift.
+
+### 2026-05-25 — Optimization worktree performance default candidate
+
+The optimization worktree validated a faster exact-trace performance candidate on
+the post-fix compact path before merging the full-answer harness.
+
+Current candidate:
+
+- `exact_trace_internal_dtype=fp32`,
+- `phase4_row_reduction=gpu_v1`,
+- `phase4_refresh_optimization=v1`,
+- `phase4_refresh_active_row_accumulation=direct_v1`,
+- `row_store_preallocate=true`,
+- performance mode: `cross_batch_decoder_cache_bytes=8GiB`.
+
+Interpretation:
+
+- The strict cache0 variant with `direct_v1 + row_store_preallocate=true` was
+  bitwise exact against the cache0 baseline on the broader five-fixture check and
+  reduced Phase 4 for every fixture.
+- The cache8g performance mode improved end-to-end runtime on all five broader
+  fixtures (`-12.8%` to `-36.1%`, mean `-23.1%`) and reduced artifact RSS, but
+  retained-edge arrays are cutoff-sensitive rather than bitwise exact against
+  cache0.
+- Keep cache0 as the bitwise-retained-edge fallback. Use cache8g only when the
+  near-exact/cutoff-sensitive performance tradeoff is acceptable.
+- The next 5x-class optimization path is trajectory-level reuse/batching in the
+  full-answer harness, not another isolated Phase 4 micro-optimization.
+
+Key provenance:
+
+- broader default validation output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260525_broader-default-validation-fast`,
+- snapshot root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260525_190714_broader_default_validation`,
+- optimization project commit before merge: `a01ab07`,
+- optimization library commit before merge: `6445795`.
 
 ### 2026-05-22 — Sweep Wave 4 prompt generalization
 

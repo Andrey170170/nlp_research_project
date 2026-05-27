@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -41,12 +42,13 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from circuit_utils import StepData, load_compact, step_from_pt
+from circuit_utils import StepData, load_compact  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
 # Per-layer feature counting (key for detecting layer collapse)
 # ---------------------------------------------------------------------------
+
 
 def features_per_layer(step: StepData) -> dict[int, int]:
     """Count unique features retained per model layer for a single step."""
@@ -68,7 +70,9 @@ def layer_coverage(steps: list[StepData]) -> dict[int, float]:
     for step in steps:
         for layer, count in features_per_layer(step).items():
             all_counts[layer].append(count)
-    return {layer: float(np.mean(counts)) for layer, counts in sorted(all_counts.items())}
+    return {
+        layer: float(np.mean(counts)) for layer, counts in sorted(all_counts.items())
+    }
 
 
 def layer_presence_rate(steps: list[StepData]) -> dict[int, float]:
@@ -86,6 +90,7 @@ def layer_presence_rate(steps: list[StepData]) -> dict[int, float]:
 # ---------------------------------------------------------------------------
 # Edge mass and Jaccard helpers (simplified, operating on StepData)
 # ---------------------------------------------------------------------------
+
 
 def _feature_set(step: StepData) -> frozenset[tuple[int, int, int]]:
     if step.feature_ids is None or step.feature_ids.shape[0] == 0:
@@ -124,6 +129,7 @@ def edge_mass_retained(approx: StepData) -> float:
 # Loading helpers
 # ---------------------------------------------------------------------------
 
+
 def _load_npz_steps(completion_dir: Path) -> list[StepData]:
     files = sorted(completion_dir.glob("step_*.npz"))
     return [load_compact(p) for p in files]
@@ -148,6 +154,7 @@ def _load_pt_topk_steps(
 
 def _load_graph_dict_no_activations(pt_file: Path) -> dict[str, Any]:
     import torch
+
     graph_dict = torch.load(pt_file, map_location="cpu", weights_only=False)
     # Remove activation_values so sparsify_edges falls back to top-K
     if isinstance(graph_dict, dict):
@@ -203,8 +210,6 @@ def _step_from_dict_topk(
 # Runtime / memory extraction (re-uses patterns from run_sparsification_experiment)
 # ---------------------------------------------------------------------------
 
-import re
-
 _PHASE4_RE = re.compile(r"Feature attributions completed in (?P<seconds>[\d.]+)")
 _MEMORY_RE = re.compile(
     r"peak.*?rss=(?P<rss>[\d.]+|n/a)\s+GiB.*?cuda_alloc=(?P<cuda_alloc>[\d.]+|n/a)\s+GiB",
@@ -233,6 +238,7 @@ def _extract_runtime(log_path: Path) -> dict[str, Any]:
 # Main comparison logic
 # ---------------------------------------------------------------------------
 
+
 def _find_completion_dirs(scenario_dir: Path) -> list[Path]:
     artifacts = scenario_dir / "artifacts"
     return sorted(artifacts.glob("prompt_*/completion_*")) if artifacts.exists() else []
@@ -245,7 +251,6 @@ def analyze_pair(
 ) -> dict[str, Any]:
     """Compare compact (top-K) vs save_raw (decoder-aware) scenarios."""
     compact_comps = _find_completion_dirs(compact_dir)
-    save_raw_comps = _find_completion_dirs(save_raw_dir)
 
     compact_runtime = _extract_runtime(compact_dir / "run.log")
     save_raw_runtime = _extract_runtime(save_raw_dir / "run.log")
@@ -263,8 +268,7 @@ def analyze_pair(
 
         has_pt = bool(list(matching_raw.glob("step_*.pt")))
         pt_topk_steps = (
-            _load_pt_topk_steps(matching_raw, max_edges=max_edges)
-            if has_pt else []
+            _load_pt_topk_steps(matching_raw, max_edges=max_edges) if has_pt else []
         )
 
         n = min(len(topk_steps), len(da_steps))
@@ -293,39 +297,52 @@ def analyze_pair(
         # Layer collapse: layers that are present in DA but absent from top-K
         all_layers = sorted(set(topk_cov) | set(da_cov))
         max_layer = max(all_layers) if all_layers else 0
-        late_layers = [l for l in all_layers if l >= max_layer * 0.6]
-        late_topk_mean = float(np.mean([topk_cov.get(l, 0) for l in late_layers])) if late_layers else 0.0
-        late_da_mean = float(np.mean([da_cov.get(l, 0) for l in late_layers])) if late_layers else 0.0
-        collapse_avoidance = late_da_mean - late_topk_mean  # positive = DA preserves more late-layer features
+        late_layers = [layer for layer in all_layers if layer >= max_layer * 0.6]
+        late_topk_mean = (
+            float(np.mean([topk_cov.get(layer, 0) for layer in late_layers]))
+            if late_layers
+            else 0.0
+        )
+        late_da_mean = (
+            float(np.mean([da_cov.get(layer, 0) for layer in late_layers]))
+            if late_layers
+            else 0.0
+        )
+        collapse_avoidance = (
+            late_da_mean - late_topk_mean
+        )  # positive = DA preserves more late-layer features
 
         # pt cross-check
         pt_check: dict[str, Any] = {}
         if pt_topk_steps:
             n2 = min(len(topk_steps), len(pt_topk_steps))
             pt_feat_jaccards = [
-                feature_jaccard(topk_steps[i], pt_topk_steps[i])
-                for i in range(n2)
+                feature_jaccard(topk_steps[i], pt_topk_steps[i]) for i in range(n2)
             ]
             pt_check = {
                 "n_pt_steps": n2,
-                "mean_feature_jaccard_compact_vs_pt_topk": float(np.nanmean(pt_feat_jaccards)),
+                "mean_feature_jaccard_compact_vs_pt_topk": float(
+                    np.nanmean(pt_feat_jaccards)
+                ),
                 "note": "Should be ~1.0 if both paths produce identical top-K feature sets",
             }
 
-        per_completion.append({
-            "completion_key": str(rel),
-            "n_steps": n,
-            "mean_feature_jaccard_topk_vs_da": float(np.nanmean(feat_jaccards)),
-            "mean_edge_jaccard_topk_vs_da": float(np.nanmean(edge_jaccards)),
-            "layer_coverage_topk": topk_cov,
-            "layer_coverage_da": da_cov,
-            "layer_presence_rate_topk": topk_pres,
-            "layer_presence_rate_da": da_pres,
-            "late_layer_mean_features_topk": late_topk_mean,
-            "late_layer_mean_features_da": late_da_mean,
-            "late_layer_collapse_avoidance": collapse_avoidance,
-            "pt_cross_check": pt_check,
-        })
+        per_completion.append(
+            {
+                "completion_key": str(rel),
+                "n_steps": n,
+                "mean_feature_jaccard_topk_vs_da": float(np.nanmean(feat_jaccards)),
+                "mean_edge_jaccard_topk_vs_da": float(np.nanmean(edge_jaccards)),
+                "layer_coverage_topk": topk_cov,
+                "layer_coverage_da": da_cov,
+                "layer_presence_rate_topk": topk_pres,
+                "layer_presence_rate_da": da_pres,
+                "late_layer_mean_features_topk": late_topk_mean,
+                "late_layer_mean_features_da": late_da_mean,
+                "late_layer_collapse_avoidance": collapse_avoidance,
+                "pt_cross_check": pt_check,
+            }
+        )
 
     return {
         "compact_scenario": compact_dir.name,
@@ -363,17 +380,21 @@ def _plot_comparison(analysis: dict[str, Any], output_path: Path) -> None:
 
     # Left: per-layer mean feature count
     ax = axes[0]
-    tk_vals = [tkcov.get(l, 0.0) for l in all_layers]
-    da_vals = [dacov.get(l, 0.0) for l in all_layers]
+    tk_vals = [tkcov.get(layer, 0.0) for layer in all_layers]
+    da_vals = [dacov.get(layer, 0.0) for layer in all_layers]
     x = np.arange(len(all_layers))
     w = 0.35
     ax.bar(x - w / 2, tk_vals, w, label="compact top-K", alpha=0.8, color="steelblue")
     ax.bar(x + w / 2, da_vals, w, label="decoder-aware", alpha=0.8, color="darkorange")
     ax.set_xticks(x[::4])
-    ax.set_xticklabels([str(all_layers[i]) for i in range(0, len(all_layers), 4)], rotation=45)
+    ax.set_xticklabels(
+        [str(all_layers[i]) for i in range(0, len(all_layers), 4)], rotation=45
+    )
     ax.set_xlabel("Model Layer")
     ax.set_ylabel("Mean Features Retained (across steps)")
-    ax.set_title("Per-Layer Feature Retention\n(layer collapse visible as missing bars)")
+    ax.set_title(
+        "Per-Layer Feature Retention\n(layer collapse visible as missing bars)"
+    )
     ax.legend()
 
     # Right: summary comparison table
@@ -412,7 +433,9 @@ def _plot_comparison(analysis: dict[str, Any], output_path: Path) -> None:
             str(analysis["save_raw_runtime"].get("peak_cuda_allocated_gib", "n/a")),
         ],
     ]
-    table = ax2.table(cellText=rows[1:], colLabels=rows[0], loc="center", cellLoc="center")
+    table = ax2.table(
+        cellText=rows[1:], colLabels=rows[0], loc="center", cellLoc="center"
+    )
     table.auto_set_font_size(False)
     table.set_fontsize(10)
     table.scale(1.2, 1.8)
@@ -432,6 +455,7 @@ def _plot_comparison(analysis: dict[str, Any], output_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -491,7 +515,10 @@ def main() -> None:
                 f"edge Jaccard: {comp['mean_edge_jaccard_topk_vs_da']:.3f}"
             )
 
-        plot_path = root / f"decoder_aware_comparison_{pairs.index((compact_dir, save_raw_dir)):02d}.png"
+        plot_path = (
+            root
+            / f"decoder_aware_comparison_{pairs.index((compact_dir, save_raw_dir)):02d}.png"
+        )
         _plot_comparison(analysis, plot_path)
 
     report = {"experiment_root": str(root), "analyses": all_analyses}

@@ -126,6 +126,10 @@ def test_schema_and_trace_spec_round_trip(tmp_path: Path) -> None:
         graph_knob_overrides={"max_edges": 7},
     )
     assert specs[0]["prefix_token_count"] == 13
+    # target_position is the absolute token index of generated token y_k:
+    # prompt_token_count + generated_index. The independent trace prefix remains
+    # prompt + y_0..y_{k-1}, so prefix_token_count has the same numeric value.
+    assert specs[0]["target_position"] == 13
     assert specs[0]["target_token_id"] == 104
     assert specs[0]["target_mode"] == "frozen_target_only"
     assert specs[0]["estimated_cost"] == 13
