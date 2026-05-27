@@ -1,7 +1,7 @@
 # Experiments inventory
 
 Status: Current compact index and interpretation summary
-Last updated: 2026-05-26
+Last updated: 2026-05-27
 
 This file is the readable front page for experiment provenance. It should stay
 small enough to edit by hand.
@@ -89,6 +89,42 @@ Near-term cleanup focus:
 | historical `matched_debug` artifacts | Old matched-debug campaign outputs/configs | Historical only; do not use as an ordinary bucket |
 
 ## Recent durable decisions
+
+### 2026-05-27 — Prefix-view validation starting point
+
+The trajectory-batching Phase-1 seam is now committed and SLURM-validated:
+full-answer traces pass explicit `prefix_view_metadata` into the sibling
+attribution path, where it is validated before attribution without changing graph
+math.
+
+Commits:
+
+- project: `20e9625` (`Forward full-answer prefix views`),
+- sibling library: `469687f` (`Validate full-answer prefix views`).
+
+Validation run:
+
+- job: Cardinal `10690579_[0]`, completed in `00:06:07`,
+- output root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/full-answer-828-prefix-view-validation-20260527`,
+- target: `828_base_full_answer_20260523_02`, generated index `0`, token
+  `Here`, target position / prefix length `73`,
+- trace time: `304.89s`, status `ok`,
+- `trace.json` records `prefix_view_metadata` with mode `independent_prefix`,
+  target token ID `8291`, and prefix-token SHA256
+  `29b69e3c31366bb2c455f4b719a453c8499b6eafd76df2ae0662cfb143f7a805`.
+
+Comparison result:
+
+- exact compact match against Cardinal Wave-1 cache8g, Cardinal Wave-0 cache0,
+  and the prior baseline-parameter full-answer run,
+- feature Jaccard `1.0`, edge Jaccard `1.0`, weighted-edge Jaccard `1.0`,
+  all-edge-weighted Jaccard `1.0`.
+
+Decision: use `20e9625` + sibling `469687f` as the starting point for
+trajectory-level optimization. Future shared-Phase-0 or row-reuse prototypes must
+preserve this prefix-view contract and reject target/prefix/hash mismatches
+before attribution.
 
 ### 2026-05-26 — Full-answer optimized-default Cardinal smoke
 
