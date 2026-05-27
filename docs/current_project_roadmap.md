@@ -1,7 +1,7 @@
 # Current Execution Plan — Post-Consolidation Cleanup
 
 Status: Current scratch roadmap
-Last updated: 2026-05-22
+Last updated: 2026-05-27
 
 ## Problem statement
 
@@ -16,6 +16,105 @@ driven by Phase-3 gradient differences, with later stages amplifying those
 differences enough to affect compact circuit outputs. We should keep the
 debug/replay machinery for future verification and regression tests, but it no
 longer needs to dominate the public workflow.
+
+## Active Track-2 plan — full-answer graph save policy refresh
+
+Status: active as of 2026-05-27.
+
+The current full-answer traces proved the all-token harness works, but the compact
+graph save policy is now known to be too lossy for feature-to-feature topology:
+the current global `max_edges=16384` cap is dominated by the single traced logit
+row and preserves only about 31--62% of selected feature-to-feature mass on a
+5-token raw calibration from wrong `828_base` temp0.8 seed1002.
+
+Raw calibration provenance:
+
+- run root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/full-answer-raw-payload-calibration-20260527/828_base_temp08_seed1002/raw_graph_5tokens_20260527/828_base_temp08_seed1002_raw_graph_5tokens_20260527`
+- analysis dir:
+  `.../raw_graph_calibration_analysis/`
+- sampled generated indices: `0, 20, 60, 100, 130`
+- raw `Graph.to_pt` payload size: ~0.49--0.98 GB/token for prefix lengths
+  73--203.
+
+### 1. Replace global top-K compact save with typed edge buckets
+
+Use typed buckets named by matrix direction `target <- source` and preserve raw
+bucket mass metadata. Downstream analyses should report bucket-specific metrics
+instead of mixing logit, feature, error, and token edges into one global top-K.
+
+Initial save policy from the raw calibration:
+
+| Bucket | Policy | Calibration note |
+| --- | --- | --- |
+| `logit<-feature` | save all | exactly 8192 nonzero edges in current one-target traces |
+| `logit<-error` | save all | median ~3226 nonzero edges |
+| `logit<-token` | save all | prefix-length scale, median ~133 nonzero edges |
+| `feature<-error` | top-p 0.99, cap ~16k | 16k preserves >99.6% mass in sampled traces |
+| `feature<-token` | top-p 0.95, cap ~250k | or top-p 0.99 with cap ~500k |
+| `feature<-feature` | top-p 0.95, cap ~1M | or top-p 0.99 with cap ~2M |
+
+Implementation requirements:
+
+1. Save each bucket with:
+   - source/target bucket names,
+   - raw weights, not only globally renormalized weights,
+   - retained raw bucket mass,
+   - total raw bucket mass before truncation,
+   - retained mass fraction,
+   - rank/cumulative-mass metadata or enough information to reconstruct it.
+2. Keep fixed-K derived views available for comparability (`128`, `512`, `1024`,
+   `4096`, etc.), but derive them from bucketed outputs rather than retracing.
+3. Update temporal analysis so exact edge churn can be computed separately for at
+   least `feature<-feature`, `feature<-token`, and logit buckets.
+4. Keep `save_raw_graph` as a calibration/debug mode, not the default workflow.
+
+### 2. Merge optimization work back into Track-2 harness branch
+
+The optimization branch has already merged this Track-2 branch and reportedly
+works. Next action is the reverse integration into the current Track-2 working
+branch using the cleanest git operation for the actual branch topology
+(`merge`, `rebase`, or fast-forward where possible), while preserving provenance
+for both repositories.
+
+Before integration:
+
+1. Record project repo branch/commit/dirty files.
+2. Record sibling `../circuit-tracer_chunked` branch/commit/dirty files.
+3. Inspect diffs in both repositories, especially exact-trace defaults and hidden
+   optimization knobs.
+4. Ensure login-safe checks still pass for touched code (`uv run ruff check ...`,
+   `uv run ty check ...`, targeted tests).
+
+After integration:
+
+1. Run a small SLURM smoke on full-answer tracing with immutable workspace
+   snapshots.
+2. Confirm canonical exact-trace defaults remain `exact_trace_internal_dtype=fp32`
+   and stable row-L1 denominator behavior.
+3. Log the merge and validation in `experiments/logs/YYYY-MM.jsonl`.
+
+### 3. Rerun current comparison traces with the new bucketed save format
+
+Once bucketed output and optimization merge are in place, rerun the current
+comparison set rather than over-interpreting the existing 16k-global-edge traces:
+
+1. greedy-correct `828_base` full answer,
+2. wrong `828_base` temp0.8 seed1002 full answer,
+3. wrong `361_base` temp0.8 seed1002 if the attrbatch128 recovery path is clean.
+
+For each rerun:
+
+1. build all-token trace specs from the frozen trajectory,
+2. use immutable workspace snapshots and record both repo SHAs,
+3. save bucketed compact graphs using the policy above,
+4. run temporal analysis/plots with bucket-specific metrics,
+5. compare old 16k-global outputs against new bucketed outputs to quantify how
+   much previous edge churn was a save-policy artifact.
+
+The immediate scientific question for the rerun is whether the high apparent
+feature-to-feature edge churn persists after preserving ~95% of feature-to-feature
+mass, or whether churn mostly reflects the old global edge cap.
 
 ## Current two-track plan after Wave 4
 
