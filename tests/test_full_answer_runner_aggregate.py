@@ -5,7 +5,9 @@ import builtins
 import argparse
 import subprocess
 import sys
+import types
 from pathlib import Path
+from typing import Any, cast
 
 from nlp_research_project.exact_trace_bench.full_answer.aggregate import (
     aggregate_shards,
@@ -17,7 +19,9 @@ from nlp_research_project.exact_trace_bench.full_answer.runner import (
     forced_target_payload,
     list_shard_specs,
     load_shard_inputs,
+    prefix_view_metadata,
     reconstruct_prefix_token_ids,
+    run_real_shard,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -171,6 +175,93 @@ def test_attribute_performance_kwargs_forward_safe_knobs() -> None:
         "phase4_row_reduction": "gpu_v1",
         "row_store_preallocate": True,
     }
+
+
+def test_prefix_view_metadata_matches_reconstructed_prefix(tmp_path: Path) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    trajectory, specs, _shard = load_shard_inputs(
+        trajectory_path=trajectory_path,
+        trace_specs_path=specs_path,
+        shards_path=shards_path,
+        shard_id=0,
+    )
+    prefix = reconstruct_prefix_token_ids(trajectory, specs[0])
+
+    metadata = prefix_view_metadata(trajectory, specs[0], prefix)
+
+    assert metadata["mode"] == "independent_prefix"
+    assert metadata["trajectory_id"] == "traj_runner"
+    assert metadata["trace_id"] == "traj_runner_tok000001"
+    assert metadata["target_position"] == 3
+    assert metadata["prefix_token_count"] == len(prefix) == 3
+    assert metadata["target_token_ids"] == [202]
+    assert len(metadata["prefix_token_ids_sha256"]) == 64
+
+
+def test_real_shard_forwards_prefix_view_metadata_without_model_load(
+    tmp_path: Path, monkeypatch
+) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    captured: dict[str, object] = {}
+
+    def fake_attribute(**kwargs):
+        captured.update(kwargs)
+        return {}
+
+    def fake_save_compact(step, graph_path):
+        Path(graph_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(graph_path).write_text("graph")
+
+    monkeypatch.setenv("SLURM_JOB_ID", "test-job")
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        types.SimpleNamespace(tensor=lambda data, dtype=None: data, long=object()),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "circuit_utils",
+        types.SimpleNamespace(save_compact=fake_save_compact),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "trace_pipeline",
+        types.SimpleNamespace(load_model=lambda **_kwargs: object()),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "trace_pipeline_chunked",
+        types.SimpleNamespace(
+            compact_result_to_step_data=lambda *_args, **_kwargs: {},
+            resolve_internal_precision=lambda _dtype: "float32",
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "circuit_tracer.attribution.attribute_nnsight",
+        types.SimpleNamespace(attribute=fake_attribute),
+    )
+
+    result = run_real_shard(
+        trajectory_path=trajectory_path,
+        trace_specs_path=specs_path,
+        shards_path=shards_path,
+        shard_id=0,
+        output_root=tmp_path / "run",
+    )
+
+    assert result["status"] == "complete"
+    metadata = cast(dict[str, Any], captured["prefix_view_metadata"])
+    assert metadata["trace_id"] == "traj_runner_tok000001"
+    assert metadata["target_position"] == 3
+    assert metadata["prefix_token_count"] == 3
+    assert metadata["target_token_ids"] == [202]
+    trace = json.loads(
+        (
+            tmp_path / "run" / "shards" / "shard_000" / "token_000001" / "trace.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert trace["prefix_view_metadata"] == metadata
 
 
 def test_aggregate_handles_dry_run_rows(tmp_path: Path) -> None:

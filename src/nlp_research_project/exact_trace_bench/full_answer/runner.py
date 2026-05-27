@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
+import hashlib
 import json
 import os
 import time
+from pathlib import Path
 from typing import Any, Mapping, cast
 
 from ..io_utils import ensure_dir, write_json, write_jsonl
@@ -172,6 +173,28 @@ def reconstruct_prefix_token_ids(
             f"position ({spec['target_position']} != {len(prefix)})"
         )
     return prefix
+
+
+def _hash_token_ids(token_ids: list[int]) -> str:
+    payload = json.dumps(
+        [int(token_id) for token_id in token_ids], separators=(",", ":")
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def prefix_view_metadata(
+    trajectory: Mapping[str, Any], spec: TraceSpec, prefix_token_ids: list[int]
+) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "mode": "independent_prefix",
+        "trajectory_id": trajectory["trajectory_id"],
+        "trace_id": spec["trace_id"],
+        "target_position": spec["target_position"],
+        "prefix_token_count": spec["prefix_token_count"],
+        "target_token_ids": [spec["target_token_id"]],
+        "prefix_token_ids_sha256": _hash_token_ids(prefix_token_ids),
+    }
 
 
 def forced_target_payload(spec: TraceSpec) -> dict[str, Any]:
@@ -431,6 +454,8 @@ def run_real_shard(
         started = time.perf_counter()
         try:
             prefix_token_ids = reconstruct_prefix_token_ids(trajectory, spec)
+            prefix_metadata = prefix_view_metadata(trajectory, spec, prefix_token_ids)
+            trace["prefix_view_metadata"] = prefix_metadata
             knobs = spec["graph_knobs"]
             compact_result = attribute_nnsight(
                 prompt=torch.tensor(prefix_token_ids, dtype=torch.long),
@@ -438,6 +463,7 @@ def run_real_shard(
                 attribution_targets=torch.tensor(
                     [spec["target_token_id"]], dtype=torch.long
                 ),
+                prefix_view_metadata=prefix_metadata,
                 max_n_logits=1,
                 desired_logit_prob=1.0,
                 batch_size=int(knobs.get("attribution_batch_size", 256)),
