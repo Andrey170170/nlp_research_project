@@ -602,7 +602,6 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
             "row_subchunk_size": args.row_subchunk_size,
             "verbose_attribution": args.verbose_attribution,
             "profile_attribution": args.profile_attribution,
-            "compact_save_format": args.compact_save_format,
         }.items()
         if value is not None
     }
@@ -890,12 +889,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-profile-attribution",
         dest="profile_attribution",
         action="store_false",
-    )
-    full_answer_trace_specs.add_argument(
-        "--compact-save-format",
-        choices=["legacy_topk", "typed_bucketed"],
-        default=None,
-        help="Compact graph.npz format; default is legacy_topk",
     )
     full_answer_trace_specs.set_defaults(func=_cmd_build_full_answer_trace_specs)
 

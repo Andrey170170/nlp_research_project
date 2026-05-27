@@ -221,7 +221,12 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
     monkeypatch.setitem(
         sys.modules,
         "circuit_utils",
-        types.SimpleNamespace(save_compact=fake_save_compact),
+        types.SimpleNamespace(
+            save_bucketed_compact=lambda _bundle, graph_path: fake_save_compact(
+                {}, graph_path
+            ),
+            save_compact=fake_save_compact,
+        ),
     )
     monkeypatch.setitem(
         sys.modules,
@@ -232,8 +237,9 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
         sys.modules,
         "trace_pipeline_chunked",
         types.SimpleNamespace(
-            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: None,
-            compact_result_to_step_data=lambda *_args, **_kwargs: {},
+            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: (
+                types.SimpleNamespace(step={})
+            ),
             resolve_internal_precision=lambda _dtype: "float32",
         ),
     )
