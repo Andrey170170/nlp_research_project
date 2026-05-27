@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 import os
 import time
+import traceback
 from typing import Any, Mapping, cast
 
 from ..io_utils import ensure_dir, write_json, write_jsonl
@@ -414,10 +415,10 @@ def run_real_shard(
                 }
             )
         except Exception as exc:  # pragma: no cover - exercised only in SLURM real mode
+            trace.update(_exception_payload(exc))
             trace.update(
                 {
                     "status": "error",
-                    "error": repr(exc),
                     "timings": {
                         "trace_seconds": time.perf_counter() - started,
                     },
@@ -456,6 +457,43 @@ def _summary_row(spec: TraceSpec, *, shard_id: int) -> dict[str, Any]:
         "estimated_cost": spec["estimated_cost"],
         "selection_reasons": spec["selection_reasons"],
     }
+
+
+def _exception_payload(exc: Exception) -> dict[str, Any]:
+    """Return diagnostic-safe exception metadata for per-token trace failures.
+
+    nnsight wraps inner exceptions in dynamically generated ``NNsightException``
+    classes whose ``repr`` is often just ``NNsightException()``.  ``str(exc)``
+    and ``print_exception`` carry the reconstructed trace, so preserve those in
+    the token trace JSON instead of only storing ``repr(exc)``.
+    """
+
+    payload: dict[str, Any] = {
+        "error": repr(exc),
+        "error_type": type(exc).__name__,
+        "error_module": type(exc).__module__,
+        "error_message": str(exc),
+        "traceback": traceback.format_exc(),
+    }
+    original = getattr(exc, "original", None)
+    if original is not None:
+        payload.update(
+            {
+                "original_error_type": type(original).__name__,
+                "original_error_module": type(original).__module__,
+                "original_error": repr(original),
+                "original_error_message": str(original),
+            }
+        )
+    cause = exc.__cause__
+    if cause is not None:
+        payload["cause_error"] = repr(cause)
+        payload["cause_error_type"] = type(cause).__name__
+    context = exc.__context__
+    if context is not None:
+        payload["context_error"] = repr(context)
+        payload["context_error_type"] = type(context).__name__
+    return payload
 
 
 def _trace_payload(spec: TraceSpec, *, shard_id: int) -> dict[str, Any]:
