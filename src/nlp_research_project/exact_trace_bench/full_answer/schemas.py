@@ -36,6 +36,7 @@ class TraceSpec(TypedDict):
     trace_id: str
     trajectory_id: str
     generated_index: int
+    target_position: int
     prefix_token_count: int
     target_token_id: int
     target_token_text: str
@@ -150,6 +151,7 @@ def validate_trace_spec(spec: Mapping[str, Any]) -> None:
             raise ValueError(f"trace spec {key} must be a string")
     for key in (
         "generated_index",
+        "target_position",
         "prefix_token_count",
         "target_token_id",
         "estimated_cost",
@@ -159,12 +161,32 @@ def validate_trace_spec(spec: Mapping[str, Any]) -> None:
             raise ValueError(f"trace spec {key} must be a non-negative int")
     if spec.get("target_mode") != TARGET_MODE:
         raise ValueError(f"trace spec target_mode must be {TARGET_MODE!r}")
+    if spec["target_position"] != spec["prefix_token_count"]:
+        raise ValueError(
+            "trace spec target_position must equal prefix_token_count for "
+            "independent-prefix full-answer traces"
+        )
     if not isinstance(spec.get("selection_reasons"), list) or not all(
         isinstance(reason, str) for reason in spec.get("selection_reasons", [])
     ):
         raise ValueError("trace spec selection_reasons must be a list of strings")
     if not isinstance(spec.get("graph_knobs"), dict):
         raise ValueError("trace spec graph_knobs must be an object")
+
+
+def normalize_trace_spec(spec: Mapping[str, Any]) -> TraceSpec:
+    """Return a current trace spec, accepting pre-target-position v1 rows.
+
+    Early full-answer v1 specs did not persist ``target_position`` because the
+    independent-prefix target is numerically identical to ``prefix_token_count``.
+    Keep those provenance artifacts loadable while ensuring every in-memory spec
+    now carries the explicit target-position metadata.
+    """
+    payload = dict(spec)
+    if "target_position" not in payload:
+        payload["target_position"] = payload.get("prefix_token_count")
+    validate_trace_spec(payload)
+    return cast(TraceSpec, payload)
 
 
 def write_trace_selection(path: Path, payload: dict[str, Any]) -> None:
@@ -200,12 +222,14 @@ def build_trace_specs(
     for generated_index in selection.get("selected_indices", []):
         token = generated_tokens[generated_index]
         prefix_token_count = prompt_token_count + generated_index
+        target_position = prompt_token_count + generated_index
         specs.append(
             {
                 "schema_version": SCHEMA_VERSION,
                 "trace_id": f"{trajectory_id}_tok{generated_index:06d}",
                 "trajectory_id": trajectory_id,
                 "generated_index": generated_index,
+                "target_position": target_position,
                 "prefix_token_count": prefix_token_count,
                 "target_token_id": int(token["token_id"]),
                 "target_token_text": str(token.get("token_text", "")),
@@ -227,8 +251,7 @@ def write_trace_specs(path: Path, specs: list[TraceSpec]) -> None:
 def load_trace_specs(path: Path) -> list[TraceSpec]:
     specs: list[TraceSpec] = []
     for row in iter_jsonl(path):
-        validate_trace_spec(row)
-        specs.append(cast(TraceSpec, row))
+        specs.append(normalize_trace_spec(row))
     return specs
 
 

@@ -45,7 +45,38 @@ def load_shard_inputs(
     for spec in selected:
         if spec["trajectory_id"] != trajectory_id:
             raise ValueError("trace spec trajectory_id does not match trajectory")
+        validate_trace_spec_against_trajectory(trajectory, spec)
     return cast(dict[str, Any], trajectory), selected, shard
+
+
+def validate_trace_spec_against_trajectory(
+    trajectory: Mapping[str, Any], spec: TraceSpec
+) -> None:
+    """Fail before attribution if position metadata diverges from the prefix."""
+    prompt_token_count = trajectory.get("prompt_token_count")
+    generated_tokens = trajectory.get("generated_tokens")
+    if not isinstance(prompt_token_count, int) or prompt_token_count < 0:
+        raise ValueError("trajectory prompt_token_count must be a non-negative int")
+    if not isinstance(generated_tokens, list):
+        raise ValueError("trajectory generated_tokens must be a list")
+    generated_index = spec["generated_index"]
+    if generated_index < 0 or generated_index >= len(generated_tokens):
+        raise ValueError(f"generated_index out of bounds: {generated_index}")
+    expected_position = prompt_token_count + generated_index
+    if spec["target_position"] != expected_position:
+        raise ValueError(
+            "trace spec target_position does not match "
+            "prompt_token_count + generated_index "
+            f"({spec['target_position']} != {expected_position})"
+        )
+    token = generated_tokens[generated_index]
+    if not isinstance(token, Mapping):
+        raise ValueError("trajectory generated token row must be an object")
+    if token.get("absolute_token_position") != expected_position:
+        raise ValueError(
+            "trajectory generated token absolute_token_position does not match "
+            "prompt_token_count + generated_index"
+        )
 
 
 def list_shard_specs(
@@ -64,7 +95,8 @@ def print_shard_specs(rows: list[dict[str, Any]]) -> None:
     for row in rows:
         print(
             f"shard={row['shard_id']} generated_index={row['generated_index']} "
-            f"trace_id={row['trace_id']} target={row['target_token_id']} "
+            f"target_position={row['target_position']} trace_id={row['trace_id']} "
+            f"target={row['target_token_id']} "
             f"text={row['target_token_text']!r} cost={row['estimated_cost']}"
         )
 
@@ -93,6 +125,7 @@ def dry_run_shard(
         "trace_specs_file": str(trace_specs_path),
         "shards_file": str(shards_path),
         "token_count": len(specs),
+        "target_positions": [spec["target_position"] for spec in specs],
     }
     write_json(root / "shard.json", shard_payload)
     rows: list[dict[str, Any]] = []
@@ -132,6 +165,11 @@ def reconstruct_prefix_token_ids(
         raise ValueError(
             "trace spec prefix_token_count does not match reconstructed prefix "
             f"({spec['prefix_token_count']} != {len(prefix)})"
+        )
+    if spec["target_position"] != len(prefix):
+        raise ValueError(
+            "trace spec target_position does not match reconstructed target "
+            f"position ({spec['target_position']} != {len(prefix)})"
         )
     return prefix
 
@@ -177,6 +215,7 @@ def _shard_record(
     shards_path: Path,
     token_count: int,
     metadata: Mapping[str, Any],
+    target_positions: list[int] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "schema_version": 1,
@@ -186,6 +225,7 @@ def _shard_record(
         "trace_specs_file": str(trace_specs_path),
         "shards_file": str(shards_path),
         "token_count": token_count,
+        "target_positions": target_positions or [],
     }
     payload.update(metadata)
     return payload
@@ -351,6 +391,7 @@ def run_real_shard(
             shards_path=shards_path,
             token_count=len(specs),
             metadata=metadata,
+            target_positions=[spec["target_position"] for spec in specs],
         ),
     )
 
@@ -459,6 +500,7 @@ def run_real_shard(
             shards_path=shards_path,
             token_count=len(specs),
             metadata=metadata,
+            target_positions=[spec["target_position"] for spec in specs],
         ),
     )
     return {"shard_dir": str(root), "token_count": len(rows), "status": final_status}
@@ -470,6 +512,7 @@ def _summary_row(spec: TraceSpec, *, shard_id: int) -> dict[str, Any]:
         "trace_id": spec["trace_id"],
         "trajectory_id": spec["trajectory_id"],
         "generated_index": spec["generated_index"],
+        "target_position": spec["target_position"],
         "prefix_token_count": spec["prefix_token_count"],
         "target_token_id": spec["target_token_id"],
         "target_token_text": spec["target_token_text"],

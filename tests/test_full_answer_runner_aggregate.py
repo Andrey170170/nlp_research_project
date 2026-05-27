@@ -53,6 +53,7 @@ def _write_tiny_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
             "trace_id": "traj_runner_tok000000",
             "trajectory_id": "traj_runner",
             "generated_index": 0,
+            "target_position": 2,
             "prefix_token_count": 2,
             "target_token_id": 201,
             "target_token_text": "A",
@@ -66,6 +67,7 @@ def _write_tiny_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
             "trace_id": "traj_runner_tok000001",
             "trajectory_id": "traj_runner",
             "generated_index": 1,
+            "target_position": 3,
             "prefix_token_count": 3,
             "target_token_id": 202,
             "target_token_text": "7",
@@ -118,7 +120,10 @@ def test_dry_run_shard_writes_expected_files_and_metadata(tmp_path: Path) -> Non
         "attribution_targets": [202],
     }
     assert trace["selection_reasons"] == ["numeric"]
+    assert trace["target_position"] == 3
     assert trace["prefix_token_count"] == 3
+    shard = json.loads((shard_dir / "shard.json").read_text(encoding="utf-8"))
+    assert shard["target_positions"] == [3]
     assert (shard_dir / "trace_results.jsonl").exists()
 
 
@@ -185,6 +190,56 @@ def test_aggregate_handles_dry_run_rows(tmp_path: Path) -> None:
     assert "target_token_id" in (run_root / "per_token_metrics.csv").read_text(
         encoding="utf-8"
     )
+    assert "target_position" in (run_root / "per_token_metrics.csv").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_shard_input_validation_rejects_target_position_mismatch(
+    tmp_path: Path,
+) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    rows = [
+        json.loads(line) for line in specs_path.read_text(encoding="utf-8").splitlines()
+    ]
+    rows[1]["target_position"] = 99
+    rows[1]["prefix_token_count"] = 99
+    specs_path.write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8"
+    )
+
+    try:
+        load_shard_inputs(
+            trajectory_path=trajectory_path,
+            trace_specs_path=specs_path,
+            shards_path=shards_path,
+            shard_id=0,
+        )
+    except ValueError as exc:
+        assert "target_position" in str(exc)
+    else:
+        raise AssertionError("expected target_position mismatch to fail")
+
+
+def test_shard_inputs_normalize_old_specs_without_target_position(
+    tmp_path: Path,
+) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    rows = [
+        json.loads(line) for line in specs_path.read_text(encoding="utf-8").splitlines()
+    ]
+    rows[1].pop("target_position")
+    specs_path.write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8"
+    )
+
+    _trajectory, specs, _shard = load_shard_inputs(
+        trajectory_path=trajectory_path,
+        trace_specs_path=specs_path,
+        shards_path=shards_path,
+        shard_id=0,
+    )
+    assert specs[0]["target_position"] == 3
 
 
 def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
@@ -242,6 +297,7 @@ def test_cli_list_does_not_require_output_root(tmp_path: Path) -> None:
     )
     assert proc.returncode == 0, proc.stderr
     assert "generated_index=0" in proc.stdout
+    assert "target_position=2" in proc.stdout
 
 
 def test_cli_dry_run_requires_output_root(tmp_path: Path) -> None:
