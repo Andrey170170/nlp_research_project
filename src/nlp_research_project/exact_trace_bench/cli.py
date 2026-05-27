@@ -27,6 +27,7 @@ from .full_answer.schemas import (
     write_trace_specs,
 )
 from .full_answer.aggregate import aggregate_shards
+from .full_answer.audit import audit_prefix_views
 from .full_answer.runner import dry_run_shard, list_shard_specs, print_shard_specs
 from .full_answer.selection import parse_indices_csv, select_tokens
 from .full_answer.sharding import build_lpt_shards
@@ -675,6 +676,19 @@ def _cmd_aggregate_full_answer_shards(args: argparse.Namespace) -> None:
     print(json.dumps(aggregate_shards(args.run_root), indent=2))
 
 
+def _cmd_audit_full_answer_prefix_views(args: argparse.Namespace) -> None:
+    print(
+        json.dumps(
+            audit_prefix_views(
+                trajectory_path=args.trajectory,
+                run_root=args.run_root,
+                output_dir=args.output_dir,
+            ),
+            indent=2,
+        )
+    )
+
+
 def _cmd_plot_full_answer_temporal(args: argparse.Namespace) -> None:
     print(
         json.dumps(
@@ -916,6 +930,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     full_answer_aggregate.add_argument("--run-root", type=Path, required=True)
     full_answer_aggregate.set_defaults(func=_cmd_aggregate_full_answer_shards)
+
+    full_answer_audit = subparsers.add_parser(
+        "audit-full-answer-prefix-views",
+        help="Login-safe audit of full-answer independent-prefix trace artifacts",
+    )
+    full_answer_audit.add_argument("--trajectory", type=Path, required=True)
+    full_answer_audit.add_argument("--run-root", type=Path, required=True)
+    full_answer_audit.add_argument("--output-dir", type=Path, default=None)
+    full_answer_audit.set_defaults(func=_cmd_audit_full_answer_prefix_views)
 
     full_answer_launch = subparsers.add_parser(
         "launch-full-answer-shards",
