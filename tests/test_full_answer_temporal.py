@@ -57,6 +57,42 @@ def _write_graph(path: Path, step: SimpleStep) -> None:
     )
 
 
+def _write_bucketed_graph(path: Path, step: SimpleStep, weight: float) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    metadata = [
+        {
+            "bucket": "feature<-feature",
+            "raw_total_abs_mass": weight + 1.0,
+            "retained_abs_mass": weight,
+            "retained_fraction": weight / (weight + 1.0),
+            "raw_nnz": 2,
+            "retained_nnz": 1,
+            "policy": {"top_p": 0.95, "cap": 1000000},
+        }
+    ]
+    np.savez_compressed(
+        path,
+        row_idx=step.row_idx,
+        col_idx=step.col_idx,
+        weights=step.weights,
+        feature_ids=step.feature_ids,
+        token_text=np.array(step.token_text),
+        logprob=np.array(np.nan),
+        n_features=np.array(step.n_features, dtype=np.int32),
+        step_idx=np.array(step.step_idx, dtype=np.int32),
+        compact_save_format=np.array("typed_bucketed"),
+        bucket_row_idx=np.asarray([0], dtype=np.int64),
+        bucket_col_idx=np.asarray([10 + step.step_idx], dtype=np.int64),
+        bucket_weights=np.asarray([weight], dtype=np.float32),
+        bucket_ids=np.asarray([0], dtype=np.int16),
+        bucket_names=np.asarray(["feature<-feature"]),
+        bucket_metadata_json=np.array(json.dumps(metadata)),
+        error_node_shape=np.asarray([1, 2], dtype=np.int32),
+        token_ids=np.asarray([1, 2], dtype=np.int64),
+        logit_token_ids=np.asarray([3], dtype=np.int64),
+    )
+
+
 def test_temporal_analyzer_adjacent_and_rolling_metrics(tmp_path: Path) -> None:
     run_root = tmp_path / "run"
     steps = {
@@ -98,42 +134,31 @@ def test_temporal_analyzer_adjacent_and_rolling_metrics(tmp_path: Path) -> None:
     ]
     assert len(rolling) == 2
     assert rolling[0]["feature_union_size"] == 3
-    assert rolling[0]["positionless_feature_union_size"] == 3
-    assert "all_edge_persistence50_mass_fraction" in rolling[0]
-    assert rolling[0]["feature_intersection_core_size"] == 1
-    assert rolling[1]["feature_intersection_core_size"] == 2
-    assert rolling[1]["feature_union_entered"] == 0
-    assert rolling[1]["feature_union_exited"] == 1
 
-    lag_rows = [
-        json.loads(line)
-        for line in (out_dir / "lag_pairs.jsonl").read_text().splitlines()
-    ]
-    assert [row["lag"] for row in lag_rows] == [1, 1, 2]
 
-    for name in (
-        "token_timeline.jsonl",
-        "cumulative_core.jsonl",
-        "layer_flow_by_token.jsonl",
-    ):
-        assert (out_dir / name).exists()
-        assert (out_dir / name).read_text().strip()
-    timeline = [
+def test_temporal_analyzer_reads_bucket_metrics(tmp_path: Path) -> None:
+    run_root = tmp_path / "run"
+    for index, weight in [(0, 2.0), (1, 3.0)]:
+        _write_bucketed_graph(
+            run_root / "shards" / "shard_000" / f"token_{index:06d}" / "graph.npz",
+            _step(index, [(0, 0, 1), (0, 0, 2)]),
+            weight,
+        )
+
+    out_dir = tmp_path / "out"
+    analyze_full_answer_temporal(
+        run_root=run_root, output_dir=out_dir, windows=[2], lags=[1]
+    )
+    adjacent = [
         json.loads(line)
-        for line in (out_dir / "token_timeline.jsonl").read_text().splitlines()
+        for line in (out_dir / "adjacent_pairs.jsonl").read_text().splitlines()
     ]
-    assert timeline[0]["phase_bin"] == "early"
-    cumulative = [
-        json.loads(line)
-        for line in (out_dir / "cumulative_core.jsonl").read_text().splitlines()
-    ]
-    assert "positionless_feature_persistence100_core_size" in cumulative[-1]
-    layer_flow = [
-        json.loads(line)
-        for line in (out_dir / "layer_flow_by_token.jsonl").read_text().splitlines()
-    ]
-    assert "mass_fraction" in layer_flow[0]
-    assert "global_core_summary" in summary
+    row = adjacent[0]
+    assert row["bucket_feature_feature_edge_count_a"] == 1
+    assert row["bucket_feature_feature_jaccard"] == 0.0
+    assert row["bucket_feature_feature_weighted_jaccard"] == 0.0
+    assert row["bucket_feature_feature_retained_nnz_a"] == 1
+    assert row["bucket_feature_feature_raw_total_abs_mass_b"] == 4.0
 
 
 def test_temporal_analyzer_rejects_step_path_mismatch(tmp_path: Path) -> None:

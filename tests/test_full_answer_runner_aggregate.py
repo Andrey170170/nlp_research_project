@@ -232,6 +232,7 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
         sys.modules,
         "trace_pipeline_chunked",
         types.SimpleNamespace(
+            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: None,
             compact_result_to_step_data=lambda *_args, **_kwargs: {},
             resolve_internal_precision=lambda _dtype: "float32",
         ),

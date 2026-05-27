@@ -40,6 +40,20 @@ class StepData:
     n_features: int
 
 
+@dataclass
+class BucketedCompact:
+    step: StepData
+    bucket_row_idx: np.ndarray
+    bucket_col_idx: np.ndarray
+    bucket_weights: np.ndarray
+    bucket_ids: np.ndarray
+    bucket_names: np.ndarray
+    bucket_metadata_json: str
+    error_node_shape: np.ndarray
+    token_ids: np.ndarray
+    logit_token_ids: np.ndarray
+
+
 # ── graph helpers ────────────────────────────────────────────────────
 
 
@@ -80,7 +94,7 @@ def decoder_aware_feature_scores(
     fb = feat_block.float()
     lb = logit_block.float()
     d_norms_sq = fb.pow(2).sum(dim=0) + lb.pow(2).sum(dim=0)  # (F,)
-    a_sq = activation_values[:n_features].float().pow(2)       # (F,)
+    a_sq = activation_values[:n_features].float().pow(2)  # (F,)
     return a_sq * d_norms_sq
 
 
@@ -105,8 +119,8 @@ def _sparsify_decoder_aware(
     lb = logit_block.float()
 
     d_norms_sq = fb.pow(2).sum(dim=0) + lb.pow(2).sum(dim=0)  # (F,)
-    a_sq = activation_values[:n_features].float().pow(2)       # (F,)
-    scores = a_sq * d_norms_sq                                  # (F,)
+    a_sq = activation_values[:n_features].float().pow(2)  # (F,)
+    scores = a_sq * d_norms_sq  # (F,)
 
     ranked = torch.argsort(scores, descending=True)
 
@@ -159,6 +173,8 @@ def _sparsify_decoder_aware(
 
     norm_weights = (vals.double() / total).float().numpy()
     return row_idx.numpy(), col_idx.numpy(), norm_weights
+
+
 # END NEW
 
 
@@ -186,8 +202,12 @@ def sparsify_edges(
     # NEW: dispatch to decoder-aware path when activations available
     if activation_values is not None:
         return _sparsify_decoder_aware(
-            feat_block, logit_block, logit_start,
-            activation_values, n_features, max_edges,
+            feat_block,
+            logit_block,
+            logit_start,
+            activation_values,
+            n_features,
+            max_edges,
         )
     # END NEW
 
@@ -260,6 +280,33 @@ def save_compact(step: StepData, path: Path) -> None:
     )
 
 
+def save_bucketed_compact(bundle: BucketedCompact, path: Path) -> None:
+    """Save legacy compact arrays plus optional typed-bucket edge arrays."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    step = bundle.step
+    np.savez_compressed(
+        str(path),
+        row_idx=step.row_idx,
+        col_idx=step.col_idx,
+        weights=step.weights,
+        feature_ids=step.feature_ids,
+        token_text=np.array(step.token_text),
+        logprob=np.array(step.logprob if step.logprob is not None else np.nan),
+        n_features=np.array(step.n_features, dtype=np.int32),
+        step_idx=np.array(step.step_idx, dtype=np.int32),
+        compact_save_format=np.array("typed_bucketed"),
+        bucket_row_idx=bundle.bucket_row_idx,
+        bucket_col_idx=bundle.bucket_col_idx,
+        bucket_weights=bundle.bucket_weights,
+        bucket_ids=bundle.bucket_ids,
+        bucket_names=bundle.bucket_names,
+        bucket_metadata_json=np.array(bundle.bucket_metadata_json),
+        error_node_shape=bundle.error_node_shape,
+        token_ids=bundle.token_ids,
+        logit_token_ids=bundle.logit_token_ids,
+    )
+
+
 def load_compact(path: Path) -> StepData:
     """Load a StepData from a .npz file."""
     data = np.load(str(path), allow_pickle=False)
@@ -285,9 +332,14 @@ def step_from_pt(
     af = graph["active_features"]  # (F, 3): layer, pos, feat_idx
     n_features = af.shape[0]
 
-    activation_values = graph.get("activation_values")  # NEW: (F,) bfloat16, may be absent
+    activation_values = graph.get(
+        "activation_values"
+    )  # NEW: (F,) bfloat16, may be absent
     row_idx, col_idx, weights = sparsify_edges(
-        adj, n_features, max_edges=max_edges, activation_values=activation_values  # NEW
+        adj,
+        n_features,
+        max_edges=max_edges,
+        activation_values=activation_values,  # NEW
     )
 
     feature_ids = af.numpy().astype(np.int64)

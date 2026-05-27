@@ -426,6 +426,7 @@ def run_real_shard(
     import circuit_utils
     import trace_pipeline as base
     from trace_pipeline_chunked import (
+        compact_result_to_bucketed_compact,
         compact_result_to_step_data,
         resolve_internal_precision,
     )
@@ -458,6 +459,11 @@ def run_real_shard(
             trace["prefix_view_metadata"] = prefix_metadata
             knobs = spec["graph_knobs"]
             save_raw_graph = bool(knobs.get("save_raw_graph", False))
+            compact_save_format = str(knobs.get("compact_save_format", "legacy_topk"))
+            if compact_save_format not in {"legacy_topk", "typed_bucketed"}:
+                raise ValueError(
+                    f"unsupported compact_save_format: {compact_save_format}"
+                )
             raw_graph_path = token_dir / "graph.pt"
             trace["graph_path"] = str(raw_graph_path if save_raw_graph else graph_path)
             graph_result = attribute_nnsight(
@@ -511,14 +517,25 @@ def run_real_shard(
                         selected_features.numel()
                     )
             else:
-                step = compact_result_to_step_data(
-                    graph_result,
-                    spec["generated_index"],
-                    token_text=spec["target_token_text"],
-                    max_edges=int(knobs.get("max_edges", 20000)),
-                )
-                circuit_utils.save_compact(step, graph_path)
+                if compact_save_format == "typed_bucketed":
+                    bucketed = compact_result_to_bucketed_compact(
+                        graph_result,
+                        spec["generated_index"],
+                        token_text=spec["target_token_text"],
+                        max_edges=int(knobs.get("max_edges", 20000)),
+                    )
+                    circuit_utils.save_bucketed_compact(bucketed, graph_path)
+                    step = bucketed.step
+                else:
+                    step = compact_result_to_step_data(
+                        graph_result,
+                        spec["generated_index"],
+                        token_text=spec["target_token_text"],
+                        max_edges=int(knobs.get("max_edges", 20000)),
+                    )
+                    circuit_utils.save_compact(step, graph_path)
                 graph_summary = _graph_summary(step, graph_path)
+                graph_summary["format"] = compact_save_format
             trace.update(
                 {
                     "status": "ok",

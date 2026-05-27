@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, cast
 
@@ -32,6 +33,8 @@ class GraphSnapshot:
     features: set[tuple[int, int, int]]
     edges: dict[tuple[object, object], float]
     all_edges: dict[tuple[object, object], float]
+    bucket_edges: dict[str, dict[tuple[object, object], float]]
+    bucket_metadata: dict[str, dict[str, Any]]
 
     @property
     def positionless_features(self) -> set[tuple[int, int]]:
@@ -86,13 +89,64 @@ def _load_snapshot(path: Path) -> GraphSnapshot:
             f"graph step_idx {generated_index} does not match path index {path_index}: {path}"
         )
     step_for_compare = cast("StepData", step)
+    bucket_edges, bucket_metadata = _load_bucket_edges(data)
     return GraphSnapshot(
         generated_index=generated_index,
         token_text=str(getattr(step, "token_text", "")),
         features=_feature_set(step_for_compare),
         edges=_edge_map(step_for_compare),
         all_edges=_all_edge_map(step_for_compare),
+        bucket_edges=bucket_edges,
+        bucket_metadata=bucket_metadata,
     )
+
+
+def _load_bucket_edges(
+    data: Any,
+) -> tuple[dict[str, dict[tuple[object, object], float]], dict[str, dict[str, Any]]]:
+    if "bucket_row_idx" not in data.files:
+        return {}, {}
+    names = [str(x) for x in data["bucket_names"].tolist()]
+    metadata_rows = json.loads(str(data["bucket_metadata_json"]))
+    metadata = {str(row["bucket"]): row for row in metadata_rows}
+    out = {name: {} for name in names}
+    for row, col, weight, bucket_id in zip(
+        data["bucket_row_idx"],
+        data["bucket_col_idx"],
+        data["bucket_weights"],
+        data["bucket_ids"],
+    ):
+        name = names[int(bucket_id)]
+        out[name][(int(row), int(col))] = float(abs(weight))
+    return out, metadata
+
+
+def _sanitize_bucket(name: str) -> str:
+    return name.replace("<-", "_").replace("-", "_")
+
+
+def _bucket_pair_metrics(a: GraphSnapshot, b: GraphSnapshot) -> dict[str, Any]:
+    row: dict[str, Any] = {}
+    for name in sorted(set(a.bucket_edges) | set(b.bucket_edges)):
+        prefix = f"bucket_{_sanitize_bucket(name)}"
+        ea = a.bucket_edges.get(name, {})
+        eb = b.bucket_edges.get(name, {})
+        row[f"{prefix}_edge_count_a"] = len(ea)
+        row[f"{prefix}_edge_count_b"] = len(eb)
+        row[f"{prefix}_jaccard"] = _jaccard(set(ea), set(eb))
+        row[f"{prefix}_weighted_jaccard"] = _weighted_edge_jaccard(ea, eb)
+        for side, snap in (("a", a), ("b", b)):
+            meta = snap.bucket_metadata.get(name, {})
+            for key in (
+                "raw_total_abs_mass",
+                "retained_abs_mass",
+                "retained_fraction",
+                "raw_nnz",
+                "retained_nnz",
+            ):
+                if key in meta:
+                    row[f"{prefix}_{key}_{side}"] = meta[key]
+    return row
 
 
 def _churn(a: set[Any], b: set[Any], *, prefix: str) -> dict[str, int | float]:
@@ -290,6 +344,7 @@ def pair_metrics(a: GraphSnapshot, b: GraphSnapshot) -> dict[str, Any]:
     row.update(_mass_churn(a.all_edges, b.all_edges))
     row.update(_topk_metrics(a.all_edges, b.all_edges))
     row.update(_mass_core_metrics(a.all_edges, b.all_edges))
+    row.update(_bucket_pair_metrics(a, b))
     return row
 
 
