@@ -63,6 +63,7 @@ def test_full_answer_cli_help_is_login_safe() -> None:
     assert run_cli("aggregate-full-answer-shards", "--help").returncode == 0
     assert run_cli("audit-full-answer-prefix-views", "--help").returncode == 0
     assert run_cli("run-full-answer-trajectory", "--help").returncode == 0
+    assert run_cli("sample-full-answer-trajectories", "--help").returncode == 0
     assert run_cli("submit-full-answer-trajectory", "--help").returncode == 0
     assert run_cli("launch-full-answer-shards", "--help").returncode == 0
     assert run_cli("plot-full-answer-temporal", "--help").returncode == 0
@@ -209,6 +210,42 @@ def test_full_answer_trajectory_print_only_plan_uses_snapshot_template(
     )
     assert "WORKSPACE_ROOT=" in plan["sbatch_command"]
     assert "LIB_WORKSPACE_ROOT=" in plan["sbatch_command"]
+
+
+def test_full_answer_trajectory_sampling_print_only_plan(tmp_path: Path) -> None:
+    prompt_path = tmp_path / "prompt.txt"
+    prompt_path.write_text("Question: 6*7?", encoding="utf-8")
+    proc = run_cli(
+        "submit-full-answer-trajectory",
+        "--cluster",
+        "ascend",
+        "--prompt-path",
+        str(prompt_path),
+        "--output",
+        str(tmp_path / "samples"),
+        "--max-new-tokens",
+        "4",
+        "--seed",
+        "100",
+        "--sample-until-success",
+        "--expected-answer",
+        "42",
+        "--max-success-tokens",
+        "2",
+        "--max-attempts",
+        "5",
+        "--time-limit-seconds",
+        "30",
+        "--snapshot-root",
+        str(tmp_path / "snapshots"),
+        "--print-only",
+    )
+    assert proc.returncode == 0, proc.stderr
+    plan = json.loads(proc.stdout)
+    assert plan["sample_until_success"] is True
+    assert plan["max_attempts"] == 5
+    assert "SAMPLE_UNTIL_SUCCESS=1" in plan["sbatch_command"]
+    assert "EXPECTED_ANSWER=42" in plan["sbatch_command"]
 
 
 def test_full_answer_shard_print_only_plan_uses_snapshot_paths(tmp_path: Path) -> None:

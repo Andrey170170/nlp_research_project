@@ -732,6 +732,11 @@ def _cmd_submit_full_answer_trajectory(args: argparse.Namespace) -> None:
         output=args.output,
         trajectory_id=args.trajectory_id,
         max_new_tokens=args.max_new_tokens,
+        sample_until_success=args.sample_until_success,
+        expected_answer=args.expected_answer,
+        max_success_tokens=args.max_success_tokens,
+        max_attempts=args.max_attempts,
+        time_limit_seconds=args.time_limit_seconds,
         temperature=args.temperature,
         seed=args.seed,
         include_prompt_text=args.include_prompt_text,
@@ -745,6 +750,27 @@ def _cmd_submit_full_answer_trajectory(args: argparse.Namespace) -> None:
     if not args.print_only:
         subprocess.run(plan["sbatch_argv"], check=True)
     print(json.dumps(plan, indent=2))
+
+
+def _cmd_sample_full_answer_trajectories(args: argparse.Namespace) -> None:
+    from .full_answer.trajectory import sample_trajectories_until_success
+
+    manifest = sample_trajectories_until_success(
+        prompt_path=args.prompt_path,
+        fixture_catalog=args.fixture_catalog,
+        fixture_name=args.fixture_name,
+        output_dir=args.output_dir,
+        trajectory_id_prefix=args.trajectory_id_prefix,
+        max_new_tokens=args.max_new_tokens,
+        temperature=args.temperature,
+        base_seed=args.base_seed,
+        include_prompt_text=args.include_prompt_text,
+        expected_answer=args.expected_answer,
+        max_success_tokens=args.max_success_tokens,
+        max_attempts=args.max_attempts,
+        time_limit_seconds=args.time_limit_seconds,
+    )
+    print(json.dumps(manifest, indent=2))
 
 
 def _cmd_launch_full_answer_shards(args: argparse.Namespace) -> None:
@@ -1011,6 +1037,17 @@ def build_parser() -> argparse.ArgumentParser:
     full_answer_trajectory_submit.add_argument("--temperature", type=float, default=0.0)
     full_answer_trajectory_submit.add_argument("--seed", type=int, default=None)
     full_answer_trajectory_submit.add_argument(
+        "--sample-until-success", action="store_true"
+    )
+    full_answer_trajectory_submit.add_argument("--expected-answer", default=None)
+    full_answer_trajectory_submit.add_argument(
+        "--max-success-tokens", type=int, default=None
+    )
+    full_answer_trajectory_submit.add_argument("--max-attempts", type=int, default=None)
+    full_answer_trajectory_submit.add_argument(
+        "--time-limit-seconds", type=float, default=None
+    )
+    full_answer_trajectory_submit.add_argument(
         "--include-prompt-text", action="store_true"
     )
     full_answer_trajectory_submit.add_argument(
@@ -1027,6 +1064,25 @@ def build_parser() -> argparse.ArgumentParser:
     full_answer_trajectory_submit.add_argument("--run-name", default=None)
     full_answer_trajectory_submit.add_argument("--print-only", action="store_true")
     full_answer_trajectory_submit.set_defaults(func=_cmd_submit_full_answer_trajectory)
+
+    full_answer_sample = subparsers.add_parser(
+        "sample-full-answer-trajectories",
+        help="SLURM-only: sample trajectories until answer/length success or limits",
+    )
+    full_answer_sample.add_argument("--prompt-path", type=Path, default=None)
+    full_answer_sample.add_argument("--fixture-catalog", type=Path, default=None)
+    full_answer_sample.add_argument("--fixture-name", default=None)
+    full_answer_sample.add_argument("--output-dir", type=Path, required=True)
+    full_answer_sample.add_argument("--trajectory-id-prefix", default=None)
+    full_answer_sample.add_argument("--max-new-tokens", type=int, required=True)
+    full_answer_sample.add_argument("--temperature", type=float, default=0.0)
+    full_answer_sample.add_argument("--base-seed", type=int, default=0)
+    full_answer_sample.add_argument("--include-prompt-text", action="store_true")
+    full_answer_sample.add_argument("--expected-answer", required=True)
+    full_answer_sample.add_argument("--max-success-tokens", type=int, required=True)
+    full_answer_sample.add_argument("--max-attempts", type=int, required=True)
+    full_answer_sample.add_argument("--time-limit-seconds", type=float, default=None)
+    full_answer_sample.set_defaults(func=_cmd_sample_full_answer_trajectories)
 
     build_scenarios = subparsers.add_parser(
         "build-scenarios",

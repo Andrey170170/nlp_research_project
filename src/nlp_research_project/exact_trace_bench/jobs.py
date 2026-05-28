@@ -505,6 +505,11 @@ def render_full_answer_trajectory_plan(
     cluster: str,
     output: Path,
     max_new_tokens: int,
+    sample_until_success: bool = False,
+    expected_answer: str | None = None,
+    max_success_tokens: int | None = None,
+    max_attempts: int | None = None,
+    time_limit_seconds: float | None = None,
     prompt_path: Path | None = None,
     fixture_catalog: Path | None = None,
     fixture_name: str | None = None,
@@ -523,6 +528,13 @@ def render_full_answer_trajectory_plan(
         raise ValueError(f"Unsupported full-answer trajectory cluster: {cluster!r}")
     if max_new_tokens <= 0:
         raise ValueError("max_new_tokens must be positive")
+    if sample_until_success:
+        if expected_answer is None:
+            raise ValueError("expected_answer is required for sampling")
+        if max_success_tokens is None or max_success_tokens <= 0:
+            raise ValueError("max_success_tokens must be positive for sampling")
+        if max_attempts is None or max_attempts <= 0:
+            raise ValueError("max_attempts must be positive for sampling")
     if prompt_path is None and (fixture_catalog is None or fixture_name is None):
         raise ValueError("provide prompt_path or fixture_catalog + fixture_name")
 
@@ -544,6 +556,8 @@ def render_full_answer_trajectory_plan(
     export_parts = [
         "ALL",
         f"OUTPUT_TRAJECTORY={output.resolve()}",
+        f"OUTPUT_DIR={output.resolve()}",
+        f"SAMPLE_UNTIL_SUCCESS={1 if sample_until_success else 0}",
         f"MAX_NEW_TOKENS={max_new_tokens}",
         f"TEMPERATURE={temperature}",
         f"INCLUDE_PROMPT_TEXT={1 if include_prompt_text else 0}",
@@ -564,6 +578,14 @@ def render_full_answer_trajectory_plan(
         export_parts.append(f"TRAJECTORY_ID={trajectory_id}")
     if seed is not None:
         export_parts.append(f"SEED={seed}")
+    if expected_answer is not None:
+        export_parts.append(f"EXPECTED_ANSWER={expected_answer}")
+    if max_success_tokens is not None:
+        export_parts.append(f"MAX_SUCCESS_TOKENS={max_success_tokens}")
+    if max_attempts is not None:
+        export_parts.append(f"MAX_ATTEMPTS={max_attempts}")
+    if time_limit_seconds is not None:
+        export_parts.append(f"TIME_LIMIT_SECONDS={time_limit_seconds}")
     resolved_run_name = (
         _normalize_free_text(run_name) or f"full answer trajectory {cluster}"
     )
@@ -577,6 +599,11 @@ def render_full_answer_trajectory_plan(
     return {
         "cluster": cluster,
         "output": str(output.resolve()),
+        "sample_until_success": sample_until_success,
+        "expected_answer": expected_answer,
+        "max_success_tokens": max_success_tokens,
+        "max_attempts": max_attempts,
+        "time_limit_seconds": time_limit_seconds,
         "max_new_tokens": max_new_tokens,
         "temperature": temperature,
         "seed": seed,
