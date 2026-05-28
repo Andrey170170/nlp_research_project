@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -122,6 +123,18 @@ def generated_answer_text(trajectory: Trajectory) -> str:
     )
 
 
+def extracted_final_answer(trajectory: Trajectory) -> str:
+    text = generated_answer_text(trajectory).replace("<end_of_turn>", "").strip()
+    final_match = re.search(
+        r"final\s+answer\s*:\s*(.+)\Z", text, re.IGNORECASE | re.DOTALL
+    )
+    candidate = final_match.group(1).strip() if final_match else text
+    numbers = re.findall(r"-?\d+(?:\.\d+)?", candidate.replace(",", ""))
+    if numbers:
+        return numbers[-1]
+    return candidate.strip()
+
+
 def trajectory_matches_expected_answer(
     trajectory: Trajectory,
     *,
@@ -131,7 +144,7 @@ def trajectory_matches_expected_answer(
     if max_generated_tokens <= 0:
         raise ValueError("max_generated_tokens must be positive")
     return (
-        generated_answer_text(trajectory).strip() == expected_answer.strip()
+        extracted_final_answer(trajectory) == expected_answer.strip()
         and len(trajectory["generated_tokens"]) <= max_generated_tokens
     )
 

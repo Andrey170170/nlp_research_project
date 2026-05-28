@@ -10,6 +10,7 @@ from nlp_research_project.exact_trace_bench.full_answer.schemas import (
 )
 from nlp_research_project.exact_trace_bench.full_answer.trajectory import (
     build_trajectory,
+    extracted_final_answer,
     generated_answer_text,
     sample_trajectories_until_success,
     trajectory_matches_expected_answer,
@@ -40,11 +41,25 @@ def test_trajectory_success_predicate_uses_final_text_and_length() -> None:
         token_texts=[" 42", "\n"],
     )
     assert generated_answer_text(trajectory) == " 42\n"
+    assert extracted_final_answer(trajectory) == "42"
     assert trajectory_matches_expected_answer(
         trajectory, expected_answer="42", max_generated_tokens=2
     )
     assert not trajectory_matches_expected_answer(
         trajectory, expected_answer="42", max_generated_tokens=1
+    )
+
+
+def test_trajectory_success_predicate_extracts_final_answer_label() -> None:
+    trajectory = build_trajectory(
+        trajectory_id="predicate_final",
+        prompt_token_ids=[1],
+        generated_token_ids=[2, 3, 4],
+        token_texts=["work 140 - 80", "\nFinal answer: 60", "<end_of_turn>"],
+    )
+    assert extracted_final_answer(trajectory) == "60"
+    assert trajectory_matches_expected_answer(
+        trajectory, expected_answer="60", max_generated_tokens=3
     )
 
 
