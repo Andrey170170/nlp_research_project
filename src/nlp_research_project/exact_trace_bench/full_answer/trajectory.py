@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from ..config import REPO_ROOT
 from ..io_utils import ensure_dir, read_json, write_json
 from .schemas import SCHEMA_VERSION, GeneratedToken, Trajectory, write_trajectory
 
@@ -55,7 +56,14 @@ def load_fixture_prompt(
         elif fixture_dir is not None:
             resolved_prompt_path = Path(str(fixture_dir)) / "prompt.txt"
         if resolved_prompt_path is not None and not resolved_prompt_path.is_absolute():
-            resolved_prompt_path = fixture_catalog.parent / resolved_prompt_path
+            candidate_paths = [
+                fixture_catalog.parent / resolved_prompt_path,
+                REPO_ROOT / resolved_prompt_path,
+            ]
+            resolved_prompt_path = next(
+                (candidate for candidate in candidate_paths if candidate.exists()),
+                candidate_paths[0],
+            )
     if resolved_prompt_path is None:
         raise ValueError("provide --prompt-path or --fixture-catalog/--fixture-name")
     prompt_text = resolved_prompt_path.read_text(encoding="utf-8")
