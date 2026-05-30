@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from functools import cached_property
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, cast
@@ -40,6 +41,12 @@ class GraphSnapshot:
     @property
     def positionless_features(self) -> set[tuple[int, int]]:
         return {(layer, feature_id) for layer, _position, feature_id in self.features}
+
+    @cached_property
+    def feature_feature_collapsed_flows(
+        self,
+    ) -> tuple[dict[tuple[int, int], float], dict[tuple[int, int, int, int], float]]:
+        return _feature_feature_collapsed_flows(self)
 
 
 @dataclass(frozen=True)
@@ -346,8 +353,8 @@ def pair_metrics(a: GraphSnapshot, b: GraphSnapshot) -> dict[str, Any]:
     shifted = posa & posb
     flow_a = _layer_flow(a.all_edges)
     flow_b = _layer_flow(b.all_edges)
-    ff_layer_flow_a, ff_positionless_flow_a = _feature_feature_collapsed_flows(a)
-    ff_layer_flow_b, ff_positionless_flow_b = _feature_feature_collapsed_flows(b)
+    ff_layer_flow_a, ff_positionless_flow_a = a.feature_feature_collapsed_flows
+    ff_layer_flow_b, ff_positionless_flow_b = b.feature_feature_collapsed_flows
     flow_mass_a = float(sum(flow_a.values()))
     flow_mass_b = float(sum(flow_b.values()))
     logit_a = sum(v for (_sl, kind, _tl), v in flow_a.items() if kind == "logit")
