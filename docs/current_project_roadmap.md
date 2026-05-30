@@ -19,8 +19,8 @@ longer needs to dominate the public workflow.
 
 ## Active Track-2 plan — full-answer graph save policy refresh
 
-Status: typed-bucketed reruns complete as of 2026-05-30; interpretation and next
-collapsed-topology follow-up remain active.
+Status: typed-bucketed reruns and collapsed-topology follow-up complete as of
+2026-05-30; result interpretation is current.
 
 The current full-answer traces proved the all-token harness works, but the compact
 graph save policy is now known to be too lossy for feature-to-feature topology:
@@ -128,18 +128,23 @@ Current result from the typed-bucketed all-token reruns:
 - the wrong `361_base` temp0.8 trace is more locally stable, especially in
   middle/late phase summaries,
 - exact `feature<-feature` edge identity remains highly churny despite about 95%
-  retained feature-feature mass, so the next analysis should compare collapsed
-  feature topology rather than exact edge IDs alone.
+  retained feature-feature mass,
+- collapsed `feature<-feature` topology is much more stable: adjacent layer-flow
+  weighted Jaccard is about `0.57`--`0.65`, and adjacent positionless feature-flow
+  weighted Jaccard is about `0.41`--`0.49`,
+- the wrong `361_base` temp0.8 trace remains the most stable; the sampled wrong
+  `828_base` trace is somewhat more stable than sampled correct `828_base` under
+  collapsed feature-feature metrics, but the current set is too small for a broad
+  correct-vs-wrong claim.
 
-Next Track-2 analysis step:
+Next Track-2 decision point:
 
-1. Add collapsed topology metrics for `feature<-feature`, at least by layer-flow
-   and positionless feature classes.
-2. Reuse the typed-bucketed outputs; do not retrace unless a metric requires data
-   not present in the bucketed artifacts.
-3. Interpret the four traces using collapsed topology, bucket-specific metrics,
-   and token/phase context together before deciding whether to launch more full
-   trajectories.
+1. Treat typed-bucketed + collapsed topology as the current analysis baseline.
+2. Do not retrace these four trajectories unless a new metric needs data missing
+   from the bucketed artifacts.
+3. Decide whether the next scientific step is more trajectories for statistical
+   support, richer token/phase annotation for the existing four trajectories, or a
+   focused write-up of the current topology-stability finding.
 
 ## Current two-track plan after Wave 4
 

@@ -91,6 +91,11 @@ Track-2 full-answer typed-bucketed interpretation (May 2026):
   95% retained feature-feature mass, so the next useful topology analysis should
   collapse by layer/positionless feature classes rather than comparing exact edge
   IDs alone.
+- Collapsed `feature<-feature` topology confirms that the retained feature graph is
+  much more stable at coarse levels than exact edge identity suggests: adjacent
+  layer-flow weighted Jaccard is about `0.57`--`0.65`, and positionless feature-flow
+  weighted Jaccard is about `0.41`--`0.49`, versus exact feature-feature edge
+  weighted Jaccard near `0.005`--`0.008`.
 
 ## Current run families
 
@@ -149,6 +154,29 @@ Decision: retain typed-bucketed saves as the current full-answer comparison form
 and treat exact feature-feature edge identity as a low-level diagnostic. For
 scientific topology comparisons, add collapsed layer/positionless feature-flow
 metrics before drawing stronger correct-vs-wrong conclusions.
+
+Collapsed topology follow-up:
+
+- implementation commit: `b2bc97c` (`Add collapsed feature topology metrics`),
+  with `5ed2d82` caching collapsed flows for full-run analysis,
+- result summary files:
+  `deep_temporal_comparison_v1/collapsed_topology_summary.{json,csv}`.
+
+Mean adjacent collapsed `feature<-feature` topology metrics:
+
+| Run | Exact F<-F edge J | Collapsed layer-flow J | Collapsed positionless-flow J |
+|---|---:|---:|---:|
+| `828` temp0 correct | 0.0054 | 0.5817 | 0.4142 |
+| `828` temp0.8 correct | 0.0063 | 0.5685 | 0.4175 |
+| `828` temp0.8 wrong | 0.0074 | 0.6418 | 0.4556 |
+| `361` temp0.8 wrong | 0.0084 | 0.6537 | 0.4909 |
+
+Interpretation: exact feature-to-feature edge IDs churn almost completely, but the
+mass distribution over source/target layers and position-collapsed feature pairs is
+moderately stable. The wrong `361` trajectory remains the most stable. The sampled
+wrong `828` is somewhat more stable than the sampled correct `828` under these
+collapsed feature-feature metrics, but this still does not establish a general
+correct-vs-wrong split from the current four traces.
 
 ### 2026-05-27 — Prefix-view validation starting point
 
