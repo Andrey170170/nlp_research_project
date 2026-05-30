@@ -1,7 +1,7 @@
 # Experiments inventory
 
 Status: Current compact index and interpretation summary
-Last updated: 2026-05-27
+Last updated: 2026-05-30
 
 This file is the readable front page for experiment provenance. It should stay
 small enough to edit by hand.
@@ -77,6 +77,21 @@ Near-term cleanup focus:
 3. separate normal benchmark workflow from Track-A replay/debug tooling,
 4. add lightweight tests before deeper harness or library refactors.
 
+Track-2 full-answer typed-bucketed interpretation (May 2026):
+
+- Typed-bucketed compact saves replace the old global top-K full-answer save path
+  for current temporal comparisons. The old global top-K view is still useful for
+  compatibility, but not as the scientific readout for feature topology.
+- Across the four completed full-answer traces, the three `828_base` trajectories
+  are close by adjacent, lag, and phase metrics; the sampled temp0.8 correct/wrong
+  pair does not show a clean correct-vs-wrong separation.
+- The wrong `361_base` temp0.8 trajectory is substantially more locally stable,
+  especially in middle/late phases and positionless/layer-flow summaries.
+- Exact `feature<-feature` edge identity remains highly churny even with about
+  95% retained feature-feature mass, so the next useful topology analysis should
+  collapse by layer/positionless feature classes rather than comparing exact edge
+  IDs alone.
+
 ## Current run families
 
 | Family | Meaning | Current status |
@@ -89,6 +104,51 @@ Near-term cleanup focus:
 | historical `matched_debug` artifacts | Old matched-debug campaign outputs/configs | Historical only; do not use as an ordinary bucket |
 
 ## Recent durable decisions
+
+### 2026-05-30 — Typed-bucketed full-answer temporal comparison
+
+The typed-bucketed all-token reruns and temporal analyses completed for the four
+current comparison traces:
+
+1. deterministic temp0 correct `828_base`,
+2. sampled temp0.8 correct `828_base` seed2003,
+3. sampled temp0.8 wrong `828_base` seed1002,
+4. sampled temp0.8 wrong `361_base` seed1002.
+
+Key output root:
+
+- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/typed-bucketed-full-reruns-20260527`
+
+Cross-run deep comparison package:
+
+- `deep_temporal_comparison_v1/deep_temporal_comparison_summary.json`
+- `deep_temporal_comparison_v1/metric_summary.csv`
+- `deep_temporal_comparison_v1/phase_summary.csv`
+- `deep_temporal_comparison_v1/bucket_summary.csv`
+- combined plots for adjacent metrics, lag decay, phase means, and bucket means.
+
+Mean adjacent metrics from the deep comparison:
+
+| Run | Feature J | All-edge weighted J | Positionless feature J | Layer-flow weighted J |
+|---|---:|---:|---:|---:|
+| `828` temp0 correct | 0.4148 | 0.4038 | 0.6751 | 0.9477 |
+| `828` temp0.8 correct | 0.4209 | 0.4116 | 0.6751 | 0.9408 |
+| `828` temp0.8 wrong | 0.4129 | 0.4018 | 0.6782 | 0.9489 |
+| `361` temp0.8 wrong | 0.5130 | 0.5104 | 0.7391 | 0.9668 |
+
+Bucket-level interpretation:
+
+- `feature<-feature` exact weighted Jaccard remains near zero across runs
+  (`0.0054`--`0.0084`) despite retained fractions near `0.95`.
+- `feature<-token` is much more stable (`0.1988`--`0.2671`) and is highest for
+  the `361` wrong trajectory.
+- logit-facing buckets are stable enough for local output-readout comparisons,
+  but they should not be mixed with feature topology in a single global edge cap.
+
+Decision: retain typed-bucketed saves as the current full-answer comparison format
+and treat exact feature-feature edge identity as a low-level diagnostic. For
+scientific topology comparisons, add collapsed layer/positionless feature-flow
+metrics before drawing stronger correct-vs-wrong conclusions.
 
 ### 2026-05-27 — Prefix-view validation starting point
 

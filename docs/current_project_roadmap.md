@@ -1,7 +1,7 @@
 # Current Execution Plan — Post-Consolidation Cleanup
 
 Status: Current scratch roadmap
-Last updated: 2026-05-27
+Last updated: 2026-05-30
 
 ## Problem statement
 
@@ -19,7 +19,8 @@ longer needs to dominate the public workflow.
 
 ## Active Track-2 plan — full-answer graph save policy refresh
 
-Status: active as of 2026-05-27.
+Status: typed-bucketed reruns complete as of 2026-05-30; interpretation and next
+collapsed-topology follow-up remain active.
 
 The current full-answer traces proved the all-token harness works, but the compact
 graph save policy is now known to be too lossy for feature-to-feature topology:
@@ -115,6 +116,30 @@ For each rerun:
 The immediate scientific question for the rerun is whether the high apparent
 feature-to-feature edge churn persists after preserving ~95% of feature-to-feature
 mass, or whether churn mostly reflects the old global edge cap.
+
+Current result from the typed-bucketed all-token reruns:
+
+- all four comparison traces completed and aggregated under
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/typed-bucketed-full-reruns-20260527`,
+- cross-run summaries/plots live in
+  `.../deep_temporal_comparison_v1/`,
+- the three `828_base` trajectories remain close by adjacent/lag/phase metrics,
+  with no clean sampled correct-vs-wrong split,
+- the wrong `361_base` temp0.8 trace is more locally stable, especially in
+  middle/late phase summaries,
+- exact `feature<-feature` edge identity remains highly churny despite about 95%
+  retained feature-feature mass, so the next analysis should compare collapsed
+  feature topology rather than exact edge IDs alone.
+
+Next Track-2 analysis step:
+
+1. Add collapsed topology metrics for `feature<-feature`, at least by layer-flow
+   and positionless feature classes.
+2. Reuse the typed-bucketed outputs; do not retrace unless a metric requires data
+   not present in the bucketed artifacts.
+3. Interpret the four traces using collapsed topology, bucket-specific metrics,
+   and token/phase context together before deciding whether to launch more full
+   trajectories.
 
 ## Current two-track plan after Wave 4
 
