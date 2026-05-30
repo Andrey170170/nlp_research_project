@@ -35,6 +35,7 @@ class GraphSnapshot:
     all_edges: dict[tuple[object, object], float]
     bucket_edges: dict[str, dict[tuple[object, object], float]]
     bucket_metadata: dict[str, dict[str, Any]]
+    error_node_shape: tuple[int, ...] | None = None
 
     @property
     def positionless_features(self) -> set[tuple[int, int]]:
@@ -98,6 +99,9 @@ def _load_snapshot(path: Path) -> GraphSnapshot:
         all_edges=_all_edge_map(step_for_compare),
         bucket_edges=bucket_edges,
         bucket_metadata=bucket_metadata,
+        error_node_shape=tuple(int(x) for x in data["error_node_shape"])
+        if "error_node_shape" in data.files
+        else None,
     )
 
 
@@ -286,6 +290,52 @@ def _layer_flow(
     return flows
 
 
+def _feature_feature_n_pos(snap: GraphSnapshot) -> int | None:
+    if snap.error_node_shape is not None and len(snap.error_node_shape) > 1:
+        return int(snap.error_node_shape[1])
+    meta = snap.bucket_metadata.get("feature<-feature", {})
+    shape = meta.get("error_node_shape")
+    if isinstance(shape, (list, tuple)) and len(shape) > 1:
+        return int(shape[1])
+    return None
+
+
+def _decode_feature_feature_id(encoded: object, n_pos: int) -> tuple[int, int, int]:
+    value = int(cast(Any, encoded))
+    stride = n_pos * 1_000_000
+    layer = value // stride
+    rem = value % stride
+    position = rem // 1_000_000
+    feature_idx = rem % 1_000_000
+    return int(layer), int(position), int(feature_idx)
+
+
+def _feature_feature_collapsed_flows(
+    snap: GraphSnapshot,
+) -> tuple[dict[tuple[int, int], float], dict[tuple[int, int, int, int], float]]:
+    edges = snap.bucket_edges.get("feature<-feature")
+    n_pos = _feature_feature_n_pos(snap)
+    layer_flow: dict[tuple[int, int], float] = {}
+    positionless_flow: dict[tuple[int, int, int, int], float] = {}
+    if not edges or not n_pos:
+        return layer_flow, positionless_flow
+    for target, source in edges:
+        target_layer, _target_pos, target_feature = _decode_feature_feature_id(
+            target, n_pos
+        )
+        source_layer, _source_pos, source_feature = _decode_feature_feature_id(
+            source, n_pos
+        )
+        mass = edges[(target, source)]
+        layer_key = (source_layer, target_layer)
+        positionless_key = (source_layer, source_feature, target_layer, target_feature)
+        layer_flow[layer_key] = layer_flow.get(layer_key, 0.0) + mass
+        positionless_flow[positionless_key] = (
+            positionless_flow.get(positionless_key, 0.0) + mass
+        )
+    return layer_flow, positionless_flow
+
+
 def _l1_distance(a: dict[Any, float], b: dict[Any, float]) -> float:
     return float(sum(abs(a.get(k, 0.0) - b.get(k, 0.0)) for k in set(a) | set(b)))
 
@@ -296,6 +346,8 @@ def pair_metrics(a: GraphSnapshot, b: GraphSnapshot) -> dict[str, Any]:
     shifted = posa & posb
     flow_a = _layer_flow(a.all_edges)
     flow_b = _layer_flow(b.all_edges)
+    ff_layer_flow_a, ff_positionless_flow_a = _feature_feature_collapsed_flows(a)
+    ff_layer_flow_b, ff_positionless_flow_b = _feature_feature_collapsed_flows(b)
     flow_mass_a = float(sum(flow_a.values()))
     flow_mass_b = float(sum(flow_b.values()))
     logit_a = sum(v for (_sl, kind, _tl), v in flow_a.items() if kind == "logit")
@@ -337,6 +389,16 @@ def pair_metrics(a: GraphSnapshot, b: GraphSnapshot) -> dict[str, Any]:
         "layer_flow_logit_mass_fraction_b": logit_b / flow_mass_b
         if flow_mass_b
         else None,
+        "feature_feature_layer_flow_weighted_jaccard": _weighted_jaccard_keys(
+            ff_layer_flow_a,
+            ff_layer_flow_b,
+            set(ff_layer_flow_a) | set(ff_layer_flow_b),
+        ),
+        "feature_feature_positionless_flow_weighted_jaccard": _weighted_jaccard_keys(
+            ff_positionless_flow_a,
+            ff_positionless_flow_b,
+            set(ff_positionless_flow_a) | set(ff_positionless_flow_b),
+        ),
     }
     row.update(_churn(a.features, b.features, prefix="features"))
     row.update(_churn(posa, posb, prefix="positionless_features"))
@@ -349,8 +411,12 @@ def pair_metrics(a: GraphSnapshot, b: GraphSnapshot) -> dict[str, Any]:
 
 
 def _mean(rows: Iterable[dict[str, Any]], key: str) -> float | None:
-    vals = [float(row[key]) for row in rows if row.get(key) is not None]
-    return float(np.nanmean(vals)) if vals else None
+    vals = [
+        value
+        for row in rows
+        if row.get(key) is not None and not np.isnan(value := float(row[key]))
+    ]
+    return float(np.mean(vals)) if vals else None
 
 
 def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -360,6 +426,12 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "mean_edge_jaccard": _mean(rows, "edge_jaccard"),
         "mean_weighted_edge_jaccard": _mean(rows, "weighted_edge_jaccard"),
         "mean_all_edge_weighted_jaccard": _mean(rows, "all_edge_weighted_jaccard"),
+        "mean_feature_feature_layer_flow_weighted_jaccard": _mean(
+            rows, "feature_feature_layer_flow_weighted_jaccard"
+        ),
+        "mean_feature_feature_positionless_flow_weighted_jaccard": _mean(
+            rows, "feature_feature_positionless_flow_weighted_jaccard"
+        ),
     }
 
 
