@@ -176,6 +176,25 @@ def reconstruct_prefix_token_ids(
     return prefix
 
 
+def reconstruct_full_sequence_token_ids(trajectory: Mapping[str, Any]) -> list[int]:
+    prompt_token_ids = trajectory.get("prompt_token_ids")
+    generated_tokens = trajectory.get("generated_tokens")
+    if not isinstance(prompt_token_ids, list) or not all(
+        isinstance(token_id, int) for token_id in prompt_token_ids
+    ):
+        raise ValueError("trajectory prompt_token_ids must be a list of ints")
+    if not isinstance(generated_tokens, list):
+        raise ValueError("trajectory generated_tokens must be a list")
+    generated = [
+        int(token["token_id"])
+        for token in generated_tokens
+        if isinstance(token, Mapping) and isinstance(token.get("token_id"), int)
+    ]
+    if len(generated) != len(generated_tokens):
+        raise ValueError("generated sequence contains malformed token rows")
+    return [int(token_id) for token_id in prompt_token_ids] + generated
+
+
 def _hash_token_ids(token_ids: list[int]) -> str:
     payload = json.dumps(
         [int(token_id) for token_id in token_ids], separators=(",", ":")
@@ -186,9 +205,15 @@ def _hash_token_ids(token_ids: list[int]) -> str:
 def prefix_view_metadata(
     trajectory: Mapping[str, Any], spec: TraceSpec, prefix_token_ids: list[int]
 ) -> dict[str, Any]:
-    return {
+    knobs = spec.get("graph_knobs", {})
+    input_context_mode = (
+        knobs.get("input_context_mode") if isinstance(knobs, Mapping) else None
+    )
+    metadata = {
         "schema_version": 1,
-        "mode": "independent_prefix",
+        "mode": "full_sequence_target_position"
+        if input_context_mode == "full_sequence"
+        else "independent_prefix",
         "trajectory_id": trajectory["trajectory_id"],
         "trace_id": spec["trace_id"],
         "target_position": spec["target_position"],
@@ -196,6 +221,13 @@ def prefix_view_metadata(
         "target_token_ids": [spec["target_token_id"]],
         "prefix_token_ids_sha256": _hash_token_ids(prefix_token_ids),
     }
+    if input_context_mode == "full_sequence":
+        full_sequence = reconstruct_full_sequence_token_ids(trajectory)
+        metadata["output_position"] = spec["target_position"] - 1
+        metadata["input_token_count"] = len(full_sequence)
+        metadata["full_sequence_token_count"] = len(full_sequence)
+        metadata["input_token_ids_sha256"] = _hash_token_ids(full_sequence)
+    return metadata
 
 
 def forced_target_payload(spec: TraceSpec) -> dict[str, Any]:
@@ -350,6 +382,14 @@ def _model_load_knobs(specs: list[TraceSpec]) -> dict[str, Any]:
 
 def _attribute_performance_kwargs(knobs: Mapping[str, Any]) -> dict[str, Any]:
     keys = (
+        "cross_cluster_debug",
+        "capture_phase0_donor_bundle",
+        "capture_phase3_seed_bundle",
+        "capture_phase3_gradient_bundle",
+        "capture_phase3_row_bundle",
+        "capture_feature_semantic_descriptors",
+        "semantic_descriptor_top_k",
+        "semantic_descriptor_dim",
         "row_subchunk_size",
         "plan_feature_batch_size",
         "feature_batch_size_max",
@@ -363,9 +403,89 @@ def _attribute_performance_kwargs(knobs: Mapping[str, Any]) -> dict[str, Any]:
         "phase4_refresh_active_row_accumulation",
         "phase4_row_executor",
         "phase4_row_reduction",
+        "phase3_frontier_buffer_relative_epsilon",
+        "phase3_frontier_buffer_max_extra",
+        "phase4_frontier_buffer_relative_epsilon",
+        "phase4_frontier_buffer_max_extra_per_refresh",
+        "phase4_frontier_buffer_max_extra_total",
         "row_store_preallocate",
     )
     return {key: knobs[key] for key in keys if key in knobs and knobs[key] is not None}
+
+
+def _npz_ready(value: Any) -> Any:
+    import numpy as np
+    import torch
+
+    if isinstance(value, torch.Tensor):
+        tensor = value.detach().cpu()
+        if tensor.dtype == torch.bfloat16:
+            tensor = tensor.to(dtype=torch.float32)
+        return tensor.numpy()
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return np.asarray(value)
+    if isinstance(value, (list, tuple)) and all(
+        item is None or isinstance(item, (str, int, float, bool)) for item in value
+    ):
+        return np.asarray(value)
+    return np.asarray(json.dumps(_json_ready(value), sort_keys=True))
+
+
+def _json_ready(value: Any) -> Any:
+    import torch
+
+    if isinstance(value, torch.Tensor):
+        return {
+            "tensor": True,
+            "shape": list(value.shape),
+            "dtype": str(value.dtype).replace("torch.", ""),
+        }
+    if isinstance(value, Mapping):
+        return {str(key): _json_ready(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_ready(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return repr(value)
+
+
+def _save_compact_debug_sidecars(
+    token_dir: Path, compact_result: Mapping[str, Any]
+) -> dict[str, str]:
+    import numpy as np
+
+    sidecar_keys = (
+        "phase0_donor_bundle",
+        "phase3_seed_bundle",
+        "phase3_gradient_bundle",
+        "phase3_row_bundle",
+        "feature_semantic_descriptors",
+        "cross_cluster_debug_summary",
+        "cross_cluster_debug_checkpoints",
+        "cross_cluster_debug_batches",
+    )
+    sidecars: dict[str, str] = {}
+    for key in sidecar_keys:
+        payload = compact_result.get(key)
+        if payload is None:
+            continue
+        ensure_dir(token_dir)
+        if key.startswith("cross_cluster_debug"):
+            path = token_dir / f"{key}.json"
+            write_json(path, _json_ready(payload))
+        else:
+            path = token_dir / f"{key}.npz"
+            if not isinstance(payload, Mapping):
+                raise TypeError(f"compact debug sidecar {key} must be a mapping")
+            np.savez_compressed(
+                path,
+                **{
+                    str(item_key): _npz_ready(item)
+                    for item_key, item in payload.items()
+                },
+            )
+        sidecars[key] = str(path)
+    return sidecars
 
 
 def run_real_shard(
@@ -460,13 +580,23 @@ def run_real_shard(
             save_raw_graph = bool(knobs.get("save_raw_graph", False))
             raw_graph_path = token_dir / "graph.pt"
             trace["graph_path"] = str(raw_graph_path if save_raw_graph else graph_path)
+            debug_sidecars: dict[str, str] = {}
+            full_sequence_mode = knobs.get("input_context_mode") == "full_sequence"
+            prompt_token_ids = (
+                reconstruct_full_sequence_token_ids(trajectory)
+                if full_sequence_mode
+                else prefix_token_ids
+            )
             graph_result = attribute_nnsight(
-                prompt=torch.tensor(prefix_token_ids, dtype=torch.long),
+                prompt=torch.tensor(prompt_token_ids, dtype=torch.long),
                 model=model,
                 attribution_targets=torch.tensor(
                     [spec["target_token_id"]], dtype=torch.long
                 ),
                 prefix_view_metadata=prefix_metadata,
+                output_position=spec["target_position"] - 1
+                if full_sequence_mode
+                else None,
                 max_n_logits=1,
                 desired_logit_prob=1.0,
                 batch_size=int(knobs.get("attribution_batch_size", 256)),
@@ -511,8 +641,10 @@ def run_real_shard(
                         selected_features.numel()
                     )
             else:
+                compact_result = graph_result
+                debug_sidecars = _save_compact_debug_sidecars(token_dir, compact_result)
                 bucketed = compact_result_to_bucketed_compact(
-                    graph_result,
+                    compact_result,
                     spec["generated_index"],
                     token_text=spec["target_token_text"],
                     max_edges=int(knobs.get("max_edges", 20000)),
@@ -531,11 +663,25 @@ def run_real_shard(
                     "graph_summary": graph_summary,
                 }
             )
+            if debug_sidecars:
+                trace["debug_sidecars"] = debug_sidecars
+            if (
+                not save_raw_graph
+            ) and "phase3_frontier_buffer_metadata" in compact_result:
+                trace["phase3_frontier_buffer_metadata"] = _json_ready(
+                    compact_result.get("phase3_frontier_buffer_metadata")
+                )
+            if "phase4_frontier_buffer_metadata" in compact_result:
+                trace["phase4_frontier_buffer_metadata"] = _json_ready(
+                    compact_result.get("phase4_frontier_buffer_metadata")
+                )
         except Exception as exc:  # pragma: no cover - exercised only in SLURM real mode
             trace.update(_exception_payload(exc))
             trace.update(
                 {
                     "status": "error",
+                    "error": repr(exc),
+                    "error_traceback": traceback.format_exc(),
                     "timings": {
                         "trace_seconds": time.perf_counter() - started,
                     },

@@ -20,6 +20,7 @@ from nlp_research_project.exact_trace_bench.full_answer.runner import (
     list_shard_specs,
     load_shard_inputs,
     prefix_view_metadata,
+    reconstruct_full_sequence_token_ids,
     reconstruct_prefix_token_ids,
     run_real_shard,
 )
@@ -156,7 +157,18 @@ def test_attribute_performance_kwargs_forward_safe_knobs() -> None:
             "phase4_refresh_active_row_accumulation": "direct_v1",
             "phase4_row_executor": "streaming_v1",
             "phase4_row_reduction": "gpu_v1",
+            "phase3_frontier_buffer_relative_epsilon": 0.01,
+            "phase3_frontier_buffer_max_extra": 256,
+            "phase4_frontier_buffer_relative_epsilon": 0.02,
+            "phase4_frontier_buffer_max_extra_per_refresh": 16,
+            "phase4_frontier_buffer_max_extra_total": 128,
             "row_store_preallocate": True,
+            "cross_cluster_debug": True,
+            "capture_phase0_donor_bundle": True,
+            "capture_phase3_seed_bundle": True,
+            "capture_feature_semantic_descriptors": True,
+            "semantic_descriptor_top_k": 1024,
+            "semantic_descriptor_dim": 32,
             "decoder_chunk_size": 256,
             "cross_batch_decoder_cache_bytes": 8589934592,
             "feature_batch_size": None,
@@ -173,7 +185,18 @@ def test_attribute_performance_kwargs_forward_safe_knobs() -> None:
         "phase4_refresh_active_row_accumulation": "direct_v1",
         "phase4_row_executor": "streaming_v1",
         "phase4_row_reduction": "gpu_v1",
+        "phase3_frontier_buffer_relative_epsilon": 0.01,
+        "phase3_frontier_buffer_max_extra": 256,
+        "phase4_frontier_buffer_relative_epsilon": 0.02,
+        "phase4_frontier_buffer_max_extra_per_refresh": 16,
+        "phase4_frontier_buffer_max_extra_total": 128,
         "row_store_preallocate": True,
+        "cross_cluster_debug": True,
+        "capture_phase0_donor_bundle": True,
+        "capture_phase3_seed_bundle": True,
+        "capture_feature_semantic_descriptors": True,
+        "semantic_descriptor_top_k": 1024,
+        "semantic_descriptor_dim": 32,
     }
 
 
@@ -198,6 +221,28 @@ def test_prefix_view_metadata_matches_reconstructed_prefix(tmp_path: Path) -> No
     assert len(metadata["prefix_token_ids_sha256"]) == 64
 
 
+def test_prefix_view_metadata_full_sequence_mode(tmp_path: Path) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    trajectory, specs, _shard = load_shard_inputs(
+        trajectory_path=trajectory_path,
+        trace_specs_path=specs_path,
+        shards_path=shards_path,
+        shard_id=0,
+    )
+    spec = specs[0]
+    spec["graph_knobs"]["input_context_mode"] = "full_sequence"
+    prefix = reconstruct_prefix_token_ids(trajectory, spec)
+
+    metadata = prefix_view_metadata(trajectory, spec, prefix)
+
+    assert metadata["mode"] == "full_sequence_target_position"
+    assert metadata["output_position"] == spec["target_position"] - 1
+    assert metadata["input_token_count"] == 4
+    assert metadata["full_sequence_token_count"] == 4
+    assert len(metadata["input_token_ids_sha256"]) == 64
+    assert reconstruct_full_sequence_token_ids(trajectory) == [101, 102, 201, 202]
+
+
 def test_real_shard_forwards_prefix_view_metadata_without_model_load(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -206,7 +251,19 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
 
     def fake_attribute(**kwargs):
         captured.update(kwargs)
-        return {}
+        return {
+            "phase3_frontier_buffer_metadata": {
+                "status": "expanded",
+                "extra_feature_count": 2,
+            },
+            "phase4_frontier_buffer_metadata": {
+                "extra_feature_count_total": 3,
+            },
+            "feature_semantic_descriptors": {
+                "status": "captured",
+                "candidate_features": [[0, 0, 1]],
+            },
+        }
 
     def fake_save_compact(step, graph_path):
         Path(graph_path).parent.mkdir(parents=True, exist_ok=True)
@@ -216,7 +273,11 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
     monkeypatch.setitem(
         sys.modules,
         "torch",
-        types.SimpleNamespace(tensor=lambda data, dtype=None: data, long=object()),
+        types.SimpleNamespace(
+            tensor=lambda data, dtype=None: data,
+            long=object(),
+            Tensor=type("FakeTensor", (), {}),
+        ),
     )
     monkeypatch.setitem(
         sys.modules,
@@ -269,6 +330,89 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
         ).read_text(encoding="utf-8")
     )
     assert trace["prefix_view_metadata"] == metadata
+    assert trace["phase3_frontier_buffer_metadata"] == {
+        "status": "expanded",
+        "extra_feature_count": 2,
+    }
+    assert trace["phase4_frontier_buffer_metadata"] == {
+        "extra_feature_count_total": 3,
+    }
+    assert (
+        tmp_path
+        / "run"
+        / "shards"
+        / "shard_000"
+        / "token_000001"
+        / "feature_semantic_descriptors.npz"
+    ).exists()
+
+
+def test_real_shard_forwards_full_sequence_prompt_and_output_position(
+    tmp_path: Path, monkeypatch
+) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    rows = [json.loads(line) for line in specs_path.read_text().splitlines()]
+    rows[1]["graph_knobs"]["input_context_mode"] = "full_sequence"
+    specs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+    captured: dict[str, object] = {}
+
+    def fake_attribute(**kwargs):
+        captured.update(kwargs)
+        return {}
+
+    def fake_save_compact(step, graph_path):
+        Path(graph_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(graph_path).write_text("graph")
+
+    monkeypatch.setenv("SLURM_JOB_ID", "test-job")
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        types.SimpleNamespace(tensor=lambda data, dtype=None: data, long=object()),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "circuit_utils",
+        types.SimpleNamespace(
+            save_bucketed_compact=lambda _bundle, graph_path: fake_save_compact(
+                {}, graph_path
+            ),
+            save_compact=fake_save_compact,
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "trace_pipeline",
+        types.SimpleNamespace(load_model=lambda **_kwargs: object()),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "trace_pipeline_chunked",
+        types.SimpleNamespace(
+            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: (
+                types.SimpleNamespace(step={})
+            ),
+            resolve_internal_precision=lambda _dtype: "float32",
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "circuit_tracer.attribution.attribute_nnsight",
+        types.SimpleNamespace(attribute=fake_attribute),
+    )
+
+    run_real_shard(
+        trajectory_path=trajectory_path,
+        trace_specs_path=specs_path,
+        shards_path=shards_path,
+        shard_id=0,
+        output_root=tmp_path / "run",
+    )
+
+    assert captured["prompt"] == [101, 102, 201, 202]
+    assert captured["output_position"] == 2
+    metadata = cast(dict[str, Any], captured["prefix_view_metadata"])
+    assert metadata["mode"] == "full_sequence_target_position"
 
 
 def test_aggregate_handles_dry_run_rows(tmp_path: Path) -> None:

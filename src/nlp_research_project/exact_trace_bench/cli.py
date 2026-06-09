@@ -28,9 +28,11 @@ from .full_answer.schemas import (
 )
 from .full_answer.aggregate import aggregate_shards
 from .full_answer.audit import audit_prefix_views
+from .full_answer.diagnostics import diagnose_full_answer_stability
 from .full_answer.runner import dry_run_shard, list_shard_specs, print_shard_specs
 from .full_answer.selection import parse_indices_csv, select_tokens
 from .full_answer.sharding import build_lpt_shards
+from .full_answer.stability import compare_token_stability
 from .full_answer.temporal import (
     DEFAULT_LAGS,
     DEFAULT_WINDOWS,
@@ -407,6 +409,27 @@ def _cmd_analyze_full_answer_temporal(args: argparse.Namespace) -> None:
     print(json.dumps(summary, indent=2))
 
 
+def _cmd_compare_full_answer_stability(args: argparse.Namespace) -> None:
+    summary = compare_token_stability(
+        args.left_token_dir,
+        args.right_token_dir,
+        output_json=args.output_json,
+    )
+    if args.output_json is not None:
+        print(f"Wrote stability comparison to {args.output_json}")
+    print(json.dumps(summary, indent=2))
+
+
+def _cmd_diagnose_full_answer_stability(args: argparse.Namespace) -> None:
+    summary = diagnose_full_answer_stability(
+        args.left_token_dir,
+        args.right_token_dir,
+        output_json=args.output_json,
+    )
+    print(f"Wrote full-answer diagnostics to {args.output_json}")
+    print(json.dumps(summary, indent=2))
+
+
 def _cmd_compare_phase3_seed_bundles(args: argparse.Namespace) -> None:
     summary = compare_phase3_seed_bundles_to_json(
         args.left_bundle,
@@ -565,9 +588,35 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
             "--phase4-refresh-prepared-chunk-cache-bytes",
             args.phase4_refresh_prepared_chunk_cache_bytes,
         ),
+        (
+            "--phase3-frontier-buffer-max-extra",
+            args.phase3_frontier_buffer_max_extra,
+        ),
+        (
+            "--phase4-frontier-buffer-max-extra-per-refresh",
+            args.phase4_frontier_buffer_max_extra_per_refresh,
+        ),
+        (
+            "--phase4-frontier-buffer-max-extra-total",
+            args.phase4_frontier_buffer_max_extra_total,
+        ),
     ):
         if value is not None and value < 0:
             raise ValueError(f"{flag_name} must be non-negative")
+    if (
+        args.phase3_frontier_buffer_relative_epsilon is not None
+        and args.phase3_frontier_buffer_relative_epsilon < 0
+    ):
+        raise ValueError(
+            "--phase3-frontier-buffer-relative-epsilon must be non-negative"
+        )
+    if (
+        args.phase4_frontier_buffer_relative_epsilon is not None
+        and args.phase4_frontier_buffer_relative_epsilon < 0
+    ):
+        raise ValueError(
+            "--phase4-frontier-buffer-relative-epsilon must be non-negative"
+        )
     trajectory = load_trajectory(args.trajectory)
     selection_modes = set(args.select or [])
     selection = select_tokens(
@@ -597,11 +646,23 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
             "phase4_row_executor": args.phase4_row_executor,
             "phase4_scheduler_mode": args.phase4_scheduler_mode,
             "phase4_scheduler_telemetry_detail": args.phase4_scheduler_telemetry_detail,
+            "phase3_frontier_buffer_relative_epsilon": args.phase3_frontier_buffer_relative_epsilon,
+            "phase3_frontier_buffer_max_extra": args.phase3_frontier_buffer_max_extra,
+            "phase4_frontier_buffer_relative_epsilon": args.phase4_frontier_buffer_relative_epsilon,
+            "phase4_frontier_buffer_max_extra_per_refresh": args.phase4_frontier_buffer_max_extra_per_refresh,
+            "phase4_frontier_buffer_max_extra_total": args.phase4_frontier_buffer_max_extra_total,
+            "cross_cluster_debug": args.cross_cluster_debug,
+            "capture_phase0_donor_bundle": args.capture_phase0_donor_bundle,
+            "capture_phase3_seed_bundle": args.capture_phase3_seed_bundle,
+            "capture_feature_semantic_descriptors": args.capture_feature_semantic_descriptors,
+            "semantic_descriptor_top_k": args.semantic_descriptor_top_k,
+            "semantic_descriptor_dim": args.semantic_descriptor_dim,
             "plan_feature_batch_size": args.plan_feature_batch_size,
             "feature_batch_size_max": args.feature_batch_size_max,
             "row_subchunk_size": args.row_subchunk_size,
             "verbose_attribution": args.verbose_attribution,
             "profile_attribution": args.profile_attribution,
+            "input_context_mode": args.input_context_mode,
         }.items()
         if value is not None
     }
@@ -880,6 +941,81 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
     )
     full_answer_trace_specs.add_argument(
+        "--phase3-frontier-buffer-relative-epsilon", type=float, default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--phase3-frontier-buffer-max-extra", type=int, default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--phase4-frontier-buffer-relative-epsilon", type=float, default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--phase4-frontier-buffer-max-extra-per-refresh", type=int, default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--phase4-frontier-buffer-max-extra-total", type=int, default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--cross-cluster-debug",
+        dest="cross_cluster_debug",
+        action="store_true",
+        default=None,
+        help="Capture cross-cluster/debug summary sidecars for diagnostic traces",
+    )
+    full_answer_trace_specs.add_argument(
+        "--no-cross-cluster-debug",
+        dest="cross_cluster_debug",
+        action="store_false",
+    )
+    full_answer_trace_specs.add_argument(
+        "--capture-phase0-donor-bundle",
+        dest="capture_phase0_donor_bundle",
+        action="store_true",
+        default=None,
+        help="Capture Phase-0 donor bundle sidecar for diagnostic traces",
+    )
+    full_answer_trace_specs.add_argument(
+        "--no-capture-phase0-donor-bundle",
+        dest="capture_phase0_donor_bundle",
+        action="store_false",
+    )
+    full_answer_trace_specs.add_argument(
+        "--capture-phase3-seed-bundle",
+        dest="capture_phase3_seed_bundle",
+        action="store_true",
+        default=None,
+        help="Capture Phase-3 seed bundle sidecar for diagnostic traces",
+    )
+    full_answer_trace_specs.add_argument(
+        "--no-capture-phase3-seed-bundle",
+        dest="capture_phase3_seed_bundle",
+        action="store_false",
+    )
+    full_answer_trace_specs.add_argument(
+        "--capture-feature-semantic-descriptors",
+        dest="capture_feature_semantic_descriptors",
+        action="store_true",
+        default=None,
+        help="Capture feature semantic descriptor sidecars for diagnostic runs",
+    )
+    full_answer_trace_specs.add_argument(
+        "--no-capture-feature-semantic-descriptors",
+        dest="capture_feature_semantic_descriptors",
+        action="store_false",
+    )
+    full_answer_trace_specs.add_argument(
+        "--semantic-descriptor-top-k",
+        type=int,
+        default=None,
+        help="Top candidate count for feature semantic descriptor capture",
+    )
+    full_answer_trace_specs.add_argument(
+        "--semantic-descriptor-dim",
+        type=int,
+        default=None,
+        help="Descriptor dimension for feature semantic descriptor capture",
+    )
+    full_answer_trace_specs.add_argument(
         "--plan-feature-batch-size",
         dest="plan_feature_batch_size",
         action="store_true",
@@ -904,6 +1040,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-verbose-attribution",
         dest="verbose_attribution",
         action="store_false",
+    )
+    full_answer_trace_specs.add_argument(
+        "--input-context-mode",
+        choices=["independent_prefix", "full_sequence"],
+        default=None,
+        help="Experimental Stage-A input context for tracing selected targets",
     )
     full_answer_trace_specs.add_argument(
         "--profile-attribution",
@@ -1583,6 +1725,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Only analyze the sorted generated-index prefix for smoke tests",
     )
     analyze_temporal.set_defaults(func=_cmd_analyze_full_answer_temporal)
+
+    compare_stability = subparsers.add_parser(
+        "compare-full-answer-stability",
+        help="Compare Phase0/Phase3 diagnostic sidecars for two full-answer token dirs",
+    )
+    compare_stability.add_argument("--left-token-dir", type=Path, required=True)
+    compare_stability.add_argument("--right-token-dir", type=Path, required=True)
+    compare_stability.add_argument(
+        "--output-json",
+        type=Path,
+        default=None,
+        help="Optional output path for comparison JSON",
+    )
+    compare_stability.set_defaults(func=_cmd_compare_full_answer_stability)
+
+    diagnose_stability = subparsers.add_parser(
+        "diagnose-full-answer-stability",
+        help="Diagnose independent-prefix vs full-sequence full-answer token dirs",
+    )
+    diagnose_stability.add_argument("--left-token-dir", type=Path, required=True)
+    diagnose_stability.add_argument("--right-token-dir", type=Path, required=True)
+    diagnose_stability.add_argument("--output-json", type=Path, required=True)
+    diagnose_stability.set_defaults(func=_cmd_diagnose_full_answer_stability)
 
     plot_temporal = subparsers.add_parser(
         "plot-full-answer-temporal",

@@ -1,7 +1,7 @@
 # Experiments inventory
 
 Status: Current compact index and interpretation summary
-Last updated: 2026-05-30
+Last updated: 2026-06-08
 
 This file is the readable front page for experiment provenance. It should stay
 small enough to edit by hand.
@@ -30,7 +30,7 @@ For important future launches, baseline decisions, and reinterpretations:
 | Sibling branch / commit | `main` / `e91370a` (`Fix Phase-3 row replay effective state`) |
 | Editable dependency path | `../circuit-tracer_chunked` |
 | Canonical exact-trace dtype | `exact_trace_internal_dtype=fp32` |
-| Canonical prompt tiers | `828_base`, `361_base` in `fast`; `94_base` in `anomaly` |
+| Canonical prompt tiers | `828_base`, `361_base`, and `94_base` in `fast` for new work |
 | Scratch root | `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench` |
 | Run placement | cluster (`ascend`/`cardinal`) × tier (`fast`/`anomaly`/`long_eval`) |
 
@@ -97,13 +97,23 @@ Track-2 full-answer typed-bucketed interpretation (May 2026):
   weighted Jaccard is about `0.41`--`0.49`, versus exact feature-feature edge
   weighted Jaccard near `0.005`--`0.008`.
 
+Full-answer stability follow-up (May 2026):
+
+- Same-cluster full-sequence versus independent-prefix runs should be treated as a
+  stability/amplification lab, not a bitwise parity target.
+- For `828_base` token 0, tiny Phase-0 drift under full sequence is amplified by
+  Phase-3/Phase-4 hard cutoffs into large compact-graph support differences.
+- Phase-3-only frontier buffering helps modestly; dynamic Phase-4 frontier
+  buffering has a much larger stability effect and should remain an explicit
+  robust-mode experiment knob while broader support definitions are evaluated.
+
 ## Current run families
 
 | Family | Meaning | Current status |
 |---|---|---|
 | `exact_trace_bench/ascend/fast` | Ascend quick validation/debug for normal prompts | Current |
 | `exact_trace_bench/cardinal/fast` | Cardinal quick validation/debug for normal prompts | Current |
-| `exact_trace_bench/{ascend,cardinal}/anomaly` | `94_base` anomaly/debug/parity work | Current |
+| `exact_trace_bench/{ascend,cardinal}/anomaly` | Historical `94_base` anomaly/debug/parity work | Historical/current-readable; do not use for new default placement |
 | `exact_trace_bench/{ascend,cardinal}/long_eval` | Longer exact-bench evaluation tier | Current but SLURM-only |
 | `workspace_snapshots/` | Immutable project + sibling-library launch snapshots | Current provenance mechanism |
 | historical `matched_debug` artifacts | Old matched-debug campaign outputs/configs | Historical only; do not use as an ordinary bucket |
@@ -177,6 +187,39 @@ moderately stable. The wrong `361` trajectory remains the most stable. The sampl
 wrong `828` is somewhat more stable than the sampled correct `828` under these
 collapsed feature-feature metrics, but this still does not establish a general
 correct-vs-wrong split from the current four traces.
+
+### 2026-05-29 — Full-answer dynamic Phase-4 buffering result
+
+A2 dynamic Phase-4 frontier-buffer runs completed on Cardinal for `828_base`
+token 0, comparing independent-prefix and full-sequence traces while excluding
+Cardinal node `c0811`.
+
+Commits:
+
+- project: `241b102` (`Plumb Phase 4 frontier buffer knobs`),
+- sibling library: `3bc2056` (`Add dynamic Phase 4 frontier buffer`).
+
+Validation:
+
+- six one-token jobs completed successfully (`11100861`--`11100866`),
+- all aggregates reported `status_counts={"ok": 1}`,
+- all prefix/future-position audits passed with `future_position_violations=0`.
+
+Stability trend versus unbuffered and Phase-3-only buffering:
+
+| Run | Features (ind/fullseq) | Feature Jaccard | Edge Jaccard | Weighted edge Jaccard | All-edge weighted |
+|---|---:|---:|---:|---:|---:|
+| Unbuffered | 8192 / 8192 | 0.6069 | 0.2252 | 0.1922 | 0.5723 |
+| Phase3 buffer 5% | 8908 / 8999 | 0.6147 | 0.2541 | 0.2140 | 0.5785 |
+| Phase4 1%, 64/1024 cap | 9932 / 10023 | 0.6277 | 0.2880 | 0.2410 | 0.5880 |
+| Phase4 1%, 128/2048 cap | 10956 / 11047 | 0.6394 | 0.3582 | 0.2835 | 0.5965 |
+| Phase4 5%, 700/8192 cap | 17100 / 17191 | 0.6656 | 0.5240 | 0.3900 | 0.6207 |
+
+Interpretation: dynamic Phase-4 boundary buffering has a substantially larger
+effect than Phase-3-only buffering. The moderate `1%, 128/2048` setting gives a
+useful cost/stability tradeoff; the `5%, 700/8192` setting gives the best
+stability but approaches one-hour runtime for this single-token pair. Keep these
+as robust-mode experiment knobs rather than ordinary exact-baseline defaults.
 
 ### 2026-05-27 — Prefix-view validation starting point
 

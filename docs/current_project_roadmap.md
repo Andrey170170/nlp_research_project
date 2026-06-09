@@ -215,6 +215,9 @@ Do a broader harness cleanup, not just a small scenario-file split:
   consolidation.
 - Current exact-trace default: `exact_trace_internal_dtype=fp32`.
 - Stable row-L1 denominator behavior is part of the validated baseline.
+- Current canonical base fixtures for new work are `828_base`, `361_base`, and
+  `94_base` in the `fast` tier; historical `94_base` anomaly-tier paths remain
+  provenance only.
 - `828_base` and `361_base` matched same-generation Ascend baselines exactly.
 - `94_base` matched the pre-consolidation optimization-control output exactly;
   mismatch against older Apr-20/21 references predates consolidation.
@@ -292,8 +295,8 @@ Output:
 Acceptance criteria:
 
 - Phase-3 row capture/replay behavior is internally consistent.
-- Existing compact exact behavior for `828_base`, `361_base`, and same-generation
-  `94_base` remains preserved after validation.
+- Existing compact exact behavior for `828_base`, `361_base`, and `94_base`
+  remains preserved after validation.
 - We have at least one documented path for testing future amplification-reduction
   changes.
 

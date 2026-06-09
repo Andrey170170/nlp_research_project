@@ -36,7 +36,7 @@ WAVE0_NEW_LATE_GSM8K_INDICES: tuple[int, ...] = (
     1201,
     1289,
 )
-WAVE0_CANONICAL_FAST_FIXTURES: tuple[str, ...] = ("828_base", "361_base")
+WAVE0_CANONICAL_FAST_FIXTURES: tuple[str, ...] = ("828_base", "361_base", "94_base")
 WAVE0_CANONICAL_ANOMALY_FIXTURES: tuple[str, ...] = ("94_base",)
 WAVE0_CANONICAL_LATE_FIXTURES: tuple[str, ...] = (
     "828_late",

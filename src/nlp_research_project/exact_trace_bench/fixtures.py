@@ -8,7 +8,7 @@ from .config import DEFAULT_FIXTURE_CATALOG, REPO_ROOT
 from .io_utils import read_json
 
 
-BASE_FIXTURES: tuple[str, ...] = ("828_base", "361_base")
+BASE_FIXTURES: tuple[str, ...] = ("828_base", "361_base", "94_base")
 ANOMALY_FIXTURES: tuple[str, ...] = ("94_base",)
 LATE_FIXTURES: tuple[str, ...] = ("828_late", "361_late", "94_late")
 

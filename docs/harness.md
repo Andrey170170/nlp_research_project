@@ -33,7 +33,7 @@ scripts do not look like the canonical path.
 |---|---|---|
 | `828_base` | `fast` | normal quick validation/debug |
 | `361_base` | `fast` | normal quick validation/debug |
-| `94_base` | `anomaly` | anomaly/parity watch gate |
+| `94_base` | `fast` | normal base fixture for new work; historical anomaly paths remain historical provenance |
 | late fixtures | `long_eval` | longer exact-bench evaluation tier |
 
 Scratch output placement should stay organized by cluster and tier only:

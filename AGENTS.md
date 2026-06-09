@@ -78,8 +78,7 @@ Update rules:
 - Canonical exact-trace dtype: `exact_trace_internal_dtype=fp32`.
 - Stable row-L1 denominator behavior is part of the validated baseline.
 - Canonical prompt gates:
-  - `828_base` and `361_base` in `fast`,
-  - `94_base` in `anomaly`.
+  - `828_base`, `361_base`, and `94_base` in `fast` for new work.
 - Track-A interpretation: Ascend/Cardinal divergence is mainly Phase-3 gradient
   drift, with later stages amplifying that drift into compact graph differences.
 - Keep Track-A replay/debug machinery as internal validation infrastructure, but
@@ -96,7 +95,7 @@ Current harness:
 Scratch outputs should be organized by cluster and tier only:
 
 - cluster: `ascend` / `cardinal`
-- tier: `fast` / `anomaly` / `long_eval`
+- tier: `fast` / `anomaly` / `long_eval` (`anomaly` is retained for historical scratch/provenance, not new default `94_base` placement)
 
 Use `run_id`, `run_name`, `run_description`, `run_goal`, and scenario names to
 distinguish debug campaigns. Do not introduce ordinary scratch buckets like

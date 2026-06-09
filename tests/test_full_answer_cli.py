@@ -67,6 +67,8 @@ def test_full_answer_cli_help_is_login_safe() -> None:
     assert run_cli("submit-full-answer-trajectory", "--help").returncode == 0
     assert run_cli("launch-full-answer-shards", "--help").returncode == 0
     assert run_cli("plot-full-answer-temporal", "--help").returncode == 0
+    assert run_cli("compare-full-answer-stability", "--help").returncode == 0
+    assert run_cli("diagnose-full-answer-stability", "--help").returncode == 0
 
 
 def test_full_answer_cli_writes_planning_artifacts(tmp_path: Path) -> None:
@@ -153,11 +155,31 @@ def test_full_answer_trace_spec_perf_knob_overrides(tmp_path: Path) -> None:
         "planner_v1",
         "--phase4-scheduler-telemetry-detail",
         "debug",
+        "--phase3-frontier-buffer-relative-epsilon",
+        "0.01",
+        "--phase3-frontier-buffer-max-extra",
+        "256",
+        "--phase4-frontier-buffer-relative-epsilon",
+        "0.02",
+        "--phase4-frontier-buffer-max-extra-per-refresh",
+        "16",
+        "--phase4-frontier-buffer-max-extra-total",
+        "128",
+        "--cross-cluster-debug",
+        "--capture-phase0-donor-bundle",
+        "--capture-phase3-seed-bundle",
+        "--capture-feature-semantic-descriptors",
+        "--semantic-descriptor-top-k",
+        "1024",
+        "--semantic-descriptor-dim",
+        "32",
         "--plan-feature-batch-size",
         "--feature-batch-size-max",
         "64",
         "--row-subchunk-size",
         "32",
+        "--input-context-mode",
+        "full_sequence",
         "--verbose-attribution",
         "--profile-attribution",
     )
@@ -173,9 +195,21 @@ def test_full_answer_trace_spec_perf_knob_overrides(tmp_path: Path) -> None:
     assert knobs["phase4_row_executor"] == "streaming_v1"
     assert knobs["phase4_scheduler_mode"] == "planner_v1"
     assert knobs["phase4_scheduler_telemetry_detail"] == "debug"
+    assert knobs["phase3_frontier_buffer_relative_epsilon"] == 0.01
+    assert knobs["phase3_frontier_buffer_max_extra"] == 256
+    assert knobs["phase4_frontier_buffer_relative_epsilon"] == 0.02
+    assert knobs["phase4_frontier_buffer_max_extra_per_refresh"] == 16
+    assert knobs["phase4_frontier_buffer_max_extra_total"] == 128
+    assert knobs["cross_cluster_debug"] is True
+    assert knobs["capture_phase0_donor_bundle"] is True
+    assert knobs["capture_phase3_seed_bundle"] is True
+    assert knobs["capture_feature_semantic_descriptors"] is True
+    assert knobs["semantic_descriptor_top_k"] == 1024
+    assert knobs["semantic_descriptor_dim"] == 32
     assert knobs["plan_feature_batch_size"] is True
     assert knobs["feature_batch_size_max"] == 64
     assert knobs["row_subchunk_size"] == 32
+    assert knobs["input_context_mode"] == "full_sequence"
     assert knobs["verbose_attribution"] is True
     assert knobs["profile_attribution"] is True
 
