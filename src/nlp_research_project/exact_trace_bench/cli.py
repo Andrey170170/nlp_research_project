@@ -762,6 +762,22 @@ def _cmd_plot_full_answer_temporal(args: argparse.Namespace) -> None:
     )
 
 
+def _cmd_build_decoder_signature_cache(args: argparse.Namespace) -> None:
+    from .full_answer.decoder_signature_cache import build_decoder_signature_cache
+
+    summary = build_decoder_signature_cache(
+        output_dir=args.output_dir,
+        source_dir=args.source_dir,
+        repo_id=args.repo_id,
+        subfolder=args.subfolder,
+        chunk_size=args.chunk_size,
+        storage_dtype=args.storage_dtype,
+        overwrite=args.overwrite,
+        layers=args.layer if args.layer else None,
+    )
+    print(json.dumps(summary, indent=2))
+
+
 def _cmd_run_full_answer_trajectory(args: argparse.Namespace) -> None:
     from .full_answer.trajectory import generate_trajectory
 
@@ -1756,6 +1772,66 @@ def build_parser() -> argparse.ArgumentParser:
     plot_temporal.add_argument("--analysis-dir", type=Path, required=True)
     plot_temporal.add_argument("--output-dir", type=Path, required=True)
     plot_temporal.set_defaults(func=_cmd_plot_full_answer_temporal)
+
+    decoder_cache = subparsers.add_parser(
+        "build-decoder-signature-cache",
+        help=(
+            "Build chunked normalized GemmaScope-2 CLT decoder-signature cache "
+            "for soft feature matching"
+        ),
+    )
+    decoder_cache.add_argument(
+        "--source-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Directory containing params_layer_*.safetensors. If omitted, uses "
+            "Hugging Face snapshot_download; run that path under SLURM if not cached."
+        ),
+    )
+    decoder_cache.add_argument(
+        "--repo-id",
+        default="google/gemma-scope-2-1b-it",
+        help="GemmaScope-2 Hugging Face repo used when --source-dir is omitted",
+    )
+    decoder_cache.add_argument(
+        "--subfolder",
+        default="clt/width_262k_l0_medium_affine",
+        help="GemmaScope-2 CLT subfolder used when --source-dir is omitted",
+    )
+    decoder_cache.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_SCRATCH_ROOT
+        / "decoder_signature_cache"
+        / "gemma-scope-2-1b-it__clt_width_262k_l0_medium_affine__float32_chunk512",
+        help="Scratch output directory for the decoder signature cache",
+    )
+    decoder_cache.add_argument(
+        "--chunk-size",
+        type=int,
+        default=512,
+        help="Rows per cached chunk file",
+    )
+    decoder_cache.add_argument(
+        "--storage-dtype",
+        choices=["float32", "float16"],
+        default="float32",
+        help="Cache dtype after float32 normalization",
+    )
+    decoder_cache.add_argument(
+        "--layer",
+        type=int,
+        action="append",
+        default=None,
+        help="Optional source layer to build; repeatable for partial/resume jobs",
+    )
+    decoder_cache.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing chunk files and metadata",
+    )
+    decoder_cache.set_defaults(func=_cmd_build_decoder_signature_cache)
 
     compare_phase3 = subparsers.add_parser(
         "compare-phase3-seed-bundles",
