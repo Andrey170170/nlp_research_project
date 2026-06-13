@@ -240,12 +240,21 @@ def rbo_ext(left: Sequence[Any], right: Sequence[Any], *, p: float) -> float | N
     right_seen: set[Any] = set()
     weighted = 0.0
     agreement = 0.0
+    overlap = 0
     for d in range(1, depth + 1):
         if d <= len(left):
-            left_seen.add(left[d - 1])
+            item = left[d - 1]
+            if item not in left_seen:
+                left_seen.add(item)
+                if item in right_seen:
+                    overlap += 1
         if d <= len(right):
-            right_seen.add(right[d - 1])
-        agreement = len(left_seen & right_seen) / d
+            item = right[d - 1]
+            if item not in right_seen:
+                right_seen.add(item)
+                if item in left_seen:
+                    overlap += 1
+        agreement = overlap / d
         weighted += agreement * (p ** (d - 1))
     return float((1.0 - p) * weighted + agreement * (p**depth))
 
