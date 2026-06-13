@@ -786,6 +786,8 @@ def _cmd_run_metric_calibration(args: argparse.Namespace) -> None:
         output_dir=args.output_dir,
         decoder_cache_dir=args.decoder_cache_dir,
         write_parquet=not args.no_parquet,
+        workers=args.workers,
+        resume=not args.no_resume,
     )
     print(json.dumps(summary, indent=2))
 
@@ -1881,6 +1883,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-parquet",
         action="store_true",
         help="Skip writing metric_rows.parquet even if pandas/pyarrow are available",
+    )
+    metric_calibration.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Parallel worker processes; each writes one-pair checkpoints",
+    )
+    metric_calibration.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="Recompute pair checkpoints even when pair_rows already exist",
     )
     metric_calibration.set_defaults(func=_cmd_run_metric_calibration)
 

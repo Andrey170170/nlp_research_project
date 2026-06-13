@@ -178,12 +178,75 @@ def test_run_metric_calibration_writes_rows_and_scorecard(tmp_path: Path) -> Non
     assert (out_dir / "metric_rows.jsonl").exists()
     assert (out_dir / "metric_rows.csv").exists()
     assert (out_dir / "scorecard.csv").exists()
+    assert (out_dir / "pair_rows" / "noise_pair.jsonl").exists()
+    assert (out_dir / "pair_context" / "noise_pair.json").exists()
     resolved = json.loads((out_dir / "pair_manifest_resolved.json").read_text())
     assert {row["pair_id"] for row in resolved} == {
         "noise_pair",
         "temporal_pair",
         "null_pair",
     }
+
+    resumed = run_metric_calibration(
+        manifest_path=manifest_path,
+        output_dir=out_dir,
+        write_parquet=False,
+    )
+    assert {row["status"] for row in resumed["checkpoint_results"]} == {
+        "skipped_existing"
+    }
+
+
+def test_run_metric_calibration_parallel_workers(tmp_path: Path) -> None:
+    run_root = tmp_path / "run"
+    graph0 = _write_graph(run_root, 0, [(0, 0, 1), (0, 0, 2)])
+    graph1 = _write_graph(run_root, 1, [(0, 1, 1), (0, 1, 3)])
+    graph2 = _write_graph(run_root, 2, [(0, 2, 8), (0, 2, 9)])
+    manifest_path = tmp_path / "manifest_parallel.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "pairs": [
+                    {
+                        "pair_id": "parallel_noise",
+                        "left_graph": str(graph0),
+                        "right_graph": str(graph0),
+                        "pair_category": "noise",
+                        "position_band": "mid",
+                    },
+                    {
+                        "pair_id": "parallel_temporal",
+                        "left_graph": str(graph0),
+                        "right_graph": str(graph1),
+                        "pair_category": "temporal",
+                        "sub_category": "adjacent",
+                        "position_band": "mid",
+                        "lag": 1,
+                    },
+                    {
+                        "pair_id": "parallel_null",
+                        "left_graph": str(graph0),
+                        "right_graph": str(graph2),
+                        "pair_category": "null",
+                        "position_band": "mid",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = run_metric_calibration(
+        manifest_path=manifest_path,
+        output_dir=tmp_path / "out_parallel",
+        write_parquet=False,
+        workers=2,
+    )
+
+    assert summary["workers"] == 2
+    assert summary["pair_count"] == 3
+    assert summary["metric_row_count"] > 0
+    assert {row["status"] for row in summary["checkpoint_results"]} == {"completed"}
 
 
 def test_plot_metric_calibration_writes_manifest_plots_and_report(

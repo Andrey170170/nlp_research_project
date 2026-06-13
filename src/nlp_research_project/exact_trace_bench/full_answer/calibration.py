@@ -1,18 +1,30 @@
 from __future__ import annotations
 
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
+import json
 from pathlib import Path
+import re
 from typing import Any, Iterable
 
 import numpy as np
 
-from ..io_utils import ensure_dir, read_json, write_csv, write_json, write_jsonl
+from ..io_utils import (
+    ensure_dir,
+    iter_jsonl,
+    read_json,
+    write_csv,
+    write_json,
+    write_jsonl,
+)
 from .decoder_signature_cache import DecoderSignatureStore
 from .metric_battery import metric_battery_rows
 from .temporal import GraphSnapshot, _load_snapshot, discover_graph_paths
 
 DEFAULT_CALIBRATION_LAGS = (1, 2, 5, 10, 20)
 SCORECARD_CATEGORIES = ("null", "temporal", "noise")
+PAIR_CHECKPOINT_DIR = "pair_rows"
+PAIR_CONTEXT_DIR = "pair_context"
 
 
 @dataclass(frozen=True)
@@ -220,6 +232,107 @@ def _snapshot_loader() -> Any:
     return load
 
 
+def _safe_pair_stem(pair_id: str) -> str:
+    stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", pair_id).strip("._")
+    return stem[:180] if stem else "pair"
+
+
+def _pair_rows_path(output_dir: Path, pair: CalibrationPair) -> Path:
+    return output_dir / PAIR_CHECKPOINT_DIR / f"{_safe_pair_stem(pair.pair_id)}.jsonl"
+
+
+def _pair_context_path(output_dir: Path, pair: CalibrationPair) -> Path:
+    return output_dir / PAIR_CONTEXT_DIR / f"{_safe_pair_stem(pair.pair_id)}.json"
+
+
+def _atomic_write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    ensure_dir(path.parent)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with tmp_path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
+    tmp_path.replace(path)
+
+
+def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    ensure_dir(path.parent)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    tmp_path.replace(path)
+
+
+def _compute_pair_rows(
+    pair: CalibrationPair,
+    *,
+    decoder_cache_dir: Path | None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    left = _load_snapshot(pair.left_graph)
+    right = _load_snapshot(pair.right_graph)
+    context = pair.context(left, right)
+    decoder_store = (
+        DecoderSignatureStore(decoder_cache_dir)
+        if decoder_cache_dir is not None
+        else None
+    )
+    rows = [
+        {**context, **metric_row}
+        for metric_row in metric_battery_rows(left, right, decoder_store=decoder_store)
+    ]
+    return context, rows
+
+
+def _run_pair_checkpoint(
+    pair: CalibrationPair,
+    *,
+    output_dir: Path,
+    decoder_cache_dir: Path | None,
+    resume: bool,
+) -> dict[str, Any]:
+    rows_path = _pair_rows_path(output_dir, pair)
+    context_path = _pair_context_path(output_dir, pair)
+    if resume and rows_path.exists() and context_path.exists():
+        return {
+            "pair_id": pair.pair_id,
+            "status": "skipped_existing",
+            "rows_path": str(rows_path),
+            "context_path": str(context_path),
+            "metric_row_count": sum(1 for _ in iter_jsonl(rows_path)),
+        }
+
+    context, rows = _compute_pair_rows(pair, decoder_cache_dir=decoder_cache_dir)
+    _atomic_write_jsonl(rows_path, rows)
+    _atomic_write_json(context_path, context)
+    return {
+        "pair_id": pair.pair_id,
+        "status": "completed",
+        "rows_path": str(rows_path),
+        "context_path": str(context_path),
+        "metric_row_count": len(rows),
+    }
+
+
+def _read_pair_outputs(
+    *, output_dir: Path, pairs: list[CalibrationPair]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    rows: list[dict[str, Any]] = []
+    contexts: list[dict[str, Any]] = []
+    missing: list[str] = []
+    for pair in pairs:
+        rows_path = _pair_rows_path(output_dir, pair)
+        context_path = _pair_context_path(output_dir, pair)
+        if not rows_path.exists() or not context_path.exists():
+            missing.append(pair.pair_id)
+            continue
+        contexts.append(read_json(context_path))
+        rows.extend(iter_jsonl(rows_path))
+    if missing:
+        raise RuntimeError(
+            f"missing calibration pair checkpoints for {len(missing)} pairs: "
+            f"{missing[:10]}"
+        )
+    return rows, contexts
+
+
 def _tabular_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out = []
     for row in rows:
@@ -359,25 +472,55 @@ def run_metric_calibration(
     output_dir: Path,
     decoder_cache_dir: Path | None = None,
     write_parquet: bool = True,
+    workers: int = 1,
+    resume: bool = True,
 ) -> dict[str, Any]:
     ensure_dir(output_dir)
+    ensure_dir(output_dir / PAIR_CHECKPOINT_DIR)
+    ensure_dir(output_dir / PAIR_CONTEXT_DIR)
     manifest = read_json(manifest_path)
     pairs = load_calibration_pairs(manifest_path)
-    decoder_store = (
-        DecoderSignatureStore(decoder_cache_dir)
-        if decoder_cache_dir is not None
-        else None
-    )
-    load_snapshot = _snapshot_loader()
-    rows: list[dict[str, Any]] = []
-    resolved_pairs: list[dict[str, Any]] = []
-    for pair in pairs:
-        left = load_snapshot(pair.left_graph)
-        right = load_snapshot(pair.right_graph)
-        context = pair.context(left, right)
-        resolved_pairs.append(context)
-        for metric_row in metric_battery_rows(left, right, decoder_store=decoder_store):
-            rows.append({**context, **metric_row})
+    workers = max(1, int(workers))
+    checkpoint_results: list[dict[str, Any]] = []
+    if workers == 1:
+        for idx, pair in enumerate(pairs, start=1):
+            result = _run_pair_checkpoint(
+                pair,
+                output_dir=output_dir,
+                decoder_cache_dir=decoder_cache_dir,
+                resume=resume,
+            )
+            checkpoint_results.append(result)
+            print(
+                f"[{idx}/{len(pairs)}] {result['status']} {pair.pair_id} "
+                f"rows={result['metric_row_count']}",
+                flush=True,
+            )
+    else:
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            future_to_pair = {
+                executor.submit(
+                    _run_pair_checkpoint,
+                    pair,
+                    output_dir=output_dir,
+                    decoder_cache_dir=decoder_cache_dir,
+                    resume=resume,
+                ): pair
+                for pair in pairs
+            }
+            completed = 0
+            for future in as_completed(future_to_pair):
+                pair = future_to_pair[future]
+                completed += 1
+                result = future.result()
+                checkpoint_results.append(result)
+                print(
+                    f"[{completed}/{len(pairs)}] {result['status']} {pair.pair_id} "
+                    f"rows={result['metric_row_count']}",
+                    flush=True,
+                )
+
+    rows, resolved_pairs = _read_pair_outputs(output_dir=output_dir, pairs=pairs)
 
     scorecard = build_scorecard(rows)
     tabular = _tabular_rows(rows)
@@ -413,10 +556,13 @@ def run_metric_calibration(
         "manifest_path": str(manifest_path),
         "output_dir": str(output_dir),
         "decoder_cache_dir": str(decoder_cache_dir) if decoder_cache_dir else None,
-        "decoder_soft_matching_enabled": decoder_store is not None,
+        "decoder_soft_matching_enabled": decoder_cache_dir is not None,
+        "workers": workers,
+        "resume": resume,
         "pair_count": len(pairs),
         "metric_row_count": len(rows),
         "scorecard_row_count": len(scorecard),
+        "checkpoint_results": checkpoint_results,
         "parquet_written": parquet_written,
         "manifest": manifest,
     }
