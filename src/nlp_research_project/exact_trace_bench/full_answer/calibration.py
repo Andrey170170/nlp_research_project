@@ -265,12 +265,13 @@ def _compute_pair_rows(
     pair: CalibrationPair,
     *,
     decoder_cache_dir: Path | None,
+    decoder_cosine_device: str,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     left = _load_snapshot(pair.left_graph)
     right = _load_snapshot(pair.right_graph)
     context = pair.context(left, right)
     decoder_store = (
-        DecoderSignatureStore(decoder_cache_dir)
+        DecoderSignatureStore(decoder_cache_dir, cosine_device=decoder_cosine_device)
         if decoder_cache_dir is not None
         else None
     )
@@ -286,6 +287,7 @@ def _run_pair_checkpoint(
     *,
     output_dir: Path,
     decoder_cache_dir: Path | None,
+    decoder_cosine_device: str,
     resume: bool,
 ) -> dict[str, Any]:
     rows_path = _pair_rows_path(output_dir, pair)
@@ -299,7 +301,11 @@ def _run_pair_checkpoint(
             "metric_row_count": sum(1 for _ in iter_jsonl(rows_path)),
         }
 
-    context, rows = _compute_pair_rows(pair, decoder_cache_dir=decoder_cache_dir)
+    context, rows = _compute_pair_rows(
+        pair,
+        decoder_cache_dir=decoder_cache_dir,
+        decoder_cosine_device=decoder_cosine_device,
+    )
     _atomic_write_jsonl(rows_path, rows)
     _atomic_write_json(context_path, context)
     return {
@@ -474,6 +480,7 @@ def run_metric_calibration(
     write_parquet: bool = True,
     workers: int = 1,
     resume: bool = True,
+    decoder_cosine_device: str = "cpu",
 ) -> dict[str, Any]:
     ensure_dir(output_dir)
     ensure_dir(output_dir / PAIR_CHECKPOINT_DIR)
@@ -488,6 +495,7 @@ def run_metric_calibration(
                 pair,
                 output_dir=output_dir,
                 decoder_cache_dir=decoder_cache_dir,
+                decoder_cosine_device=decoder_cosine_device,
                 resume=resume,
             )
             checkpoint_results.append(result)
@@ -504,6 +512,7 @@ def run_metric_calibration(
                     pair,
                     output_dir=output_dir,
                     decoder_cache_dir=decoder_cache_dir,
+                    decoder_cosine_device=decoder_cosine_device,
                     resume=resume,
                 ): pair
                 for pair in pairs
@@ -557,6 +566,7 @@ def run_metric_calibration(
         "output_dir": str(output_dir),
         "decoder_cache_dir": str(decoder_cache_dir) if decoder_cache_dir else None,
         "decoder_soft_matching_enabled": decoder_cache_dir is not None,
+        "decoder_cosine_device": decoder_cosine_device,
         "workers": workers,
         "resume": resume,
         "pair_count": len(pairs),

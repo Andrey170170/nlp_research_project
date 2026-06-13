@@ -788,6 +788,7 @@ def _cmd_run_metric_calibration(args: argparse.Namespace) -> None:
         write_parquet=not args.no_parquet,
         workers=args.workers,
         resume=not args.no_resume,
+        decoder_cosine_device=args.decoder_cosine_device,
     )
     print(json.dumps(summary, indent=2))
 
@@ -1889,6 +1890,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=1,
         help="Parallel worker processes; each writes one-pair checkpoints",
+    )
+    metric_calibration.add_argument(
+        "--decoder-cosine-device",
+        default="cpu",
+        help="Device for decoder cosine matrix multiplies, e.g. cpu or cuda",
     )
     metric_calibration.add_argument(
         "--no-resume",

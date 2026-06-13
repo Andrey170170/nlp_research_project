@@ -325,7 +325,13 @@ def build_decoder_signature_cache(
 class DecoderSignatureStore:
     """Lazy reader for chunked normalized decoder signatures."""
 
-    def __init__(self, cache_dir: Path, *, max_resident_chunks: int = 16) -> None:
+    def __init__(
+        self,
+        cache_dir: Path,
+        *,
+        max_resident_chunks: int = 16,
+        cosine_device: str = "cpu",
+    ) -> None:
         self.cache_dir = cache_dir
         metadata_path = cache_dir / "metadata.json"
         if not metadata_path.exists():
@@ -343,6 +349,7 @@ class DecoderSignatureStore:
         self.d_model = int(self.metadata["d_model"])
         self.chunk_size = int(self.metadata["chunk_size"])
         self.max_resident_chunks = max(0, int(max_resident_chunks))
+        self.cosine_device = str(cosine_device)
         self._chunk_cache: OrderedDict[
             tuple[int, int], np.ndarray[Any, np.dtype[Any]]
         ] = OrderedDict()
@@ -418,4 +425,14 @@ class DecoderSignatureStore:
         right = self.get_rows(layer, right_feature_ids)
         if left.shape[0] == 0 or right.shape[0] == 0:
             return np.empty((left.shape[0], right.shape[0]), dtype=np.float32)
+        if self.cosine_device != "cpu":
+            import torch
+
+            device = torch.device(self.cosine_device)
+            left_tensor = torch.as_tensor(left, dtype=torch.float32, device=device)
+            right_tensor = torch.as_tensor(right, dtype=torch.float32, device=device)
+            result = left_tensor @ right_tensor.T
+            return (
+                result.detach().to(device="cpu").numpy().astype(np.float32, copy=False)
+            )
         return np.asarray(left @ right.T, dtype=np.float32)

@@ -175,6 +175,7 @@ def test_run_metric_calibration_writes_rows_and_scorecard(tmp_path: Path) -> Non
     assert summary["pair_count"] == 3
     assert summary["metric_row_count"] > 0
     assert summary["decoder_soft_matching_enabled"] is False
+    assert summary["decoder_cosine_device"] == "cpu"
     assert (out_dir / "metric_rows.jsonl").exists()
     assert (out_dir / "metric_rows.csv").exists()
     assert (out_dir / "scorecard.csv").exists()
