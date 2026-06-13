@@ -450,12 +450,30 @@ def _feature_feature_bucket_positionless_mass(
 
 
 def _greedy_soft_matches(
+    candidates: list[tuple[float, PositionlessFeature, PositionlessFeature]],
+    threshold: float,
+) -> list[tuple[PositionlessFeature, PositionlessFeature, float]]:
+    used_left: set[PositionlessFeature] = set()
+    used_right: set[PositionlessFeature] = set()
+    matches: list[tuple[PositionlessFeature, PositionlessFeature, float]] = []
+    for similarity, left_key, right_key in candidates:
+        if similarity < threshold:
+            break
+        if left_key in used_left or right_key in used_right:
+            continue
+        used_left.add(left_key)
+        used_right.add(right_key)
+        matches.append((left_key, right_key, similarity))
+    return matches
+
+
+def _soft_match_candidates(
     left: dict[PositionlessFeature, float],
     right: dict[PositionlessFeature, float],
     *,
     decoder_store: DecoderSignatureStore,
-    threshold: float,
-) -> tuple[list[tuple[PositionlessFeature, PositionlessFeature, float]], int]:
+    min_threshold: float,
+) -> tuple[list[tuple[float, PositionlessFeature, PositionlessFeature]], int]:
     candidates: list[tuple[float, PositionlessFeature, PositionlessFeature]] = []
     compared = 0
     layers = sorted({layer for layer, _fid in left} & {layer for layer, _fid in right})
@@ -466,22 +484,13 @@ def _greedy_soft_matches(
             continue
         cosine = decoder_store.cosine_matrix(layer, left_ids, right_ids)
         compared += int(cosine.size)
-        left_arr, right_arr = np.nonzero(cosine >= threshold)
+        left_arr, right_arr = np.nonzero(cosine >= min_threshold)
         for i, j in zip(left_arr.tolist(), right_arr.tolist()):
             candidates.append(
                 (float(cosine[i, j]), (layer, left_ids[i]), (layer, right_ids[j]))
             )
     candidates.sort(key=lambda item: (-item[0], item[1], item[2]))
-    used_left: set[PositionlessFeature] = set()
-    used_right: set[PositionlessFeature] = set()
-    matches: list[tuple[PositionlessFeature, PositionlessFeature, float]] = []
-    for similarity, left_key, right_key in candidates:
-        if left_key in used_left or right_key in used_right:
-            continue
-        used_left.add(left_key)
-        used_right.add(right_key)
-        matches.append((left_key, right_key, similarity))
-    return matches, compared
+    return candidates, compared
 
 
 def soft_feature_matching_rows(
@@ -495,10 +504,15 @@ def soft_feature_matching_rows(
     rows: list[dict[str, Any]] = []
     total_left = _mass(left)
     total_right = _mass(right)
+    sorted_thresholds = sorted({float(threshold) for threshold in thresholds})
+    candidates, compared = _soft_match_candidates(
+        left,
+        right,
+        decoder_store=decoder_store,
+        min_threshold=min(sorted_thresholds) if sorted_thresholds else 1.0,
+    )
     for threshold in thresholds:
-        matches, compared = _greedy_soft_matches(
-            left, right, decoder_store=decoder_store, threshold=float(threshold)
-        )
+        matches = _greedy_soft_matches(candidates, threshold=float(threshold))
         weighted_overlap = sum(
             min(float(left[lkey]), float(right[rkey])) * similarity
             for lkey, rkey, similarity in matches
@@ -526,6 +540,16 @@ def soft_feature_matching_rows(
                 _row(
                     bucket=bucket,
                     metric="decoder_soft_candidate_count",
+                    params=params,
+                    value=sum(
+                        1
+                        for similarity, _lkey, _rkey in candidates
+                        if similarity >= float(threshold)
+                    ),
+                ),
+                _row(
+                    bucket=bucket,
+                    metric="decoder_soft_compared_pair_count",
                     params=params,
                     value=compared,
                 ),
