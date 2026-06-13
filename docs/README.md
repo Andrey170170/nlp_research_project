@@ -15,6 +15,7 @@ names as source-of-truth signals.
 | `../AGENTS.md` | Durable repo policy and operating conventions |
 | `../EXPERIMENTS.md` | Compact experiment baseline/index and current interpretation |
 | `harness.md` | Current exact-bench harness overview |
+| `metric_calibration.md` | Phase-0/Phase-1 decoder-cache and metric calibration workflow |
 | `knob_api_taxonomy.md` | Exact-trace knob/API taxonomy and Phase-3 cleanup map |
 | `current_project_roadmap.md` | Current scratch roadmap for the active cleanup phase |
 | `full_answer_harness_spec.md` | Track-2 full-answer / multi-token tracing harness design |

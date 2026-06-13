@@ -790,6 +790,16 @@ def _cmd_run_metric_calibration(args: argparse.Namespace) -> None:
     print(json.dumps(summary, indent=2))
 
 
+def _cmd_plot_metric_calibration(args: argparse.Namespace) -> None:
+    from .full_answer.calibration_plots import plot_metric_calibration
+
+    manifest = plot_metric_calibration(
+        analysis_dir=args.analysis_dir,
+        output_dir=args.output_dir,
+    )
+    print(json.dumps(manifest, indent=2))
+
+
 def _cmd_run_full_answer_trajectory(args: argparse.Namespace) -> None:
     from .full_answer.trajectory import generate_trajectory
 
@@ -1873,6 +1883,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip writing metric_rows.parquet even if pandas/pyarrow are available",
     )
     metric_calibration.set_defaults(func=_cmd_run_metric_calibration)
+
+    metric_calibration_plots = subparsers.add_parser(
+        "plot-metric-calibration",
+        help="Plot Phase-1 metric calibration outputs and write a findings template",
+    )
+    metric_calibration_plots.add_argument(
+        "--analysis-dir",
+        type=Path,
+        required=True,
+        help="Directory produced by run-metric-calibration",
+    )
+    metric_calibration_plots.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Directory for calibration plots and markdown findings template",
+    )
+    metric_calibration_plots.set_defaults(func=_cmd_plot_metric_calibration)
 
     compare_phase3 = subparsers.add_parser(
         "compare-phase3-seed-bundles",

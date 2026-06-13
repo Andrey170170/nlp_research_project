@@ -11,6 +11,9 @@ from nlp_research_project.exact_trace_bench.full_answer.calibration import (
     position_band_for_index,
     run_metric_calibration,
 )
+from nlp_research_project.exact_trace_bench.full_answer.calibration_plots import (
+    plot_metric_calibration,
+)
 
 
 def _write_graph(
@@ -181,3 +184,57 @@ def test_run_metric_calibration_writes_rows_and_scorecard(tmp_path: Path) -> Non
         "temporal_pair",
         "null_pair",
     }
+
+
+def test_plot_metric_calibration_writes_manifest_plots_and_report(
+    tmp_path: Path,
+) -> None:
+    run_root = tmp_path / "run"
+    graph0 = _write_graph(run_root, 0, [(0, 0, 1), (0, 0, 2)])
+    graph1 = _write_graph(run_root, 1, [(0, 1, 1), (0, 1, 3)])
+    graph2 = _write_graph(run_root, 2, [(0, 2, 8), (0, 2, 9)])
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "pairs": [
+                    {
+                        "left_graph": str(graph0),
+                        "right_graph": str(graph0),
+                        "pair_category": "noise",
+                        "position_band": "mid",
+                    },
+                    {
+                        "left_graph": str(graph0),
+                        "right_graph": str(graph1),
+                        "pair_category": "temporal",
+                        "sub_category": "adjacent",
+                        "position_band": "mid",
+                        "lag": 1,
+                    },
+                    {
+                        "left_graph": str(graph0),
+                        "right_graph": str(graph2),
+                        "pair_category": "null",
+                        "position_band": "mid",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    analysis_dir = tmp_path / "analysis"
+    run_metric_calibration(
+        manifest_path=manifest_path,
+        output_dir=analysis_dir,
+        write_parquet=False,
+    )
+
+    plot_dir = tmp_path / "plots"
+    manifest = plot_metric_calibration(analysis_dir=analysis_dir, output_dir=plot_dir)
+
+    assert (plot_dir / "plot_manifest.json").exists()
+    assert (plot_dir / "metric_calibration_findings.md").exists()
+    assert manifest["generated_files"]
+    for path in manifest["generated_files"]:
+        assert Path(path).exists()
