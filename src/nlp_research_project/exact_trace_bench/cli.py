@@ -778,6 +778,18 @@ def _cmd_build_decoder_signature_cache(args: argparse.Namespace) -> None:
     print(json.dumps(summary, indent=2))
 
 
+def _cmd_run_metric_calibration(args: argparse.Namespace) -> None:
+    from .full_answer.calibration import run_metric_calibration
+
+    summary = run_metric_calibration(
+        manifest_path=args.pair_manifest,
+        output_dir=args.output_dir,
+        decoder_cache_dir=args.decoder_cache_dir,
+        write_parquet=not args.no_parquet,
+    )
+    print(json.dumps(summary, indent=2))
+
+
 def _cmd_run_full_answer_trajectory(args: argparse.Namespace) -> None:
     from .full_answer.trajectory import generate_trajectory
 
@@ -1832,6 +1844,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Overwrite existing chunk files and metadata",
     )
     decoder_cache.set_defaults(func=_cmd_build_decoder_signature_cache)
+
+    metric_calibration = subparsers.add_parser(
+        "run-metric-calibration",
+        help="Run Phase-1 metric battery calibration from a pair manifest",
+    )
+    metric_calibration.add_argument(
+        "--pair-manifest",
+        type=Path,
+        required=True,
+        help="JSON manifest describing explicit, trajectory, and null calibration pairs",
+    )
+    metric_calibration.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Output directory for metric rows, parquet, scorecard, and summary",
+    )
+    metric_calibration.add_argument(
+        "--decoder-cache-dir",
+        type=Path,
+        default=None,
+        help="Optional decoder signature cache enabling soft feature matching",
+    )
+    metric_calibration.add_argument(
+        "--no-parquet",
+        action="store_true",
+        help="Skip writing metric_rows.parquet even if pandas/pyarrow are available",
+    )
+    metric_calibration.set_defaults(func=_cmd_run_metric_calibration)
 
     compare_phase3 = subparsers.add_parser(
         "compare-phase3-seed-bundles",
