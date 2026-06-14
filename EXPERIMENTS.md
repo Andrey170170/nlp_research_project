@@ -107,6 +107,32 @@ Full-answer stability follow-up (May 2026):
   buffering has a much larger stability effect and should remain an explicit
   robust-mode experiment knob while broader support definitions are evaluated.
 
+Metric-calibrated temporal stability decision (June 2026):
+
+- Phase-1 metric calibration over Stage A--C noise pairs, four existing
+  trajectories, and matched null pairs selected a simple primary ruler:
+  `logit<-error / union_raw_weight_cosine / {}` for mid/late answer positions.
+- The selected metric separates controls in the desired order. Calibration means:
+  late null `0.194`, temporal-adjacent `0.602`, noise `0.998`; mid null `0.244`,
+  temporal-adjacent `0.588`, noise `0.991`.
+- Secondary interpretable readouts are `logit<-error /
+  top_p_core_shared_mass_fraction_{a,b}` at `p=0.8`; rank/core checks include
+  `logit<-error / top_p_core_jaccard / {"p":0.95}` and derived-K weighted
+  Jaccard.
+- Near-case feature identity is not the main problem: feature-node raw-weight
+  cosine is high at mid/late (`~0.980`/`~0.991`), and decoder-soft matched
+  feature mass is near complete (`~0.998`). The brittle object is exact compact
+  edge support, especially exact `feature<-feature` edges and early token-0
+  support boundaries.
+- Default full-answer tracing for the next confirmation/scaling phase should be
+  `full_sequence`, unbuffered, typed-bucketed, fp32, with the caveat that the
+  first-pass full-sequence implementation needs an efficiency/hardening pass
+  before large all-token runs. Do not mix `full_sequence` and
+  `independent_prefix` inside one comparison set.
+- Keep Phase-3/Phase-4 frontier buffering as an explicit robustness/debug knob,
+  not the ordinary default, unless a unified Stage-D rerun shows it materially
+  narrows the calibrated mid/late noise band on the frozen primary metric.
+
 ## Current run families
 
 | Family | Meaning | Current status |
@@ -119,6 +145,59 @@ Full-answer stability follow-up (May 2026):
 | historical `matched_debug` artifacts | Old matched-debug campaign outputs/configs | Historical only; do not use as an ordinary bucket |
 
 ## Recent durable decisions
+
+### 2026-06-13 — Phase-1 calibrated temporal graph metrics
+
+Phase-1 calibration completed on existing Stage A--C selected-token artifacts and
+the four typed-bucketed full-answer trajectories. The calibration compared three
+control families: same-token perturbed/noise pairs, within-trajectory temporal
+pairs, and matched null pairs.
+
+Key outputs:
+
+- analysis root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/metric-calibration-v1`,
+- report root: `reports/metric-calibration-v1/`,
+- pair count: `502`, metric rows: `328810`, scorecard rows: `1965`,
+- decoder signature cache:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/decoder_signature_cache/gemma-scope-2-1b-it__clt_width_262k_l0_medium_affine__float32_chunk512`.
+
+Decision:
+
+- Freeze `logit<-error / union_raw_weight_cosine / {}` as the primary temporal
+  stability ruler for mid/late answer positions.
+- Interpret scores against the calibrated anchors rather than as absolute truth:
+  near noise means reproducible/same-core, near temporal-adjacent means normal
+  within-answer evolution, and near null means weak temporal relation or major
+  divergence.
+- Treat this as metric/instrument calibration only. General temporal-relation
+  claims require applying the frozen metric to held-out prompts/trajectories.
+
+Selected calibration means:
+
+| Bucket/metric | Band | Null | Temporal adjacent | Noise |
+|---|---:|---:|---:|---:|
+| `logit<-error / union_raw_weight_cosine` | mid | 0.244 | 0.588 | 0.991 |
+| `logit<-error / union_raw_weight_cosine` | late | 0.194 | 0.602 | 0.998 |
+
+Near-case interpretation:
+
+- Full-sequence versus independent-prefix and cross-cluster near cases preserve a
+  strong feature/readout core. Mid/late feature-node raw-weight cosine is about
+  `0.980`/`0.991`, and decoder-soft matched feature mass is about `0.998`.
+- Exact compact support differences are therefore mostly boundary/selection
+  amplification rather than wholesale semantic-feature replacement.
+
+Operational default for the next confirmation/scaling step:
+
+- Use `full_sequence`, unbuffered, typed-bucketed saves, fp32 internal dtype.
+- Keep early positions reliability-caveated.
+- Keep Phase-3/Phase-4 buffering as a robustness/debug knob, not the default,
+  unless a unified Stage-D rerun proves a meaningful reduction in the frozen
+  primary metric's mid/late noise band.
+- Before large all-token full-answer runs, harden/optimize the first-pass
+  full-sequence implementation; the instability campaign validated it enough for
+  selected-token comparisons but did not finish throughput engineering.
 
 ### 2026-05-30 — Typed-bucketed full-answer temporal comparison
 
