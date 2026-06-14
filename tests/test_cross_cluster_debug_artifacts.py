@@ -34,6 +34,7 @@ def run_checks() -> None:
         parse_phase4_row_executor,
         parse_phase4_scheduler_mode,
         parse_phase4_scheduler_telemetry_detail,
+        parse_row_store_cache_control,
         resolve_phase4_refresh_optimization_effective,
         resolve_phase4_row_executor_effective,
         trace_completion_compact_chunked,
@@ -123,6 +124,10 @@ def run_checks() -> None:
     assert parse_phase4_refresh_optimization("v1") == "v1"
     assert parse_phase4_row_executor("batched") == "batched"
     assert parse_phase4_row_executor("streaming_v1") == "streaming_v1"
+    assert (
+        parse_row_store_cache_control("fadvise_dontneed_after_append_and_read_v1")
+        == "fadvise_dontneed_after_append_and_read_v1"
+    )
     assert resolve_phase4_refresh_optimization_effective("v1") == "v1"
     assert resolve_phase4_row_executor_effective("streaming_v1") == "batched"
 
@@ -160,7 +165,9 @@ def run_checks() -> None:
 
 
 def run_launcher_and_extractor_roundtrip_checks() -> None:
-    from nlp_research_project.exact_trace_bench.scenarios import _select_exact_mode_knobs
+    from nlp_research_project.exact_trace_bench.scenarios import (
+        _select_exact_mode_knobs,
+    )
     from nlp_research_project.exact_trace_bench.extract import build_benchmark_index_row
     from experiments.extract_benchmark_index import build_row
     from experiments.run_sparsification_experiment import build_command

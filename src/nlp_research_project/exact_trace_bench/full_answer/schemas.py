@@ -13,6 +13,11 @@ TRAJECTORY_SESSION_MODES = {"per_token", "experimental_reuse", "window_reuse_v1"
 PHASE0_WINDOW_SCOPES = {"shard_window", "trajectory"}
 PHASE0_WINDOW_MAX_PREFIX_POLICIES = {"max_target_position"}
 PHASE0_WINDOW_REFERENCE_CHECKS = {"off", "sampled", "all"}
+ROW_STORE_CACHE_CONTROLS = {
+    "off",
+    "fadvise_dontneed_after_append_v1",
+    "fadvise_dontneed_after_append_and_read_v1",
+}
 
 
 class GeneratedToken(TypedDict, total=False):
@@ -219,6 +224,15 @@ def validate_trace_spec(spec: Mapping[str, Any]) -> None:
         raise ValueError(
             "trace spec graph_knobs.phase0_window_reference_checks must be one of "
             f"{sorted(PHASE0_WINDOW_REFERENCE_CHECKS)!r}"
+        )
+    row_store_cache_control = spec["graph_knobs"].get("row_store_cache_control")
+    if (
+        row_store_cache_control is not None
+        and row_store_cache_control not in ROW_STORE_CACHE_CONTROLS
+    ):
+        raise ValueError(
+            "trace spec graph_knobs.row_store_cache_control must be one of "
+            f"{sorted(ROW_STORE_CACHE_CONTROLS)!r}"
         )
     if (
         spec["graph_knobs"].get("reuse_target_logits")

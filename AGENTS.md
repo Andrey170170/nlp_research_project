@@ -31,6 +31,14 @@ on both this repo and the sibling library checkout.
 This repo runs on Ohio Supercomputer Center systems. GPU/model work must happen
 inside SLURM jobs, never on login nodes.
 
+Filesystem search safety on HPC:
+
+- Never run broad filesystem searches rooted at `/` or other HPC-wide roots.
+- Restrict file discovery and content searches to the repo, the sibling checkout,
+  exact known scratch/log roots, or exact temp paths already identified.
+- Prefer explicit paths over globbing large shared filesystems; ask before
+  expanding an unknown search scope.
+
 Safe on login nodes:
 
 - `uv run ruff check .`

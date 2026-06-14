@@ -132,7 +132,10 @@ def test_schema_and_trace_spec_round_trip(tmp_path: Path) -> None:
     specs = build_trace_specs(
         trajectory,
         selection,
-        graph_knob_overrides={"max_edges": 7},
+        graph_knob_overrides={
+            "max_edges": 7,
+            "row_store_cache_control": "fadvise_dontneed_after_append_and_read_v1",
+        },
     )
     assert specs[0]["prefix_token_count"] == 13
     # target_position is the absolute token index of generated token y_k:
@@ -144,6 +147,10 @@ def test_schema_and_trace_spec_round_trip(tmp_path: Path) -> None:
     assert specs[0]["estimated_cost"] == 13
     assert specs[0]["graph_knobs"]["exact_trace_internal_dtype"] == "fp32"
     assert specs[0]["graph_knobs"]["max_edges"] == 7
+    assert (
+        specs[0]["graph_knobs"]["row_store_cache_control"]
+        == "fadvise_dontneed_after_append_and_read_v1"
+    )
 
     specs_path = tmp_path / "trace_specs.jsonl"
     write_trace_specs(specs_path, specs)

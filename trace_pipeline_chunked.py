@@ -95,6 +95,7 @@ _PHASE4_RANKERS = {
 _ROW_STORE_CACHE_CONTROLS = {
     "off",
     "fadvise_dontneed_after_append_v1",
+    "fadvise_dontneed_after_append_and_read_v1",
 }
 
 _ROW_STORE_TEMP_ROOT_POLICIES = {
@@ -348,7 +349,8 @@ def parse_row_store_cache_control(value: str) -> str:
     normalized = _normalize_row_store_cache_control(value)
     if normalized is None:
         raise argparse.ArgumentTypeError(
-            f"Expected one of {{off, fadvise_dontneed_after_append_v1}}, got: {value!r}"
+            "Expected one of {off, fadvise_dontneed_after_append_v1, "
+            f"fadvise_dontneed_after_append_and_read_v1}}, got: {value!r}"
         )
     return normalized
 
@@ -4813,7 +4815,10 @@ if __name__ == "__main__":
         "--row-store-cache-control",
         type=parse_row_store_cache_control,
         default="off",
-        help=("Row-store cache-control mode (off or fadvise_dontneed_after_append_v1)"),
+        help=(
+            "Row-store cache-control mode (off, fadvise_dontneed_after_append_v1, "
+            "or fadvise_dontneed_after_append_and_read_v1)"
+        ),
     )
     parser.add_argument(
         "--row-store-temp-root-policy",
