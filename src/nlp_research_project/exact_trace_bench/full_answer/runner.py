@@ -203,7 +203,12 @@ def _hash_token_ids(token_ids: list[int]) -> str:
 
 
 def prefix_view_metadata(
-    trajectory: Mapping[str, Any], spec: TraceSpec, prefix_token_ids: list[int]
+    trajectory: Mapping[str, Any],
+    spec: TraceSpec,
+    prefix_token_ids: list[int],
+    *,
+    full_sequence_token_ids: list[int] | None = None,
+    full_sequence_token_ids_sha256: str | None = None,
 ) -> dict[str, Any]:
     knobs = spec.get("graph_knobs", {})
     input_context_mode = (
@@ -222,12 +227,114 @@ def prefix_view_metadata(
         "prefix_token_ids_sha256": _hash_token_ids(prefix_token_ids),
     }
     if input_context_mode == "full_sequence":
-        full_sequence = reconstruct_full_sequence_token_ids(trajectory)
+        full_sequence = full_sequence_token_ids or reconstruct_full_sequence_token_ids(
+            trajectory
+        )
+        full_sequence_hash = full_sequence_token_ids_sha256 or _hash_token_ids(
+            full_sequence
+        )
         metadata["output_position"] = spec["target_position"] - 1
         metadata["input_token_count"] = len(full_sequence)
         metadata["full_sequence_token_count"] = len(full_sequence)
-        metadata["input_token_ids_sha256"] = _hash_token_ids(full_sequence)
+        metadata["input_token_ids_sha256"] = full_sequence_hash
     return metadata
+
+
+def prepare_full_sequence_cache(
+    trajectory: Mapping[str, Any], specs: list[TraceSpec]
+) -> dict[str, Any] | None:
+    """Reconstruct full-sequence ids/hash once when any shard spec requests it."""
+    if not any(
+        spec.get("graph_knobs", {}).get("input_context_mode") == "full_sequence"
+        for spec in specs
+    ):
+        return None
+    token_ids = reconstruct_full_sequence_token_ids(trajectory)
+    return {"token_ids": token_ids, "token_ids_sha256": _hash_token_ids(token_ids)}
+
+
+def session_reuse_metadata(spec: TraceSpec) -> dict[str, Any]:
+    mode = spec.get("graph_knobs", {}).get("trajectory_session_mode", "per_token")
+    requested = mode not in (None, "per_token")
+    return {
+        "trajectory_session_mode": mode,
+        "session_reuse_requested": bool(requested),
+        "session_reuse_effective": False,
+        "session_reuse_fallback": "per_token_path" if requested else None,
+    }
+
+
+def _decoder_cache_fingerprint(
+    model: Any, model_load_knobs: Mapping[str, Any]
+) -> tuple[Any, ...]:
+    provider = getattr(model, "transcoders", None)
+    return (
+        "full_answer_runner_decoder_cache_v1",
+        id(provider),
+        type(provider).__name__ if provider is not None else None,
+        str(getattr(model, "device", None)),
+        str(getattr(provider, "dtype", None)),
+        int(getattr(provider, "n_layers", 0) or 0),
+        int(getattr(provider, "d_transcoder", 0) or 0),
+        int(getattr(provider, "d_model", 0) or 0),
+        int(model_load_knobs.get("decoder_chunk_size", 0) or 0),
+        int(model_load_knobs.get("cross_batch_decoder_cache_bytes", 0) or 0),
+    )
+
+
+def prepare_trajectory_session_cache(
+    model: Any,
+    specs: list[TraceSpec],
+    model_load_knobs: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Prepare opt-in per-shard session reuse state.
+
+    Stage 3 is intentionally conservative: the only effective reuse today is a
+    shared immutable decoder chunk cache.  Broader NNSight/Phase-0 reuse remains
+    a later validation-gated path.
+    """
+    requested = any(
+        spec.get("graph_knobs", {}).get("trajectory_session_mode")
+        == "experimental_reuse"
+        and spec.get("graph_knobs", {}).get("input_context_mode") == "full_sequence"
+        for spec in specs
+    )
+    result: dict[str, Any] = {
+        "requested": requested,
+        "effective": False,
+        "fallback": "per_token_path" if requested else None,
+        "decoder_chunk_cache": None,
+        "decoder_cache_fingerprint": None,
+    }
+    if not requested:
+        return result
+    provider = getattr(model, "transcoders", None)
+    create_cache = getattr(provider, "create_decoder_block_cache", None)
+    if not callable(create_cache):
+        result["fallback"] = "decoder_cache_unavailable"
+        return result
+    fingerprint = _decoder_cache_fingerprint(model, model_load_knobs)
+    try:
+        cache = create_cache(fingerprint=fingerprint)
+    except TypeError:
+        cache = create_cache()
+        try:
+            setattr(cache, "fingerprint", fingerprint)
+        except Exception:
+            result["fallback"] = "decoder_cache_fingerprint_unavailable"
+            return result
+    if cache is None:
+        result["fallback"] = "decoder_cache_disabled"
+        return result
+    result.update(
+        {
+            "effective": True,
+            "fallback": None,
+            "decoder_chunk_cache": cache,
+            "decoder_cache_fingerprint": fingerprint,
+        }
+    )
+    return result
 
 
 def forced_target_payload(spec: TraceSpec) -> dict[str, Any]:
@@ -564,6 +671,10 @@ def run_real_shard(
     )
     offload = "cpu"
     rows: list[dict[str, Any]] = []
+    full_sequence_cache = prepare_full_sequence_cache(trajectory, specs)
+    trajectory_session_cache = prepare_trajectory_session_cache(
+        model, specs, model_load_knobs
+    )
     for spec in specs:
         token_dir = root / f"token_{spec['generated_index']:06d}"
         graph_path = token_dir / "graph.npz"
@@ -574,19 +685,48 @@ def run_real_shard(
         started = time.perf_counter()
         try:
             prefix_token_ids = reconstruct_prefix_token_ids(trajectory, spec)
-            prefix_metadata = prefix_view_metadata(trajectory, spec, prefix_token_ids)
+            prefix_metadata = prefix_view_metadata(
+                trajectory,
+                spec,
+                prefix_token_ids,
+                full_sequence_token_ids=full_sequence_cache["token_ids"]
+                if full_sequence_cache
+                else None,
+                full_sequence_token_ids_sha256=full_sequence_cache["token_ids_sha256"]
+                if full_sequence_cache
+                else None,
+            )
             trace["prefix_view_metadata"] = prefix_metadata
+            spec_reuse_requested = (
+                spec.get("graph_knobs", {}).get("trajectory_session_mode")
+                == "experimental_reuse"
+            )
+            spec_cache_effective = bool(
+                spec_reuse_requested and trajectory_session_cache["effective"]
+            )
+            trace["trajectory_session"] = {
+                **session_reuse_metadata(spec),
+                "session_reuse_effective": spec_cache_effective,
+                "session_reuse_fallback": trajectory_session_cache["fallback"]
+                if spec_reuse_requested
+                else None,
+                "decoder_cache_reuse_effective": spec_cache_effective,
+            }
             knobs = spec["graph_knobs"]
             save_raw_graph = bool(knobs.get("save_raw_graph", False))
             raw_graph_path = token_dir / "graph.pt"
             trace["graph_path"] = str(raw_graph_path if save_raw_graph else graph_path)
             debug_sidecars: dict[str, str] = {}
             full_sequence_mode = knobs.get("input_context_mode") == "full_sequence"
-            prompt_token_ids = (
-                reconstruct_full_sequence_token_ids(trajectory)
-                if full_sequence_mode
-                else prefix_token_ids
-            )
+            if full_sequence_mode and full_sequence_cache is None:
+                raise ValueError(
+                    "full_sequence cache missing for full_sequence trace spec"
+                )
+            if full_sequence_mode:
+                assert full_sequence_cache is not None
+                prompt_token_ids = full_sequence_cache["token_ids"]
+            else:
+                prompt_token_ids = prefix_token_ids
             graph_result = attribute_nnsight(
                 prompt=torch.tensor(prompt_token_ids, dtype=torch.long),
                 model=model,
@@ -615,6 +755,14 @@ def run_real_shard(
                     knobs.get("exact_trace_internal_dtype", "fp32")
                 ),
                 **_attribute_performance_kwargs(knobs),
+                decoder_chunk_cache=trajectory_session_cache["decoder_chunk_cache"]
+                if full_sequence_mode and spec_cache_effective
+                else None,
+                decoder_cache_fingerprint=trajectory_session_cache[
+                    "decoder_cache_fingerprint"
+                ]
+                if full_sequence_mode and spec_cache_effective
+                else None,
                 compact_output=not save_raw_graph,
             )
             if save_raw_graph:
@@ -692,6 +840,24 @@ def run_real_shard(
         with trace_results_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(trace, sort_keys=True) + "\n")
     final_status = "complete" if all(r["status"] == "ok" for r in rows) else "error"
+    provider = getattr(model, "transcoders", None)
+    clear_cache = getattr(provider, "clear_decoder_block_cache", None)
+    if trajectory_session_cache["decoder_chunk_cache"] is not None and callable(
+        clear_cache
+    ):
+        clear_cache(trajectory_session_cache["decoder_chunk_cache"])
+    token_seconds = [
+        float(r.get("timings", {}).get("trace_seconds", 0.0)) for r in rows
+    ]
+    health = {
+        "actual_total_seconds": sum(token_seconds),
+        "max_token_seconds": max(token_seconds) if token_seconds else 0.0,
+        "failed_token_count": sum(1 for r in rows if r.get("status") != "ok"),
+        "predicted_cost_sum": int(
+            shard.get("estimated_cost_sum", sum(s["estimated_cost"] for s in specs))
+        ),
+        "retry_recommended": any(r.get("status") != "ok" for r in rows),
+    }
     write_json(
         root / "shard.json",
         _shard_record(
@@ -701,7 +867,7 @@ def run_real_shard(
             trace_specs_path=trace_specs_path,
             shards_path=shards_path,
             token_count=len(specs),
-            metadata=metadata,
+            metadata={**metadata, "shard_health": health},
             target_positions=[spec["target_position"] for spec in specs],
         ),
     )

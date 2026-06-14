@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from nlp_research_project.exact_trace_bench.full_answer.schemas import (
+    Trajectory,
     build_trace_specs,
     load_trace_selection,
     load_trace_specs,
@@ -15,7 +16,7 @@ from nlp_research_project.exact_trace_bench.full_answer.schemas import (
 from nlp_research_project.exact_trace_bench.full_answer.selection import select_tokens
 
 
-def tiny_trajectory() -> dict:
+def tiny_trajectory() -> Trajectory:
     return {
         "schema_version": 1,
         "trajectory_id": "traj_test",
@@ -90,6 +91,14 @@ def test_selection_policies_merge_reasons() -> None:
         "high_surprisal",
     ]
     assert selection["selection_reasons"]["4"] == ["final_answer"]
+
+
+def test_all_token_selection_is_explicit_policy() -> None:
+    selection = select_tokens(tiny_trajectory(), include_all=True)
+
+    assert selection["selected_indices"] == list(range(6))
+    assert selection["selection_policy"]["include_all"] is True
+    assert selection["selection_reasons"]["0"] == ["all_tokens"]
 
 
 def test_bad_index_validation() -> None:

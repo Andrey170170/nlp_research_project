@@ -20,9 +20,11 @@ from nlp_research_project.exact_trace_bench.full_answer.runner import (
     list_shard_specs,
     load_shard_inputs,
     prefix_view_metadata,
+    prepare_full_sequence_cache,
     reconstruct_full_sequence_token_ids,
     reconstruct_prefix_token_ids,
     run_real_shard,
+    session_reuse_metadata,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -218,7 +220,46 @@ def test_prefix_view_metadata_matches_reconstructed_prefix(tmp_path: Path) -> No
     assert metadata["target_position"] == 3
     assert metadata["prefix_token_count"] == len(prefix) == 3
     assert metadata["target_token_ids"] == [202]
+
+
+def test_full_sequence_cache_is_reused_for_prefix_metadata(tmp_path: Path) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    trajectory, specs, _shard = load_shard_inputs(
+        trajectory_path=trajectory_path,
+        trace_specs_path=specs_path,
+        shards_path=shards_path,
+        shard_id=0,
+    )
+    specs[0]["graph_knobs"]["input_context_mode"] = "full_sequence"
+    prefix = reconstruct_prefix_token_ids(trajectory, specs[0])
+    cache = prepare_full_sequence_cache(trajectory, specs)
+    assert cache is not None
+
+    metadata = prefix_view_metadata(
+        trajectory,
+        specs[0],
+        prefix,
+        full_sequence_token_ids=cache["token_ids"],
+        full_sequence_token_ids_sha256=cache["token_ids_sha256"],
+    )
+
+    assert metadata["mode"] == "full_sequence_target_position"
+    assert metadata["full_sequence_token_count"] == 4
+    assert metadata["input_token_ids_sha256"] == cache["token_ids_sha256"]
     assert len(metadata["prefix_token_ids_sha256"]) == 64
+
+
+def test_session_reuse_request_falls_back_to_per_token_metadata() -> None:
+    spec = {
+        "graph_knobs": {"trajectory_session_mode": "experimental_reuse"},
+    }
+
+    assert session_reuse_metadata(cast(Any, spec)) == {
+        "trajectory_session_mode": "experimental_reuse",
+        "session_reuse_requested": True,
+        "session_reuse_effective": False,
+        "session_reuse_fallback": "per_token_path",
+    }
 
 
 def test_prefix_view_metadata_full_sequence_mode(tmp_path: Path) -> None:
@@ -413,6 +454,186 @@ def test_real_shard_forwards_full_sequence_prompt_and_output_position(
     assert captured["output_position"] == 2
     metadata = cast(dict[str, Any], captured["prefix_view_metadata"])
     assert metadata["mode"] == "full_sequence_target_position"
+
+
+def test_real_shard_experimental_reuse_passes_shared_decoder_cache(
+    tmp_path: Path, monkeypatch
+) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    rows = [json.loads(line) for line in specs_path.read_text().splitlines()]
+    rows[1]["graph_knobs"]["input_context_mode"] = "full_sequence"
+    rows[1]["graph_knobs"]["trajectory_session_mode"] = "experimental_reuse"
+    specs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+    captured: dict[str, object] = {}
+
+    class Cache:
+        fingerprint: object | None = None
+
+    class Transcoders:
+        def __init__(self) -> None:
+            self.created = 0
+            self.cleared = 0
+            self.cache = Cache()
+
+        def create_decoder_block_cache(self, *, fingerprint=None):
+            self.created += 1
+            self.cache.fingerprint = fingerprint
+            return self.cache
+
+        def clear_decoder_block_cache(self, cache) -> None:
+            assert cache is self.cache
+            self.cleared += 1
+
+    transcoders = Transcoders()
+    model = types.SimpleNamespace(transcoders=transcoders, device="cpu")
+
+    def fake_attribute(**kwargs):
+        captured.update(kwargs)
+        return {}
+
+    monkeypatch.setenv("SLURM_JOB_ID", "test-job")
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        types.SimpleNamespace(tensor=lambda data, dtype=None: data, long=object()),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "circuit_utils",
+        types.SimpleNamespace(
+            save_bucketed_compact=lambda _bundle, graph_path: Path(
+                graph_path
+            ).write_text("graph"),
+            save_compact=lambda _step, graph_path: Path(graph_path).write_text("graph"),
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "trace_pipeline",
+        types.SimpleNamespace(load_model=lambda **_kwargs: model),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "trace_pipeline_chunked",
+        types.SimpleNamespace(
+            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: (
+                types.SimpleNamespace(step={})
+            ),
+            resolve_internal_precision=lambda _dtype: "float32",
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "circuit_tracer.attribution.attribute_nnsight",
+        types.SimpleNamespace(attribute=fake_attribute),
+    )
+
+    run_real_shard(
+        trajectory_path=trajectory_path,
+        trace_specs_path=specs_path,
+        shards_path=shards_path,
+        shard_id=0,
+        output_root=tmp_path / "run",
+    )
+
+    assert captured["decoder_chunk_cache"] is transcoders.cache
+    assert captured["decoder_cache_fingerprint"] == transcoders.cache.fingerprint
+    assert transcoders.created == 1
+    assert transcoders.cleared == 1
+    trace = json.loads(
+        (
+            tmp_path / "run" / "shards" / "shard_000" / "token_000001" / "trace.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert trace["trajectory_session"]["session_reuse_effective"] is True
+    assert trace["trajectory_session"]["decoder_cache_reuse_effective"] is True
+
+
+def test_real_shard_decoder_cache_reuse_is_per_spec_opt_in(
+    tmp_path: Path, monkeypatch
+) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    rows = [json.loads(line) for line in specs_path.read_text().splitlines()]
+    rows[0]["graph_knobs"]["input_context_mode"] = "full_sequence"
+    rows[1]["graph_knobs"]["input_context_mode"] = "full_sequence"
+    rows[1]["graph_knobs"]["trajectory_session_mode"] = "experimental_reuse"
+    specs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+    shards = json.loads(shards_path.read_text(encoding="utf-8"))
+    shards["shards"] = [
+        {"shard_id": 0, "estimated_cost_sum": 5, "spec_indices": [0, 1]}
+    ]
+    shards_path.write_text(json.dumps(shards), encoding="utf-8")
+    calls: list[dict[str, object]] = []
+
+    class Cache:
+        fingerprint: object | None = None
+
+    class Transcoders:
+        def __init__(self) -> None:
+            self.cache = Cache()
+
+        def create_decoder_block_cache(self, *, fingerprint=None):
+            self.cache.fingerprint = fingerprint
+            return self.cache
+
+        def clear_decoder_block_cache(self, cache) -> None:
+            assert cache is self.cache
+
+    transcoders = Transcoders()
+    model = types.SimpleNamespace(transcoders=transcoders, device="cpu")
+
+    def fake_attribute(**kwargs):
+        calls.append(dict(kwargs))
+        return {}
+
+    monkeypatch.setenv("SLURM_JOB_ID", "test-job")
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        types.SimpleNamespace(tensor=lambda data, dtype=None: data, long=object()),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "circuit_utils",
+        types.SimpleNamespace(
+            save_bucketed_compact=lambda _bundle, graph_path: Path(
+                graph_path
+            ).write_text("graph"),
+            save_compact=lambda _step, graph_path: Path(graph_path).write_text("graph"),
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "trace_pipeline",
+        types.SimpleNamespace(load_model=lambda **_kwargs: model),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "trace_pipeline_chunked",
+        types.SimpleNamespace(
+            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: (
+                types.SimpleNamespace(step={})
+            ),
+            resolve_internal_precision=lambda _dtype: "float32",
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "circuit_tracer.attribution.attribute_nnsight",
+        types.SimpleNamespace(attribute=fake_attribute),
+    )
+
+    run_real_shard(
+        trajectory_path=trajectory_path,
+        trace_specs_path=specs_path,
+        shards_path=shards_path,
+        shard_id=0,
+        output_root=tmp_path / "run",
+    )
+
+    assert len(calls) == 2
+    assert calls[0]["decoder_chunk_cache"] is None
+    assert calls[1]["decoder_chunk_cache"] is transcoders.cache
 
 
 def test_aggregate_handles_dry_run_rows(tmp_path: Path) -> None:

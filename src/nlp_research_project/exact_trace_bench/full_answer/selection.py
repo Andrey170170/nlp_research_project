@@ -26,6 +26,7 @@ def select_tokens(
     uniform_every_k: int | None = None,
     include_numeric: bool = False,
     include_final_answer: bool = False,
+    include_all: bool = False,
     high_surprisal_top_k: int | None = None,
 ) -> dict[str, Any]:
     """Build a merged trace selection from simple login-safe policies.
@@ -48,6 +49,10 @@ def select_tokens(
 
     for index in explicit_indices or []:
         add(index, "explicit")
+
+    if include_all:
+        for index in range(len(tokens)):
+            add(index, "all_tokens")
 
     if uniform_every_k is not None:
         if uniform_every_k <= 0:
@@ -86,6 +91,7 @@ def select_tokens(
         "selection_policy": {
             "explicit_indices": explicit_indices or [],
             "include_final_answer": include_final_answer,
+            "include_all": include_all,
             "include_numeric": include_numeric,
             "high_surprisal_top_k": high_surprisal_top_k,
             "uniform_every_k": uniform_every_k,

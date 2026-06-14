@@ -31,7 +31,7 @@ from .full_answer.audit import audit_prefix_views
 from .full_answer.diagnostics import diagnose_full_answer_stability
 from .full_answer.runner import dry_run_shard, list_shard_specs, print_shard_specs
 from .full_answer.selection import parse_indices_csv, select_tokens
-from .full_answer.sharding import build_lpt_shards
+from .full_answer.sharding import build_contiguous_window_lpt_shards, build_lpt_shards
 from .full_answer.stability import compare_token_stability
 from .full_answer.temporal import (
     DEFAULT_LAGS,
@@ -625,6 +625,7 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
         uniform_every_k=args.every_k,
         include_numeric="numeric" in selection_modes,
         include_final_answer="final-answer" in selection_modes,
+        include_all="all" in selection_modes,
         high_surprisal_top_k=args.high_surprisal_top_k,
     )
     graph_overrides = {
@@ -663,6 +664,7 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
             "verbose_attribution": args.verbose_attribution,
             "profile_attribution": args.profile_attribution,
             "input_context_mode": args.input_context_mode,
+            "trajectory_session_mode": args.trajectory_session_mode,
         }.items()
         if value is not None
     }
@@ -682,11 +684,18 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
 
 def _cmd_build_full_answer_shards(args: argparse.Namespace) -> None:
     specs = load_trace_specs(args.trace_specs)
-    shards = build_lpt_shards(
-        specs,
-        shard_count=args.shard_count,
-        trace_specs_file=args.trace_specs,
+    builder = (
+        build_contiguous_window_lpt_shards
+        if args.sharding_strategy == "contiguous-window-lpt"
+        else build_lpt_shards
     )
+    shard_kwargs = {
+        "shard_count": args.shard_count,
+        "trace_specs_file": args.trace_specs,
+    }
+    if args.sharding_strategy == "contiguous-window-lpt":
+        shard_kwargs["max_window_estimated_cost"] = args.max_window_estimated_cost
+    shards = builder(specs, **shard_kwargs)
     write_shards(args.output, shards)
     print(f"Wrote {args.output}")
 
@@ -913,7 +922,7 @@ def build_parser() -> argparse.ArgumentParser:
     full_answer_trace_specs.add_argument(
         "--select",
         action="append",
-        choices=["final-answer", "numeric"],
+        choices=["final-answer", "numeric", "all"],
         default=[],
         help="Selection heuristic to include; repeatable",
     )
@@ -1089,6 +1098,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Experimental Stage-A input context for tracing selected targets",
     )
     full_answer_trace_specs.add_argument(
+        "--trajectory-session-mode",
+        choices=["per_token", "experimental_reuse"],
+        default=None,
+        help="Experimental Stage-3 session reuse request; currently falls back to per-token execution",
+    )
+    full_answer_trace_specs.add_argument(
         "--profile-attribution",
         dest="profile_attribution",
         action="store_true",
@@ -1108,6 +1123,17 @@ def build_parser() -> argparse.ArgumentParser:
     full_answer_shards.add_argument("--trace-specs", type=Path, required=True)
     full_answer_shards.add_argument("--shard-count", type=int, required=True)
     full_answer_shards.add_argument("--output", type=Path, required=True)
+    full_answer_shards.add_argument(
+        "--sharding-strategy",
+        choices=["lpt", "contiguous-window-lpt"],
+        default="lpt",
+    )
+    full_answer_shards.add_argument(
+        "--max-window-estimated-cost",
+        type=int,
+        default=None,
+        help="Optional max estimated cost per contiguous window for contiguous-window-lpt",
+    )
     full_answer_shards.set_defaults(func=_cmd_build_full_answer_shards)
 
     full_answer_run_shard = subparsers.add_parser(

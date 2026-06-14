@@ -8,6 +8,7 @@ from ..io_utils import iter_jsonl, read_json, write_json, write_jsonl
 
 SCHEMA_VERSION = 1
 TARGET_MODE = "frozen_target_only"
+INPUT_CONTEXT_MODES = {"independent_prefix", "full_sequence"}
 
 
 class GeneratedToken(TypedDict, total=False):
@@ -172,6 +173,12 @@ def validate_trace_spec(spec: Mapping[str, Any]) -> None:
         raise ValueError("trace spec selection_reasons must be a list of strings")
     if not isinstance(spec.get("graph_knobs"), dict):
         raise ValueError("trace spec graph_knobs must be an object")
+    input_context_mode = spec["graph_knobs"].get("input_context_mode")
+    if input_context_mode is not None and input_context_mode not in INPUT_CONTEXT_MODES:
+        raise ValueError(
+            "trace spec graph_knobs.input_context_mode must be one of "
+            f"{sorted(INPUT_CONTEXT_MODES)!r}"
+        )
 
 
 def normalize_trace_spec(spec: Mapping[str, Any]) -> TraceSpec:
