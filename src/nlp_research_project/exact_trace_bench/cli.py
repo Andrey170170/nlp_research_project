@@ -665,6 +665,11 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
             "profile_attribution": args.profile_attribution,
             "input_context_mode": args.input_context_mode,
             "trajectory_session_mode": args.trajectory_session_mode,
+            "reuse_phase0_window_state": args.reuse_phase0_window_state,
+            "reuse_target_logits": args.reuse_target_logits,
+            "phase0_window_scope": args.phase0_window_scope,
+            "phase0_window_max_prefix_policy": args.phase0_window_max_prefix_policy,
+            "phase0_window_reference_checks": args.phase0_window_reference_checks,
         }.items()
         if value is not None
     }
@@ -1099,9 +1104,48 @@ def build_parser() -> argparse.ArgumentParser:
     )
     full_answer_trace_specs.add_argument(
         "--trajectory-session-mode",
-        choices=["per_token", "experimental_reuse"],
+        choices=["per_token", "experimental_reuse", "window_reuse_v1"],
         default=None,
-        help="Experimental Stage-3 session reuse request; currently falls back to per-token execution",
+        help="Full-answer target session reuse mode",
+    )
+    full_answer_trace_specs.add_argument(
+        "--reuse-phase0-window-state",
+        dest="reuse_phase0_window_state",
+        action="store_true",
+        default=None,
+        help="Reuse Phase-0 window state inside window_reuse_v1 sessions",
+    )
+    full_answer_trace_specs.add_argument(
+        "--no-reuse-phase0-window-state",
+        dest="reuse_phase0_window_state",
+        action="store_false",
+    )
+    full_answer_trace_specs.add_argument(
+        "--reuse-target-logits",
+        dest="reuse_target_logits",
+        action="store_true",
+        default=None,
+        help="Read target logits from cached window logits inside window_reuse_v1 sessions",
+    )
+    full_answer_trace_specs.add_argument(
+        "--no-reuse-target-logits",
+        dest="reuse_target_logits",
+        action="store_false",
+    )
+    full_answer_trace_specs.add_argument(
+        "--phase0-window-scope",
+        choices=["shard_window", "trajectory"],
+        default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--phase0-window-max-prefix-policy",
+        choices=["max_target_position"],
+        default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--phase0-window-reference-checks",
+        choices=["off", "sampled", "all"],
+        default=None,
     )
     full_answer_trace_specs.add_argument(
         "--profile-attribution",

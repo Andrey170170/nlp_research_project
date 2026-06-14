@@ -71,12 +71,21 @@ def _contiguous_windows(
             current = {
                 "start_generated_index": generated_index,
                 "end_generated_index": generated_index,
+                "window_start_generated_index": generated_index,
+                "window_end_generated_index": generated_index,
+                "window_max_target_position": int(spec["target_position"]),
+                "target_positions": [int(spec["target_position"])],
                 "spec_indices": [spec_index],
                 "estimated_cost_sum": cost,
             }
             windows.append(current)
         else:
             current["end_generated_index"] = generated_index
+            current["window_end_generated_index"] = generated_index
+            current["window_max_target_position"] = max(
+                int(current["window_max_target_position"]), int(spec["target_position"])
+            )
+            current["target_positions"].append(int(spec["target_position"]))
             current["spec_indices"].append(spec_index)
             current["estimated_cost_sum"] += cost
         previous_generated_index = generated_index

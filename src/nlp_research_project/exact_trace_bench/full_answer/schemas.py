@@ -9,6 +9,10 @@ from ..io_utils import iter_jsonl, read_json, write_json, write_jsonl
 SCHEMA_VERSION = 1
 TARGET_MODE = "frozen_target_only"
 INPUT_CONTEXT_MODES = {"independent_prefix", "full_sequence"}
+TRAJECTORY_SESSION_MODES = {"per_token", "experimental_reuse", "window_reuse_v1"}
+PHASE0_WINDOW_SCOPES = {"shard_window", "trajectory"}
+PHASE0_WINDOW_MAX_PREFIX_POLICIES = {"max_target_position"}
+PHASE0_WINDOW_REFERENCE_CHECKS = {"off", "sampled", "all"}
 
 
 class GeneratedToken(TypedDict, total=False):
@@ -178,6 +182,59 @@ def validate_trace_spec(spec: Mapping[str, Any]) -> None:
         raise ValueError(
             "trace spec graph_knobs.input_context_mode must be one of "
             f"{sorted(INPUT_CONTEXT_MODES)!r}"
+        )
+    session_mode = spec["graph_knobs"].get("trajectory_session_mode")
+    if session_mode is not None and session_mode not in TRAJECTORY_SESSION_MODES:
+        raise ValueError(
+            "trace spec graph_knobs.trajectory_session_mode must be one of "
+            f"{sorted(TRAJECTORY_SESSION_MODES)!r}"
+        )
+    for key in ("reuse_phase0_window_state", "reuse_target_logits"):
+        value = spec["graph_knobs"].get(key)
+        if value is not None and not isinstance(value, bool):
+            raise ValueError(f"trace spec graph_knobs.{key} must be a bool")
+    phase0_window_scope = spec["graph_knobs"].get("phase0_window_scope")
+    if (
+        phase0_window_scope is not None
+        and phase0_window_scope not in PHASE0_WINDOW_SCOPES
+    ):
+        raise ValueError(
+            "trace spec graph_knobs.phase0_window_scope must be one of "
+            f"{sorted(PHASE0_WINDOW_SCOPES)!r}"
+        )
+    max_prefix_policy = spec["graph_knobs"].get("phase0_window_max_prefix_policy")
+    if (
+        max_prefix_policy is not None
+        and max_prefix_policy not in PHASE0_WINDOW_MAX_PREFIX_POLICIES
+    ):
+        raise ValueError(
+            "trace spec graph_knobs.phase0_window_max_prefix_policy must be one of "
+            f"{sorted(PHASE0_WINDOW_MAX_PREFIX_POLICIES)!r}"
+        )
+    reference_checks = spec["graph_knobs"].get("phase0_window_reference_checks")
+    if (
+        reference_checks is not None
+        and reference_checks not in PHASE0_WINDOW_REFERENCE_CHECKS
+    ):
+        raise ValueError(
+            "trace spec graph_knobs.phase0_window_reference_checks must be one of "
+            f"{sorted(PHASE0_WINDOW_REFERENCE_CHECKS)!r}"
+        )
+    if (
+        spec["graph_knobs"].get("reuse_target_logits")
+        and session_mode != "window_reuse_v1"
+    ):
+        raise ValueError(
+            "trace spec graph_knobs.reuse_target_logits requires "
+            "trajectory_session_mode='window_reuse_v1'"
+        )
+    if (
+        spec["graph_knobs"].get("reuse_phase0_window_state")
+        and session_mode != "window_reuse_v1"
+    ):
+        raise ValueError(
+            "trace spec graph_knobs.reuse_phase0_window_state requires "
+            "trajectory_session_mode='window_reuse_v1'"
         )
 
 
