@@ -515,6 +515,7 @@ def _attribute_performance_kwargs(knobs: Mapping[str, Any]) -> dict[str, Any]:
         "phase4_frontier_buffer_relative_epsilon",
         "phase4_frontier_buffer_max_extra_per_refresh",
         "phase4_frontier_buffer_max_extra_total",
+        "row_store_cache_control",
         "row_store_preallocate",
     )
     return {key: knobs[key] for key in keys if key in knobs and knobs[key] is not None}

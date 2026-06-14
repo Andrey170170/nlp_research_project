@@ -1,7 +1,7 @@
 # Experiments inventory
 
 Status: Current compact index and interpretation summary
-Last updated: 2026-06-08
+Last updated: 2026-06-14
 
 This file is the readable front page for experiment provenance. It should stay
 small enough to edit by hand.
@@ -133,6 +133,18 @@ Metric-calibrated temporal stability decision (June 2026):
   not the ordinary default, unless a unified Stage-D rerun shows it materially
   narrows the calibrated mid/late noise band on the frozen primary metric.
 
+Full-sequence telemetry pilot (June 2026):
+
+- Full-sequence prefix views now execute NNSight traces only over the
+  prefix-effective token span while retaining full-sequence metadata for audit.
+- On Cardinal, large full-sequence selected-token traces completed under the QOS
+  cap with `--mem=460G` plus `row_store_cache_control=fadvise_dontneed_after_append_v1`;
+  lower memory requests failed or were canceled during hardening.
+- For `94_base` and `828_base` selected early/final tokens, final full-sequence
+  per-token, full-sequence experimental-reuse, and independent-prefix compact
+  graphs matched exactly in the structural comparator (`feature_jaccard=1.0`,
+  `edge_jaccard=1.0`, `weighted_edge_jaccard=1.0`).
+
 ## Current run families
 
 | Family | Meaning | Current status |
@@ -145,6 +157,60 @@ Metric-calibrated temporal stability decision (June 2026):
 | historical `matched_debug` artifacts | Old matched-debug campaign outputs/configs | Historical only; do not use as an ordinary bucket |
 
 ## Recent durable decisions
+
+### 2026-06-14 — Full-sequence telemetry/resource pilot
+
+The first selected-token full-sequence telemetry matrix completed on Cardinal for
+`94_base` and `828_base` after prefix-effective trace hardening and row-store
+cache-control pass-through.
+
+Key output root:
+
+- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/fullseq-telemetry-v1`
+
+Final successful fadvise rerun roots use run id:
+
+- `rerun_prefix-trace-fix2_mem460_fadvise_20260614`
+
+Successful final jobs:
+
+| Fixture/mode | Job | Elapsed | ReqMem | MaxRSS | Shard seconds | Max token seconds |
+|---|---:|---:|---:|---:|---:|---:|
+| `94_base` `full_sequence_per_token` | `11569735` | `00:28:40` | `460G` | `482391168K` | `1706.2` | `1310.3` |
+| `94_base` `full_sequence_experimental_reuse` | `11569736` | `00:25:07` | `460G` | `482379748K` | `1491.5` | `1184.3` |
+| `828_base` `full_sequence_per_token` | `11569737` | `00:29:49` | `460G` | `482352784K` | `1776.7` | `1448.0` |
+| `828_base` `full_sequence_experimental_reuse` | `11569738` | `00:30:43` | `460G` | `482353536K` | `1802.5` | `1480.9` |
+
+Control independent-prefix jobs also completed:
+
+| Fixture/mode | Job | Elapsed | ReqMem | MaxRSS | Shard seconds | Max token seconds |
+|---|---:|---:|---:|---:|---:|---:|
+| `94_base` `independent_prefix_per_token` | `11561805` | `01:42:04` | `360G` | `377482464K` | `6096.1` | `4844.0` |
+| `828_base` `independent_prefix_per_token` | `11561802` | `01:48:05` | `360G` | `377482708K` | `6434.1` | `5407.8` |
+
+Validation summary:
+
+- All final full-sequence shards completed with `failed_token_count=0` and
+  `retry_recommended=false`.
+- Sibling-library prefix-effective trace hardening was committed as `2bf8c28`
+  (`Trace full-sequence prefix views over prefixes`).
+- `row_store_cache_control` was recorded as
+  `fadvise_dontneed_after_append_v1` on final full-sequence traces.
+- Experimental reuse was effective for reuse-mode traces (`session_reuse_effective`
+  and `decoder_cache_reuse_effective` true) and produced exact compact-graph
+  agreement with per-token full-sequence traces for all four checked tokens.
+- Independent-prefix versus full-sequence structural comparisons also matched
+  exactly for the checked `94_base` token indices `0`/`220` and `828_base` token
+  indices `0`/`227`.
+- Cardinal resource constraint found during hardening: `460G` was accepted and
+  completed; `470G+` and exclusive-node memory requests were rejected by QOS, and
+  `180G`/`360G` attempts were insufficient for this matrix.
+
+Operational decision:
+
+- Keep `full_sequence`, unbuffered, typed-bucketed, fp32 as the next default, and
+  use prefix-effective tracing plus row-store fadvise cache control for large
+  Cardinal selected-token/fullseq runs under the current QOS cap.
 
 ### 2026-06-13 — Phase-1 calibrated temporal graph metrics
 
