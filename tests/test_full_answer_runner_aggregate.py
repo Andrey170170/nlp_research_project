@@ -256,12 +256,17 @@ def test_session_reuse_request_falls_back_to_per_token_metadata() -> None:
         "graph_knobs": {"trajectory_session_mode": "experimental_reuse"},
     }
 
-    assert session_reuse_metadata(cast(Any, spec)) == {
+    metadata = session_reuse_metadata(cast(Any, spec))
+    expected = {
         "trajectory_session_mode": "experimental_reuse",
         "session_reuse_requested": True,
         "session_reuse_effective": False,
         "session_reuse_fallback": "per_token_path",
     }
+    for key, value in expected.items():
+        assert metadata[key] == value
+    assert metadata["reuse_phase0_window_state_requested"] is False
+    assert metadata["reuse_target_logits_requested"] is False
 
 
 def test_prefix_view_metadata_full_sequence_mode(tmp_path: Path) -> None:
@@ -411,7 +416,11 @@ def test_real_shard_forwards_full_sequence_prompt_and_output_position(
     monkeypatch.setitem(
         sys.modules,
         "torch",
-        types.SimpleNamespace(tensor=lambda data, dtype=None: data, long=object()),
+        types.SimpleNamespace(
+            tensor=lambda data, dtype=None: data,
+            long=object(),
+            Tensor=type("FakeTensor", (), {}),
+        ),
     )
     monkeypatch.setitem(
         sys.modules,
@@ -497,15 +506,20 @@ def test_real_shard_experimental_reuse_passes_shared_decoder_cache(
     monkeypatch.setitem(
         sys.modules,
         "torch",
-        types.SimpleNamespace(tensor=lambda data, dtype=None: data, long=object()),
+        types.SimpleNamespace(
+            tensor=lambda data, dtype=None: data,
+            long=object(),
+            Tensor=type("FakeTensor", (), {}),
+        ),
     )
     monkeypatch.setitem(
         sys.modules,
         "circuit_utils",
         types.SimpleNamespace(
-            save_bucketed_compact=lambda _bundle, graph_path: Path(
-                graph_path
-            ).write_text("graph"),
+            save_bucketed_compact=lambda _bundle, graph_path: (
+                Path(graph_path).parent.mkdir(parents=True, exist_ok=True),
+                Path(graph_path).write_text("graph"),
+            ),
             save_compact=lambda _step, graph_path: Path(graph_path).write_text("graph"),
         ),
     )
@@ -598,9 +612,10 @@ def test_real_shard_decoder_cache_reuse_is_per_spec_opt_in(
         sys.modules,
         "circuit_utils",
         types.SimpleNamespace(
-            save_bucketed_compact=lambda _bundle, graph_path: Path(
-                graph_path
-            ).write_text("graph"),
+            save_bucketed_compact=lambda _bundle, graph_path: (
+                Path(graph_path).parent.mkdir(parents=True, exist_ok=True),
+                Path(graph_path).write_text("graph"),
+            ),
             save_compact=lambda _step, graph_path: Path(graph_path).write_text("graph"),
         ),
     )
@@ -636,6 +651,146 @@ def test_real_shard_decoder_cache_reuse_is_per_spec_opt_in(
     assert len(calls) == 2
     assert calls[0]["decoder_chunk_cache"] is None
     assert calls[1]["decoder_chunk_cache"] is transcoders.cache
+
+
+def test_real_shard_window_reuse_uses_window_session(
+    tmp_path: Path, monkeypatch
+) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    rows = [json.loads(line) for line in specs_path.read_text().splitlines()]
+    for row in rows:
+        row["graph_knobs"].update(
+            {
+                "input_context_mode": "full_sequence",
+                "trajectory_session_mode": "window_reuse_v1",
+                "reuse_phase0_window_state": True,
+                "reuse_target_logits": True,
+                "phase0_window_scope": "shard_window",
+                "phase0_window_max_prefix_policy": "max_target_position",
+                "phase0_window_reference_checks": "off",
+            }
+        )
+    specs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+    shards_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "trace_specs_file": "trace_specs.jsonl",
+                "cost_model": "contiguous_window_lpt_v1",
+                "shards": [
+                    {
+                        "shard_id": 0,
+                        "estimated_cost_sum": 5,
+                        "spec_indices": [0, 1],
+                        "windows": [
+                            {
+                                "window_start_generated_index": 0,
+                                "window_end_generated_index": 1,
+                                "window_max_target_position": 3,
+                                "target_positions": [2, 3],
+                                "spec_indices": [0, 1],
+                                "estimated_cost_sum": 5,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls: list[int] = []
+    session_inits: list[dict[str, object]] = []
+
+    class FakeSession:
+        def __init__(self, **kwargs) -> None:
+            session_inits.append(dict(kwargs))
+
+        def attribute_target_position(self, target_position, **kwargs):
+            calls.append(int(target_position))
+            return {
+                "phase0_window_state_reuse_effective": True,
+                "target_logit_source": "full_sequence_window_logits",
+            }
+
+        def cleanup(self) -> None:
+            calls.append(-1)
+
+    class Transcoders:
+        def create_decoder_block_cache(self, *, fingerprint=None):
+            return types.SimpleNamespace(fingerprint=fingerprint)
+
+        def clear_decoder_block_cache(self, _cache) -> None:
+            pass
+
+    monkeypatch.setenv("SLURM_JOB_ID", "test-job")
+    fake_torch = types.SimpleNamespace(
+        tensor=lambda data, dtype=None: data,
+        long=object(),
+        Tensor=type("FakeTensor", (), {}),
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    def fake_save_bucketed(_bundle, graph_path) -> None:
+        Path(graph_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(graph_path).write_text("graph")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "circuit_utils",
+        types.SimpleNamespace(
+            save_bucketed_compact=fake_save_bucketed,
+            save_compact=lambda _step, graph_path: Path(graph_path).write_text("graph"),
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "trace_pipeline",
+        types.SimpleNamespace(
+            load_model=lambda **_kwargs: types.SimpleNamespace(
+                transcoders=Transcoders(), device="cpu"
+            )
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "trace_pipeline_chunked",
+        types.SimpleNamespace(
+            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: (
+                types.SimpleNamespace(step={})
+            ),
+            resolve_internal_precision=lambda _dtype: "float32",
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "circuit_tracer.attribution.attribute_nnsight",
+        types.SimpleNamespace(
+            attribute=lambda **_kwargs: {},
+            FullSequenceWindowAttributionSession=FakeSession,
+        ),
+    )
+
+    result = run_real_shard(
+        trajectory_path=trajectory_path,
+        trace_specs_path=specs_path,
+        shards_path=shards_path,
+        shard_id=0,
+        output_root=tmp_path / "run",
+    )
+
+    assert result["status"] == "complete"
+    assert calls == [2, 3, -1]
+    assert session_inits[0]["window_max_prefix_len"] == 3
+    assert session_inits[0]["reuse_phase0_window_state"] is True
+    assert session_inits[0]["reuse_target_logits"] is True
+    trace = json.loads(
+        (
+            tmp_path / "run" / "shards" / "shard_000" / "token_000001" / "trace.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert trace["trajectory_session"]["trajectory_session_mode"] == "window_reuse_v1"
+    assert trace["trajectory_session"]["reuse_phase0_window_state_effective"] is True
+    assert trace["trajectory_session"]["reuse_target_logits_effective"] is True
 
 
 def test_aggregate_handles_dry_run_rows(tmp_path: Path) -> None:
