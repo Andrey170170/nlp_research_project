@@ -158,6 +158,32 @@ Full-sequence telemetry pilot (June 2026):
 
 ## Recent durable decisions
 
+### 2026-06-14 — Full-sequence window/session reuse validation
+
+The `window_reuse_v1` validation matrix completed on Cardinal for selected
+`94_base` and `828_base` early/late targets.
+
+Key output root:
+
+- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/fullseq-window-reuse-v1`
+
+Decision:
+
+- Use `trajectory_session_mode=window_reuse_v1` with
+  `reuse_phase0_window_state=true` and `reuse_target_logits=true` as the next
+  production full-sequence mode for Stage-D-style confirmation runs.
+- Keep `phase0_window_scope=shard_window` and
+  `phase0_window_reference_checks=off` until trajectory-wide sessions and live
+  sampled/all reference checks are implemented.
+- Validation showed exact agreement for resource-session-only and logit-only
+  controls. Combined Phase-0/logit reuse introduced only tiny fixed-configuration
+  early-token drift under calibrated metrics (worst checked
+  `logit<-error / union_raw_weight_cosine / {}` was `~0.9999966`) with no
+  prefix-audit failures.
+- Runtime improvement was modest on the selected two-token matrix (about
+  `~6%` for combined mode), but this mode is the right operational default for
+  dense full-sequence windows where setup amortization can compound.
+
 ### 2026-06-14 — Full-sequence telemetry/resource pilot
 
 The first selected-token full-sequence telemetry matrix completed on Cardinal for
