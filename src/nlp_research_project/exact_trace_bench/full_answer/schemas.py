@@ -236,6 +236,17 @@ def validate_trace_spec(spec: Mapping[str, Any]) -> None:
             "trace spec graph_knobs.reuse_phase0_window_state requires "
             "trajectory_session_mode='window_reuse_v1'"
         )
+    if session_mode == "window_reuse_v1":
+        if phase0_window_scope not in (None, "shard_window"):
+            raise ValueError(
+                "window_reuse_v1 currently supports only "
+                "phase0_window_scope='shard_window'"
+            )
+        if reference_checks not in (None, "off"):
+            raise ValueError(
+                "window_reuse_v1 phase0_window_reference_checks sampled/all are "
+                "not implemented; use 'off'"
+            )
 
 
 def normalize_trace_spec(spec: Mapping[str, Any]) -> TraceSpec:

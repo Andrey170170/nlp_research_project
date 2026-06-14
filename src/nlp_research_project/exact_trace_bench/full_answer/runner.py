@@ -449,6 +449,12 @@ def _validate_window_session_specs(window_specs: list[TraceSpec]) -> None:
                 raise ValueError(f"window_reuse_v1 specs in a window must share {key}")
 
 
+def _normalize_target_logit_source(source: Any) -> str:
+    if source in (None, "context", "override"):
+        return "per_target_trace"
+    return str(source)
+
+
 def forced_target_payload(spec: TraceSpec) -> dict[str, Any]:
     return {
         "token_id": spec["target_token_id"],
@@ -886,13 +892,11 @@ def run_real_shard(
                     spec_cache_effective = bool(
                         spec_reuse_requested and trajectory_session_cache["effective"]
                     )
-                    window_mode_effective = bool(mode == "window_reuse_v1")
                     trace["trajectory_session"] = {
                         **session_reuse_metadata(spec),
-                        "session_reuse_effective": spec_cache_effective
-                        or window_mode_effective,
+                        "session_reuse_effective": spec_cache_effective,
                         "session_reuse_fallback": trajectory_session_cache["fallback"]
-                        if spec_reuse_requested and not window_mode_effective
+                        if spec_reuse_requested and mode != "window_reuse_v1"
                         else None,
                         "decoder_cache_reuse_effective": spec_cache_effective,
                     }
@@ -1049,9 +1053,20 @@ def run_real_shard(
                             compact_result.get("target_logit_source")
                             == "full_sequence_window_logits"
                         )
-                        trace["trajectory_session"]["target_logit_source"] = str(
-                            compact_result.get(
-                                "target_logit_source", "per_target_trace"
+                        trace["trajectory_session"]["target_logit_source"] = (
+                            _normalize_target_logit_source(
+                                compact_result.get("target_logit_source")
+                            )
+                        )
+                        trace["trajectory_session"]["session_reuse_effective"] = bool(
+                            trace["trajectory_session"].get(
+                                "decoder_cache_reuse_effective", False
+                            )
+                            or trace["trajectory_session"].get(
+                                "reuse_phase0_window_state_effective", False
+                            )
+                            or trace["trajectory_session"].get(
+                                "reuse_target_logits_effective", False
                             )
                         )
                     if (
