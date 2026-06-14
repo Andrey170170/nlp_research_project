@@ -986,7 +986,7 @@ def extract_compact_chunked_attribution(
     phase4_refresh_prepared_chunk_cache_bytes: int = 0,
     phase4_refresh_active_row_accumulation: str = "direct_v1",
     phase4_ranker: str = "argsort",
-    row_store_cache_control: str = "off",
+    row_store_cache_control: str = "fadvise_dontneed_after_append_and_read_v1",
     exact_encoder_residency: str = "lazy",
     phase4_scheduler_mode: str = "locality",
     phase4_scheduler_debug: bool = False,
@@ -1533,7 +1533,7 @@ def trace_completion_compact_chunked(
     phase4_refresh_prepared_chunk_cache_bytes: int = 0,
     phase4_refresh_active_row_accumulation: str = "direct_v1",
     phase4_ranker: str = "argsort",
-    row_store_cache_control: str = "off",
+    row_store_cache_control: str = "fadvise_dontneed_after_append_and_read_v1",
     exact_encoder_residency: str = "lazy",
     phase4_scheduler_mode: str = "locality",
     phase4_scheduler_debug: bool = False,
@@ -4814,7 +4814,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--row-store-cache-control",
         type=parse_row_store_cache_control,
-        default="off",
+        default="fadvise_dontneed_after_append_and_read_v1",
         help=(
             "Row-store cache-control mode (off, fadvise_dontneed_after_append_v1, "
             "or fadvise_dontneed_after_append_and_read_v1)"

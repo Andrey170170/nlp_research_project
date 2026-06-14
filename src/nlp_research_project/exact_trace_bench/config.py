@@ -75,6 +75,7 @@ def base_trace_defaults() -> dict[str, Any]:
         "phase4_refresh_active_row_accumulation": "direct_v1",
         "phase4_row_executor": "batched",
         "phase4_row_reduction": "gpu_v1",
+        "row_store_cache_control": "fadvise_dontneed_after_append_and_read_v1",
         "row_store_preallocate": True,
         "trajectory_session_mode": "per_token",
         "reuse_phase0_window_state": False,

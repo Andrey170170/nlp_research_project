@@ -642,6 +642,7 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
             "phase4_refresh_optimization": args.phase4_refresh_optimization,
             "phase4_refresh_active_row_accumulation": args.phase4_refresh_active_row_accumulation,
             "phase4_row_reduction": args.phase4_row_reduction,
+            "row_store_cache_control": args.row_store_cache_control,
             "row_store_preallocate": args.row_store_preallocate,
             "phase4_refresh_prepared_chunk_cache_bytes": args.phase4_refresh_prepared_chunk_cache_bytes,
             "phase4_row_executor": args.phase4_row_executor,
@@ -967,6 +968,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     full_answer_trace_specs.add_argument(
         "--phase4-row-reduction", choices=["off", "gpu_v1"], default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--row-store-cache-control",
+        choices=[
+            "off",
+            "fadvise_dontneed_after_append_v1",
+            "fadvise_dontneed_after_append_and_read_v1",
+        ],
+        default=None,
     )
     full_answer_trace_specs.add_argument(
         "--row-store-preallocate",
