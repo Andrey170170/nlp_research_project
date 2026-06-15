@@ -1,0 +1,58 @@
+{
+  "gsm8k_indices": [
+    102,
+    160,
+    164,
+    166,
+    217,
+    256,
+    337,
+    434,
+    451,
+    452,
+    474,
+    486,
+    642,
+    650,
+    669,
+    683,
+    692,
+    709,
+    732,
+    740,
+    821,
+    830,
+    860,
+    882,
+    961,
+    1031,
+    1242,
+    1269,
+    1300,
+    1301
+  ],
+  "late_prefix_fraction_min": 0.75,
+  "late_prefix_fraction_max": 0.85,
+  "prompt_token_multiplier_cap": 2.0,
+  "max_new_tokens": 16,
+  "notes": [
+    "Fresh real-prompt screening pool for full-answer correct/wrong trajectory selection.",
+    "Indices are a deterministic sample from the GSM8K test split, excluding previously used anchor/Wave-0 indices.",
+    "The fixture-prep greedy completion is intentionally not used for selection; max_new_tokens is kept small because this target spec is only for preparing prompt files and metadata.",
+    "Actual screening generations should sample temperature 0.8 fixed-seed trajectories, then select comparable-length correct/wrong pairs before tracing."
+  ],
+  "screening_plan": {
+    "temperature": 0.8,
+    "max_new_tokens": 768,
+    "attempts_per_prompt_initial": 16,
+    "seed_policy": "base_seed + attempt_index; initial base_seed 3000",
+    "candidate_keep_rules": [
+      "has parseable final numeric answer",
+      "does not hit max_new_tokens",
+      "generated token count preferably <= 512, allow <= 768 for rare otherwise-good pairs",
+      "choose one correct and one wrong completion per prompt with length ratio preferably <= 1.5 or absolute difference <= 100 tokens"
+    ],
+    "target_prompt_count_after_screening": "8-10 prompts",
+    "split_policy_after_tracing": "split by prompt into calibration/metric-selection and held-out evaluation sets"
+  }
+}
