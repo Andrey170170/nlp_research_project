@@ -1,7 +1,7 @@
 # Experiments inventory
 
 Status: Current compact index and interpretation summary
-Last updated: 2026-06-14
+Last updated: 2026-06-15
 
 This file is the readable front page for experiment provenance. It should stay
 small enough to edit by hand.
@@ -133,6 +133,26 @@ Metric-calibrated temporal stability decision (June 2026):
   not the ordinary default, unless a unified Stage-D rerun shows it materially
   narrows the calibrated mid/late noise band on the frozen primary metric.
 
+Stage-D full-matrix calibration follow-up (June 2026):
+
+- The unified Cardinal Stage-D-style matrix with `window_reuse_v1` and read-side
+  row-store fadvise completed cleanly and re-calibrated metrics on 39 sparse
+  selected-token pairs.
+- Same-token noise anchors are now effectively exact under robust metrics:
+  independent-prefix versus full-sequence and late rep-a/rep-b repeats are at
+  `1.0` or numerical-equivalent `1.0` for feature-node/readout/core metrics.
+- This confirms the operational default: `full_sequence`, `window_reuse_v1`,
+  unbuffered, typed-bucketed, fp32, and
+  `row_store_cache_control=fadvise_dontneed_after_append_and_read_v1`.
+- The modest Phase-4 buffer did not narrow the Stage-D noise band because the
+  noise ceiling was already exact; keep it as an explicit robustness/debug arm,
+  not the ordinary default.
+- The Phase-1 primary `logit<-error / union_raw_weight_cosine / {}` does **not**
+  separate this sparse selected-neighbor Stage-D calibration regime: selected
+  large-hop temporal pairs fall below the matched cross-fixture null. Do not use
+  that metric as the primary for sparse selected-neighbor Stage-D scoring; retest
+  it on dense adjacent all-token trajectories before making Phase-3 claims.
+
 Full-sequence telemetry pilot (June 2026):
 
 - Full-sequence prefix views now execute NNSight traces only over the
@@ -157,6 +177,50 @@ Full-sequence telemetry pilot (June 2026):
 | historical `matched_debug` artifacts | Old matched-debug campaign outputs/configs | Historical only; do not use as an ordinary bucket |
 
 ## Recent durable decisions
+
+### 2026-06-15 — Stage-D full matrix metric calibration
+
+Metric calibration completed over the Stage-D-style selected-token full matrix.
+
+Key outputs:
+
+- matrix root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/native-instability-stage-d-full-matrix-read-fadvise-v1`,
+- analysis root:
+  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/native-instability-stage-d-full-matrix-read-fadvise-v1/analysis_full_matrix/metric_calibration_v1`,
+- pair count: `39` (`24` noise, `6` sparse selected-neighbor temporal, `9`
+  null), metric rows: `25545`, scorecard rows: `1965`.
+
+Decision:
+
+- Adopt `full_sequence` + `trajectory_session_mode=window_reuse_v1` with
+  `reuse_phase0_window_state=true`, `reuse_target_logits=true`, typed-bucketed
+  saves, fp32 internal dtype, and read-side row-store fadvise as the next
+  operational tracing default.
+- Keep ordinary runs unbuffered. The `phase4buf01_128_2048` arm showed no
+  measurable noise-band improvement in this matrix because same-token noise was
+  already exact on robust metrics.
+- For sparse selected-neighbor Stage-D scoring, prefer feature/readout/core
+  metrics that still separate null < selected-neighbor < noise. Do not promote
+  the older `logit<-error / union_raw_weight_cosine / {}` primary for this sparse
+  regime.
+
+Selected Stage-D scorecard means:
+
+| Bucket/metric | Band | Null | Selected-neighbor temporal | Noise |
+|---|---:|---:|---:|---:|
+| `feature_nodes / union_raw_weight_cosine` | mid | 0.547 | 0.764 | 1.000 |
+| `feature_nodes / union_raw_weight_cosine` | late | 0.619 | 0.900 | 1.000 |
+| `logit<-feature / union_raw_weight_cosine` | mid | 0.532 | 0.717 | 1.000 |
+| `logit<-feature / union_raw_weight_cosine` | late | 0.604 | 0.846 | 1.000 |
+| `all_edges / derived_k_weighted_jaccard / {"K":2048}` | mid | 0.411 | 0.636 | 1.000 |
+| `all_edges / derived_k_weighted_jaccard / {"K":2048}` | late | 0.495 | 0.830 | 1.000 |
+
+Caveat:
+
+- This manifest's temporal anchors are sparse selected-neighbor hops, not dense
+  adjacent all-token trajectories. The older Phase-1 primary should be retested
+  in the dense adjacent setting before being retired for full trajectory work.
 
 ### 2026-06-14 — Full-sequence window/session reuse validation
 
