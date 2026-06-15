@@ -143,3 +143,50 @@ def test_sampling_loop_saves_every_attempt_and_manifest(
         (tmp_path / "samples" / "manifest.json").read_text(encoding="utf-8")
     )
     assert saved_manifest["success_attempt"]["attempt"] == 2
+
+
+def test_sampling_collect_all_continues_after_success(
+    tmp_path: Path, monkeypatch
+) -> None:
+    prompt_path = tmp_path / "prompt.txt"
+    prompt_path.write_text("Question?", encoding="utf-8")
+    outputs = iter(["42", "wrong", "42"])
+
+    def generate_next_token(_model, input_ids, *, temperature: float):
+        token_text = next(outputs)
+        return {
+            "token_id": 100,
+            "token_text": token_text,
+            "token_logprob": None,
+            "next_input_ids": input_ids,
+        }
+
+    fake_trace_pipeline = SimpleNamespace(
+        load_model=lambda exact_chunked_decoder: _FakeModel(),
+        generate_next_token=generate_next_token,
+    )
+    fake_torch = SimpleNamespace(
+        manual_seed=lambda seed: None,
+        cuda=SimpleNamespace(
+            is_available=lambda: False, manual_seed_all=lambda seed: None
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "trace_pipeline", fake_trace_pipeline)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    manifest = sample_trajectories_until_success(
+        prompt_path=prompt_path,
+        output_dir=tmp_path / "samples",
+        expected_answer="42",
+        max_success_tokens=1,
+        max_attempts=3,
+        max_new_tokens=1,
+        base_seed=7,
+        collect_all=True,
+    )
+
+    assert manifest["status"] == "completed"
+    assert [row["success"] for row in manifest["attempts"]] == [True, False, True]
+    assert manifest["success_attempt"]["attempt"] == 1
+    assert [row["attempt"] for row in manifest["success_attempts"]] == [1, 3]
+    assert (tmp_path / "samples" / "attempt_000003.json").exists()

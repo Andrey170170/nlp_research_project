@@ -853,6 +853,7 @@ def _cmd_submit_full_answer_trajectory(args: argparse.Namespace) -> None:
         expected_answer=args.expected_answer,
         max_success_tokens=args.max_success_tokens,
         max_attempts=args.max_attempts,
+        collect_all=args.collect_all,
         time_limit_seconds=args.time_limit_seconds,
         temperature=args.temperature,
         seed=args.seed,
@@ -886,6 +887,7 @@ def _cmd_sample_full_answer_trajectories(args: argparse.Namespace) -> None:
         max_success_tokens=args.max_success_tokens,
         max_attempts=args.max_attempts,
         time_limit_seconds=args.time_limit_seconds,
+        collect_all=args.collect_all,
     )
     print(json.dumps(manifest, indent=2))
 
@@ -1308,6 +1310,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     full_answer_trajectory_submit.add_argument("--max-attempts", type=int, default=None)
     full_answer_trajectory_submit.add_argument(
+        "--collect-all",
+        action="store_true",
+        help="When sampling, continue through max attempts after successes",
+    )
+    full_answer_trajectory_submit.add_argument(
         "--time-limit-seconds", type=float, default=None
     )
     full_answer_trajectory_submit.add_argument(
@@ -1344,6 +1351,11 @@ def build_parser() -> argparse.ArgumentParser:
     full_answer_sample.add_argument("--expected-answer", required=True)
     full_answer_sample.add_argument("--max-success-tokens", type=int, required=True)
     full_answer_sample.add_argument("--max-attempts", type=int, required=True)
+    full_answer_sample.add_argument(
+        "--collect-all",
+        action="store_true",
+        help="Continue through max attempts after successes and record each result",
+    )
     full_answer_sample.add_argument("--time-limit-seconds", type=float, default=None)
     full_answer_sample.set_defaults(func=_cmd_sample_full_answer_trajectories)
 

@@ -267,6 +267,7 @@ def sample_trajectories_until_success(
     fixture_catalog: Path | None = None,
     fixture_name: str | None = None,
     trajectory_id_prefix: str | None = None,
+    collect_all: bool = False,
 ) -> dict[str, Any]:
     """SLURM-only repeated generation loop; imports/loads the model once."""
     if max_attempts <= 0:
@@ -298,8 +299,10 @@ def sample_trajectories_until_success(
         "temperature": temperature,
         "base_seed": base_seed,
         "time_limit_seconds": time_limit_seconds,
+        "collect_all": collect_all,
         "attempts": attempts,
         "success_attempt": None,
+        "success_attempts": [],
     }
     prefix = trajectory_id_prefix or str(
         metadata.get("fixture_name") or output_dir.name
@@ -344,12 +347,16 @@ def sample_trajectories_until_success(
         }
         attempts.append(row)
         if success:
-            manifest["status"] = "success"
-            manifest["success_attempt"] = row
+            if manifest["success_attempt"] is None:
+                manifest["success_attempt"] = row
+            manifest["success_attempts"].append(row)
+            if not collect_all:
+                manifest["status"] = "success"
+                write_json(output_dir / "manifest.json", manifest)
+                return manifest
             write_json(output_dir / "manifest.json", manifest)
-            return manifest
         write_json(output_dir / "manifest.json", manifest)
     if manifest["status"] == "running":
-        manifest["status"] = "exhausted"
+        manifest["status"] = "completed" if collect_all else "exhausted"
     write_json(output_dir / "manifest.json", manifest)
     return manifest

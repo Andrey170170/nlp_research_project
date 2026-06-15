@@ -271,6 +271,7 @@ def test_full_answer_trajectory_sampling_print_only_plan(tmp_path: Path) -> None
         "2",
         "--max-attempts",
         "5",
+        "--collect-all",
         "--time-limit-seconds",
         "30",
         "--snapshot-root",
@@ -280,8 +281,10 @@ def test_full_answer_trajectory_sampling_print_only_plan(tmp_path: Path) -> None
     assert proc.returncode == 0, proc.stderr
     plan = json.loads(proc.stdout)
     assert plan["sample_until_success"] is True
+    assert plan["collect_all"] is True
     assert plan["max_attempts"] == 5
     assert "SAMPLE_UNTIL_SUCCESS=1" in plan["sbatch_command"]
+    assert "COLLECT_ALL=1" in plan["sbatch_command"]
     assert "EXPECTED_ANSWER=42" in plan["sbatch_command"]
 
 

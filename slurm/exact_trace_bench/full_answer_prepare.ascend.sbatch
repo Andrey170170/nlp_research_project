@@ -24,6 +24,7 @@ FIXTURE_NAME="${FIXTURE_NAME:-}"
 OUTPUT_TRAJECTORY="${OUTPUT_TRAJECTORY:?OUTPUT_TRAJECTORY is required}"
 OUTPUT_DIR="${OUTPUT_DIR:-$OUTPUT_TRAJECTORY}"
 SAMPLE_UNTIL_SUCCESS="${SAMPLE_UNTIL_SUCCESS:-0}"
+COLLECT_ALL="${COLLECT_ALL:-0}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:?MAX_NEW_TOKENS is required}"
 TEMPERATURE="${TEMPERATURE:-0.0}"
 SEED="${SEED:-}"
@@ -66,6 +67,7 @@ if [[ "$SAMPLE_UNTIL_SUCCESS" == "1" ]]; then
   if [[ -n "$SEED" ]]; then SAMPLE_ARGS+=(--base-seed "$SEED"); fi
   if [[ -n "$TRAJECTORY_ID" ]]; then SAMPLE_ARGS+=(--trajectory-id-prefix "$TRAJECTORY_ID"); fi
   if [[ -n "$TIME_LIMIT_SECONDS" ]]; then SAMPLE_ARGS+=(--time-limit-seconds "$TIME_LIMIT_SECONDS"); fi
+  if [[ "$COLLECT_ALL" == "1" ]]; then SAMPLE_ARGS+=(--collect-all); fi
   uv run --no-sync exact-trace-bench sample-full-answer-trajectories "${ARGS[@]}" "${SAMPLE_ARGS[@]}"
 else
   if [[ -n "$SEED" ]]; then ARGS+=(--seed "$SEED"); fi
