@@ -1,0 +1,127 @@
+{
+  "selection_id": "real_prompt_screen_v1_selected_pairs_20260615",
+  "status": "selected_for_full_trace_launch_prep",
+  "source_screening_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/real-prompt-screen-v1",
+  "source_summary": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/real-prompt-screen-v1/screening_summary_temp08_seed3000_attempts16.json",
+  "scratch_selection_manifest": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/real-prompt-screen-v1/proposed_trace_pairs_20260615.json",
+  "trace_launch_prep_manifest": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/real-prompt-screen-v1/trace_launch_prep_fullseq_wreuse_w1600/launch_prep_manifest.json",
+  "screening_generation": {
+    "temperature": 0.8,
+    "base_seed": 3000,
+    "attempts_per_prompt": 16,
+    "max_new_tokens": 768,
+    "collect_all": true
+  },
+  "selection_rules": [
+    "one stopped non-truncated correct attempt and one stopped non-truncated wrong attempt",
+    "prefer length ratio <= 1.5 and absolute length difference <= 100 generated tokens",
+    "exclude very long near-cap pairs from the primary set when enough shorter pairs exist",
+    "split by prompt, not by token, into calibration/metric-selection and held-out evaluation sets after tracing"
+  ],
+  "selected_pairs": [
+    {
+      "fixture": "164_base",
+      "gsm8k_index": 164,
+      "expected_answer": "15",
+      "correct": {"attempt": 5, "seed": 3004, "generated_tokens": 162},
+      "wrong": {"attempt": 10, "seed": 3009, "generated_tokens": 169, "final_answer": "12"},
+      "length_diff": 7,
+      "length_ratio": 1.0432098765432098
+    },
+    {
+      "fixture": "486_base",
+      "gsm8k_index": 486,
+      "expected_answer": "6",
+      "correct": {"attempt": 4, "seed": 3003, "generated_tokens": 108},
+      "wrong": {"attempt": 1, "seed": 3000, "generated_tokens": 107, "final_answer": "8.57"},
+      "length_diff": 1,
+      "length_ratio": 1.0093457943925233
+    },
+    {
+      "fixture": "642_base",
+      "gsm8k_index": 642,
+      "expected_answer": "10800",
+      "correct": {"attempt": 13, "seed": 3012, "generated_tokens": 272},
+      "wrong": {"attempt": 2, "seed": 3001, "generated_tokens": 273, "final_answer": "9780"},
+      "length_diff": 1,
+      "length_ratio": 1.0036764705882353
+    },
+    {
+      "fixture": "650_base",
+      "gsm8k_index": 650,
+      "expected_answer": "142",
+      "correct": {"attempt": 13, "seed": 3012, "generated_tokens": 226},
+      "wrong": {"attempt": 11, "seed": 3010, "generated_tokens": 227, "final_answer": "160"},
+      "length_diff": 1,
+      "length_ratio": 1.0044247787610618
+    },
+    {
+      "fixture": "692_base",
+      "gsm8k_index": 692,
+      "expected_answer": "32",
+      "correct": {"attempt": 2, "seed": 3001, "generated_tokens": 245},
+      "wrong": {"attempt": 7, "seed": 3006, "generated_tokens": 243, "final_answer": "4.30"},
+      "length_diff": 2,
+      "length_ratio": 1.008230452674897
+    },
+    {
+      "fixture": "709_base",
+      "gsm8k_index": 709,
+      "expected_answer": "3000",
+      "correct": {"attempt": 14, "seed": 3013, "generated_tokens": 286},
+      "wrong": {"attempt": 13, "seed": 3012, "generated_tokens": 268, "final_answer": "2960"},
+      "length_diff": 18,
+      "length_ratio": 1.0671641791044777
+    },
+    {
+      "fixture": "821_base",
+      "gsm8k_index": 821,
+      "expected_answer": "35",
+      "correct": {"attempt": 11, "seed": 3010, "generated_tokens": 128},
+      "wrong": {"attempt": 2, "seed": 3001, "generated_tokens": 127, "final_answer": "105"},
+      "length_diff": 1,
+      "length_ratio": 1.0078740157480315
+    },
+    {
+      "fixture": "830_base",
+      "gsm8k_index": 830,
+      "expected_answer": "1128",
+      "correct": {"attempt": 3, "seed": 3002, "generated_tokens": 312},
+      "wrong": {"attempt": 2, "seed": 3001, "generated_tokens": 325, "final_answer": "35"},
+      "length_diff": 13,
+      "length_ratio": 1.0416666666666667
+    },
+    {
+      "fixture": "1031_base",
+      "gsm8k_index": 1031,
+      "expected_answer": "5",
+      "correct": {"attempt": 12, "seed": 3011, "generated_tokens": 119},
+      "wrong": {"attempt": 5, "seed": 3004, "generated_tokens": 126, "final_answer": "1"},
+      "length_diff": 7,
+      "length_ratio": 1.0588235294117647
+    },
+    {
+      "fixture": "1300_base",
+      "gsm8k_index": 1300,
+      "expected_answer": "120",
+      "correct": {"attempt": 4, "seed": 3003, "generated_tokens": 173},
+      "wrong": {"attempt": 14, "seed": 3013, "generated_tokens": 173, "final_answer": "280"},
+      "length_diff": 0,
+      "length_ratio": 1.0
+    }
+  ],
+  "launch_prep": {
+    "input_context_mode": "full_sequence",
+    "trajectory_session_mode": "window_reuse_v1",
+    "reuse_phase0_window_state": true,
+    "reuse_target_logits": true,
+    "row_store_cache_control": "fadvise_dontneed_after_append_and_read_v1",
+    "exact_trace_internal_dtype": "fp32",
+    "sharding_strategy": "contiguous-window-lpt",
+    "max_window_estimated_cost": 1600,
+    "trajectory_count": 20,
+    "token_count": 4069,
+    "shard_count": 592,
+    "max_target_position": 417
+  }
+}
