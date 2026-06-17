@@ -9,7 +9,8 @@ SRC="${SRC:-/fs/scratch/PAS3272/kopanev.1/}"
 DST="${DST:-/fs/scratch/PAS2836/kopanev.1/}"
 LOG_DIR="${LOG_DIR:-$DST/transfer_logs}"
 SKIP_RSYNC="${SKIP_RSYNC:-0}"
-export SRC DST LOG_DIR
+SKIP_WORKSPACE_SNAPSHOTS="${SKIP_WORKSPACE_SNAPSHOTS:-1}"
+export SRC DST LOG_DIR SKIP_WORKSPACE_SNAPSHOTS
 
 mkdir -p "$DST" "$LOG_DIR"
 
@@ -29,9 +30,6 @@ else
     2>&1 | tee "$LOG_DIR/rsync_$(date +%Y%m%d_%H%M%S).log"
 fi
 
-echo "Ensuring copied files are user-writable for path/account rewrite..."
-chmod -R u+rwX "$DST"
-
 echo "Rewriting copied text references from PAS3272 to PAS2836..."
 python - <<'PY'
 from __future__ import annotations
@@ -40,6 +38,7 @@ from pathlib import Path
 import os
 
 dst = Path(os.environ.get("DST", "/fs/scratch/PAS2836/kopanev.1/"))
+skip_workspace_snapshots = os.environ.get("SKIP_WORKSPACE_SNAPSHOTS", "1") == "1"
 suffixes = {
     ".json",
     ".jsonl",
@@ -56,6 +55,8 @@ suffixes = {
 changed = 0
 skipped = 0
 for path in dst.rglob("*"):
+    if skip_workspace_snapshots and "workspace_snapshots" in path.parts:
+        continue
     if not path.is_file() or path.suffix.lower() not in suffixes:
         continue
     try:
