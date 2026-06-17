@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=feature-dist
-#SBATCH --account=PAS3272
+#SBATCH --account=PAS2836
 #SBATCH --cluster=ascend
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -17,7 +17,7 @@ set -euo pipefail
 cd "$SLURM_SUBMIT_DIR"
 
 BATCHES_FILE="${BATCHES_FILE:-experiments/generated/feature_distribution_analysis_batches.json}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS3272/kopanev.1/feature_distribution_analysis}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS2836/kopanev.1/feature_distribution_analysis}"
 DECODER_CHUNK_SIZE="${DECODER_CHUNK_SIZE:-256}"
 
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"

@@ -31,7 +31,7 @@ For important future launches, baseline decisions, and reinterpretations:
 | Editable dependency path | `../circuit-tracer_chunked` |
 | Canonical exact-trace dtype | `exact_trace_internal_dtype=fp32` |
 | Canonical prompt tiers | `828_base`, `361_base`, and `94_base` in `fast` for new work |
-| Scratch root | `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench` |
+| Scratch root | `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench` |
 | Run placement | cluster (`ascend`/`cardinal`) × tier (`fast`/`anomaly`/`long_eval`) |
 
 Baseline preservation notes:
@@ -185,9 +185,9 @@ Metric calibration completed over the Stage-D-style selected-token full matrix.
 Key outputs:
 
 - matrix root:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/native-instability-stage-d-full-matrix-read-fadvise-v1`,
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/native-instability-stage-d-full-matrix-read-fadvise-v1`,
 - analysis root:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/native-instability-stage-d-full-matrix-read-fadvise-v1/analysis_full_matrix/metric_calibration_v1`,
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/native-instability-stage-d-full-matrix-read-fadvise-v1/analysis_full_matrix/metric_calibration_v1`,
 - pair count: `39` (`24` noise, `6` sparse selected-neighbor temporal, `9`
   null), metric rows: `25545`, scorecard rows: `1965`.
 
@@ -229,7 +229,7 @@ The `window_reuse_v1` validation matrix completed on Cardinal for selected
 
 Key output root:
 
-- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/fullseq-window-reuse-v1`
+- `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/fullseq-window-reuse-v1`
 
 Decision:
 
@@ -256,7 +256,7 @@ cache-control pass-through.
 
 Key output root:
 
-- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/fullseq-telemetry-v1`
+- `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/fullseq-telemetry-v1`
 
 Final successful fadvise rerun roots use run id:
 
@@ -312,11 +312,11 @@ pairs, and matched null pairs.
 Key outputs:
 
 - analysis root:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/metric-calibration-v1`,
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/metric-calibration-v1`,
 - report root: `reports/metric-calibration-v1/`,
 - pair count: `502`, metric rows: `328810`, scorecard rows: `1965`,
 - decoder signature cache:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/decoder_signature_cache/gemma-scope-2-1b-it__clt_width_262k_l0_medium_affine__float32_chunk512`.
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/decoder_signature_cache/gemma-scope-2-1b-it__clt_width_262k_l0_medium_affine__float32_chunk512`.
 
 Decision:
 
@@ -367,7 +367,7 @@ current comparison traces:
 
 Key output root:
 
-- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/typed-bucketed-full-reruns-20260527`
+- `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/typed-bucketed-full-reruns-20260527`
 
 Cross-run deep comparison package:
 
@@ -472,7 +472,7 @@ Validation run:
 
 - job: Cardinal `10690579_[0]`, completed in `00:06:07`,
 - output root:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/full-answer-828-prefix-view-validation-20260527`,
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/full-answer-828-prefix-view-validation-20260527`,
 - target: `828_base_full_answer_20260523_02`, generated index `0`, token
   `Here`, target position / prefix length `73`,
 - trace time: `304.89s`, status `ok`,
@@ -503,7 +503,7 @@ Run:
 - project worktree commit: `0c39a7b`, sibling library commit: `6445795`,
 - job: Cardinal `10438978_[0]`, completed in `00:06:30`,
 - output root:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/full-answer-828-smoke-perf-default-20260526`,
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/full-answer-828-smoke-perf-default-20260526`,
 - target: `828_base_full_answer_20260523_02`, generated index `0`, token
   `Here`, prefix length `73`,
 - trace time: `330.82s`, status `ok`, graph saved as `graph.npz`.
@@ -535,7 +535,7 @@ Follow-up baseline-parameter run:
 
 - job: Cardinal `10497418_[0]`, completed in `00:06:18`,
 - output root:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/full-answer-828-baseline-params-20260526`,
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/full-answer-828-baseline-params-20260526`,
 - matching compact/reference knobs: `max_edges=20000`,
   `decoder_chunk_size=4096`, `cross_batch_decoder_cache_bytes=8589934592`,
   `phase4_refresh_optimization=off`, `phase4_row_reduction=off`,
@@ -582,9 +582,9 @@ Interpretation:
 Key provenance:
 
 - broader default validation output root:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260525_broader-default-validation-fast`,
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/20260525_broader-default-validation-fast`,
 - snapshot root:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260525_190714_broader_default_validation`,
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260525_190714_broader_default_validation`,
 - optimization project commit before merge: `a01ab07`,
 - optimization library commit before merge: `6445795`.
 
@@ -737,7 +737,7 @@ Structured record:
 Sweep campaign status:
 
 - Wave 0 established the pinned cross-cluster baseline registry:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/baselines/wave0-baseline-20260520-01.json`.
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/baselines/wave0-baseline-20260520-01.json`.
 - Wave 1 locked stable resource settings for later waves:
   - Ascend fast: `batch=128`, `decoder_chunk_size=2048`, cache `0`.
   - Ascend anomaly: `batch=256`, `decoder_chunk_size=4096`, cache `0`.
@@ -806,9 +806,9 @@ Validation summary:
 
 Relevant scratch roots:
 
-- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/phase1-row-replay-fix-20260515-01`
-- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/phase1-row-replay-fix-20260515-01`
-- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/phase1-row-replay-smoke-20260515-01`
+- `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/phase1-row-replay-fix-20260515-01`
+- `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/phase1-row-replay-fix-20260515-01`
+- `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/phase1-row-replay-smoke-20260515-01`
 
 Structured record:
 
@@ -822,10 +822,10 @@ baseline before post-consolidation cleanup.
 Key references:
 
 - same-generation post-consolidation references:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260512_193309_605201_post-consolidation-ascend-validation`
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260512_193309_737038_post-consolidation-ascend-validation`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/20260512_193309_605201_post-consolidation-ascend-validation`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260512_193309_737038_post-consolidation-ascend-validation`
 - pre-consolidation optimization `94_base` control:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260512_201118_810555_pre-consolidation-optimization-94-control`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260512_201118_810555_pre-consolidation-optimization-94-control`
 
 Structured record:
 

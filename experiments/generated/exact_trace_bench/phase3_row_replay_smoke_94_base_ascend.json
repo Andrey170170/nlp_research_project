@@ -43,7 +43,7 @@
     "stage": "exact_trace_bench_anomaly",
     "tier": "anomaly",
     "resource_profile": "standard",
-    "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly",
+    "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly",
     "run_name": "phase3 row replay smoke 94_base ascend",
     "run_description": "Single Ascend host/Ascend donor Phase-3 row replay smoke for the Phase-1 row-state fix.",
     "run_goal": "Validate donor row replay plus row bundle capture after Phase-3 effective row-state cleanup."
@@ -54,7 +54,7 @@
       "stage": "exact_trace_bench_anomaly",
       "cluster": "ascend",
       "resource_profile": "standard",
-      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly",
+      "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly",
       "fixture_name": "94_base",
       "fixture_kind": "base",
       "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/94_base/prompt.txt",
@@ -65,9 +65,9 @@
       "logit_batch_size": 128,
       "decoder_chunk_size": 2048,
       "cross_batch_decoder_cache_bytes": 0,
-      "phase0_donor_bundle": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260429_184917_527785_phase3-gradient-donor-capture-94-base-ascend/ascend_phase3_gradient_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000/step_000_phase0_donor_bundle.npz",
+      "phase0_donor_bundle": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260429_184917_527785_phase3-gradient-donor-capture-94-base-ascend/ascend_phase3_gradient_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000/step_000_phase0_donor_bundle.npz",
       "phase3_row_replay_mode": "donor",
-      "phase3_row_donor_bundle": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260429_184917_527785_phase3-gradient-donor-capture-94-base-ascend/ascend_phase3_gradient_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000/step_000_phase3_row_bundle.npz",
+      "phase3_row_donor_bundle": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260429_184917_527785_phase3-gradient-donor-capture-94-base-ascend/ascend_phase3_gradient_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000/step_000_phase3_row_bundle.npz",
       "donor_label": "ascend",
       "phase3_replay_matrix_mode": "row_donor_smoke"
     }

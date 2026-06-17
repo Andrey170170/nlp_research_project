@@ -9,7 +9,7 @@ Reads completion.json + prompt_meta.json, writes evaluation.json
 alongside each completion.
 
 Usage:
-    python evaluate.py --traces-dir /fs/scratch/PAS3272/kopanev.1/traces
+    python evaluate.py --traces-dir /fs/scratch/PAS2836/kopanev.1/traces
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=da-comparison
-#SBATCH --account=PAS3272
+#SBATCH --account=PAS2836
 #SBATCH --cluster=ascend
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -36,7 +36,7 @@ set -euo pipefail
 cd "$SLURM_SUBMIT_DIR"
 
 SCENARIOS_FILE="${SCENARIOS_FILE:-experiments/generated/decoder_aware_comparison_scenarios.json}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS3272/vinson1/decoder_aware_comparison}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS2836/vinson1/decoder_aware_comparison}"
 
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 export TOKENIZERS_PARALLELISM=false

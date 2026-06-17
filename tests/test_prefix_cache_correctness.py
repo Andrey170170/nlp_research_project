@@ -7,7 +7,7 @@ matched at every step.  Runs on a login node — no GPU required.
 Usage::
 
     uv run python tests/test_prefix_cache_correctness.py \\
-        --results-dir /fs/scratch/PAS3272/kopanev.1/prefix_cache_bench/prompt_000/completion_000
+        --results-dir /fs/scratch/PAS2836/kopanev.1/prefix_cache_bench/prompt_000/completion_000
 """
 
 from __future__ import annotations

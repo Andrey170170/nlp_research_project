@@ -4572,7 +4572,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output-dir",
-        default="/fs/scratch/PAS3272/kopanev.1/traces_chunked",
+        default="/fs/scratch/PAS2836/kopanev.1/traces_chunked",
         help="Output directory",
     )
     parser.add_argument(

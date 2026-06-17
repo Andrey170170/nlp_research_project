@@ -149,7 +149,7 @@ allow hardware-specific optimal settings.
 
 Scratch layout remains:
 
-`/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/{ascend,cardinal}/{fast,anomaly,long_eval}/<run_id>`
+`/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/{ascend,cardinal}/{fast,anomaly,long_eval}/<run_id>`
 
 Use `run_id`, `run_name`, `run_description`, `run_goal`, and scenario names only;
 do not add new buckets.

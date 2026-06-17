@@ -13,7 +13,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SCENARIOS = Path(__file__).with_name("chunked_trace_scenarios.json")
-DEFAULT_OUTPUT_ROOT = Path("/fs/scratch/PAS3272/kopanev.1/trace_chunked_test_matrix")
+DEFAULT_OUTPUT_ROOT = Path("/fs/scratch/PAS2836/kopanev.1/trace_chunked_test_matrix")
 
 
 def build_command(output_dir: Path, scenario: dict[str, Any]) -> list[str]:

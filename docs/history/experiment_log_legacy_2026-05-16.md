@@ -6,7 +6,7 @@ result reinterpretations.
 
 For now it documents:
 
-- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench`
+- `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench`
 
 The goal is to make it easy to answer:
 
@@ -51,18 +51,18 @@ Implementation/launch provenance:
   - commit: `cee7e4c52140994ebda9d970963a421c37506491`
     (`Replay Phase-3 donor gradients and rows`)
 - immutable snapshot container:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_230804_phase3_replay_matrix_94_base`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_230804_phase3_replay_matrix_94_base`
 - snapshot project root:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_230804_phase3_replay_matrix_94_base/nlp_research_project`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_230804_phase3_replay_matrix_94_base/nlp_research_project`
 - snapshot library root:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_230804_phase3_replay_matrix_94_base/circuit-tracer_chunked`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_230804_phase3_replay_matrix_94_base/circuit-tracer_chunked`
 
 Scenario files:
 
 - Ascend:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_230804_phase3_replay_matrix_94_base/nlp_research_project/experiments/generated/exact_trace_bench/phase3_replay_matrix_94_base_ascend.json`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_230804_phase3_replay_matrix_94_base/nlp_research_project/experiments/generated/exact_trace_bench/phase3_replay_matrix_94_base_ascend.json`
 - Cardinal:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_230804_phase3_replay_matrix_94_base/nlp_research_project/experiments/generated/exact_trace_bench/phase3_replay_matrix_94_base_cardinal.json`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_230804_phase3_replay_matrix_94_base/nlp_research_project/experiments/generated/exact_trace_bench/phase3_replay_matrix_94_base_cardinal.json`
 - each contains eight tasks:
   - tasks `0-3`: same-cluster donor self controls,
   - tasks `4-7`: opposite-cluster donor cross-swaps,
@@ -72,9 +72,9 @@ Scenario files:
 Donor roots:
 
 - Ascend donor:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260429_184917_527785_phase3-gradient-donor-capture-94-base-ascend/ascend_phase3_gradient_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260429_184917_527785_phase3-gradient-donor-capture-94-base-ascend/ascend_phase3_gradient_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000`
 - Cardinal donor:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260429_184917_613970_phase3-gradient-donor-capture-94-base-cardinal/cardinal_phase3_gradient_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly/20260429_184917_613970_phase3-gradient-donor-capture-94-base-cardinal/cardinal_phase3_gradient_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000`
 - each mode uses the donor's `step_000_phase0_donor_bundle.npz`; donor-gradient
   modes also use `step_000_phase3_gradient_bundle.npz`; donor-row modes also use
   `step_000_phase3_row_bundle.npz`.
@@ -84,11 +84,11 @@ Submitted jobs and intended outputs:
 - Ascend:
   - SLURM job `5147972` (`5147972_[0-7]` array)
   - run id `phase3_replay_matrix_94_base_ascend`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/phase3_replay_matrix_94_base_ascend`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/phase3_replay_matrix_94_base_ascend`
 - Cardinal:
   - SLURM job `8978498` (`8978498_[0-7]` array)
   - run id `phase3_replay_matrix_94_base_cardinal`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/phase3_replay_matrix_94_base_cardinal`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly/phase3_replay_matrix_94_base_cardinal`
 
 Shared replay config:
 
@@ -153,11 +153,11 @@ Relaunch provenance after the trace-batch validation fix:
   - commit: `f3add59fa352b2c503a575e10f0040a257cc6dfc`
     (`Validate Phase-3 gradients by trace batch width`)
 - immutable snapshot container:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260430_010643_phase3_replay_matrix_tracebatchfix_94_base`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260430_010643_phase3_replay_matrix_tracebatchfix_94_base`
 - snapshot project root:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260430_010643_phase3_replay_matrix_tracebatchfix_94_base/nlp_research_project`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260430_010643_phase3_replay_matrix_tracebatchfix_94_base/nlp_research_project`
 - snapshot library root:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260430_010643_phase3_replay_matrix_tracebatchfix_94_base/circuit-tracer_chunked`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260430_010643_phase3_replay_matrix_tracebatchfix_94_base/circuit-tracer_chunked`
 
 Relaunched jobs:
 
@@ -165,14 +165,14 @@ Relaunched jobs:
   - SLURM job `5148766` (`5148766_[2-3,6-7]` array)
   - scenario file: same Ascend matrix JSON from the fixed snapshot
   - run id `phase3_replay_matrix_94_base_ascend_gradient_fix`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/phase3_replay_matrix_94_base_ascend_gradient_fix`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/phase3_replay_matrix_94_base_ascend_gradient_fix`
   - task ids: `2`, `3`, `6`, `7` only (`gradient_donor` and
     `gradient_row_donor` for both donors)
 - Cardinal full rerun:
   - SLURM job `8980846` (`8980846_[0-7]` array)
   - scenario file: same Cardinal matrix JSON from the fixed snapshot
   - run id `phase3_replay_matrix_94_base_cardinal_tracebatchfix`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/phase3_replay_matrix_94_base_cardinal_tracebatchfix`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly/phase3_replay_matrix_94_base_cardinal_tracebatchfix`
   - task ids: `0-7`
 
 Result interpretation after relaunch completion:
@@ -192,9 +192,9 @@ Result interpretation after relaunch completion:
   - All checked one-step completions generated `"Let"`.
 - Comparison artifacts:
   - summary:
-    `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/analysis/phase3_replay_matrix_94_base_tracebatchfix_compare_summary_no_semantic.json`
+    `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/analysis/phase3_replay_matrix_94_base_tracebatchfix_compare_summary_no_semantic.json`
   - per-mode comparisons:
-    `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/analysis/phase3_replay_matrix_94_base_{baseline,row_donor,gradient_donor,gradient_row_donor}_compare_no_semantic.json`
+    `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/analysis/phase3_replay_matrix_94_base_{baseline,row_donor,gradient_donor,gradient_row_donor}_compare_no_semantic.json`
 
 Key findings:
 
@@ -365,24 +365,24 @@ Implementation/launch provenance:
   - commit: `a6946fa7875d6e510845b38e44d66db88098a8f1`
     (`Add Phase-0 donor replay plumbing`)
 - immutable snapshot container:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_143848_phase0_donor_capture_94_base`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_143848_phase0_donor_capture_94_base`
 - snapshot project root:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_143848_phase0_donor_capture_94_base/nlp_research_project`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_143848_phase0_donor_capture_94_base/nlp_research_project`
 - snapshot library root:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_143848_phase0_donor_capture_94_base/circuit-tracer_chunked`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_143848_phase0_donor_capture_94_base/circuit-tracer_chunked`
 
 Submitted jobs and intended outputs:
 
 - Ascend:
   - SLURM job `5098340` (`5098340_0` array task)
   - run id `20260427_143849_028151_phase0-donor-capture-94-base-ascend`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260427_143849_028151_phase0-donor-capture-94-base-ascend`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260427_143849_028151_phase0-donor-capture-94-base-ascend`
   - completed `2026-04-27T15:19:17`, state `COMPLETED`, exit `0:0`,
     elapsed `00:29:30`
 - Cardinal:
   - SLURM job `8887574` (`8887574_0` array task)
   - run id `20260427_143849_120767_phase0-donor-capture-94-base-cardinal`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260427_143849_120767_phase0-donor-capture-94-base-cardinal`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly/20260427_143849_120767_phase0-donor-capture-94-base-cardinal`
   - completed `2026-04-27T15:14:07`, state `COMPLETED`, exit `0:0`,
     elapsed `00:16:38`
 
@@ -451,11 +451,11 @@ Implementation/launch provenance:
   - commit: `a6946fa7875d6e510845b38e44d66db88098a8f1`
     (`Add Phase-0 donor replay plumbing`)
 - immutable snapshot container:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_164501_phase0_replay_matrix_94_base`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_164501_phase0_replay_matrix_94_base`
 - snapshot project root:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_164501_phase0_replay_matrix_94_base/nlp_research_project`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_164501_phase0_replay_matrix_94_base/nlp_research_project`
 - snapshot library root:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_164501_phase0_replay_matrix_94_base/circuit-tracer_chunked`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_164501_phase0_replay_matrix_94_base/circuit-tracer_chunked`
 
 Scenario files:
 
@@ -470,22 +470,22 @@ Scenario files:
 Donor bundles used:
 
 - Ascend donor:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260427_143849_028151_phase0-donor-capture-94-base-ascend/ascend_phase0_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000/step_000_phase0_donor_bundle.npz`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260427_143849_028151_phase0-donor-capture-94-base-ascend/ascend_phase0_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000/step_000_phase0_donor_bundle.npz`
 - Cardinal donor:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260427_143849_120767_phase0-donor-capture-94-base-cardinal/cardinal_phase0_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000/step_000_phase0_donor_bundle.npz`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly/20260427_143849_120767_phase0-donor-capture-94-base-cardinal/cardinal_phase0_donor_capture_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000/step_000_phase0_donor_bundle.npz`
 
 Submitted jobs and intended outputs:
 
 - Ascend:
   - SLURM job `5101354` (`5101354_[0-1]` array)
   - run id `20260427_164504_282386_phase0-replay-matrix-94-base-ascend`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260427_164504_282386_phase0-replay-matrix-94-base-ascend`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260427_164504_282386_phase0-replay-matrix-94-base-ascend`
   - queue check after submission: `PENDING` on `nextgen` with reason
     `Priority`
 - Cardinal:
   - SLURM job `8888658` (`8888658_[0-1]` array)
   - run id `20260427_164504_455131_phase0-replay-matrix-94-base-cardinal`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260427_164504_455131_phase0-replay-matrix-94-base-cardinal`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly/20260427_164504_455131_phase0-replay-matrix-94-base-cardinal`
   - queue check after submission: `PENDING` on `gpu` with reason `Priority`
 
 Shared replay config:
@@ -543,7 +543,7 @@ Completion / analysis update:
     - Phase-3 support Jaccard `1.0`, seed influence Pearson
       `0.9999999999999999`, top-1024 overlap `1.0`, frontier post Jaccard `1.0`.
 - full comparison written to:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/analysis/phase0_replay_matrix_94_base_compare_no_semantic.json`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/analysis/phase0_replay_matrix_94_base_compare_no_semantic.json`
   (`include_semantic=false`; semantic descriptors in this run are still the
   fallback identity-metadata descriptors, so the main interpretation uses compact
   graph and Phase-3 seed-bundle metrics).
@@ -647,11 +647,11 @@ Implementation/launch provenance:
   - branch: `exact-trace-hidden-knobs`
   - commit: `050c877` (`Capture Phase-3 gradients and rows`)
 - immutable snapshot container:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_184917_phase3_gradient_capture_94_base`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_184917_phase3_gradient_capture_94_base`
 - snapshot project root:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_184917_phase3_gradient_capture_94_base/nlp_research_project`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_184917_phase3_gradient_capture_94_base/nlp_research_project`
 - snapshot library root:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_184917_phase3_gradient_capture_94_base/circuit-tracer_chunked`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_184917_phase3_gradient_capture_94_base/circuit-tracer_chunked`
 
 Scenario files:
 
@@ -665,13 +665,13 @@ Submitted jobs and intended outputs:
 - Ascend:
   - SLURM job `5146702` (`5146702_[0]` array)
   - run id `20260429_184917_527785_phase3-gradient-donor-capture-94-base-ascend`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260429_184917_527785_phase3-gradient-donor-capture-94-base-ascend`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260429_184917_527785_phase3-gradient-donor-capture-94-base-ascend`
   - SLURM state: `COMPLETED`, exit code `0:0`, elapsed `00:32:34`
     (`2026-04-29T20:44:30`–`2026-04-29T21:17:04`)
 - Cardinal:
   - SLURM job `8975505` (`8975505_[0]` array)
   - run id `20260429_184917_613970_phase3-gradient-donor-capture-94-base-cardinal`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260429_184917_613970_phase3-gradient-donor-capture-94-base-cardinal`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly/20260429_184917_613970_phase3-gradient-donor-capture-94-base-cardinal`
   - SLURM state: `COMPLETED`, exit code `0:0`, elapsed `00:18:40`
     (`2026-04-29T20:16:37`–`2026-04-29T20:35:17`)
 
@@ -781,23 +781,23 @@ Implementation/launch provenance:
   - commit: `fc22162ba75aca736ae1a088a83e64d0fac20f93`
     (`Capture semantic feature descriptors`)
 - immutable snapshot container:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260423_200451_matched_cross_cluster_94_phase3_seed_fix`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260423_200451_matched_cross_cluster_94_phase3_seed_fix`
 - snapshot project root:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260423_200451_matched_cross_cluster_94_phase3_seed_fix/nlp_research_project`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260423_200451_matched_cross_cluster_94_phase3_seed_fix/nlp_research_project`
 - snapshot library root:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260423_200451_matched_cross_cluster_94_phase3_seed_fix/circuit-tracer_chunked`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260423_200451_matched_cross_cluster_94_phase3_seed_fix/circuit-tracer_chunked`
 
 Submitted jobs and outputs:
 
 - Ascend:
   - SLURM job `5066410`
   - run id `20260423_200451_matched-cross-cluster-94-phase3-seed-fix-ascend`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260423_200451_matched-cross-cluster-94-phase3-seed-fix-ascend`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260423_200451_matched-cross-cluster-94-phase3-seed-fix-ascend`
   - completed `2026-04-23T20:32:26`, state `COMPLETED`, exit `0:0`
 - Cardinal:
   - SLURM job `8757353`
   - run id `20260423_200451_matched-cross-cluster-94-phase3-seed-fix-cardinal`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260423_200451_matched-cross-cluster-94-phase3-seed-fix-cardinal`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly/20260423_200451_matched-cross-cluster-94-phase3-seed-fix-cardinal`
   - completed `2026-04-24T05:28:24`, state `COMPLETED`, exit `0:0`
 
 Shared config:
@@ -829,9 +829,9 @@ Artifact status:
 
 Analysis outputs written:
 
-- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260423_200451_matched-cross-cluster-94-phase3-seed-fix-ascend/compact_compare_vs_cardinal.json`
-- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260423_200451_matched-cross-cluster-94-phase3-seed-fix-ascend/phase3_seed_compare_vs_cardinal.json`
-- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260423_200451_matched-cross-cluster-94-phase3-seed-fix-ascend/semantic_compare_vs_cardinal.json`
+- `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260423_200451_matched-cross-cluster-94-phase3-seed-fix-ascend/compact_compare_vs_cardinal.json`
+- `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260423_200451_matched-cross-cluster-94-phase3-seed-fix-ascend/phase3_seed_compare_vs_cardinal.json`
+- `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260423_200451_matched-cross-cluster-94-phase3-seed-fix-ascend/semantic_compare_vs_cardinal.json`
 
 Key debug hashes:
 
@@ -1066,11 +1066,11 @@ Launch provenance:
   - `/users/PAS2119/andreykopanev/worktrees_probe_94_boundary/nlp_research_project`
   - `/users/PAS2119/andreykopanev/worktrees_probe_94_boundary/circuit-tracer_chunked`
 - immutable snapshot container:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260423_124304_matched_cross_cluster_94_boundary_probe`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260423_124304_matched_cross_cluster_94_boundary_probe`
 - snapshot project root:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260423_124304_matched_cross_cluster_94_boundary_probe/nlp_research_project`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260423_124304_matched_cross_cluster_94_boundary_probe/nlp_research_project`
 - snapshot library root:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260423_124304_matched_cross_cluster_94_boundary_probe/circuit-tracer_chunked`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260423_124304_matched_cross_cluster_94_boundary_probe/circuit-tracer_chunked`
 
 Shared config across both jobs:
 
@@ -1097,11 +1097,11 @@ Submitted jobs:
 - Ascend boundary probe:
   - SLURM job `5059551`
   - run id `20260423_124423_578647_matched-cross-cluster-94-anomaly-boundary-probe-ascend`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260423_124423_578647_matched-cross-cluster-94-anomaly-boundary-probe-ascend`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260423_124423_578647_matched-cross-cluster-94-anomaly-boundary-probe-ascend`
 - Cardinal boundary probe:
   - SLURM job `8726006`
   - run id `20260423_124423_723348_matched-cross-cluster-94-anomaly-boundary-probe-cardinal`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260423_124423_723348_matched-cross-cluster-94-anomaly-boundary-probe-cardinal`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly/20260423_124423_723348_matched-cross-cluster-94-anomaly-boundary-probe-cardinal`
 
 Intended interpretation:
 
@@ -1184,11 +1184,11 @@ Launch provenance:
   - branch: `exact-trace-hidden-knobs`
   - commit: `bd9f3c16bbfddfe499706eb357863c5d9ac0d1b1`
 - immutable snapshot container:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_154606_matched_cross_cluster_94_phase0_compare_matrix`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_154606_matched_cross_cluster_94_phase0_compare_matrix`
 - snapshot project root:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_154606_matched_cross_cluster_94_phase0_compare_matrix/nlp_research_project`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_154606_matched_cross_cluster_94_phase0_compare_matrix/nlp_research_project`
 - snapshot library root:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_154606_matched_cross_cluster_94_phase0_compare_matrix/circuit-tracer_chunked`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_154606_matched_cross_cluster_94_phase0_compare_matrix/circuit-tracer_chunked`
 
 Shared config across all six jobs:
 
@@ -1230,27 +1230,27 @@ Submitted jobs:
 - Ascend baseline:
   - SLURM job `5040750`
   - run id `20260422_154658_571947_matched-cross-cluster-94-anomaly-baseline-ascend`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154658_571947_matched-cross-cluster-94-anomaly-baseline-ascend`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154658_571947_matched-cross-cluster-94-anomaly-baseline-ascend`
 - Cardinal baseline:
   - SLURM job `8706829`
   - run id `20260422_154658_754153_matched-cross-cluster-94-anomaly-baseline-cardinal`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_154658_754153_matched-cross-cluster-94-anomaly-baseline-cardinal`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_154658_754153_matched-cross-cluster-94-anomaly-baseline-cardinal`
 - Ascend Phase-0 compare `fp32`:
   - SLURM job `5040751`
   - run id `20260422_154658_838439_matched-cross-cluster-94-anomaly-p0-fp32-ascend`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154658_838439_matched-cross-cluster-94-anomaly-p0-fp32-ascend`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154658_838439_matched-cross-cluster-94-anomaly-p0-fp32-ascend`
 - Cardinal Phase-0 compare `fp32`:
   - SLURM job `8706832`
   - run id `20260422_154658_929983_matched-cross-cluster-94-anomaly-p0-fp32-cardinal`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_154658_929983_matched-cross-cluster-94-anomaly-p0-fp32-cardinal`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_154658_929983_matched-cross-cluster-94-anomaly-p0-fp32-cardinal`
 - Ascend Phase-0 compare `fp64`:
   - SLURM job `5040752`
   - run id `20260422_154659_015092_matched-cross-cluster-94-anomaly-p0-fp64-ascend`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154659_015092_matched-cross-cluster-94-anomaly-p0-fp64-ascend`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154659_015092_matched-cross-cluster-94-anomaly-p0-fp64-ascend`
 - Cardinal Phase-0 compare `fp64`:
   - SLURM job `8706834`
   - run id `20260422_154659_103228_matched-cross-cluster-94-anomaly-p0-fp64-cardinal`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_154659_103228_matched-cross-cluster-94-anomaly-p0-fp64-cardinal`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_154659_103228_matched-cross-cluster-94-anomaly-p0-fp64-cardinal`
 
 Intended interpretation:
 
@@ -1284,16 +1284,16 @@ Analysis provenance:
   - branch: `exact-trace-hidden-knobs`
   - commit: `bd9f3c16bbfddfe499706eb357863c5d9ac0d1b1`
 - snapshot container:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_154606_matched_cross_cluster_94_phase0_compare_matrix`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_154606_matched_cross_cluster_94_phase0_compare_matrix`
 
 Runs analyzed:
 
 - Ascend baseline:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154658_571947_matched-cross-cluster-94-anomaly-baseline-ascend/ascend_matched_cross_cluster_94_base_anomaly_p0baseline_b128_c2048_cache0g`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154658_571947_matched-cross-cluster-94-anomaly-baseline-ascend/ascend_matched_cross_cluster_94_base_anomaly_p0baseline_b128_c2048_cache0g`
 - Ascend Phase-0 compare `fp32`:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154658_838439_matched-cross-cluster-94-anomaly-p0-fp32-ascend/ascend_matched_cross_cluster_94_base_anomaly_p0fp32_b128_c2048_cache0g`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154658_838439_matched-cross-cluster-94-anomaly-p0-fp32-ascend/ascend_matched_cross_cluster_94_base_anomaly_p0fp32_b128_c2048_cache0g`
 - Ascend Phase-0 compare `fp64`:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154659_015092_matched-cross-cluster-94-anomaly-p0-fp64-ascend/ascend_matched_cross_cluster_94_base_anomaly_p0fp64_b128_c2048_cache0g`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154659_015092_matched-cross-cluster-94-anomaly-p0-fp64-ascend/ascend_matched_cross_cluster_94_base_anomaly_p0fp64_b128_c2048_cache0g`
 
 Observed Ascend-only results:
 
@@ -1360,18 +1360,18 @@ Analysis provenance:
   - branch: `exact-trace-hidden-knobs`
   - commit: `bd9f3c16bbfddfe499706eb357863c5d9ac0d1b1`
 - snapshot container:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_154606_matched_cross_cluster_94_phase0_compare_matrix`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_154606_matched_cross_cluster_94_phase0_compare_matrix`
 
 Runs analyzed:
 
 - Ascend baseline / `fp32` / `fp64`:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154658_571947_matched-cross-cluster-94-anomaly-baseline-ascend/ascend_matched_cross_cluster_94_base_anomaly_p0baseline_b128_c2048_cache0g`
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154658_838439_matched-cross-cluster-94-anomaly-p0-fp32-ascend/ascend_matched_cross_cluster_94_base_anomaly_p0fp32_b128_c2048_cache0g`
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154659_015092_matched-cross-cluster-94-anomaly-p0-fp64-ascend/ascend_matched_cross_cluster_94_base_anomaly_p0fp64_b128_c2048_cache0g`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154658_571947_matched-cross-cluster-94-anomaly-baseline-ascend/ascend_matched_cross_cluster_94_base_anomaly_p0baseline_b128_c2048_cache0g`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154658_838439_matched-cross-cluster-94-anomaly-p0-fp32-ascend/ascend_matched_cross_cluster_94_base_anomaly_p0fp32_b128_c2048_cache0g`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_154659_015092_matched-cross-cluster-94-anomaly-p0-fp64-ascend/ascend_matched_cross_cluster_94_base_anomaly_p0fp64_b128_c2048_cache0g`
 - Cardinal baseline / `fp32` / `fp64`:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_154658_754153_matched-cross-cluster-94-anomaly-baseline-cardinal/cardinal_matched_cross_cluster_94_base_anomaly_p0baseline_b128_c2048_cache0g`
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_154658_929983_matched-cross-cluster-94-anomaly-p0-fp32-cardinal/cardinal_matched_cross_cluster_94_base_anomaly_p0fp32_b128_c2048_cache0g`
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_154659_103228_matched-cross-cluster-94-anomaly-p0-fp64-cardinal/cardinal_matched_cross_cluster_94_base_anomaly_p0fp64_b128_c2048_cache0g`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_154658_754153_matched-cross-cluster-94-anomaly-baseline-cardinal/cardinal_matched_cross_cluster_94_base_anomaly_p0baseline_b128_c2048_cache0g`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_154658_929983_matched-cross-cluster-94-anomaly-p0-fp32-cardinal/cardinal_matched_cross_cluster_94_base_anomaly_p0fp32_b128_c2048_cache0g`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_154659_103228_matched-cross-cluster-94-anomaly-p0-fp64-cardinal/cardinal_matched_cross_cluster_94_base_anomaly_p0fp64_b128_c2048_cache0g`
 
 Observed within-cluster behavior:
 
@@ -1544,11 +1544,11 @@ Current expectation before launch:
 Runs analyzed:
 
 - `828_base` fast:
-  - Ascend output: `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260422_001758_409577_matched-cross-cluster-828-fast-ascend/ascend_matched_cross_cluster_828_base_fast_b128_c2048_cache0g`
-  - Cardinal output: `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260422_001758_483504_matched-cross-cluster-828-fast-cardinal/cardinal_matched_cross_cluster_828_base_fast_b128_c2048_cache0g`
+  - Ascend output: `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/20260422_001758_409577_matched-cross-cluster-828-fast-ascend/ascend_matched_cross_cluster_828_base_fast_b128_c2048_cache0g`
+  - Cardinal output: `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/20260422_001758_483504_matched-cross-cluster-828-fast-cardinal/cardinal_matched_cross_cluster_828_base_fast_b128_c2048_cache0g`
 - `94_base` anomaly:
-  - Ascend output: `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_001758_549185_matched-cross-cluster-94-anomaly-ascend/ascend_matched_cross_cluster_94_base_anomaly_b128_c2048_cache0g`
-  - Cardinal output: `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_001758_619013_matched-cross-cluster-94-anomaly-cardinal/cardinal_matched_cross_cluster_94_base_anomaly_b128_c2048_cache0g`
+  - Ascend output: `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_001758_549185_matched-cross-cluster-94-anomaly-ascend/ascend_matched_cross_cluster_94_base_anomaly_b128_c2048_cache0g`
+  - Cardinal output: `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_001758_619013_matched-cross-cluster-94-anomaly-cardinal/cardinal_matched_cross_cluster_94_base_anomaly_b128_c2048_cache0g`
 
 Important scope note:
 
@@ -1633,11 +1633,11 @@ Launch provenance:
   - branch: `exact-trace-hidden-knobs`
   - commit: `d1f3df3e456fdb5430b5462a0a6834bdaf7fa716`
 - immutable snapshot container:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_001720_matched_cross_cluster_828_94_fp64`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_001720_matched_cross_cluster_828_94_fp64`
 - snapshot project root:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_001720_matched_cross_cluster_828_94_fp64/nlp_research_project`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_001720_matched_cross_cluster_828_94_fp64/nlp_research_project`
 - snapshot library root:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_001720_matched_cross_cluster_828_94_fp64/circuit-tracer_chunked`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260422_001720_matched_cross_cluster_828_94_fp64/circuit-tracer_chunked`
 
 Matched launch config used on **all four** runs:
 
@@ -1674,19 +1674,19 @@ Submitted jobs:
 - Ascend `828_base` fast:
   - SLURM job `5024202`
   - run id `20260422_001758_409577_matched-cross-cluster-828-fast-ascend`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260422_001758_409577_matched-cross-cluster-828-fast-ascend`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/20260422_001758_409577_matched-cross-cluster-828-fast-ascend`
 - Cardinal `828_base` fast:
   - SLURM job `8694599`
   - run id `20260422_001758_483504_matched-cross-cluster-828-fast-cardinal`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260422_001758_483504_matched-cross-cluster-828-fast-cardinal`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/20260422_001758_483504_matched-cross-cluster-828-fast-cardinal`
 - Ascend `94_base` anomaly:
   - SLURM job `5024203`
   - run id `20260422_001758_549185_matched-cross-cluster-94-anomaly-ascend`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_001758_549185_matched-cross-cluster-94-anomaly-ascend`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260422_001758_549185_matched-cross-cluster-94-anomaly-ascend`
 - Cardinal `94_base` anomaly:
   - SLURM job `8694600`
   - run id `20260422_001758_619013_matched-cross-cluster-94-anomaly-cardinal`
-  - output root `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_001758_619013_matched-cross-cluster-94-anomaly-cardinal`
+  - output root `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly/20260422_001758_619013_matched-cross-cluster-94-anomaly-cardinal`
 
 Interpretation / intent:
 
@@ -1720,15 +1720,15 @@ Project + library provenance for the checked baseline pair:
 Runs checked:
 
 - Ascend current baseline-check run:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/ascend_quick_fp64_cross_cluster_828_base_postlibmerge_b128_c2048_cache0g`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/ascend_quick_fp64_cross_cluster_828_base_postlibmerge_b128_c2048_cache0g`
   - launched from the live main workspace
 - Ascend same-cluster reference run:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/ascend_quick_fp64_cross_cluster_828_base_b128_c2048_cache0g`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/ascend_quick_fp64_cross_cluster_828_base_b128_c2048_cache0g`
 - Cardinal current baseline-check run:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260421_214702_004280_quick-cross-cluster-fp64-828-postlibmerge-snapshot/cardinal_quick_fp64_cross_cluster_828_base_postlibmerge_b128_c4096_cache0g`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/20260421_214702_004280_quick-cross-cluster-fp64-828-postlibmerge-snapshot/cardinal_quick_fp64_cross_cluster_828_base_postlibmerge_b128_c4096_cache0g`
   - launched from immutable snapshot workspace `workspace_20260421_214702_cardinal_828_postlibmerge`
 - Cardinal same-cluster reference run:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/20260420_131422_618249_prompt828-debug-cardinal-float64-norm-general/cardinal_fast_828_base_b128_c4096_cache0g`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/20260420_131422_618249_prompt828-debug-cardinal-float64-norm-general/cardinal_fast_828_base_b128_c4096_cache0g`
 
 Validation notes:
 
@@ -1772,7 +1772,7 @@ Interpretation:
 Current top-level layout:
 
 ```text
-/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/
+/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/
   ascend/
     fast/
     anomaly/
@@ -2030,17 +2030,17 @@ and were launched from custom scenario files under:
 Current output roots:
 
 - fast / fp32 debug:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260421_124700_true-fp32-norm-debug-ascend`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/20260421_124700_true-fp32-norm-debug-ascend`
 - anomaly / fp32 debug:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260421_124700_true-fp32-norm-debug-ascend`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260421_124700_true-fp32-norm-debug-ascend`
 - fast / fp64 debug:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260421_124700_true-fp64-norm-debug-ascend`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/20260421_124700_true-fp64-norm-debug-ascend`
 - anomaly / fp64 debug:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260421_124700_true-fp64-norm-debug-ascend`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260421_124700_true-fp64-norm-debug-ascend`
 - fast / fp32 361 baseline:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260421_124700_true-fp32-norm-361-baseline-ascend`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/20260421_124700_true-fp32-norm-361-baseline-ascend`
 - fast / fp64 361 baseline:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260421_124700_true-fp64-norm-361-baseline-ascend`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/20260421_124700_true-fp64-norm-361-baseline-ascend`
 
 Interpretation note:
 
@@ -2188,7 +2188,7 @@ Re-extract from scratch:
 
 ```bash
 uv run python -m experiments.exact_trace_bench extract \
-  --input-root /fs/scratch/PAS3272/kopanev.1/exact_trace_bench \
+  --input-root /fs/scratch/PAS2836/kopanev.1/exact_trace_bench \
   --output-dir /tmp/exact_trace_extract_all_scratch \
   --skip-slurm
 ```
@@ -2253,12 +2253,12 @@ Shared runtime config:
 
 Expected output roots:
 
-- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_828_base_overflow_fix_fp32_b256_c4096_cache0`
-- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_828_base_overflow_fix_fp64_b256_c4096_cache0`
-- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_361_base_overflow_fix_fp32_b256_c4096_cache0`
-- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_361_base_overflow_fix_fp64_b256_c4096_cache0`
-- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/ascend_anomaly_94_base_overflow_fix_fp32_b256_c4096_cache0`
-- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/ascend_anomaly_94_base_overflow_fix_fp64_b256_c4096_cache0`
+- `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_828_base_overflow_fix_fp32_b256_c4096_cache0`
+- `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_828_base_overflow_fix_fp64_b256_c4096_cache0`
+- `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_361_base_overflow_fix_fp32_b256_c4096_cache0`
+- `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_361_base_overflow_fix_fp64_b256_c4096_cache0`
+- `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/ascend_anomaly_94_base_overflow_fix_fp32_b256_c4096_cache0`
+- `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/ascend_anomaly_94_base_overflow_fix_fp64_b256_c4096_cache0`
 
 Interpretation goal:
 
@@ -2588,8 +2588,8 @@ Observed result summary:
   - `5044503_0` (`828_base`) completed in `00:12:11`
   - `5044503_1` (`361_base`) completed in `00:16:50`
 - output roots:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_828_base_phase4_memory_probe_fp32_b256_c4096_cache0/`
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_361_base_phase4_memory_probe_fp32_b256_c4096_cache0/`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_828_base_phase4_memory_probe_fp32_b256_c4096_cache0/`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_361_base_phase4_memory_probe_fp32_b256_c4096_cache0/`
 - runtime snapshots:
   - `828_base`: completion `727.51s`, Phase 4 wall `423.24s`, final resource
     snapshot `rss_gib=133.32`
@@ -2955,8 +2955,8 @@ Observed result summary:
   - `5063198_1` (`361_base`) completed in about `00:16:34`; harness duration
     `992.11s`.
 - output roots:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_828_base_phase4_locality_validation_v2_fp32_b256_c4096_cache0/`
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_361_base_phase4_locality_validation_v2_fp32_b256_c4096_cache0/`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_828_base_phase4_locality_validation_v2_fp32_b256_c4096_cache0/`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/ascend_fast_361_base_phase4_locality_validation_v2_fp32_b256_c4096_cache0/`
 
 Exactness / artifact comparison vs the hybrid baseline:
 
@@ -3312,7 +3312,7 @@ Launch metadata:
 - validation array job: `5066332`
 - run id: `20260423_phase4-planner-v1-fast-ascend`
 - run name: `phase4_planner_v1_fast_ascend`
-- output root: `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast`
+- output root: `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast`
 
 Scenarios:
 
@@ -3429,7 +3429,7 @@ Launch metadata:
 - validation array job: `5066777`
 - run id: `20260423_phase4-planner-v2-fast-ascend`
 - run name: `phase4_planner_v2_fast_ascend`
-- output root: `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast`
+- output root: `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast`
 
 Scenarios:
 
@@ -3601,7 +3601,7 @@ Launch metadata:
 - combined array job: `5068136`
   - run id: `20260424_phase4-refresh-streaming-v1-fast-ascend`
   - run name: `phase4_refresh_streaming_v1`
-- output root: `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast`
+- output root: `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast`
 
 Scenarios:
 
@@ -3788,11 +3788,11 @@ Launch metadata:
 - run id / launch id: `20260427_165337_015086_planner-v1-hidden-knobs-matrix`
 - run name: `planner-v1 hidden knobs matrix`
 - output root:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260427_165337_015086_planner-v1-hidden-knobs-matrix`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/20260427_165337_015086_planner-v1-hidden-knobs-matrix`
 - immutable project snapshot:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_165337/nlp_research_project`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_165337/nlp_research_project`
 - immutable library snapshot:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_165337/circuit-tracer_chunked`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260427_165337/circuit-tracer_chunked`
 
 Scenarios:
 
@@ -3951,11 +3951,11 @@ Launch metadata:
 - run id / launch id: `20260429_191737_716512_next-combo-phase1-cache-matrix`
 - run name: `next combo phase1 cache matrix`
 - output root:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260429_191737_716512_next-combo-phase1-cache-matrix`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/20260429_191737_716512_next-combo-phase1-cache-matrix`
 - immutable project snapshot:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_191737/nlp_research_project`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_191737/nlp_research_project`
 - immutable library snapshot:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_191737/circuit-tracer_chunked`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260429_191737/circuit-tracer_chunked`
 
 Scenarios:
 
@@ -4070,7 +4070,7 @@ Launch metadata:
 - run id / launch id: `20260430_004931_523439_cache8g-interaction-matrix`
 - run name: `cache8g interaction matrix`
 - output root:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260430_004931_523439_cache8g-interaction-matrix`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/20260430_004931_523439_cache8g-interaction-matrix`
 
 Scenarios:
 
@@ -4138,7 +4138,7 @@ Code state used at launch:
   - commit: `c8999d8` (`Merge exact trace optimization branch`)
   - pushed to `origin/integrate/exact-trace-baseline-20260512` before launch
 - immutable workspace snapshot:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260512_193308_post_consolidation_ascend_validation`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260512_193308_post_consolidation_ascend_validation`
 
 Launch metadata:
 
@@ -4151,14 +4151,14 @@ Launch metadata:
   - SLURM array job: `5232773` on cluster `ascend`, array indices `0-1`
   - run id: `20260512_193309_605201_post-consolidation-ascend-validation`
   - output root:
-    `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260512_193309_605201_post-consolidation-ascend-validation`
+    `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/20260512_193309_605201_post-consolidation-ascend-validation`
   - scenarios: `828_base` and `361_base`, normal fast tier (`b128`, `c2048`,
     `cache0g`)
 - Anomaly/base job:
   - SLURM array job: `5232774` on cluster `ascend`, array index `0`
   - run id: `20260512_193309_737038_post-consolidation-ascend-validation`
   - output root:
-    `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260512_193309_737038_post-consolidation-ascend-validation`
+    `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260512_193309_737038_post-consolidation-ascend-validation`
   - scenario: `94_base`, normal anomaly tier (`b256`, `c4096`, `cache0g`)
 
 Initial scheduler status after submit:
@@ -4171,11 +4171,11 @@ Initial scheduler status after submit:
 Planned same-cluster compact comparisons after completion:
 
 - `828_base` new run vs known same-scenario post-hidden-knobs baseline:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260427_151047_170269_post-hidden-knobs-baseline/ascend_fast_828_base_b128_c2048_cache0g`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/20260427_151047_170269_post-hidden-knobs-baseline/ascend_fast_828_base_b128_c2048_cache0g`
 - `361_base` new run vs known same-scenario post-hidden-knobs baseline:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260427_151047_170269_post-hidden-knobs-baseline/ascend_fast_361_base_b128_c2048_cache0g`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/20260427_151047_170269_post-hidden-knobs-baseline/ascend_fast_361_base_b128_c2048_cache0g`
 - `94_base` new run vs prior standard Ascend anomaly reference:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260420_131329_865838_prompt94-standard-ascend-float64-norm/ascend_anomaly_94_base_b256_c4096_cache0g`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260420_131329_865838_prompt94-standard-ascend-float64-norm/ascend_anomaly_94_base_b256_c4096_cache0g`
 
 Post-completion checklist:
 
@@ -4255,17 +4255,17 @@ Follow-up launch:
   - commit: `493760d` (`decouple phase1 trace batch cap`)
   - worktree clean.
 - immutable workspace snapshot:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260512_201118_pre_consolidation_opt_94_control`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260512_201118_pre_consolidation_opt_94_control`
 - SLURM array job: `5233298` on cluster `ascend`, array index `0`
 - initial scheduler status after submit: pending (`PD`, priority)
 - run id: `20260512_201118_810555_pre-consolidation-optimization-94-control`
 - output root:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260512_201118_810555_pre-consolidation-optimization-94-control`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260512_201118_810555_pre-consolidation-optimization-94-control`
 - scenario: `94_base`, normal anomaly tier (`b256`, `c4096`, `cache0g`), using
   the optimization worktree's generated anomaly scenario file.
 - planned comparison after completion: compare this control to the consolidated
   validation run at
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260512_193309_737038_post-consolidation-ascend-validation/ascend_anomaly_94_base_b256_c4096_cache0g`.
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260512_193309_737038_post-consolidation-ascend-validation/ascend_anomaly_94_base_b256_c4096_cache0g`.
 
 Control completion / comparison result:
 
@@ -4326,16 +4326,16 @@ Ascend SLURM validation:
 - canonical fast/anomaly run id: `phase1-row-replay-fix-20260515-01`
   - jobs: `5277715` (`fast`, array `0-1`) and `5277716` (`anomaly`, array `0`),
   - snapshot:
-    `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260515_224038_preset`,
+    `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260515_224038_preset`,
   - output roots:
-    - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/phase1-row-replay-fix-20260515-01`,
-    - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/phase1-row-replay-fix-20260515-01`.
+    - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/phase1-row-replay-fix-20260515-01`,
+    - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/phase1-row-replay-fix-20260515-01`.
 - Phase-3 row donor replay smoke run id: `phase1-row-replay-smoke-20260515-01`
   - job: `5277717` (`anomaly`, array `0`),
   - snapshot:
-    `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260515_224237`,
+    `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/workspace_20260515_224237`,
   - output root:
-    `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/phase1-row-replay-smoke-20260515-01`.
+    `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/phase1-row-replay-smoke-20260515-01`.
 
 Job completion:
 
@@ -4374,7 +4374,7 @@ Phase-3 row donor replay smoke check:
 - result status: `success`, duration `1618.77 s`, Phase 3 `92.27 s`, Phase 4
   `1087.11 s`.
 - saved row bundle:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/phase1-row-replay-smoke-20260515-01/ascend_phase3_row_donor_smoke_with_ascend_donor_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000/step_000_phase3_row_bundle.npz`.
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/phase1-row-replay-smoke-20260515-01/ascend_phase3_row_donor_smoke_with_ascend_donor_94_base_anomaly_b128_c2048_cache0g/artifacts/prompt_000/completion_000/step_000_phase3_row_bundle.npz`.
 - row-bundle finiteness / split-sum sanity:
   - `row_abs_sums`: shape `(1,)`, dtype `float64`, finite, max
     `3.306366250278821e+38`,

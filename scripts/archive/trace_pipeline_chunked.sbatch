@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=trace-pipeline-chunked
-#SBATCH --account=PAS3272
+#SBATCH --account=PAS2836
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -30,7 +30,7 @@ uv run python -u trace_pipeline_chunked.py \
     --prompts 10 \
     --completions 3 \
     --temperature 0.7 \
-    --output-dir /fs/scratch/PAS3272/kopanev.1/traces_chunked \
+    --output-dir /fs/scratch/PAS2836/kopanev.1/traces_chunked \
     --save-raw \
     --max-feature-nodes 8192 \
     --max-edges 100000 \

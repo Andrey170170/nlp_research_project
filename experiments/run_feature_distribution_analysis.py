@@ -22,7 +22,7 @@ DEFAULT_BATCHES_FILE = (
     Path(__file__).with_name("generated") / "feature_distribution_analysis_batches.json"
 )
 DEFAULT_OUTPUT_ROOT = Path(
-    "/fs/scratch/PAS3272/kopanev.1/feature_distribution_analysis"
+    "/fs/scratch/PAS2836/kopanev.1/feature_distribution_analysis"
 )
 
 

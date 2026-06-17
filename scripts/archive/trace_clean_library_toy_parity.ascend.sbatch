@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=clean-toy-parity
-#SBATCH --account=PAS3272
+#SBATCH --account=PAS2836
 #SBATCH --cluster=ascend
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -17,7 +17,7 @@ WORKSPACE_ROOT="${WORKSPACE_ROOT:-$SLURM_SUBMIT_DIR}"
 CLEAN_LIB_ROOT="${CLEAN_LIB_ROOT:-/users/PAS2119/andreykopanev/worktrees_opt/upstream/circuit-tracer}"
 PROMPT_FILE="${PROMPT_FILE:-experiments/generated/toy_clean_library_parity/dax_wug_prompt.txt}"
 PROMPT_META_FILE="${PROMPT_META_FILE:-experiments/generated/toy_clean_library_parity/dax_wug_prompt_meta.json}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/clean-library-toy-parity}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/clean-library-toy-parity}"
 
 cd "$WORKSPACE_ROOT"
 

@@ -93,7 +93,7 @@ uv run exact-trace-bench build-baseline-registry \
   --run-id wave0-baseline-20260520-01 \
   --all-clusters \
   --all-tiers \
-  --output /fs/scratch/PAS3272/kopanev.1/exact_trace_bench/baselines/wave0-baseline-20260520-01.json
+  --output /fs/scratch/PAS2836/kopanev.1/exact_trace_bench/baselines/wave0-baseline-20260520-01.json
 ```
 
 ## Debug/replay and validation configs

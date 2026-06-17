@@ -31,7 +31,7 @@ row and preserves only about 31--62% of selected feature-to-feature mass on a
 Raw calibration provenance:
 
 - run root:
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/full-answer-raw-payload-calibration-20260527/828_base_temp08_seed1002/raw_graph_5tokens_20260527/828_base_temp08_seed1002_raw_graph_5tokens_20260527`
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/full-answer-raw-payload-calibration-20260527/828_base_temp08_seed1002/raw_graph_5tokens_20260527/828_base_temp08_seed1002_raw_graph_5tokens_20260527`
 - analysis dir:
   `.../raw_graph_calibration_analysis/`
 - sampled generated indices: `0, 20, 60, 100, 130`
@@ -120,7 +120,7 @@ mass, or whether churn mostly reflects the old global edge cap.
 Current result from the typed-bucketed all-token reruns:
 
 - all four comparison traces completed and aggregated under
-  `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/typed-bucketed-full-reruns-20260527`,
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/typed-bucketed-full-reruns-20260527`,
 - cross-run summaries/plots live in
   `.../deep_temporal_comparison_v1/`,
 - the three `828_base` trajectories remain close by adjacent/lag/phase metrics,

@@ -279,7 +279,7 @@ Use **your own scratch storage**, not local repo storage, because scratch is:
 Recommended scratch layout in **your** scratch folder:
 
 ```text
-/fs/scratch/PAS3272/<your-osc-username>/jayden_direction3/
+/fs/scratch/PAS2836/<your-osc-username>/jayden_direction3/
   exact_reference/
   sparse_eval/
 ```
@@ -397,7 +397,7 @@ Please follow these rules while working:
 - use `uv run ...` for Python,
 - do **not** run GPU tracing on login nodes,
 - launch tracing through **SLURM jobs**,
-- keep large outputs on `/fs/scratch/PAS3272/<your-osc-username>/...`.
+- keep large outputs on `/fs/scratch/PAS2836/<your-osc-username>/...`.
 
 ### Repo structure
 

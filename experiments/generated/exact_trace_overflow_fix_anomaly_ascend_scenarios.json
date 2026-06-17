@@ -35,7 +35,7 @@
     "stage": "overflow_fix_validation_anomaly",
     "tier": "anomaly",
     "resource_profile": "standard",
-    "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly",
+    "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly",
     "notes": [
       "Post-overflow-fix gate check on prompt 94.",
       "Compare fp32 vs fp64 without anomaly-debug overhead."
@@ -47,7 +47,7 @@
       "stage": "overflow_fix_validation_anomaly",
       "cluster": "ascend",
       "resource_profile": "standard",
-      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly",
+      "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly",
       "fixture_name": "94_base",
       "fixture_kind": "base",
       "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/94_base/prompt.txt",
@@ -65,7 +65,7 @@
       "stage": "overflow_fix_validation_anomaly",
       "cluster": "ascend",
       "resource_profile": "standard",
-      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly",
+      "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly",
       "fixture_name": "94_base",
       "fixture_kind": "base",
       "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/94_base/prompt.txt",

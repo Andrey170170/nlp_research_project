@@ -43,7 +43,7 @@
     "stage": "toy_clean_library_parity_current",
     "tier": "fast",
     "resource_profile": "standard",
-    "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast",
+    "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast",
     "notes": [
       "One-step toy logic prompt for clean-library parity checks.",
       "Current fork/chunked side of clean-vs-current comparison."
@@ -55,7 +55,7 @@
       "stage": "toy_clean_library_parity_current",
       "cluster": "ascend",
       "resource_profile": "standard",
-      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast",
+      "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast",
       "prepared_prompt_file": "experiments/generated/toy_clean_library_parity/dax_wug_prompt.txt",
       "prepared_prompt_meta_file": "experiments/generated/toy_clean_library_parity/dax_wug_prompt_meta.json",
       "attribution_batch_size": 128,

@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=prep-weekend-prefix
-#SBATCH --account=PAS3272
+#SBATCH --account=PAS2836
 #SBATCH --cluster=ascend
 #SBATCH --nodes=1
 #SBATCH --ntasks=1

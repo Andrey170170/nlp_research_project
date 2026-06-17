@@ -30,7 +30,7 @@ This file is a living note for experiment artifacts currently stored on scratch.
 
 For now it documents:
 
-- `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench`
+- `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench`
 
 The goal is to make it easy to answer:
 
@@ -44,7 +44,7 @@ The goal is to make it easy to answer:
 Current top-level layout:
 
 ```text
-/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/
+/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/
   ascend/
     fast/
     anomaly/
@@ -302,17 +302,17 @@ and were launched from custom scenario files under:
 Current output roots:
 
 - fast / fp32 debug:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260421_124700_true-fp32-norm-debug-ascend`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/20260421_124700_true-fp32-norm-debug-ascend`
 - anomaly / fp32 debug:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260421_124700_true-fp32-norm-debug-ascend`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260421_124700_true-fp32-norm-debug-ascend`
 - fast / fp64 debug:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260421_124700_true-fp64-norm-debug-ascend`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/20260421_124700_true-fp64-norm-debug-ascend`
 - anomaly / fp64 debug:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/anomaly/20260421_124700_true-fp64-norm-debug-ascend`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/anomaly/20260421_124700_true-fp64-norm-debug-ascend`
 - fast / fp32 361 baseline:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260421_124700_true-fp32-norm-361-baseline-ascend`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/20260421_124700_true-fp32-norm-361-baseline-ascend`
 - fast / fp64 361 baseline:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/20260421_124700_true-fp64-norm-361-baseline-ascend`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/20260421_124700_true-fp64-norm-361-baseline-ascend`
 
 Interpretation note:
 
@@ -419,7 +419,7 @@ Re-extract from scratch:
 
 ```bash
 uv run python -m experiments.exact_trace_bench extract \
-  --input-root /fs/scratch/PAS3272/kopanev.1/exact_trace_bench \
+  --input-root /fs/scratch/PAS2836/kopanev.1/exact_trace_bench \
   --output-dir /tmp/exact_trace_extract_all_scratch \
   --skip-slurm
 ```

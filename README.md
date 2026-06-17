@@ -19,7 +19,7 @@ Use this README for orientation, `AGENTS.md` for durable operating rules, and
 | Model stack | Gemma-3-1B-IT + GemmaScope-2 cross-layer transcoders |
 | Canonical exact-trace dtype | `exact_trace_internal_dtype=fp32` |
 | Current benchmark harness | `src/nlp_research_project/exact_trace_bench/` |
-| Scratch root | `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/` |
+| Scratch root | `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/` |
 
 Every serious run depends on **both** this repository and the sibling
 `../circuit-tracer_chunked` checkout. Record both branch/commit states before

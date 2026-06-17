@@ -12,7 +12,7 @@ The next phase of work is to make **single exact traces** more efficient while p
 - better-controlled VRAM usage,
 - and a safe optimization sequence for Phase 4 scheduling and replay.
 
-All benchmark outputs should live on scratch under `/fs/scratch/PAS3272/kopanev.1`, not in user-space, because artifacts are large and scratch is both faster and better suited to repeated benchmark runs.
+All benchmark outputs should live on scratch under `/fs/scratch/PAS2836/kopanev.1`, not in user-space, because artifacts are large and scratch is both faster and better suited to repeated benchmark runs.
 
 This work supports **Direction 1: within-run trace optimization** from the midpoint report.
 
@@ -198,7 +198,7 @@ These should not be part of the default iteration loop.
 Each run should emit a structured directory such as:
 
 ```text
- /fs/scratch/PAS3272/kopanev.1/exact_trace_bench/
+ /fs/scratch/PAS2836/kopanev.1/exact_trace_bench/
   <run_id>/
     manifest.json
     config.json
@@ -396,7 +396,7 @@ This spec is complete when all of the following are true.
 
 - Per-run outputs include standardized runtime and memory metrics.
 - Per-run outputs include enough raw compact graph data for exact comparisons.
-- Large outputs are written to `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/` by default.
+- Large outputs are written to `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/` by default.
 - The new harness reuses existing extractor behavior by copying/adapting parsing logic from `experiments/extract_*.py`, not by importing those old modules directly.
 - There is a one-command path to:
   - generate scenarios,

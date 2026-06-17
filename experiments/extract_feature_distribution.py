@@ -14,7 +14,7 @@ from extract_utils import (
 )
 
 
-DEFAULT_INPUT_ROOT = Path("/fs/scratch/PAS3272/kopanev.1/feature_distribution_analysis")
+DEFAULT_INPUT_ROOT = Path("/fs/scratch/PAS2836/kopanev.1/feature_distribution_analysis")
 DEFAULT_OUTPUT_DIR = Path("experiments/extracted/feature_distribution_analysis")
 
 

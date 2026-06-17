@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=weekend-exact-long
-#SBATCH --account=PAS3272
+#SBATCH --account=PAS2836
 #SBATCH --cluster=ascend
 #SBATCH --partition=quad
 #SBATCH --nodes=1
@@ -21,7 +21,7 @@ LIB_WORKSPACE_ROOT="${LIB_WORKSPACE_ROOT:-$WORKSPACE_ROOT/../circuit-tracer_chun
 cd "$WORKSPACE_ROOT"
 
 SCENARIOS_FILE="${SCENARIOS_FILE:-experiments/generated/weekend_exact_chunked_wave2_ascend_361_late_scenarios.json}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS3272/kopanev.1/weekend_exact_chunked/ascend/wave2}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS2836/kopanev.1/weekend_exact_chunked/ascend/wave2}"
 
 RUN_ID=""
 RUN_NAME=""

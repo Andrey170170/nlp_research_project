@@ -32,7 +32,7 @@
     "stage": "exact_trace_bench_fast",
     "tier": "fast",
     "resource_profile": "standard",
-    "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast",
+    "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast",
     "notes": [
       "Canonical post-library-merge cross-cluster fp64 validation.",
       "Single-step 828_base run with cross_cluster_debug enabled.",
@@ -45,7 +45,7 @@
       "stage": "exact_trace_bench_fast",
       "cluster": "ascend",
       "resource_profile": "standard",
-      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast",
+      "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast",
       "fixture_name": "828_base",
       "fixture_kind": "base",
       "prepared_prompt_file": "/users/PAS2119/andreykopanev/nlp_research_project/experiments/generated/weekend_exact_chunked_fixtures/828_base/prompt.txt",

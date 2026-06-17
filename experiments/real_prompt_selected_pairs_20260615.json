@@ -1,10 +1,10 @@
 {
   "selection_id": "real_prompt_screen_v1_selected_pairs_20260615",
   "status": "selected_for_full_trace_launch_prep",
-  "source_screening_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/real-prompt-screen-v1",
-  "source_summary": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/real-prompt-screen-v1/screening_summary_temp08_seed3000_attempts16.json",
-  "scratch_selection_manifest": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/real-prompt-screen-v1/proposed_trace_pairs_20260615.json",
-  "trace_launch_prep_manifest": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/fast/real-prompt-screen-v1/trace_launch_prep_fullseq_wreuse_w1600/launch_prep_manifest.json",
+  "source_screening_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/real-prompt-screen-v1",
+  "source_summary": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/real-prompt-screen-v1/screening_summary_temp08_seed3000_attempts16.json",
+  "scratch_selection_manifest": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/real-prompt-screen-v1/proposed_trace_pairs_20260615.json",
+  "trace_launch_prep_manifest": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/real-prompt-screen-v1/trace_launch_prep_fullseq_wreuse_w1600/launch_prep_manifest.json",
   "screening_generation": {
     "temperature": 0.8,
     "base_seed": 3000,

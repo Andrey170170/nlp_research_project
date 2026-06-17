@@ -10,7 +10,7 @@ from typing import Any
 from extract_utils import ensure_dir, flatten_dict, read_json, write_csv, write_jsonl
 
 
-DEFAULT_INPUT_ROOT = Path("/fs/scratch/PAS3272/kopanev.1/weekend_exact_chunked")
+DEFAULT_INPUT_ROOT = Path("/fs/scratch/PAS2836/kopanev.1/weekend_exact_chunked")
 DEFAULT_OUTPUT_DIR = Path("experiments/extracted/weekend_exact_chunked")
 
 

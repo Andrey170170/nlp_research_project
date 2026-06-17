@@ -11,7 +11,7 @@ and immutable workspace snapshots.
   - late: `828_late`, `361_late`, `94_late`
 - Scenario generation for three tiers: `fast`, `anomaly`, `long_eval`
 - Scratch-root defaults under:
-  - `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench`
+  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench`
 - Extraction/aggregation helpers for `result.json`, `run.log`, and SLURM logs
 - Compact graph comparison helpers for prompt94-style analysis (`step_*.npz`)
 - Immutable workspace snapshot helper for launch safety
@@ -132,7 +132,7 @@ uv run exact-trace-bench build-baseline-registry \
   --run-id wave0-baseline-20260520-01 \
   --all-clusters \
   --all-tiers \
-  --output /fs/scratch/PAS3272/kopanev.1/exact_trace_bench/baselines/wave0-baseline-20260520-01.json
+  --output /fs/scratch/PAS2836/kopanev.1/exact_trace_bench/baselines/wave0-baseline-20260520-01.json
 ```
 
 ### 1.5) Render a scratch-backed launch plan
@@ -146,7 +146,7 @@ uv run exact-trace-bench launch-plan \
 
 This prints an `sbatch` command that uses:
 
-- a scratch output root under `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/...`
+- a scratch output root under `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/...`
   with an auto-generated run folder (`<base>/<timestamp>_<run_slug>`), so
   launches no longer collide when reusing the same tier/cluster base
 - and, optionally, an immutable workspace snapshot for `nnsight` safety.
@@ -221,7 +221,7 @@ or `--print-only` to inspect the generated plans without calling `sbatch`.
 
 ```bash
 uv run exact-trace-bench extract \
-  --input-root /fs/scratch/PAS3272/kopanev.1/exact_trace_bench \
+  --input-root /fs/scratch/PAS2836/kopanev.1/exact_trace_bench \
   --output-dir experiments/extracted/exact_trace_bench \
   --logs-dir /path/to/benchmark/slurm/logs
 ```
@@ -266,7 +266,7 @@ such as:
 
 ```bash
 uv run exact-trace-bench verify-imports \
-  --workspace-root /fs/scratch/PAS3272/kopanev.1/exact_trace_bench/workspace_snapshots/<id>/nlp_research_project
+  --workspace-root /fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/<id>/nlp_research_project
 ```
 
 This prints the resolved import paths for:

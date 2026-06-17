@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=trace-pipeline
-#SBATCH --account=PAS3272
+#SBATCH --account=PAS2836
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -31,7 +31,7 @@ python trace_pipeline.py \
     --prompts 10 \
     --completions 3 \
     --temperature 0.7 \
-    --output-dir /fs/scratch/PAS3272/kopanev.1/traces \
+    --output-dir /fs/scratch/PAS2836/kopanev.1/traces \
     --save-raw \
     --max-feature-nodes 16384 \
     --max-edges 100000

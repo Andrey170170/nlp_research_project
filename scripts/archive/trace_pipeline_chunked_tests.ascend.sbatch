@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=trace-chunked-tests
-#SBATCH --account=PAS3272
+#SBATCH --account=PAS2836
 #SBATCH --cluster=ascend
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -30,6 +30,6 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
 
 uv run python -u tests/run_chunked_trace_matrix.py \
     --scenarios-file tests/chunked_trace_scenarios.json \
-    --output-root /fs/scratch/PAS3272/kopanev.1/trace_chunked_test_matrix
+    --output-root /fs/scratch/PAS2836/kopanev.1/trace_chunked_test_matrix
 
 echo "End: $(date)"

@@ -37,7 +37,7 @@
     "stage": "prompt_diversity_fast",
     "tier": "fast",
     "resource_profile": "standard",
-    "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast",
+    "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast",
     "notes": [
       "Prompt-diversity validation after the hybrid row-store fix.",
       "Use late-prefix healthy fixtures to see whether the fix generalizes beyond the canonical one-token base probes."
@@ -49,7 +49,7 @@
       "stage": "prompt_diversity_fast",
       "cluster": "ascend",
       "resource_profile": "standard",
-      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast",
+      "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast",
       "fixture_name": "828_late",
       "fixture_kind": "late_prefix",
       "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/828_late/prompt.txt",
@@ -67,7 +67,7 @@
       "stage": "prompt_diversity_fast",
       "cluster": "ascend",
       "resource_profile": "standard",
-      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast",
+      "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast",
       "fixture_name": "361_late",
       "fixture_kind": "late_prefix",
       "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/361_late/prompt.txt",

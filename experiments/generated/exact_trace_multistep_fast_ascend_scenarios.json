@@ -36,7 +36,7 @@
     "stage": "multistep_fast",
     "tier": "fast",
     "resource_profile": "standard",
-    "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast",
+    "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast",
     "notes": [
       "Small multistep validation after the hybrid row-store fix.",
       "Use modest max_steps to inspect per-step cleanup/tail behavior without turning this into a long-run benchmark."
@@ -48,7 +48,7 @@
       "stage": "multistep_fast",
       "cluster": "ascend",
       "resource_profile": "standard",
-      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast",
+      "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast",
       "fixture_name": "828_base",
       "fixture_kind": "base",
       "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/828_base/prompt.txt",
@@ -67,7 +67,7 @@
       "stage": "multistep_fast",
       "cluster": "ascend",
       "resource_profile": "standard",
-      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast",
+      "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast",
       "fixture_name": "361_base",
       "fixture_kind": "base",
       "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/361_base/prompt.txt",

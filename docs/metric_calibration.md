@@ -14,7 +14,7 @@ Soft feature matching uses normalized GemmaScope-2 CLT downstream decoder
 signatures. The canonical cache built for current work is:
 
 ```text
-/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/decoder_signature_cache/
+/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/decoder_signature_cache/
   gemma-scope-2-1b-it__clt_width_262k_l0_medium_affine__float32_chunk512/
 ```
 
@@ -32,7 +32,7 @@ Rebuild command template:
 ```bash
 uv run exact-trace-bench build-decoder-signature-cache \
   --source-dir /path/to/gemma-scope-2-1b-it/clt/width_262k_l0_medium_affine \
-  --output-dir /fs/scratch/PAS3272/kopanev.1/exact_trace_bench/decoder_signature_cache/gemma-scope-2-1b-it__clt_width_262k_l0_medium_affine__float32_chunk512 \
+  --output-dir /fs/scratch/PAS2836/kopanev.1/exact_trace_bench/decoder_signature_cache/gemma-scope-2-1b-it__clt_width_262k_l0_medium_affine__float32_chunk512 \
   --chunk-size 512 \
   --storage-dtype float32
 ```
@@ -44,8 +44,8 @@ Run the calibration harness from a JSON pair manifest:
 ```bash
 uv run exact-trace-bench run-metric-calibration \
   --pair-manifest experiments/generated/exact_trace_bench/metric_calibration_manifest.json \
-  --output-dir /fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/metric-calibration-v1 \
-  --decoder-cache-dir /fs/scratch/PAS3272/kopanev.1/exact_trace_bench/decoder_signature_cache/gemma-scope-2-1b-it__clt_width_262k_l0_medium_affine__float32_chunk512
+  --output-dir /fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/metric-calibration-v1 \
+  --decoder-cache-dir /fs/scratch/PAS2836/kopanev.1/exact_trace_bench/decoder_signature_cache/gemma-scope-2-1b-it__clt_width_262k_l0_medium_affine__float32_chunk512
 ```
 
 Outputs:
@@ -61,7 +61,7 @@ Plot and report template command:
 
 ```bash
 uv run exact-trace-bench plot-metric-calibration \
-  --analysis-dir /fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast/metric-calibration-v1 \
+  --analysis-dir /fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/metric-calibration-v1 \
   --output-dir reports/metric-calibration-v1
 ```
 

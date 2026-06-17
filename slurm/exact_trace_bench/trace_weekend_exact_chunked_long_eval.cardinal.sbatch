@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=weekend-exact-long
-#SBATCH --account=PAS3272
+#SBATCH --account=PAS2836
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -20,7 +20,7 @@ LIB_WORKSPACE_ROOT="${LIB_WORKSPACE_ROOT:-$WORKSPACE_ROOT/../circuit-tracer_chun
 cd "$WORKSPACE_ROOT"
 
 SCENARIOS_FILE="${SCENARIOS_FILE:-experiments/generated/exact_trace_bench/exact_trace_bench_long_eval_cardinal_scenarios.json}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/long_eval}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/long_eval}"
 
 RUN_ID=""
 RUN_NAME=""

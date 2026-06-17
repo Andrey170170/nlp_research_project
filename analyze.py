@@ -5,7 +5,7 @@ Reads compact .npz step files and evaluation.json per completion,
 computes temporal metrics, and produces aggregate comparison plots.
 
 Usage:
-    python analyze.py --traces-dir /fs/scratch/PAS3272/kopanev.1/traces [--workers N]
+    python analyze.py --traces-dir /fs/scratch/PAS2836/kopanev.1/traces [--workers N]
 """
 
 from __future__ import annotations

@@ -33,7 +33,7 @@ from nlp_research_project.exact_trace_bench.io_utils import write_csv  # noqa: E
 DEFAULT_SCENARIOS = (
     Path(__file__).with_name("generated") / "sparsification_calibration_scenarios.json"
 )
-DEFAULT_OUTPUT_ROOT = Path("/fs/scratch/PAS3272/kopanev.1/sparsification_experiment")
+DEFAULT_OUTPUT_ROOT = Path("/fs/scratch/PAS2836/kopanev.1/sparsification_experiment")
 
 PHASE_DURATION_RE = re.compile(r"completed in (?P<seconds>\d+(?:\.\d+)?)s")
 PHASE4_BATCH_RE = re.compile(

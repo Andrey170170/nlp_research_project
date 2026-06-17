@@ -13,7 +13,7 @@ Usage:
     --prompts N               Number of GSM8K prompts (default: 10)
     --completions N           Completions per prompt (default: 3)
     --temperature T           Sampling temperature (default: 0.7)
-    --output-dir DIR          Output directory (default: /fs/scratch/PAS3272/kopanev.1/traces)
+    --output-dir DIR          Output directory (default: /fs/scratch/PAS2836/kopanev.1/traces)
     --save-raw                Also save raw .pt files (~460 MB each)
     --no-offload              Keep attribution on GPU (faster, may OOM)
     --max-feature-nodes N     Max feature nodes for attribution (default: 32768)
@@ -1161,7 +1161,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output-dir",
-        default="/fs/scratch/PAS3272/kopanev.1/traces",
+        default="/fs/scratch/PAS2836/kopanev.1/traces",
         help="Output directory",
     )
     parser.add_argument(

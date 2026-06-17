@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=full-answer-trace-quad
-#SBATCH --account=PAS3272
+#SBATCH --account=PAS2836
 #SBATCH --cluster=ascend
 #SBATCH --partition=quad
 #SBATCH --nodes=1

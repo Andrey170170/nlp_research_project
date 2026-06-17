@@ -13,7 +13,7 @@ import pandas as pd
 
 
 OUT_DIR = Path("experiments/figures/presentation")
-SCRATCH = Path("/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend")
+SCRATCH = Path("/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend")
 
 
 RUNS = [

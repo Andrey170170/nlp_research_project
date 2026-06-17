@@ -83,13 +83,13 @@ squeue -u $USER
 
 ```bash
 uv run python tests/test_prefix_cache_correctness.py \
-    --results-dir /fs/scratch/PAS3272/kopanev.1/prefix_cache_bench/prompt_000/completion_000
+    --results-dir /fs/scratch/PAS2836/kopanev.1/prefix_cache_bench/prompt_000/completion_000
 ```
 
 ### Step 5: Look at raw data
 
 ```bash
-cat /fs/scratch/PAS3272/kopanev.1/prefix_cache_bench/prompt_000/completion_000/cache_validation.json
+cat /fs/scratch/PAS2836/kopanev.1/prefix_cache_bench/prompt_000/completion_000/cache_validation.json
 ```
 
 ## What the results tell us

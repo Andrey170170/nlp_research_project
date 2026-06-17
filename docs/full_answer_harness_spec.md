@@ -325,7 +325,7 @@ Login-safe aggregation:
 
 ```bash
 uv run exact-trace-bench aggregate-full-answer-shards \
-  --run-root /fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/full_answer/<run_id>
+  --run-root /fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/full_answer/<run_id>
 ```
 
 ### 3.4 SLURM job flow

@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=prep-wave0-prefix
-#SBATCH --account=PAS3272
+#SBATCH --account=PAS2836
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1

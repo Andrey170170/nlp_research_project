@@ -134,7 +134,7 @@ Please keep outputs on scratch, not in the repo.
 Recommended layout:
 
 ```text
-/fs/scratch/PAS3272/<your-osc-username>/temporal_prefix_cache/
+/fs/scratch/PAS2836/<your-osc-username>/temporal_prefix_cache/
   baseline_exact/
   forward_cache/
   backward_reuse/
@@ -317,7 +317,7 @@ Please follow these rules while working:
 - use `uv run ...` for Python,
 - do **not** run GPU tracing on login nodes,
 - launch GPU work through **SLURM jobs**,
-- keep large outputs on `/fs/scratch/PAS3272/<your-osc-username>/...`.
+- keep large outputs on `/fs/scratch/PAS2836/<your-osc-username>/...`.
 
 ### Validation
 

@@ -37,7 +37,7 @@
     "stage": "phase4_hybrid_rowstore_rerun_fast",
     "tier": "fast",
     "resource_profile": "standard",
-    "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast",
+    "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast",
     "notes": [
       "Rerun the canonical Phase 4 memory probe after the hybrid row-store fix.",
       "This keeps the cheap read path and changes only append/writeback behavior."
@@ -49,7 +49,7 @@
       "stage": "phase4_hybrid_rowstore_rerun_fast",
       "cluster": "ascend",
       "resource_profile": "standard",
-      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast",
+      "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast",
       "fixture_name": "828_base",
       "fixture_kind": "base",
       "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/828_base/prompt.txt",
@@ -67,7 +67,7 @@
       "stage": "phase4_hybrid_rowstore_rerun_fast",
       "cluster": "ascend",
       "resource_profile": "standard",
-      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/ascend/fast",
+      "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast",
       "fixture_name": "361_base",
       "fixture_kind": "base",
       "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/361_base/prompt.txt",

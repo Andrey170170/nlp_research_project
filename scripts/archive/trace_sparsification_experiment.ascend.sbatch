@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=trace-sparsify-exp
-#SBATCH --account=PAS3272
+#SBATCH --account=PAS2836
 #SBATCH --cluster=ascend
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -17,7 +17,7 @@ set -euo pipefail
 cd "$SLURM_SUBMIT_DIR"
 
 SCENARIOS_FILE="${SCENARIOS_FILE:-experiments/generated/sparsification_calibration_scenarios.json}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS3272/kopanev.1/sparsification_experiment}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-/fs/scratch/PAS2836/kopanev.1/sparsification_experiment}"
 
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 export TOKENIZERS_PARALLELISM=false

@@ -368,7 +368,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output-dir",
-        default="/fs/scratch/PAS3272/kopanev.1/prefix_cache_bench",
+        default="/fs/scratch/PAS2836/kopanev.1/prefix_cache_bench",
         help="Output directory",
     )
     parser.add_argument(

@@ -21,7 +21,7 @@ scripts do not look like the canonical path.
 3. Run GPU/model-loading work only inside SLURM jobs.
 4. Let the CLI select templates from `slurm/exact_trace_bench/` and execute from
    immutable workspace snapshots by default.
-5. Write artifacts to `/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/`.
+5. Write artifacts to `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/`.
 6. Extract and compare compact outputs with the exact-bench extraction/comparison
    helpers.
 7. Record baseline-changing results in root `EXPERIMENTS.md` and append structured

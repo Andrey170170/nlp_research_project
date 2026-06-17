@@ -9,7 +9,7 @@ from extract_utils import ensure_dir, read_json, safe_stem, write_csv
 
 
 DEFAULT_LOGS_DIR = Path("logs")
-DEFAULT_BENCHMARK_ROOT = Path("/fs/scratch/PAS3272/kopanev.1/weekend_exact_chunked")
+DEFAULT_BENCHMARK_ROOT = Path("/fs/scratch/PAS2836/kopanev.1/weekend_exact_chunked")
 DEFAULT_OUTPUT_DIR = Path("experiments/extracted/weekend_exact_chunked")
 
 JOB_ID_RE = re.compile(r"Job ID: (?P<job_id>\d+)")

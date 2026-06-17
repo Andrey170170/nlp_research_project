@@ -34,7 +34,7 @@
     "stage": "exact_trace_bench_anomaly",
     "tier": "anomaly",
     "resource_profile": "standard",
-    "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly",
+    "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly",
     "notes": [
       "Prompt-94-focused tier for anomaly reproduction and diagnosis.",
       "This tier is anomaly-watch only and should not be used as a general tuning benchmark."
@@ -46,7 +46,7 @@
       "stage": "exact_trace_bench_anomaly",
       "cluster": "cardinal",
       "resource_profile": "standard",
-      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly",
+      "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly",
       "fixture_name": "94_base",
       "fixture_kind": "base",
       "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/94_base/prompt.txt",

@@ -33,7 +33,7 @@
     "stage": "exact_trace_bench_anomaly",
     "tier": "anomaly",
     "resource_profile": "standard",
-    "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly",
+    "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly",
     "notes": [
       "Matched cross-cluster anomaly run for 94_base with Phase-0 threshold compare upcast to fp64.",
       "Uses the same tracing config on Ascend and Cardinal to isolate cluster effects.",
@@ -46,7 +46,7 @@
       "stage": "exact_trace_bench_anomaly",
       "cluster": "cardinal",
       "resource_profile": "standard",
-      "recommended_output_root": "/fs/scratch/PAS3272/kopanev.1/exact_trace_bench/cardinal/anomaly",
+      "recommended_output_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/anomaly",
       "fixture_name": "94_base",
       "fixture_kind": "base",
       "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/94_base/prompt.txt",
