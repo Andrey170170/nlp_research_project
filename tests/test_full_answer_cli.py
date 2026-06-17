@@ -67,6 +67,9 @@ def test_full_answer_cli_help_is_login_safe() -> None:
     assert run_cli("submit-full-answer-trajectory", "--help").returncode == 0
     assert run_cli("launch-full-answer-shards", "--help").returncode == 0
     assert run_cli("plot-full-answer-temporal", "--help").returncode == 0
+    assert run_cli("classify-full-answer-roles", "--help").returncode == 0
+    assert run_cli("build-role-matched-calibration-manifest", "--help").returncode == 0
+    assert run_cli("apply-role-classification-reviews", "--help").returncode == 0
     assert run_cli("build-decoder-signature-cache", "--help").returncode == 0
     assert run_cli("run-metric-calibration", "--help").returncode == 0
     assert run_cli("plot-metric-calibration", "--help").returncode == 0

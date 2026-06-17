@@ -777,6 +777,61 @@ def _cmd_plot_full_answer_temporal(args: argparse.Namespace) -> None:
     )
 
 
+def _cmd_classify_full_answer_roles(args: argparse.Namespace) -> None:
+    from .full_answer.role_classification import (
+        classify_analysis_pair_manifest,
+        write_role_classification,
+    )
+
+    if args.pair_manifest is not None:
+        if args.launch_prep_manifest is None:
+            raise ValueError("--launch-prep-manifest is required with --pair-manifest")
+        if args.output_dir is None:
+            raise ValueError("--output-dir is required with --pair-manifest")
+        result = classify_analysis_pair_manifest(
+            pair_manifest_path=args.pair_manifest,
+            launch_prep_manifest=args.launch_prep_manifest,
+            output_dir=args.output_dir,
+        )
+    else:
+        if args.trajectory is None or args.output is None:
+            raise ValueError("provide either --pair-manifest or --trajectory/--output")
+        result = write_role_classification(
+            trajectory_path=args.trajectory,
+            output_path=args.output,
+            name=args.name,
+            prompt_id=args.prompt_id,
+            label=args.label,
+            run_root=args.run_root,
+        )
+    print(json.dumps(result, indent=2))
+
+
+def _cmd_build_role_matched_calibration_manifest(args: argparse.Namespace) -> None:
+    from .full_answer.role_classification import build_role_matched_calibration_manifest
+
+    result = build_role_matched_calibration_manifest(
+        classification_catalog=args.classification_catalog,
+        output_path=args.output,
+        prompt_ids=args.prompt_id,
+        role_clusters=args.role_cluster,
+        max_temporal_pairs_per_role=args.max_temporal_pairs_per_role,
+        max_null_pairs_per_role=args.max_null_pairs_per_role,
+        max_noise_pairs_per_role=args.max_noise_pairs_per_role,
+    )
+    print(json.dumps(result, indent=2))
+
+
+def _cmd_apply_role_classification_reviews(args: argparse.Namespace) -> None:
+    from .full_answer.role_classification import apply_role_classification_reviews
+
+    result = apply_role_classification_reviews(
+        classification_catalog=args.classification_catalog,
+        output_dir=args.output_dir,
+    )
+    print(json.dumps(result, indent=2))
+
+
 def _cmd_build_decoder_signature_cache(args: argparse.Namespace) -> None:
     from .full_answer.decoder_signature_cache import build_decoder_signature_cache
 
@@ -1901,6 +1956,77 @@ def build_parser() -> argparse.ArgumentParser:
     plot_temporal.add_argument("--analysis-dir", type=Path, required=True)
     plot_temporal.add_argument("--output-dir", type=Path, required=True)
     plot_temporal.set_defaults(func=_cmd_plot_full_answer_temporal)
+
+    classify_roles = subparsers.add_parser(
+        "classify-full-answer-roles",
+        help="Classify generated tokens into heuristic functional role clusters",
+    )
+    classify_roles.add_argument(
+        "--pair-manifest",
+        type=Path,
+        default=None,
+        help="Analysis pair manifest; classifies all correct/wrong trajectories",
+    )
+    classify_roles.add_argument(
+        "--launch-prep-manifest",
+        type=Path,
+        default=None,
+        help="Trace launch prep manifest used to resolve trajectory JSON paths",
+    )
+    classify_roles.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Output directory for pair-manifest classification catalog",
+    )
+    classify_roles.add_argument("--trajectory", type=Path, default=None)
+    classify_roles.add_argument("--output", type=Path, default=None)
+    classify_roles.add_argument("--name", default=None)
+    classify_roles.add_argument("--prompt-id", default=None)
+    classify_roles.add_argument("--label", default=None)
+    classify_roles.add_argument("--run-root", type=Path, default=None)
+    classify_roles.set_defaults(func=_cmd_classify_full_answer_roles)
+
+    role_matched = subparsers.add_parser(
+        "build-role-matched-calibration-manifest",
+        help="Build explicit metric-calibration pairs matched by token role cluster",
+    )
+    role_matched.add_argument(
+        "--classification-catalog",
+        type=Path,
+        required=True,
+        help="role_classification_catalog.json from classify-full-answer-roles",
+    )
+    role_matched.add_argument("--output", type=Path, required=True)
+    role_matched.add_argument(
+        "--prompt-id",
+        action="append",
+        default=None,
+        help="Prompt id to include; repeatable. Defaults to all prompts in catalog.",
+    )
+    role_matched.add_argument(
+        "--role-cluster",
+        action="append",
+        default=None,
+        help="Role cluster to include; repeatable. Defaults to standard clusters.",
+    )
+    role_matched.add_argument("--max-temporal-pairs-per-role", type=int, default=40)
+    role_matched.add_argument("--max-null-pairs-per-role", type=int, default=30)
+    role_matched.add_argument("--max-noise-pairs-per-role", type=int, default=30)
+    role_matched.set_defaults(func=_cmd_build_role_matched_calibration_manifest)
+
+    apply_role_reviews = subparsers.add_parser(
+        "apply-role-classification-reviews",
+        help="Apply subagent role-review sidecars to a copied classification catalog",
+    )
+    apply_role_reviews.add_argument(
+        "--classification-catalog",
+        type=Path,
+        required=True,
+        help="Heuristic role_classification_catalog.json with sibling *.review.json files",
+    )
+    apply_role_reviews.add_argument("--output-dir", type=Path, required=True)
+    apply_role_reviews.set_defaults(func=_cmd_apply_role_classification_reviews)
 
     decoder_cache = subparsers.add_parser(
         "build-decoder-signature-cache",

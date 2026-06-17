@@ -377,20 +377,26 @@ def _is_distance_metric(metric: str) -> bool:
 
 
 def build_scorecard(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    groups: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
+    groups: dict[tuple[str, str, str, str, str], list[dict[str, Any]]] = {}
     for row in rows:
         key = (
             str(row.get("bucket")),
             str(row.get("metric")),
             str(row.get("params_json", "{}")),
             str(row.get("position_band") or "unknown"),
+            str(row.get("role_cluster") or "all"),
         )
         groups.setdefault(key, []).append(row)
 
     scorecard: list[dict[str, Any]] = []
-    for (bucket, metric, params_json, position_band), group_rows in sorted(
-        groups.items()
-    ):
+    temporal_scorecard_sub_categories = {"adjacent", "role_matched_within_trajectory"}
+    for (
+        bucket,
+        metric,
+        params_json,
+        position_band,
+        role_cluster,
+    ), group_rows in sorted(groups.items()):
         category_values: dict[str, list[float]] = {}
         for category in SCORECARD_CATEGORIES:
             if category == "temporal":
@@ -398,7 +404,10 @@ def build_scorecard(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     row
                     for row in group_rows
                     if row.get("pair_category") == "temporal"
-                    and (row.get("sub_category") == "adjacent" or row.get("lag") == 1)
+                    and (
+                        row.get("sub_category") in temporal_scorecard_sub_categories
+                        or row.get("lag") == 1
+                    )
                 ]
             else:
                 selected = [
@@ -443,6 +452,7 @@ def build_scorecard(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "metric": metric,
                 "params_json": params_json,
                 "position_band": position_band,
+                "role_cluster": role_cluster,
                 "metric_direction": "lower_is_more_similar"
                 if distance_metric
                 else "higher_is_more_similar",
