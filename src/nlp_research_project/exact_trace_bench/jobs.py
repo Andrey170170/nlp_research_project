@@ -641,6 +641,8 @@ def render_full_answer_shard_plan(
     source_root: Path = REPO_ROOT,
     workspace_label: str | None = None,
     walltime: str | None = None,
+    mem: str | None = None,
+    partition: str | None = None,
     run_name: str | None = None,
     run_id: str | None = None,
     run_description: str | None = None,
@@ -722,6 +724,8 @@ def render_full_answer_shard_plan(
     command_parts = [
         "sbatch",
         *([f"--time={walltime}"] if walltime else []),
+        *([f"--mem={mem}"] if mem else []),
+        *([f"--partition={partition}"] if partition else []),
         f"--job-name={_slugify_run_name(resolved_run_name)}",
         f"--array={resolved_array_range}",
         f"--export={','.join(export_parts)}",
@@ -741,6 +745,8 @@ def render_full_answer_shard_plan(
         "run_name": resolved_run_name,
         "run_description": _normalize_free_text(run_description),
         "run_goal": _normalize_free_text(run_goal),
+        "mem": mem,
+        "partition": partition,
         "workspace_root": str(workspace),
         "library_workspace_root": None
         if library_workspace is None

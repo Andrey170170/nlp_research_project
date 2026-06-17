@@ -403,6 +403,10 @@ def test_full_answer_shard_plan_supports_quad_partial_array(tmp_path: Path) -> N
         "quad",
         "--array-range",
         "0-39",
+        "--mem",
+        "600G",
+        "--partition",
+        "gpu",
         "--trajectory",
         str(trajectory_path),
         "--trace-specs",
@@ -423,10 +427,14 @@ def test_full_answer_shard_plan_supports_quad_partial_array(tmp_path: Path) -> N
     plan = json.loads(proc.stdout)
     assert plan["resource_profile"] == "quad"
     assert plan["array_range"] == "0-39"
+    assert plan["mem"] == "600G"
+    assert plan["partition"] == "gpu"
     assert plan["sbatch_script"].endswith(
         "slurm/exact_trace_bench/full_answer_trace_quad.ascend.sbatch"
     )
     assert "--array=0-39" in plan["sbatch_command"]
+    assert "--mem=600G" in plan["sbatch_command"]
+    assert "--partition=gpu" in plan["sbatch_command"]
 
 
 def test_full_answer_shard_plan_rejects_existing_output_root(tmp_path: Path) -> None:

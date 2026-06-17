@@ -906,6 +906,8 @@ def _cmd_launch_full_answer_shards(args: argparse.Namespace) -> None:
         source_root=args.source_root,
         workspace_label=args.workspace_label,
         walltime=args.walltime,
+        mem=args.mem,
+        partition=args.partition,
         run_name=args.run_name,
         run_id=args.run_id,
         run_description=args.run_description,
@@ -1260,6 +1262,16 @@ def build_parser() -> argparse.ArgumentParser:
     full_answer_launch.add_argument("--source-root", type=Path, default=REPO_ROOT)
     full_answer_launch.add_argument("--workspace-label", default=None)
     full_answer_launch.add_argument("--walltime", default=None)
+    full_answer_launch.add_argument(
+        "--mem",
+        default=None,
+        help="Optional sbatch memory override, e.g. 600G",
+    )
+    full_answer_launch.add_argument(
+        "--partition",
+        default=None,
+        help="Optional sbatch partition override, e.g. gpu",
+    )
     full_answer_launch.add_argument("--run-name", default=None)
     full_answer_launch.add_argument("--run-id", default=None)
     full_answer_launch.add_argument("--run-description", default=None)
