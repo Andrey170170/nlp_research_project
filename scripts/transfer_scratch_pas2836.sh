@@ -8,6 +8,8 @@ set -euo pipefail
 SRC="${SRC:-/fs/scratch/PAS3272/kopanev.1/}"
 DST="${DST:-/fs/scratch/PAS2836/kopanev.1/}"
 LOG_DIR="${LOG_DIR:-$DST/transfer_logs}"
+SKIP_RSYNC="${SKIP_RSYNC:-0}"
+export SRC DST LOG_DIR
 
 mkdir -p "$DST" "$LOG_DIR"
 
@@ -15,13 +17,20 @@ echo "Source: $SRC"
 echo "Destination: $DST"
 echo "Start: $(date --iso-8601=seconds)"
 
-# --no-times intentionally refreshes copied file mtimes to the transfer time so
-# the new scratch copy is not immediately eligible for age-based purge.  We do
-# not preserve old owner/group metadata; the new allocation should own the copy.
-# --size-only makes reruns practical after the destination mtimes are refreshed.
-rsync -rlpH --size-only --no-times --partial --human-readable --info=progress2 \
-  "$SRC" "$DST" \
-  2>&1 | tee "$LOG_DIR/rsync_$(date +%Y%m%d_%H%M%S).log"
+if [[ "$SKIP_RSYNC" == "1" ]]; then
+  echo "Skipping rsync because SKIP_RSYNC=1"
+else
+  # --no-times intentionally refreshes copied file mtimes to the transfer time so
+  # the new scratch copy is not immediately eligible for age-based purge.  We do
+  # not preserve old owner/group metadata; the new allocation should own the copy.
+  # --size-only makes reruns practical after the destination mtimes are refreshed.
+  rsync -rlpH --size-only --no-times --partial --human-readable --info=progress2 \
+    "$SRC" "$DST" \
+    2>&1 | tee "$LOG_DIR/rsync_$(date +%Y%m%d_%H%M%S).log"
+fi
+
+echo "Ensuring copied files are user-writable for path/account rewrite..."
+chmod -R u+rwX "$DST"
 
 echo "Rewriting copied text references from PAS3272 to PAS2836..."
 python - <<'PY'
@@ -45,19 +54,25 @@ suffixes = {
     ".toml",
 }
 changed = 0
+skipped = 0
 for path in dst.rglob("*"):
     if not path.is_file() or path.suffix.lower() not in suffixes:
         continue
     try:
         text = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
+    except (OSError, UnicodeDecodeError):
+        skipped += 1
         continue
     new = text.replace("/fs/scratch/PAS3272/kopanev.1", "/fs/scratch/PAS2836/kopanev.1")
     new = new.replace("PAS3272", "PAS2836")
     if new != text:
-        path.write_text(new, encoding="utf-8")
-        changed += 1
-print(f"rewrote {changed} copied text files")
+        try:
+            path.chmod(path.stat().st_mode | 0o200)
+            path.write_text(new, encoding="utf-8")
+            changed += 1
+        except OSError:
+            skipped += 1
+print(f"rewrote {changed} copied text files; skipped {skipped}")
 PY
 
 echo "Refreshing mtimes under destination tree..."
