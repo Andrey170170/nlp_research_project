@@ -1,7 +1,7 @@
 # Documentation index
 
 Status: Current docs map
-Last updated: 2026-05-23
+Last updated: 2026-06-30
 
 This directory is split between current working documentation and archived
 historical plans. Prefer linking to this index instead of relying on old file
@@ -21,6 +21,7 @@ names as source-of-truth signals.
 | `full_answer_harness_spec.md` | Track-2 full-answer / multi-token tracing harness design |
 | `exact_trace_sweep_campaign_spec.md` | Next exact-trace sweep campaign plan and wave structure |
 | `post_consolidation_cleanup_spec.md` | Durable cleanup strategy after Track-0B consolidation |
+| `plt_clt_optimization_parity_spec.md` | Current PLT/CLT optimization parity plan and validation strategy |
 | `phase4_refresh_optimization_spec.md` | Current Phase-4 normalization/RSS optimization guidance |
 | `next_exact_optimization_paths_spec.md` | Current optimization option map |
 | `tracing_profiling_spec.md` | Current profiling/telemetry design |

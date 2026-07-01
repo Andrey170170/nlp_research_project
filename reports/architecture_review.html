@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Architecture Review: circuit_tracer + exact-trace harness</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+  </head>
+  <body class="bg-slate-950 text-slate-100">
+    <main class="mx-auto max-w-6xl px-6 py-10">
+      <section class="mb-10">
+        <p class="text-sm uppercase tracking-wide text-cyan-300">Scouting only · 2026-06-30</p>
+        <h1 class="mt-2 text-4xl font-bold">Architecture review: deepening opportunities</h1>
+        <p class="mt-4 max-w-3xl text-slate-300">
+          Scope: sibling <code class="rounded bg-slate-800 px-1">circuit_tracer</code> first,
+          exact-trace harness second. This report uses module/interface/depth/seam/adapter/
+          leverage/locality/deletion-test vocabulary and avoids detailed new interfaces.
+        </p>
+      </section>
+
+      <section class="mb-10 rounded-2xl border border-cyan-700/40 bg-cyan-950/30 p-6">
+        <h2 class="text-2xl font-semibold text-cyan-200">Top recommendation</h2>
+        <p class="mt-3 text-slate-200">
+          Start by deepening <code>circuit_tracer/attribution/attribute_nnsight.py</code>.
+          It is the main shallow module: one mega-file owns attribution orchestration,
+          phase policies, row-store behavior, replay validation, prefix views, telemetry,
+          debug bundles, and full-sequence session reuse. Cleaning this seam gives the
+          highest locality and leverage for later harness cleanup.
+        </p>
+      </section>
+
+      <section class="grid gap-6">
+        <article class="rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-xl">
+          <div class="flex items-start justify-between gap-4">
+            <h2 class="text-2xl font-semibold">1. NNSight attribution module split</h2>
+            <span class="rounded-full bg-red-500/20 px-3 py-1 text-sm font-semibold text-red-200">Strong</span>
+          </div>
+          <p class="mt-3 text-sm text-slate-400">Files: <code>attribute_nnsight.py</code>, <code>context_nnsight.py</code>, phase/replay/prefix tests.</p>
+          <div class="mt-4 grid gap-4 md:grid-cols-2">
+            <div>
+              <h3 class="font-semibold text-slate-200">Problem</h3>
+              <p class="mt-2 text-slate-300">One shallow module mixes orchestration, policy, storage, replay, diagnostics, and session reuse. The public call surface has dozens of knobs.</p>
+            </div>
+            <div>
+              <h3 class="font-semibold text-slate-200">Deepening direction</h3>
+              <p class="mt-2 text-slate-300">Keep the existing entrypoint as a compatibility facade while coherent phase/runtime concepts move behind deeper modules.</p>
+            </div>
+          </div>
+          <div class="mt-5 rounded-xl bg-slate-950 p-4">
+            <div class="mermaid">
+flowchart LR
+  subgraph Before
+    A[attribute_nnsight.py mega-module] --> B[phase policy]
+    A --> C[row-store]
+    A --> D[replay bundles]
+    A --> E[prefix view]
+    A --> F[telemetry]
+    A --> G[session reuse]
+  end
+  subgraph After
+    H[compat attribution entrypoint] --> I[deep phase modules]
+    H --> J[deep runtime/storage modules]
+    H --> K[deep validation/metadata modules]
+  end
+            </div>
+          </div>
+          <p class="mt-4 text-slate-300"><strong>Deletion test:</strong> strong. Extracted helper groups already behave like modules; deleting them from the mega-file should concentrate complexity.</p>
+        </article>
+
+        <article class="rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-xl">
+          <div class="flex items-start justify-between gap-4">
+            <h2 class="text-2xl font-semibold">2. Exact-trace policy/config seam</h2>
+            <span class="rounded-full bg-red-500/20 px-3 py-1 text-sm font-semibold text-red-200">Strong</span>
+          </div>
+          <p class="mt-3 text-sm text-slate-400">Files: <code>attribute.py</code>, <code>attribute_nnsight.py</code>, harness runner and knob taxonomy.</p>
+          <p class="mt-4 text-slate-300">The flat attribution interface exposes scheduler, row-store, dtype, cache, replay, and debug policies together. The harness mirrors this wide surface and forwards many details manually.</p>
+          <div class="mt-5 rounded-xl bg-slate-950 p-4">
+            <div class="mermaid">
+flowchart TD
+  Before[Wide flat kwargs] --> S[Scheduler knobs]
+  Before --> R[Row-store knobs]
+  Before --> D[Dtype knobs]
+  Before --> P[Replay/debug knobs]
+  Before --> C[Cache/session knobs]
+  After[Compatibility adapter] --> Deep[Deeper policy modules]
+  Deep --> Harness[Harness maps experiments to stable seam]
+            </div>
+          </div>
+          <p class="mt-4 text-slate-300"><strong>Benefits:</strong> better locality for policy changes and higher leverage for harness integration. <strong>Deletion test:</strong> strong.</p>
+        </article>
+
+        <article class="rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-xl">
+          <div class="flex items-start justify-between gap-4">
+            <h2 class="text-2xl font-semibold">3. Row-store, replay, and prefix-view locality</h2>
+            <span class="rounded-full bg-red-500/20 px-3 py-1 text-sm font-semibold text-red-200">Strong</span>
+          </div>
+          <p class="mt-3 text-sm text-slate-400">Files: <code>attribute_nnsight.py</code>, <code>context_nnsight.py</code>.</p>
+          <p class="mt-4 text-slate-300">Research-critical invariants — row-L1 denominator behavior, file-backed rows, donor replay validation, prefix metadata, and full-sequence reuse — are spread across large orchestration/context modules.</p>
+          <div class="mt-5 rounded-xl bg-slate-950 p-4">
+            <div class="mermaid">
+flowchart LR
+  Before[Attribution flow] --> Mixed[Rows + replay + prefix + scheduler]
+  After[Attribution flow] --> Rows[Deep row materialization]
+  After --> Replay[Deep replay validation]
+  After --> Prefix[Deep prefix metadata]
+            </div>
+          </div>
+          <p class="mt-4 text-slate-300"><strong>Deletion test:</strong> strong because these helpers are cohesive and already have targeted tests.</p>
+        </article>
+
+        <article class="rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-xl">
+          <div class="flex items-start justify-between gap-4">
+            <h2 class="text-2xl font-semibold">4. Cross-layer transcoder runtime helpers</h2>
+            <span class="rounded-full bg-amber-500/20 px-3 py-1 text-sm font-semibold text-amber-200">Worth exploring</span>
+          </div>
+          <p class="mt-3 text-sm text-slate-400">File: <code>transcoder/cross_layer_transcoder.py</code>.</p>
+          <p class="mt-4 text-slate-300">Core CLT math is mixed with decoder chunk cache, diagnostics, trace logging, fingerprinting, and loaders. Cache/diagnostic changes should have better locality.</p>
+          <div class="mt-5 rounded-xl bg-slate-950 p-4">
+            <div class="mermaid">
+flowchart LR
+  CLT[CrossLayerTranscoder mega-class] --> Math[Math]
+  CLT --> Cache[Decoder cache]
+  CLT --> Diag[Diagnostics]
+  CLT --> Load[Loading]
+  Math2[Core transcoder] --> Runtime[Runtime/cache module]
+  Math2 --> Loader[Loading adapter]
+            </div>
+          </div>
+        </article>
+
+        <article class="rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-xl">
+          <div class="flex items-start justify-between gap-4">
+            <h2 class="text-2xl font-semibold">5. Harness full-answer runner adapter</h2>
+            <span class="rounded-full bg-red-500/20 px-3 py-1 text-sm font-semibold text-red-200">Strong</span>
+          </div>
+          <p class="mt-3 text-sm text-slate-400">File: <code>src/nlp_research_project/exact_trace_bench/full_answer/runner.py</code>.</p>
+          <p class="mt-4 text-slate-300">The harness runner mixes shard orchestration with direct sibling runtime details, graph sinks, sidecars, target forcing, and session reuse. Cleanup should follow sibling attribution cleanup.</p>
+          <div class="mt-5 rounded-xl bg-slate-950 p-4">
+            <div class="mermaid">
+flowchart LR
+  Runner[full_answer/runner.py] --> Shards[Shard orchestration]
+  Runner --> Sibling[Sibling internals]
+  Runner --> Graphs[Graph saving]
+  Runner --> Debug[Debug sidecars]
+  Thin[Shard runner] --> Runtime[Trace runtime adapter]
+  Thin --> Sink[Graph/debug sinks]
+            </div>
+          </div>
+          <p class="mt-4 text-slate-300"><strong>Deletion test:</strong> strong, but dependent on the sibling library exposing deeper seams.</p>
+        </article>
+
+        <article class="rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-xl">
+          <div class="flex items-start justify-between gap-4">
+            <h2 class="text-2xl font-semibold">6. CLI and launch surface cleanup</h2>
+            <span class="rounded-full bg-amber-500/20 px-3 py-1 text-sm font-semibold text-amber-200">Worth exploring</span>
+          </div>
+          <p class="mt-3 text-sm text-slate-400">Files: <code>cli.py</code>, <code>jobs.py</code>, <code>presets.py</code>, SLURM templates, legacy experiment script.</p>
+          <p class="mt-4 text-slate-300">The CLI is a large command router, and launch behavior appears split between packaged CLI paths and older experiment scripts/templates. This is a provenance-sensitive seam.</p>
+          <div class="mt-5 rounded-xl bg-slate-950 p-4">
+            <div class="mermaid">
+flowchart TD
+  Old[Legacy script/templates] --> Launch[Launch behavior]
+  CLI[exact-trace-bench CLI] --> Launch
+  Plan[Launch planning] --> Submit[Submission adapter]
+  Groups[Command-family modules] --> CLI2[Stable entrypoint]
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="mt-10 rounded-2xl border border-slate-700 bg-slate-900 p-6">
+        <h2 class="text-2xl font-semibold">Documentation finding</h2>
+        <p class="mt-3 text-slate-300">
+          No ADR convention was found. For this project, use <code>docs/</code>,
+          <code>EXPERIMENTS.md</code>, and <code>experiments/logs/*.jsonl</code> as the
+          documentation context, while checking for staleness against current code.
+          The sibling library has much thinner architecture documentation, mostly
+          <code>README.md</code>, <code>RESEARCH_USAGE.md</code>, and
+          <code>circuit_tracer/utils/MAPPING_INFO.md</code>.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>
