@@ -77,14 +77,21 @@ class CalibrationPair:
 
 
 def position_band_for_index(index: int, generated_count: int) -> str:
+    """Return the generated-token quintile bucket for ``index``.
+
+    Buckets are explicit percent ranges over generated-token ordinal position:
+    ``pct_00_20``, ``pct_20_40``, ``pct_40_60``, ``pct_60_80``, and
+    ``pct_80_100``.  Using ``index / generated_count`` rather than
+    ``index / (generated_count - 1)`` keeps exact 20-token slices intuitive for
+    lengths divisible by five: indices 0..19 land in ``pct_00_20`` for a
+    100-token answer.
+    """
     if generated_count <= 1:
-        return "early"
-    r = index / max(generated_count - 1, 1)
-    if r < 0.1:
-        return "early"
-    if r <= 0.8:
-        return "mid"
-    return "late"
+        return "pct_00_20"
+    clamped_index = min(max(int(index), 0), int(generated_count) - 1)
+    bucket = min(4, (clamped_index * 5) // int(generated_count))
+    labels = ("pct_00_20", "pct_20_40", "pct_40_60", "pct_60_80", "pct_80_100")
+    return labels[bucket]
 
 
 def _sample_indices(indices: list[int], *, max_count: int | None) -> list[int]:
@@ -480,6 +487,140 @@ def _write_parquet(path: Path, rows: list[dict[str, Any]]) -> bool:
     ensure_dir(path.parent)
     pd.DataFrame(rows).to_parquet(path, index=False)
     return True
+
+
+def _token_count_maps_from_classification_catalog(
+    catalog_path: Path,
+) -> tuple[dict[str, int], dict[tuple[str, str], int]]:
+    catalog = read_json(catalog_path)
+    by_trajectory: dict[str, int] = {}
+    by_prompt_label: dict[tuple[str, str], int] = {}
+    for record in catalog.get("records", []):
+        token_count = int(record["token_count"])
+        name = str(record["name"])
+        prompt_id = str(record["prompt_id"])
+        label = str(record["label"])
+        by_trajectory[name] = token_count
+        by_prompt_label[(prompt_id, label)] = token_count
+    return by_trajectory, by_prompt_label
+
+
+def _rebucket_metric_row(
+    row: dict[str, Any],
+    *,
+    token_counts_by_trajectory: dict[str, int],
+    token_counts_by_prompt_label: dict[tuple[str, str], int],
+) -> dict[str, Any]:
+    out = dict(row)
+    trajectory = out.get("trajectory")
+    token_count = (
+        token_counts_by_trajectory.get(str(trajectory))
+        if trajectory is not None
+        else None
+    )
+    if token_count is None:
+        prompt_id = out.get("prompt_id") or out.get("fixture")
+        answer_label = out.get("answer_label")
+        if answer_label is None and out.get("pair_category") == "null":
+            # Same-prompt correct-vs-wrong nulls are anchored by the left/correct
+            # trajectory in build_role_matched_calibration_manifest.
+            answer_label = "correct"
+        if prompt_id is not None and answer_label is not None:
+            token_count = token_counts_by_prompt_label.get(
+                (str(prompt_id), str(answer_label))
+            )
+    index = out.get("generated_index")
+    if index is None:
+        index = out.get("generated_index_a")
+    if token_count is not None and index is not None:
+        out["position_band"] = position_band_for_index(int(index), int(token_count))
+    return out
+
+
+def rebucket_metric_calibration(
+    *,
+    analysis_dir: Path,
+    output_dir: Path,
+    classification_catalog: Path,
+    write_parquet: bool = True,
+) -> dict[str, Any]:
+    """Rewrite metric-calibration rollups with current position-band labels.
+
+    This is intended for metadata-only bucket changes. It reuses existing metric
+    values from ``metric_rows.jsonl`` and recomputes scorecards after replacing
+    ``position_band`` from token counts in a role-classification catalog.
+    """
+    ensure_dir(output_dir)
+    token_counts_by_trajectory, token_counts_by_prompt_label = (
+        _token_count_maps_from_classification_catalog(classification_catalog)
+    )
+
+    rows = [
+        _rebucket_metric_row(
+            row,
+            token_counts_by_trajectory=token_counts_by_trajectory,
+            token_counts_by_prompt_label=token_counts_by_prompt_label,
+        )
+        for row in iter_jsonl(analysis_dir / "metric_rows.jsonl")
+    ]
+    resolved_pairs = [
+        _rebucket_metric_row(
+            dict(pair),
+            token_counts_by_trajectory=token_counts_by_trajectory,
+            token_counts_by_prompt_label=token_counts_by_prompt_label,
+        )
+        for pair in read_json(analysis_dir / "pair_manifest_resolved.json")
+    ]
+    scorecard = build_scorecard(rows)
+    tabular = _tabular_rows(rows)
+    write_jsonl(output_dir / "metric_rows.jsonl", rows)
+    write_csv(
+        output_dir / "metric_rows.csv",
+        tabular,
+        preferred_headers=[
+            "pair_id",
+            "pair_category",
+            "sub_category",
+            "fixture",
+            "trajectory",
+            "position_band",
+            "generated_index",
+            "generated_index_a",
+            "generated_index_b",
+            "lag",
+            "bucket",
+            "metric",
+            "params_json",
+            "value",
+        ],
+    )
+    parquet_written = False
+    if write_parquet:
+        parquet_written = _write_parquet(output_dir / "metric_rows.parquet", tabular)
+    write_csv(output_dir / "scorecard.csv", scorecard)
+    write_json(output_dir / "scorecard.json", scorecard)
+    write_json(output_dir / "pair_manifest_resolved.json", resolved_pairs)
+    source_summary_path = analysis_dir / "calibration_summary.json"
+    source_summary = (
+        read_json(source_summary_path) if source_summary_path.exists() else None
+    )
+    summary = {
+        "analysis_kind": "full_answer_metric_calibration_rebucketed",
+        "position_band_scheme": "generated_token_quintile_pct20_v1",
+        "source_analysis_dir": str(analysis_dir),
+        "source_calibration_summary": str(source_summary_path)
+        if source_summary_path.exists()
+        else None,
+        "classification_catalog": str(classification_catalog),
+        "output_dir": str(output_dir),
+        "pair_count": len(resolved_pairs),
+        "metric_row_count": len(rows),
+        "scorecard_row_count": len(scorecard),
+        "parquet_written": parquet_written,
+        "source_summary": source_summary,
+    }
+    write_json(output_dir / "calibration_summary.json", summary)
+    return summary
 
 
 def run_metric_calibration(

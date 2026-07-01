@@ -863,6 +863,18 @@ def _cmd_run_metric_calibration(args: argparse.Namespace) -> None:
     print(json.dumps(summary, indent=2))
 
 
+def _cmd_rebucket_metric_calibration(args: argparse.Namespace) -> None:
+    from .full_answer.calibration import rebucket_metric_calibration
+
+    summary = rebucket_metric_calibration(
+        analysis_dir=args.analysis_dir,
+        output_dir=args.output_dir,
+        classification_catalog=args.classification_catalog,
+        write_parquet=not args.no_parquet,
+    )
+    print(json.dumps(summary, indent=2))
+
+
 def _cmd_plot_metric_calibration(args: argparse.Namespace) -> None:
     from .full_answer.calibration_plots import plot_metric_calibration
 
@@ -2132,6 +2144,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Recompute pair checkpoints even when pair_rows already exist",
     )
     metric_calibration.set_defaults(func=_cmd_run_metric_calibration)
+
+    metric_calibration_rebucket = subparsers.add_parser(
+        "rebucket-metric-calibration",
+        help="Rewrite metric calibration rollups with current position-band labels",
+    )
+    metric_calibration_rebucket.add_argument(
+        "--analysis-dir",
+        type=Path,
+        required=True,
+        help="Existing directory produced by run-metric-calibration",
+    )
+    metric_calibration_rebucket.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Output directory for rebucketed metric rows and scorecard",
+    )
+    metric_calibration_rebucket.add_argument(
+        "--classification-catalog",
+        type=Path,
+        required=True,
+        help="Role classification catalog providing trajectory token counts",
+    )
+    metric_calibration_rebucket.add_argument(
+        "--no-parquet",
+        action="store_true",
+        help="Skip writing metric_rows.parquet even if pandas/pyarrow are available",
+    )
+    metric_calibration_rebucket.set_defaults(func=_cmd_rebucket_metric_calibration)
 
     metric_calibration_plots = subparsers.add_parser(
         "plot-metric-calibration",

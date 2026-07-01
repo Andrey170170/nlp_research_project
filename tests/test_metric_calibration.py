@@ -9,6 +9,7 @@ from nlp_research_project.exact_trace_bench.full_answer.calibration import (
     build_scorecard,
     load_calibration_pairs,
     position_band_for_index,
+    rebucket_metric_calibration,
     run_metric_calibration,
 )
 from nlp_research_project.exact_trace_bench.full_answer.calibration_plots import (
@@ -40,9 +41,88 @@ def _write_graph(
 
 
 def test_position_band_for_index_matches_plan_boundaries() -> None:
-    assert position_band_for_index(0, 100) == "early"
-    assert position_band_for_index(10, 100) == "mid"
-    assert position_band_for_index(90, 100) == "late"
+    assert position_band_for_index(0, 100) == "pct_00_20"
+    assert position_band_for_index(19, 100) == "pct_00_20"
+    assert position_band_for_index(20, 100) == "pct_20_40"
+    assert position_band_for_index(40, 100) == "pct_40_60"
+    assert position_band_for_index(60, 100) == "pct_60_80"
+    assert position_band_for_index(80, 100) == "pct_80_100"
+    assert position_band_for_index(99, 100) == "pct_80_100"
+
+
+def test_rebucket_metric_calibration_uses_classification_token_counts(
+    tmp_path: Path,
+) -> None:
+    analysis_dir = tmp_path / "old"
+    output_dir = tmp_path / "rebucketed"
+    analysis_dir.mkdir()
+    rows = [
+        {
+            "pair_id": "p1",
+            "pair_category": "noise",
+            "sub_category": "identity",
+            "trajectory": "traj_correct",
+            "prompt_id": "prompt_a",
+            "answer_label": "correct",
+            "generated_index": 80,
+            "position_band": "late",
+            "bucket": "all_edges",
+            "metric": "similarity_metric",
+            "params_json": "{}",
+            "value": 1.0,
+        },
+        {
+            "pair_id": "p2",
+            "pair_category": "null",
+            "sub_category": "same_prompt_correct_wrong_same_role",
+            "trajectory": "prompt_a:correct_vs_wrong:reasoning_text",
+            "prompt_id": "prompt_a",
+            "generated_index": 20,
+            "position_band": "mid",
+            "bucket": "all_edges",
+            "metric": "similarity_metric",
+            "params_json": "{}",
+            "value": 0.1,
+        },
+    ]
+    (analysis_dir / "metric_rows.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+    )
+    (analysis_dir / "pair_manifest_resolved.json").write_text(
+        json.dumps(rows), encoding="utf-8"
+    )
+    (analysis_dir / "calibration_summary.json").write_text("{}", encoding="utf-8")
+    catalog = tmp_path / "role_classification_catalog.json"
+    catalog.write_text(
+        json.dumps(
+            {
+                "records": [
+                    {
+                        "name": "traj_correct",
+                        "prompt_id": "prompt_a",
+                        "label": "correct",
+                        "token_count": 100,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = rebucket_metric_calibration(
+        analysis_dir=analysis_dir,
+        output_dir=output_dir,
+        classification_catalog=catalog,
+        write_parquet=False,
+    )
+
+    rebucketed = [
+        json.loads(line)
+        for line in (output_dir / "metric_rows.jsonl").read_text().splitlines()
+    ]
+    assert summary["position_band_scheme"] == "generated_token_quintile_pct20_v1"
+    assert rebucketed[0]["position_band"] == "pct_80_100"
+    assert rebucketed[1]["position_band"] == "pct_20_40"
 
 
 def test_load_calibration_pairs_expands_trajectory_and_relative_pairs(
