@@ -1,23 +1,39 @@
 # Documentation index
 
 Status: Current docs map
-Last updated: 2026-06-30
+Last updated: 2026-07-01
 
-This directory is split between current working documentation and archived
-historical plans. Prefer linking to this index instead of relying on old file
-names as source-of-truth signals.
+This directory mixes current-state references, active specs, and historical
+material. Use the sections below to separate descriptive maps from working
+plans.
 
-## Current source-of-truth docs
+## Entry points
+
+| File | Role |
+|---|---|
+| `current_state.md` | Workspace-level current-state overview |
+| `architecture/README.md` | Descriptive code/workspace map index |
+
+## Current authoritative docs
 
 | File | Role |
 |---|---|
 | `../README.md` | Contributor orientation and safe OSC workflow |
 | `../AGENTS.md` | Durable repo policy and operating conventions |
+| `../CLAUDE.md` | Pointer back to `AGENTS.md` |
 | `../EXPERIMENTS.md` | Compact experiment baseline/index and current interpretation |
 | `harness.md` | Current exact-bench harness overview |
 | `metric_calibration.md` | Phase-0/Phase-1 decoder-cache and metric calibration workflow |
-| `knob_api_taxonomy.md` | Exact-trace knob/API taxonomy and Phase-3 cleanup map |
+| `../scripts/README.md` | Script entry-point notes |
+| `../experiments/logs/README.md` | Structured experiment log guidance |
+| `../src/nlp_research_project/exact_trace_bench/README.md` | Package-level harness notes |
+
+## Active specs and scratch docs
+
+| File | Role |
+|---|---|
 | `current_project_roadmap.md` | Current scratch roadmap for the active cleanup phase |
+| `knob_api_taxonomy.md` | Exact-trace knob/API taxonomy and Phase-3 cleanup map |
 | `full_answer_harness_spec.md` | Track-2 full-answer / multi-token tracing harness design |
 | `exact_trace_sweep_campaign_spec.md` | Next exact-trace sweep campaign plan and wave structure |
 | `post_consolidation_cleanup_spec.md` | Durable cleanup strategy after Track-0B consolidation |
@@ -27,28 +43,24 @@ names as source-of-truth signals.
 | `tracing_profiling_spec.md` | Current profiling/telemetry design |
 | `phase4_scheduler_v2_spec.md` | Proposed/deferred Phase-4 scheduler-v2 design |
 
+## Reports and scouting outputs
+
+| Location | Role |
+|---|---|
+| `../reports/**` | Generated/scouting outputs; useful for inspection, not binding decisions |
+
 ## Historical docs
 
-Historical plans, old proposals, superseded specs, and duplicate inventories live
-in `history/`.
+Historical plans, old proposals, superseded specs, and duplicate inventories
+live in `history/`.
 
 Use them for provenance only. Do not treat them as current workflow unless a
 current doc explicitly points to a section there.
 
-Notable archived material:
-
-- old Track-A localization plans and Prompt-94 debug specs,
-- old consolidation/worktree notes,
-- pre-consolidation exact-trace optimization specs,
-- matched-debug/weekend benchmark plans,
-- the pre-split long-form experiment log.
-
 ## Update rules
 
-- Put durable policy in `AGENTS.md`.
-- Put compact current baseline/interpretation in root `EXPERIMENTS.md`.
-- Put structured event records in `experiments/logs/YYYY-MM.jsonl`.
-- Put current execution steps in `current_project_roadmap.md`.
-- Put implementation tradeoffs in the active spec that owns that area.
-- Move superseded docs to `history/` instead of leaving stale current-looking
-  files in the top-level `docs/` directory.
+- Keep baseline/interpretation changes in `../EXPERIMENTS.md`.
+- Keep current execution steps in `current_project_roadmap.md`.
+- Keep implementation tradeoffs in the active spec that owns that area.
+- Treat reports as evidence unless a current doc explicitly promotes them.
+- Prefer the new current-state and architecture pages for code/workspace maps.

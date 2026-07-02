@@ -20,6 +20,9 @@ docs/
 !docs/
 docs/*
 !docs/README.md
+!docs/current_state.md
+!docs/architecture/
+!docs/architecture/*.md
 !docs/harness.md
 !docs/knob_api_taxonomy.md
 !docs/current_project_roadmap.md
