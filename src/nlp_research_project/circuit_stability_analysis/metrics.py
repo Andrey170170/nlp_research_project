@@ -16,6 +16,7 @@ except Exception:  # pragma: no cover - optional dependency path
     DecoderSignatureStore: Any | None = None
 
 METRIC_VERSION = "core_v1"
+DECODE_ERRORS = (ValueError, TypeError, IndexError)
 
 
 def weighted_jaccard(a: dict[Any, float], b: dict[Any, float]) -> float:
@@ -52,8 +53,17 @@ def _mapped_logit_id(graph: Any, row_id: int) -> int:
     return int(row_id)
 
 
+def _iter_edge_arrays(rows: Any, cols: Any, weights: Any) -> zip:
+    if not (len(rows) == len(cols) == len(weights)):
+        raise ValueError(
+            "bucket edge arrays have mismatched lengths: "
+            f"rows={len(rows)}, cols={len(cols)}, weights={len(weights)}"
+        )
+    return zip(rows, cols, weights)
+
+
 def _maps(path: str) -> tuple[dict[str, dict[Any, float]], int]:
-    g = load_signed_graph(path, validate_step_path=False)
+    g = load_signed_graph(path)
     n_pos = infer_n_pos(g)
     out = {
         "feature_node": {},
@@ -64,7 +74,7 @@ def _maps(path: str) -> tuple[dict[str, dict[Any, float]], int]:
     errors = 0
     for bucket in ("feature<-token", "logit<-feature", "feature<-feature"):
         rows, cols, ws = g.bucket_edge_arrays(bucket)
-        for r, c, w in zip(rows, cols, ws):
+        for r, c, w in _iter_edge_arrays(rows, cols, ws):
             try:
                 if bucket == "feature<-token":
                     ep = decode_feature_endpoint(int(r), n_pos)
@@ -92,7 +102,7 @@ def _maps(path: str) -> tuple[dict[str, dict[Any, float]], int]:
                         (er.layer, er.feature_id, ec.layer, ec.feature_id),
                         w,
                     )
-            except Exception:
+            except DECODE_ERRORS:
                 errors += 1
     return out, errors
 
@@ -154,29 +164,44 @@ def _decoder_soft_metrics(
     for (layer, fid), mass in mb["feature_node"].items():
         layer_masses_b.setdefault(int(layer), {})[int(fid)] = float(mass)
 
+    layer_candidates: dict[
+        int,
+        tuple[
+            dict[int, float],
+            dict[int, float],
+            list[int],
+            list[int],
+            list[tuple[float, int, int]],
+        ],
+    ] = {}
+    for layer in sorted(set(layer_masses_a) | set(layer_masses_b)):
+        fa = layer_masses_a.get(layer, {})
+        fb = layer_masses_b.get(layer, {})
+        if not fa or not fb:
+            continue
+        fids_a = list(fa)
+        fids_b = list(fb)
+        cos = store.cosine_matrix(layer, fids_a, fids_b)
+        candidates: list[tuple[float, int, int]] = []
+        for ia, _fid_a in enumerate(fids_a):
+            for ib, _fid_b in enumerate(fids_b):
+                val = float(cos[ia, ib])
+                if math.isnan(val):
+                    continue
+                candidates.append((val, ia, ib))
+        candidates.sort(key=lambda x: (-x[0], x[1], x[2]))
+        layer_candidates[layer] = (fa, fb, fids_a, fids_b, candidates)
+
+    sum_mass_a = sum(sum(v.values()) for v in layer_masses_a.values())
+    sum_mass_b = sum(sum(v.values()) for v in layer_masses_b.values())
     for threshold in thresholds:
         matched_mass = 0.0
-        sum_mass_a = sum(sum(v.values()) for v in layer_masses_a.values())
-        sum_mass_b = sum(sum(v.values()) for v in layer_masses_b.values())
-        for layer in sorted(set(layer_masses_a) | set(layer_masses_b)):
-            fa = layer_masses_a.get(layer, {})
-            fb = layer_masses_b.get(layer, {})
-            if not fa or not fb:
-                continue
-            fids_a = list(fa)
-            fids_b = list(fb)
-            cos = store.cosine_matrix(layer, fids_a, fids_b)
-            candidates: list[tuple[float, int, int]] = []
-            for ia, _fid_a in enumerate(fids_a):
-                for ib, _fid_b in enumerate(fids_b):
-                    val = float(cos[ia, ib])
-                    if math.isnan(val) or val < threshold:
-                        continue
-                    candidates.append((val, ia, ib))
-            candidates.sort(key=lambda x: (-x[0], x[1], x[2]))
+        for fa, fb, fids_a, fids_b, candidates in layer_candidates.values():
             used_a: set[int] = set()
             used_b: set[int] = set()
             for cos_val, ia, ib in candidates:
+                if cos_val < threshold:
+                    break
                 if ia in used_a or ib in used_b:
                     continue
                 used_a.add(ia)

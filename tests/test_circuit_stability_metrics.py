@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from nlp_research_project.circuit_stability_analysis.cli import main
 from nlp_research_project.circuit_stability_analysis.metrics import run_metrics
@@ -18,6 +19,7 @@ def _fid(fid: int) -> int:
 
 
 def _graph(path: Path, fid: int, *, token_id: int, logit_id: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     names = ["feature<-token", "logit<-feature", "feature<-feature"]
     edges = [
         (0, _fid(fid), 0, 1.0),
@@ -38,6 +40,30 @@ def _graph(path: Path, fid: int, *, token_id: int, logit_id: int) -> None:
         bucket_col_idx=np.asarray([e[2] for e in edges]),
         bucket_weights=np.asarray([e[3] for e in edges], dtype=np.float32),
     )
+
+
+def test_metrics_keep_graph_step_path_validation(tmp_path: Path) -> None:
+    graph = tmp_path / "token_000001" / "graph.npz"
+    _graph(graph, 10, token_id=7, logit_id=70)
+    manifest = {
+        "metadata": {},
+        "pairs": [
+            {
+                "pair_id": "p0",
+                "pair_category": "temporal",
+                "pair_subcategory": "adjacent",
+                "prompt_id": "p",
+                "label_a": "correct",
+                "label_b": "correct",
+                "graph_path_a": str(graph),
+                "graph_path_b": str(graph),
+            }
+        ],
+    }
+    mp = tmp_path / "pairs.json"
+    mp.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="step_idx"):
+        run_metrics(mp, tmp_path / "metrics.csv")
 
 
 def test_metrics_exact_cluster_and_cli(tmp_path: Path) -> None:

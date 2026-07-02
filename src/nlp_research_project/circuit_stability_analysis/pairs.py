@@ -11,14 +11,18 @@ ROLE_FIELDS = (
     "span_type",
     "token_group",
     "fine_role",
-    "coarse_role",
     "tags",
     "confidence",
-    "role_confidence",
-    "role_version",
+    "role_notes",
     "analysis_group",
+    "span_id",
+    "char_start",
+    "char_end",
+    "rule_ids",
+    "review_priority",
+    "target_token_text",
 )
-KEY_FIELDS = ("wave", "prompt_id", "label", "generated_index")
+KEY_FIELDS = ("wave", "prompt_id", "label", "trajectory_name", "generated_index")
 
 
 def _read_csv(path: Path | None) -> list[dict[str, str]]:
@@ -50,11 +54,12 @@ def _gfrac(row: dict[str, Any]) -> float | None:
     return None
 
 
-def _key(row: dict[str, str]) -> tuple[str, str, str, str]:
+def _key(row: dict[str, str]) -> tuple[str, str, str, str, str]:
     return (
         str(row.get("wave", "")),
         str(row.get("prompt_id", "")),
         str(row.get("label", "")),
+        str(row.get("trajectory_name", "")),
         str(row.get("generated_index", "")),
     )
 
@@ -230,6 +235,9 @@ def build_pair_manifest(
             by_wl[(str(r.get("wave", "")), str(r.get("label", "")))].append(r)
         counts: Counter[str] = Counter()
         for a in rows:
+            traj = str(a.get("trajectory_name", ""))
+            if counts[traj] >= null_cap_per_trajectory:
+                continue
             key = (str(a.get("wave", "")), str(a.get("label", "")))
             candidates = [
                 r for r in by_wl[key] if r.get("prompt_id") != a.get("prompt_id")
@@ -241,9 +249,6 @@ def build_pair_manifest(
                 if a.get(same_role_field)
                 and r.get(same_role_field) == a.get(same_role_field)
             ]
-            traj = str(a.get("trajectory_name", ""))
-            if counts[traj] >= null_cap_per_trajectory:
-                continue
             chosen = same_role or candidates
             if chosen:
                 b = min(

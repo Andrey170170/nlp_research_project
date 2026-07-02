@@ -47,6 +47,7 @@ OPENING_LINE_RE = re.compile(
 LIST_LINE_RE = re.compile(r"^\s*(?:\d+[.)]|[-*•])\s+")
 LIST_MARKER_PREFIX_RE = re.compile(r"^\s*(?:\d+[.)]?|[-*•])\s*$")
 STEP_HEADER_RE = re.compile(r"^\s*(?:\d+[.)]\s*)?(?:\*\*)?[^\n]{0,90}?:\*\*")
+LOW_CONFIDENCE_REVIEW_THRESHOLD = 0.85
 MATH_LINE_RE = re.compile(
     r"\d\s*(?:[+\-*/=×÷]|\\times|\\div|times|plus|minus|divided|equals?)"
     r"|(?:[+\-*/=×÷]|\\times|\\div|=)\s*[$\\]?\d"
@@ -480,7 +481,7 @@ def _looks_like_math_context(
 
 
 def _inside_step_header(row: TokenRow, line: LineSpan) -> bool:
-    header_match = re.search(r"(?:(?:\*\*)?[^\n]{0,100}?:\*\*)", line.text)
+    header_match = STEP_HEADER_RE.search(line.text)
     if header_match is None:
         return False
     header_end = line.start + header_match.end()
@@ -749,7 +750,7 @@ def _classify_token(
         tags.append("answer_region")
     if region == "final_calculation":
         tags.append("final_calculation_region")
-    if confidence < 0.7:
+    if confidence < LOW_CONFIDENCE_REVIEW_THRESHOLD:
         tags.append("low_confidence")
         review_priority = "high"
 
@@ -914,18 +915,30 @@ def summarize(
     }
 
 
+def _default_review_sample(
+    rows: list[dict[str, str]], max_trajectories: int = 8
+) -> set[str]:
+    by_name: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for row in rows:
+        by_name[row["trajectory_name"]].append(row)
+    high_priority = sorted(
+        name
+        for name, group in by_name.items()
+        if any(row.get("review_priority") == "high" for row in group)
+    )
+    selected = high_priority[:max_trajectories]
+    if len(selected) < max_trajectories:
+        selected.extend(name for name in sorted(by_name) if name not in selected)
+    return set(selected[:max_trajectories])
+
+
 def write_review_packet(
-    path: Path, rows: list[dict[str, str]], texts: dict[tuple[str, str, str, str], str]
+    path: Path,
+    rows: list[dict[str, str]],
+    texts: dict[tuple[str, str, str, str], str],
+    sample_trajectories: set[str] | None = None,
 ) -> None:
-    sample = {
-        "486_correct_seed3003_attempt000004",
-        "486_wrong_seed3000_attempt000001",
-        "709_correct_seed3013_attempt000014",
-        "709_wrong_seed3012_attempt000013",
-        "401_correct_seed3013_attempt000014",
-        "401_wrong_seed3014_attempt000015",
-        "877_wrong_seed3005_attempt000006",
-    }
+    sample = sample_trajectories or _default_review_sample(rows)
     by_traj: dict[str, list[dict[str, str]]] = defaultdict(list)
     for row in rows:
         if row["trajectory_name"] in sample:

@@ -53,7 +53,6 @@ def _layer_affinity(
             raise RuntimeError(
                 f"decoder cosine failed for layer {layer}: {exc}"
             ) from exc
-            decoder_sim = None
     n = len(idxs)
     aff = np.zeros((n, n), dtype=np.float64)
     for i in range(n):

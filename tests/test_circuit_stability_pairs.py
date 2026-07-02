@@ -4,6 +4,8 @@ import csv
 import json
 from pathlib import Path
 
+import pytest
+
 from nlp_research_project.circuit_stability_analysis.cli import main
 from nlp_research_project.circuit_stability_analysis.pairs import build_pair_manifest
 
@@ -97,15 +99,12 @@ def test_pair_manifest_categories_and_cli(tmp_path: Path) -> None:
     assert abs(float(sample["global_frac_a"]) - (1 / 3)) < 1e-9
     assert abs(float(sample["region_frac_a"]) - 1.0) < 1e-9
     assert abs(float(sample["region_frac_b"])) < 1e-9
-    try:
+    with pytest.raises(FileNotFoundError):
         build_pair_manifest(
             tokens,
             tmp_path / "missing_roles.json",
             roles=tmp_path / "does_not_exist.csv",
         )
-        raise AssertionError("expected FileNotFoundError")
-    except FileNotFoundError:
-        pass
     main(
         [
             "build-pair-manifest",
@@ -122,3 +121,51 @@ def test_pair_manifest_categories_and_cli(tmp_path: Path) -> None:
         ]
     )
     assert json.loads((tmp_path / "cli.json").read_text())["pairs"]
+
+
+def test_role_join_keeps_trajectory_name_in_key(tmp_path: Path) -> None:
+    rows = [
+        {
+            "wave": "w",
+            "prompt_id": "p",
+            "label": "correct",
+            "trajectory_name": trajectory,
+            "generated_index": str(i),
+            "target_token_text": f"{trajectory}_{i}",
+            "graph_path": f"{trajectory}_{i}.npz",
+        }
+        for trajectory in ("attempt_a", "attempt_b")
+        for i in range(2)
+    ]
+    tokens = tmp_path / "tokens.csv"
+    _csv(tokens, rows)
+    roles = tmp_path / "roles.csv"
+    _csv(
+        roles,
+        [
+            {
+                **row,
+                "region": "region_a"
+                if row["trajectory_name"] == "attempt_a"
+                else "region_b",
+                "analysis_group": "ag",
+                "token_group": "tg",
+                "fine_role": "fr",
+                "span_type": "body",
+                "tags": "",
+                "confidence": "1",
+            }
+            for row in rows
+        ],
+    )
+    manifest = build_pair_manifest(
+        tokens,
+        tmp_path / "pairs.json",
+        roles=roles,
+        lags=[1],
+        null_cap_per_trajectory=0,
+    )
+    temporal = [p for p in manifest["pairs"] if p["pair_category"] == "temporal"]
+    by_traj = {p["trajectory_name_a"]: p for p in temporal}
+    assert by_traj["attempt_a"]["region_a"] == "region_a"
+    assert by_traj["attempt_b"]["region_a"] == "region_b"

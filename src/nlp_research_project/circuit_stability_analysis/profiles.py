@@ -28,11 +28,12 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
-def _key(row: dict[str, str]) -> tuple[str, str, str, str]:
+def _key(row: dict[str, str]) -> tuple[str, str, str, str, str]:
     return (
         row.get("wave", ""),
         row.get("prompt_id", ""),
         row.get("label", ""),
+        row.get("trajectory_name", ""),
         row.get("generated_index", ""),
     )
 
@@ -66,7 +67,7 @@ def _rel_bin(delta: int) -> str:
 
 
 def _add(
-    vecs: dict[str, dict[tuple[int, int], float]],
+    vecs: dict[str, dict[tuple[int, int, int], float]],
     vocabs: dict[str, dict[str, int]],
     view: str,
     fkey: tuple[int, int],
@@ -128,7 +129,7 @@ def build_feature_profiles(
     acc: dict[tuple[int, int], dict[str, float]] = defaultdict(
         lambda: defaultdict(float)
     )
-    obs: dict[tuple[int, int], set[tuple[str, str, str, str]]] = defaultdict(set)
+    obs: dict[tuple[int, int], set[tuple[str, str, str, str, str]]] = defaultdict(set)
     vecs: dict[str, dict[tuple[int, int, int], float]] = {
         v: defaultdict(float) for v in VIEWS
     }
