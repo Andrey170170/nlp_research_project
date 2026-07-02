@@ -19,6 +19,9 @@ import torch
 
 import trace_pipeline as base
 from circuit_utils import StepData, save_compact
+from nlp_research_project.exact_trace_bench.transcoder_config import (
+    PUBLIC_TRANSCODER_KNOB_KEYS,
+)
 
 
 _PHASE4_SCHEDULER_MODE_ALIAS: dict[str, str] = {
@@ -4130,11 +4133,37 @@ def run_pipeline(args: argparse.Namespace) -> None:
         raise ValueError("semantic_descriptor_dim must be > 0")
     sparsification = build_sparsification_config(args)
     model = base.load_model(
+        model_name=args.model_name,
+        transcoder_architecture=args.transcoder_architecture,
+        transcoder_provider_family=args.transcoder_provider_family,
+        repo_id=args.repo_id,
+        revision=args.revision,
+        clt_subfolder=args.clt_subfolder,
+        plt_subfolder_template=args.plt_subfolder_template,
+        layer_count=args.layer_count,
+        feature_input_hook=args.feature_input_hook,
+        feature_output_hook=args.feature_output_hook,
+        transcoder_cache_dir=args.transcoder_cache_dir,
         lazy_encoder=not args.no_lazy_encoder,
         lazy_decoder=not args.no_lazy_decoder,
         decoder_chunk_size=args.decoder_chunk_size,
         cross_batch_decoder_cache_bytes=args.cross_batch_decoder_cache_bytes,
     )
+    get_transcoder_metadata = getattr(base, "get_model_transcoder_metadata", None)
+    transcoder_metadata = (
+        get_transcoder_metadata(model) if callable(get_transcoder_metadata) else None
+    )
+    resolved_transcoder_config = (
+        transcoder_metadata.get("requested", {})
+        if isinstance(transcoder_metadata, dict)
+        else {}
+    )
+    if not resolved_transcoder_config:
+        resolved_transcoder_config = {
+            key: getattr(args, key)
+            for key in PUBLIC_TRANSCODER_KNOB_KEYS
+            if hasattr(args, key)
+        }
     examples = base.load_prompt_examples(args)
     gsm8k_indices = [
         example["gsm8k_index"]
@@ -4174,6 +4203,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "lazy_decoder": not args.no_lazy_decoder,
         "decoder_chunk_size": args.decoder_chunk_size,
         "cross_batch_decoder_cache_bytes": args.cross_batch_decoder_cache_bytes,
+        **resolved_transcoder_config,
+        "transcoder": transcoder_metadata,
         "chunked_feature_replay_window": args.chunked_feature_replay_window,
         "error_vector_prefetch_lookahead": args.error_vector_prefetch_lookahead,
         "stage_encoder_vecs_on_cpu": args.stage_encoder_vecs_on_cpu,
@@ -4680,6 +4711,19 @@ if __name__ == "__main__":
             "(default 8589934592; set 0 for strict cache0 fallback)"
         ),
     )
+    parser.add_argument(
+        "--transcoder-architecture", choices=["clt", "plt"], default=None
+    )
+    parser.add_argument("--transcoder-provider-family", default=None)
+    parser.add_argument("--model-name", default=None)
+    parser.add_argument("--transcoder-repo-id", dest="repo_id", default=None)
+    parser.add_argument("--transcoder-revision", dest="revision", default=None)
+    parser.add_argument("--clt-subfolder", default=None)
+    parser.add_argument("--plt-subfolder-template", default=None)
+    parser.add_argument("--transcoder-layer-count", dest="layer_count", default=None)
+    parser.add_argument("--feature-input-hook", default=None)
+    parser.add_argument("--feature-output-hook", default=None)
+    parser.add_argument("--transcoder-cache-dir", default=None)
     parser.add_argument(
         "--chunked-feature-replay-window",
         type=int,

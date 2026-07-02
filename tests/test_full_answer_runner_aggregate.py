@@ -385,6 +385,11 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
     assert trace["phase4_frontier_buffer_metadata"] == {
         "extra_feature_count_total": 3,
     }
+    assert trace["transcoder"]["requested"]["transcoder_architecture"] == "clt"
+    assert (
+        trace["transcoder"]["requested"]["transcoder_provider_family"]
+        == "gemmascope2-clt-1b-medium-affine"
+    )
     assert (
         tmp_path
         / "run"

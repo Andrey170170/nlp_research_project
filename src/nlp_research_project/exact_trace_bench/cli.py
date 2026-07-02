@@ -73,6 +73,11 @@ from .scenarios import (
     write_wave0_baseline_config,
 )
 from .semantic_feature_compare import compare_semantic_feature_descriptors_to_json
+from .transcoder_config import (
+    PUBLIC_TRANSCODER_KNOB_KEYS,
+    resolve_transcoder_load_config,
+    transcoder_config_to_json,
+)
 from .workspace import (
     DEFAULT_SNAPSHOT_ROOT,
     create_workspace_snapshot,
@@ -671,9 +676,29 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
             "phase0_window_scope": args.phase0_window_scope,
             "phase0_window_max_prefix_policy": args.phase0_window_max_prefix_policy,
             "phase0_window_reference_checks": args.phase0_window_reference_checks,
+            "transcoder_architecture": args.transcoder_architecture,
+            "transcoder_provider_family": args.transcoder_provider_family,
+            "model_name": args.model_name,
+            "repo_id": args.transcoder_repo_id,
+            "revision": args.transcoder_revision,
+            "clt_subfolder": args.clt_subfolder,
+            "plt_subfolder_template": args.plt_subfolder_template,
+            "layer_count": args.transcoder_layer_count,
+            "feature_input_hook": args.feature_input_hook,
+            "feature_output_hook": args.feature_output_hook,
+            "transcoder_cache_dir": args.transcoder_cache_dir,
         }.items()
         if value is not None
     }
+    provider_inputs = {
+        key: graph_overrides[key]
+        for key in PUBLIC_TRANSCODER_KNOB_KEYS
+        if key in graph_overrides
+    }
+    if provider_inputs:
+        graph_overrides.update(
+            transcoder_config_to_json(resolve_transcoder_load_config(provider_inputs))
+        )
     specs = build_trace_specs(
         trajectory,
         selection,
@@ -1019,6 +1044,19 @@ def build_parser() -> argparse.ArgumentParser:
     full_answer_trace_specs.add_argument(
         "--cross-batch-decoder-cache-bytes", type=int, default=None
     )
+    full_answer_trace_specs.add_argument(
+        "--transcoder-architecture", choices=["clt", "plt"], default=None
+    )
+    full_answer_trace_specs.add_argument("--transcoder-provider-family", default=None)
+    full_answer_trace_specs.add_argument("--model-name", default=None)
+    full_answer_trace_specs.add_argument("--transcoder-repo-id", default=None)
+    full_answer_trace_specs.add_argument("--transcoder-revision", default=None)
+    full_answer_trace_specs.add_argument("--clt-subfolder", default=None)
+    full_answer_trace_specs.add_argument("--plt-subfolder-template", default=None)
+    full_answer_trace_specs.add_argument("--transcoder-layer-count", default=None)
+    full_answer_trace_specs.add_argument("--feature-input-hook", default=None)
+    full_answer_trace_specs.add_argument("--feature-output-hook", default=None)
+    full_answer_trace_specs.add_argument("--transcoder-cache-dir", default=None)
     full_answer_trace_specs.add_argument(
         "--attribution-batch-size", type=int, default=None
     )

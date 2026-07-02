@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from .transcoder_config import transcoder_config_to_json, TranscoderLoadConfig
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -37,6 +39,7 @@ DEFAULT_LOGS_DIR = REPO_ROOT / "logs"
 
 def base_trace_defaults() -> dict[str, Any]:
     return {
+        **transcoder_config_to_json(TranscoderLoadConfig()),
         "completions": 1,
         "temperature": 0.0,
         "max_feature_nodes": 8192,

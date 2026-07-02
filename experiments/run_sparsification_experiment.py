@@ -28,6 +28,10 @@ from nlp_research_project.exact_trace_bench.baselines import (  # noqa: E402
     write_scenario_metrics,
 )
 from nlp_research_project.exact_trace_bench.io_utils import write_csv  # noqa: E402
+from nlp_research_project.exact_trace_bench.transcoder_config import (  # noqa: E402
+    resolve_transcoder_load_config,
+    transcoder_config_to_json,
+)
 
 
 DEFAULT_SCENARIOS = (
@@ -338,6 +342,13 @@ def build_command(
         scenario,
         cross_batch_decoder_cache_bytes_override=cross_batch_decoder_cache_bytes_override,
     )
+    provider_config = transcoder_config_to_json(
+        resolve_transcoder_load_config(scenario)
+    )
+    if cross_batch_decoder_cache_bytes_override is not None:
+        provider_config["cross_batch_decoder_cache_bytes"] = (
+            cross_batch_decoder_cache_bytes_override
+        )
     method = scenario["method"]
     script_name = (
         "trace_pipeline.py" if method == "old_patch" else "trace_pipeline_chunked.py"
@@ -404,11 +415,11 @@ def build_command(
                     str(scenario["phase1_trace_batch_size_max"]),
                 ]
             )
-        cmd.extend(["--decoder-chunk-size", str(scenario["decoder_chunk_size"])])
+        cmd.extend(["--decoder-chunk-size", str(provider_config["decoder_chunk_size"])])
         cross_batch_decoder_cache_bytes = (
             cross_batch_decoder_cache_bytes_override
             if cross_batch_decoder_cache_bytes_override is not None
-            else scenario.get("cross_batch_decoder_cache_bytes")
+            else provider_config.get("cross_batch_decoder_cache_bytes")
         )
         if cross_batch_decoder_cache_bytes is not None:
             cmd.extend(
@@ -417,6 +428,21 @@ def build_command(
                     str(cross_batch_decoder_cache_bytes),
                 ]
             )
+        for key, flag in (
+            ("transcoder_architecture", "--transcoder-architecture"),
+            ("transcoder_provider_family", "--transcoder-provider-family"),
+            ("model_name", "--model-name"),
+            ("repo_id", "--transcoder-repo-id"),
+            ("revision", "--transcoder-revision"),
+            ("clt_subfolder", "--clt-subfolder"),
+            ("plt_subfolder_template", "--plt-subfolder-template"),
+            ("layer_count", "--transcoder-layer-count"),
+            ("feature_input_hook", "--feature-input-hook"),
+            ("feature_output_hook", "--feature-output-hook"),
+            ("transcoder_cache_dir", "--transcoder-cache-dir"),
+        ):
+            if provider_config.get(key) is not None:
+                cmd.extend([flag, str(provider_config[key])])
         if scenario.get("sparsify_per_layer_position_topk") is not None:
             cmd.extend(
                 [

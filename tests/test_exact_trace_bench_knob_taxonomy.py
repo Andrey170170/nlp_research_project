@@ -309,6 +309,38 @@ def test_canonical_commands_do_not_enable_debug_or_replay_knobs() -> None:
             assert "--cross-batch-decoder-cache-bytes" in command
 
 
+def test_command_builder_resolves_provider_family_to_coherent_plt_config() -> None:
+    scenario = {
+        **build_tier_config(tier="fast", cluster="ascend")["defaults"],
+        "name": "plt_4b_smoke",
+        "method": "exact",
+        "completions": 1,
+        "temperature": 0.0,
+        "max_feature_nodes": 128,
+        "max_edges": 128,
+        "max_steps": 1,
+        "attribution_batch_size": 1,
+        "max_n_logits": 1,
+        "desired_logit_prob": 1.0,
+        "attribution_update_interval": 1,
+        "prepared_prompt_file": "/tmp/prompt.txt",
+        "transcoder_provider_family": "gemmascope2-plt-4b-small-affine",
+    }
+    command = build_command(Path("/tmp/exact-bench-taxonomy"), scenario)
+
+    def flag_value(flag: str) -> str:
+        return command[command.index(flag) + 1]
+
+    assert flag_value("--transcoder-architecture") == "plt"
+    assert (
+        flag_value("--transcoder-provider-family") == "gemmascope2-plt-4b-small-affine"
+    )
+    assert flag_value("--model-name") == "google/gemma-3-4b-it"
+    assert flag_value("--transcoder-repo-id") == "google/gemma-scope-2-4b-it"
+    assert flag_value("--transcoder-layer-count") == "34"
+    assert flag_value("--cross-batch-decoder-cache-bytes") == "0"
+
+
 def test_wave0_baseline_scenario_counts_and_tiers() -> None:
     catalog = _fake_wave0_catalog()
     fast = build_wave0_baseline_config(

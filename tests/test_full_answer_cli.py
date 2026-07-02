@@ -109,6 +109,10 @@ def test_full_answer_cli_writes_planning_artifacts(tmp_path: Path) -> None:
     assert knobs["profile_attribution"] is False
     assert knobs["decoder_chunk_size"] == 256
     assert knobs["cross_batch_decoder_cache_bytes"] == 8589934592
+    assert knobs["transcoder_architecture"] == "clt"
+    assert knobs["transcoder_provider_family"] == "gemmascope2-clt-1b-medium-affine"
+    assert knobs["repo_id"] == "google/gemma-scope-2-1b-it"
+    assert knobs["clt_subfolder"] == "clt/width_262k_l0_medium_affine"
     assert knobs["phase4_row_reduction"] == "gpu_v1"
     assert knobs["phase4_refresh_optimization"] == "v1"
     assert knobs["phase4_refresh_active_row_accumulation"] == "direct_v1"
@@ -146,6 +150,10 @@ def test_full_answer_trace_spec_perf_knob_overrides(tmp_path: Path) -> None:
         "128",
         "--cross-batch-decoder-cache-bytes",
         "0",
+        "--transcoder-architecture",
+        "plt",
+        "--transcoder-provider-family",
+        "gemmascope2-plt-1b-big-affine",
         "--phase4-refresh-optimization",
         "off",
         "--phase4-refresh-active-row-accumulation",
@@ -194,6 +202,11 @@ def test_full_answer_trace_spec_perf_knob_overrides(tmp_path: Path) -> None:
     knobs = spec["graph_knobs"]
     assert knobs["decoder_chunk_size"] == 128
     assert knobs["cross_batch_decoder_cache_bytes"] == 0
+    assert knobs["transcoder_architecture"] == "plt"
+    assert knobs["transcoder_provider_family"] == "gemmascope2-plt-1b-big-affine"
+    assert knobs["model_name"] == "google/gemma-3-1b-it"
+    assert knobs["repo_id"] == "google/gemma-scope-2-1b-it"
+    assert knobs["layer_count"] == 26
     assert knobs["phase4_refresh_optimization"] == "off"
     assert knobs["phase4_refresh_active_row_accumulation"] == "zero_fill"
     assert knobs["phase4_row_reduction"] == "off"
@@ -218,6 +231,35 @@ def test_full_answer_trace_spec_perf_knob_overrides(tmp_path: Path) -> None:
     assert knobs["input_context_mode"] == "full_sequence"
     assert knobs["verbose_attribution"] is True
     assert knobs["profile_attribution"] is True
+
+
+def test_full_answer_trace_spec_provider_family_resolves_complete_plt_config(
+    tmp_path: Path,
+) -> None:
+    trajectory_path = tmp_path / "trajectory.json"
+    out_dir = tmp_path / "out"
+    trajectory_path.write_text(json.dumps(tiny_trajectory()), encoding="utf-8")
+
+    proc = run_cli(
+        "build-full-answer-trace-specs",
+        "--trajectory",
+        str(trajectory_path),
+        "--indices",
+        "0",
+        "--output-dir",
+        str(out_dir),
+        "--transcoder-provider-family",
+        "gemmascope2-plt-4b-small-affine",
+    )
+    assert proc.returncode == 0, proc.stderr
+    spec = json.loads((out_dir / "trace_specs.jsonl").read_text(encoding="utf-8"))
+    knobs = spec["graph_knobs"]
+    assert knobs["transcoder_architecture"] == "plt"
+    assert knobs["transcoder_provider_family"] == "gemmascope2-plt-4b-small-affine"
+    assert knobs["model_name"] == "google/gemma-3-4b-it"
+    assert knobs["repo_id"] == "google/gemma-scope-2-4b-it"
+    assert knobs["layer_count"] == 34
+    assert knobs["cross_batch_decoder_cache_bytes"] == 0
 
 
 def test_full_answer_trajectory_print_only_plan_uses_snapshot_template(
