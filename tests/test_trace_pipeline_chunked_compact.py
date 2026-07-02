@@ -78,7 +78,7 @@ def test_bucketed_compact_policy_and_optional_npz_fields(tmp_path) -> None:
         "selected_features": torch.tensor([0, 1], dtype=torch.int64),
         "feature_row_node_indices": torch.tensor([0, 1], dtype=torch.int64),
         "logit_row_node_indices": torch.tensor([5], dtype=torch.int64),
-        "feature_feature_edges": torch.tensor([[0.9, 0.1], [0.0, 0.2]]),
+        "feature_feature_edges": torch.tensor([[-0.9, 0.1], [0.0, 0.2]]),
         "logit_feature_edges": torch.tensor([[0.3, 0.4]]),
         "feature_error_edges": torch.tensor([[1.0, 0.01], [0.5, 0.0]]),
         "feature_token_edges": torch.tensor([[0.7, 0.1], [0.0, 0.2]]),
@@ -120,3 +120,9 @@ def test_bucketed_compact_policy_and_optional_npz_fields(tmp_path) -> None:
     }
     assert metadata["feature<-error"]["retained_nnz"] == 1
     assert metadata["feature<-error"]["raw_nnz"] == 3
+    assert metadata["feature<-feature"]["weights_signed"] is True
+    feature_feature_bucket = names.index("feature<-feature")
+    feature_feature_weights = data["bucket_weights"][
+        data["bucket_ids"] == feature_feature_bucket
+    ]
+    assert np.any(feature_feature_weights < 0)

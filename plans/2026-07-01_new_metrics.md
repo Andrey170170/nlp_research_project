@@ -1,8 +1,23 @@
 # ADAG-lite temporal stability metrics plan
 
-Status: implementation-ready design spec for the next analysis pass  
+Status: pair manifests, core magnitude metrics, and summaries implemented as dry-run code paths
 Date: 2026-07-01  
 Scope: project repo `nlp_research_project`; no new model tracing required
+
+Implementation note (2026-07-02): `circuit_stability_analysis` now includes
+deterministic pair manifest construction, `core_v1` graph-overlap metric rows,
+and prompt-normalized summaries. These are magnitude-based dry-run analysis paths
+that preserve signed graph weights where available but intentionally do not make
+final support/suppression claims pending real signed retrace validation.
+
+Local CLI smoke (2026-07-02) against the canonical 19-prompt inventory and
+`roles_v1` built a dry-run pair manifest with `55,219` pairs using lags `1,2`,
+final-window size `3`, and one same-role null control per trajectory. A 12-pair
+real-graph metric smoke produced zero decode errors and prompt summaries; a
+3-pair smoke with the prior 32-graph ADAG-lite cluster manifest populated
+cluster-collapsed metric columns. Smoke outputs were kept under
+`/tmp/opencode/circuit_stability_smoke_20260702/`, not promoted as durable
+scientific artifacts.
 
 ## Problem statement
 
@@ -302,6 +317,12 @@ support-vs-suppression must be gated on this audit. If the full run also reports
 nonnegative-only buckets, treat v1 clustering as an absolute-mass
 structural/profile clustering, not a proper signed-output-effect clustering,
 unless signed bucket artifacts are regenerated later.
+
+Follow-up fix: `trace_pipeline_chunked.compact_result_to_bucketed_compact` now
+selects retained bucket edges by absolute magnitude but serializes the original
+signed attribution value and marks bucket metadata with `weights_signed=true`.
+This affects future trace artifacts only; historical 19-prompt graphs remain
+nonnegative-only and cannot recover sign after the fact.
 
 32-graph smoke:
 

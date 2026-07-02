@@ -1306,7 +1306,12 @@ def compact_result_to_bucketed_compact(
             col_global = encode_feature_ids(feature_cols[cc])
         else:
             col_global = cc
-        vals = mat.reshape(-1)[keep].abs().float() if keep.numel() else torch.empty(0)
+        # Select retained entries by absolute magnitude, but store the original
+        # signed attribution value.  Older typed-bucket artifacts stored
+        # magnitudes here, which is fine for retained-mass accounting but loses
+        # support-vs-suppression information needed by post-hoc ADAG-lite
+        # analyses.
+        vals = mat.reshape(-1)[keep].float() if keep.numel() else torch.empty(0)
         all_r.append(row_global.numpy().astype(base.np.int64))
         all_c.append(col_global.numpy().astype(base.np.int64))
         all_w.append(vals.numpy().astype(base.np.float32))
@@ -1320,6 +1325,7 @@ def compact_result_to_bucketed_compact(
                 "raw_nnz": int((raw_abs != 0).sum().item()),
                 "retained_nnz": int(keep.numel()),
                 "policy": bucket_policies[name],
+                "weights_signed": True,
             }
         )
     return circuit_utils.BucketedCompact(
