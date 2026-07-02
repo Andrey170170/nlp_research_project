@@ -16,7 +16,7 @@ class TranscoderLoadConfig:
     clt_subfolder: str | None = "clt/width_262k_l0_medium_affine"
     plt_subfolder_template: str | None = None
     layer_count: int | Literal["infer"] = "infer"
-    feature_input_hook: str = "hook_resid_mid"
+    feature_input_hook: str = "mlp.hook_in"
     feature_output_hook: str = "hook_mlp_out"
     lazy_encoder: bool = True
     lazy_decoder: bool = True
@@ -28,6 +28,7 @@ class TranscoderLoadConfig:
 _PLT_TEMPLATE = (
     "transcoder_all/layer_{layer}_width_262k_l0_{variant}/params.safetensors"
 )
+_GEMMASCOPE2_FEATURE_INPUT_HOOK = "mlp.hook_in"
 
 
 def _plt(
@@ -46,6 +47,7 @@ def _plt(
         clt_subfolder=None,
         plt_subfolder_template=_PLT_TEMPLATE.format(layer="{layer}", variant=variant),
         layer_count=layer_count,
+        feature_input_hook=_GEMMASCOPE2_FEATURE_INPUT_HOOK,
         cross_batch_decoder_cache_bytes=0,
     )
 

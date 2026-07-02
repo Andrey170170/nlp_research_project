@@ -1,7 +1,7 @@
 # Experiments inventory
 
 Status: Current compact index and interpretation summary
-Last updated: 2026-06-15
+Last updated: 2026-07-02
 
 This file is the readable front page for experiment provenance. It should stay
 small enough to edit by hand.
@@ -31,6 +31,7 @@ For important future launches, baseline decisions, and reinterpretations:
 | Editable dependency path | `../circuit-tracer_chunked` |
 | Canonical exact-trace dtype | `exact_trace_internal_dtype=fp32` |
 | Canonical prompt tiers | `828_base`, `361_base`, and `94_base` in `fast` for new work |
+| GemmaScope-2 feature input hook | `mlp.hook_in` (`pre_feedforward_layernorm.output`) for CLT and PLT |
 | Scratch root | `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench` |
 | Run placement | cluster (`ascend`/`cardinal`) × tier (`fast`/`anomaly`/`long_eval`) |
 
@@ -177,6 +178,20 @@ Full-sequence telemetry pilot (June 2026):
 | historical `matched_debug` artifacts | Old matched-debug campaign outputs/configs | Historical only; do not use as an ordinary bucket |
 
 ## Recent durable decisions
+
+### 2026-07-02 — GemmaScope-2 CLT/PLT hook correction
+
+GemmaScope-2 CLT and PLT checkpoint configs train on
+`pre_feedforward_layernorm.output`, not the pre-layernorm residual input. The
+harness defaults now use `feature_input_hook=mlp.hook_in` for GemmaScope-2 CLT
+and PLT providers while keeping `feature_output_hook=hook_mlp_out`.
+
+Decision:
+
+- Treat prior `hook_resid_mid` GemmaScope-2 CLT/PLT exact-trace runs as a legacy
+  baseline using the wrong input site.
+- Use corrected-hook CLT/PLT active-count probes launched on 2026-07-02 as the
+  baseline migration evidence before larger PLT feasibility conclusions.
 
 ### 2026-06-15 — Stage-D full matrix metric calibration
 

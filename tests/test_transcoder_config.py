@@ -15,6 +15,8 @@ def test_default_transcoder_config_is_current_clt() -> None:
     assert payload["model_name"] == "google/gemma-3-1b-it"
     assert payload["repo_id"] == "google/gemma-scope-2-1b-it"
     assert payload["clt_subfolder"] == "clt/width_262k_l0_medium_affine"
+    assert payload["feature_input_hook"] == "mlp.hook_in"
+    assert payload["feature_output_hook"] == "hook_mlp_out"
     assert payload["decoder_chunk_size"] == 256
     assert payload["cross_batch_decoder_cache_bytes"] == 8589934592
 
@@ -24,6 +26,7 @@ def test_plt_architecture_without_family_uses_safe_explicit_default() -> None:
     payload = transcoder_config_to_json(config)
     assert payload["transcoder_provider_family"] == "gemmascope2-plt-1b-big-affine"
     assert payload["layer_count"] == 26
+    assert payload["feature_input_hook"] == "mlp.hook_in"
     assert payload["cross_batch_decoder_cache_bytes"] == 0
     assert payload["lazy_encoder"] is True
     assert payload["lazy_decoder"] is True
@@ -38,6 +41,7 @@ def test_plt_4b_provider_selects_4b_model_and_repo() -> None:
     assert payload["model_name"] == "google/gemma-3-4b-it"
     assert payload["repo_id"] == "google/gemma-scope-2-4b-it"
     assert payload["layer_count"] == 34
+    assert payload["feature_input_hook"] == "mlp.hook_in"
 
 
 def test_architecture_family_conflicts_are_rejected() -> None:
@@ -63,6 +67,7 @@ def test_baked_clt_defaults_do_not_override_plt_architecture_request() -> None:
     assert payload["transcoder_provider_family"] == "gemmascope2-plt-1b-big-affine"
     assert payload["cross_batch_decoder_cache_bytes"] == 0
     assert payload["layer_count"] == 26
+    assert payload["feature_input_hook"] == "mlp.hook_in"
 
 
 def test_baked_clt_defaults_do_not_override_plt_provider_family() -> None:
@@ -78,3 +83,4 @@ def test_baked_clt_defaults_do_not_override_plt_provider_family() -> None:
     assert payload["model_name"] == "google/gemma-3-4b-it"
     assert payload["repo_id"] == "google/gemma-scope-2-4b-it"
     assert payload["cross_batch_decoder_cache_bytes"] == 0
+    assert payload["feature_input_hook"] == "mlp.hook_in"

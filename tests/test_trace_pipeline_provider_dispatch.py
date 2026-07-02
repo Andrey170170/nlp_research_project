@@ -108,6 +108,8 @@ def test_plt_loader_dispatches_to_transcoder_set(monkeypatch, tmp_path) -> None:
     assert load_kwargs["lazy_decoder"] is True
     assert load_kwargs["decoder_chunk_size"] == 128
     assert load_kwargs["cross_batch_decoder_cache_bytes"] == 0
+    assert load_kwargs["feature_input_hook"] == "mlp.hook_in"
+    assert load_kwargs["feature_output_hook"] == "hook_mlp_out"
     assert sorted(load_kwargs["transcoder_paths"]) == list(range(34))
 
     replacement_kwargs = calls["replacement_model"]
