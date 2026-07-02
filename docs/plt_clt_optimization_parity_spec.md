@@ -330,6 +330,18 @@ Done when:
 
 Goal: make the project-side entrypoints architecture-aware and scenario-driven.
 
+Implementation status (2026-07-02): login-safe harness support completed in
+project commits `93a4c97`, `29fca4a`, and `885fd30`. The harness now has an
+explicit `TranscoderLoadConfig` resolver with GemmaScope2 CLT and PLT 1B/4B
+width_262k presets, architecture-aware `trace_pipeline.py` loading, provider
+metadata recording in full-answer shard/token outputs, provider-aware
+`trace_pipeline_chunked.py` run configs, CLI trace-spec provider overrides, and a
+SLURM-guarded `download-transcoders` prefetch command. Cardinal prefetch job
+`12165101` was submitted for `gemmascope2-plt-1b-big-affine` and
+`gemmascope2-plt-4b-big-affine` into the scratch HF cache
+`/fs/scratch/PAS2836/kopanev.1/huggingface`. Real PLT tracing remains Phase-4
+SLURM validation work.
+
 Project harness file-level tasks:
 
 - `trace_pipeline.py`
