@@ -291,6 +291,30 @@ The paper's useful idea is to cluster features by **functional profile**, not by
 feature ID or decoder similarity alone. For our existing artifacts, build four
 profile views per `feature_key`.
 
+Implementation note 2026-07-02: profile extraction now records observed bucket
+weight sign statistics in `graph_profile_audit.json`. A one-graph local smoke and
+a 32-graph CPU-SLURM smoke both observed
+`bucket_sign_mode=nonnegative_observed`, which means the current historical
+`graph.npz` buckets appear to contain retained absolute magnitudes for the
+sampled artifacts. ADAG-lite code preserves signs when present and tests
+synthetic signed buckets, but scientific claims that depend on
+support-vs-suppression must be gated on this audit. If the full run also reports
+nonnegative-only buckets, treat v1 clustering as an absolute-mass
+structural/profile clustering, not a proper signed-output-effect clustering,
+unless signed bucket artifacts are regenerated later.
+
+32-graph smoke:
+
+```text
+/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/real-prompt-adag-lite-smoke32-cap5k-20260702
+SLURM job: 12164946
+graphs_seen: 32
+max_edges_per_bucket: 5000
+decode_errors: 0
+cluster_count: 12
+assigned_feature_count: 256
+```
+
 ### View A — token input attribution profile
 
 Source bucket: `feature<-token`.
