@@ -273,6 +273,15 @@ Done when:
 
 Goal: make PLTs first-class under the same provider contract.
 
+Implementation status (2026-07-01): completed in sibling library commits
+`c211311`, `b47eb2a`, `e82ad4c`, `0e78ca0`, and `08ffcba` for login-safe
+Phase-2 scope. The implemented path adds lazy GemmaScope2 PLT lowercase readers,
+same-layer provider topology, exact/chunked PLT attribution components, HF/cache
+provider metadata handling, TransformerLens provider integration, default-disabled
+PLT decoder cache residency, and synthetic parity/loader tests. Real GemmaScope2
+width_262k PLT tracing remains SLURM-only validation work and should be run after
+Phase 3 exposes explicit project-side PLT scenarios.
+
 Sibling library file-level tasks:
 
 - `circuit_tracer/transcoder/single_layer_transcoder.py`
