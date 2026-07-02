@@ -1,0 +1,99 @@
+{
+  "analysis_group_counts": {
+    "answer_core": 229,
+    "excluded_whitespace": 488,
+    "formatting_control": 863,
+    "math_core": 2601,
+    "punctuation_control": 343,
+    "reasoning_prose": 3152,
+    "stop_control": 38
+  },
+  "answer_quantity_counts_by_trajectory": {
+    "1031_correct_seed3011_attempt000012": 1,
+    "1031_wrong_seed3004_attempt000005": 1,
+    "1300_correct_seed3003_attempt000004": 3,
+    "1300_wrong_seed3013_attempt000014": 3,
+    "159_correct_seed3008_attempt000009": 2,
+    "159_wrong_seed3004_attempt000005": 2,
+    "164_correct_seed3004_attempt000005": 2,
+    "164_wrong_seed3009_attempt000010": 2,
+    "246_correct_seed3008_attempt000009": 5,
+    "246_wrong_seed3015_attempt000016": 6,
+    "327_correct_seed3011_attempt000012": 2,
+    "327_wrong_seed3003_attempt000004": 2,
+    "401_correct_seed3013_attempt000014": 5,
+    "401_wrong_seed3014_attempt000015": 5,
+    "486_correct_seed3003_attempt000004": 1,
+    "486_wrong_seed3000_attempt000001": 4,
+    "636_correct_seed3005_attempt000006": 4,
+    "636_wrong_seed3004_attempt000005": 3,
+    "642_correct_seed3012_attempt000013": 5,
+    "642_wrong_seed3001_attempt000002": 4,
+    "650_correct_seed3012_attempt000013": 3,
+    "650_wrong_seed3010_attempt000011": 3,
+    "662_correct_seed3002_attempt000003": 1,
+    "662_wrong_seed3015_attempt000016": 1,
+    "692_correct_seed3001_attempt000002": 2,
+    "692_wrong_seed3006_attempt000007": 4,
+    "698_correct_seed3007_attempt000008": 3,
+    "698_wrong_seed3015_attempt000016": 4,
+    "709_correct_seed3013_attempt000014": 4,
+    "709_wrong_seed3012_attempt000013": 4,
+    "821_correct_seed3010_attempt000011": 2,
+    "821_wrong_seed3001_attempt000002": 3,
+    "830_correct_seed3002_attempt000003": 4,
+    "830_wrong_seed3001_attempt000002": 2,
+    "860_correct_seed3010_attempt000011": 1,
+    "860_wrong_seed3006_attempt000007": 2,
+    "877_correct_seed3008_attempt000009": 4,
+    "877_wrong_seed3005_attempt000006": 4
+  },
+  "answer_statement_missing_for_marker_trajectories": [],
+  "diagnostics": [],
+  "exactly_one_role_per_token": true,
+  "final_calculation_missing_trajectories": [],
+  "region_counts": {
+    "answer_statement": 271,
+    "final_calculation": 1311,
+    "intro_planning": 480,
+    "problem_setup": 1599,
+    "stop": 38,
+    "work_step": 4015
+  },
+  "review_priority_counts": {
+    "high": 113,
+    "none": 7601
+  },
+  "row_count": 7714,
+  "row_count_equals_token_count": true,
+  "span_type_counts": {
+    "final_answer_marker": 229,
+    "formatting": 787,
+    "latex_format": 155,
+    "math_expression": 2446,
+    "reasoning_prose": 2881,
+    "step_header": 1178,
+    "stop": 38
+  },
+  "stop_count": 38,
+  "stop_label_count": {
+    "stop": 38
+  },
+  "token_count": 7714,
+  "token_group_counts": {
+    "answer_marker": 116,
+    "answer_quantity": 113,
+    "equation_punctuation": 263,
+    "format_marker": 1351,
+    "math_operator": 413,
+    "math_quantity": 1484,
+    "reasoning_text": 3152,
+    "sentence_punctuation": 343,
+    "stop_special": 38,
+    "unit_symbol": 441
+  },
+  "unknown_fraction": 0.0,
+  "unknown_label_counts": {
+    "any_unknown": 0
+  }
+}
