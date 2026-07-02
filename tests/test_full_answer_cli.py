@@ -71,6 +71,7 @@ def test_full_answer_cli_help_is_login_safe() -> None:
     assert run_cli("build-role-matched-calibration-manifest", "--help").returncode == 0
     assert run_cli("apply-role-classification-reviews", "--help").returncode == 0
     assert run_cli("build-decoder-signature-cache", "--help").returncode == 0
+    assert run_cli("download-transcoders", "--help").returncode == 0
     assert run_cli("run-metric-calibration", "--help").returncode == 0
     assert run_cli("plot-metric-calibration", "--help").returncode == 0
     assert run_cli("compare-full-answer-stability", "--help").returncode == 0
@@ -260,6 +261,51 @@ def test_full_answer_trace_spec_provider_family_resolves_complete_plt_config(
     assert knobs["repo_id"] == "google/gemma-scope-2-4b-it"
     assert knobs["layer_count"] == 34
     assert knobs["cross_batch_decoder_cache_bytes"] == 0
+
+
+def test_download_transcoders_dry_run_is_login_safe(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("HF_TOKEN=fake-token-for-dry-run\n", encoding="utf-8")
+    proc = run_cli(
+        "download-transcoders",
+        "--provider-family",
+        "gemmascope2-plt-1b-big-affine",
+        "--provider-family",
+        "gemmascope2-plt-4b-big-affine",
+        "--env-file",
+        str(env_file),
+        "--dry-run",
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "fake-token-for-dry-run" not in proc.stdout
+    assert "fake-token-for-dry-run" not in proc.stderr
+    payload = json.loads(proc.stdout)
+    assert payload["status"] == "dry_run"
+    assert payload["env_file_loaded"] is True
+    downloads = payload["downloads"]
+    assert [item["config"]["transcoder_provider_family"] for item in downloads] == [
+        "gemmascope2-plt-1b-big-affine",
+        "gemmascope2-plt-4b-big-affine",
+    ]
+    assert downloads[0]["pattern_count"] == 26
+    assert downloads[1]["pattern_count"] == 34
+    assert downloads[1]["config"]["model_name"] == "google/gemma-3-4b-it"
+
+
+def test_download_transcoders_rejects_local_non_dry_run(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("HF_TOKEN=fake-token-for-guard\n", encoding="utf-8")
+    proc = run_cli(
+        "download-transcoders",
+        "--provider-family",
+        "gemmascope2-plt-1b-big-affine",
+        "--env-file",
+        str(env_file),
+    )
+    assert proc.returncode != 0
+    assert "run under SLURM" in proc.stderr
+    assert "fake-token-for-guard" not in proc.stdout
+    assert "fake-token-for-guard" not in proc.stderr
 
 
 def test_full_answer_trajectory_print_only_plan_uses_snapshot_template(

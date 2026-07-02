@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -78,6 +79,7 @@ from .transcoder_config import (
     resolve_transcoder_load_config,
     transcoder_config_to_json,
 )
+from .transcoder_download import download_transcoder_snapshot, load_env_file
 from .workspace import (
     DEFAULT_SNAPSHOT_ROOT,
     create_workspace_snapshot,
@@ -871,6 +873,49 @@ def _cmd_build_decoder_signature_cache(args: argparse.Namespace) -> None:
         layers=args.layer if args.layer else None,
     )
     print(json.dumps(summary, indent=2))
+
+
+def _cmd_download_transcoders(args: argparse.Namespace) -> None:
+    if (
+        not args.dry_run
+        and not args.allow_local_download
+        and os.environ.get("SLURM_JOB_ID") is None
+    ):
+        raise RuntimeError(
+            "download-transcoders may fetch large HF artifacts; run under SLURM or pass "
+            "--allow-local-download for an explicit local override"
+        )
+    env_loaded = load_env_file(args.env_file)
+    common_overrides = {
+        "transcoder_architecture": args.transcoder_architecture,
+        "model_name": args.model_name,
+        "repo_id": args.transcoder_repo_id,
+        "revision": args.transcoder_revision,
+        "clt_subfolder": args.clt_subfolder,
+        "plt_subfolder_template": args.plt_subfolder_template,
+        "layer_count": args.transcoder_layer_count,
+        "feature_input_hook": args.feature_input_hook,
+        "feature_output_hook": args.feature_output_hook,
+        "transcoder_cache_dir": None if args.cache_dir is None else str(args.cache_dir),
+    }
+    families = args.provider_family or [None]
+    downloads = []
+    for family in families:
+        config = resolve_transcoder_load_config(
+            transcoder_provider_family=family,
+            **common_overrides,
+        )
+        downloads.append(download_transcoder_snapshot(config, dry_run=args.dry_run))
+    print(
+        json.dumps(
+            {
+                "status": "dry_run" if args.dry_run else "ok",
+                "env_file_loaded": env_loaded,
+                "downloads": downloads,
+            },
+            indent=2,
+        )
+    )
 
 
 def _cmd_run_metric_calibration(args: argparse.Namespace) -> None:
@@ -2137,6 +2182,51 @@ def build_parser() -> argparse.ArgumentParser:
         help="Overwrite existing chunk files and metadata",
     )
     decoder_cache.set_defaults(func=_cmd_build_decoder_signature_cache)
+
+    download_transcoders = subparsers.add_parser(
+        "download-transcoders",
+        help="SLURM-safe Hugging Face pre-download for CLT/PLT transcoder weights",
+    )
+    download_transcoders.add_argument(
+        "--provider-family",
+        action="append",
+        default=None,
+        help="Provider preset to download; repeatable",
+    )
+    download_transcoders.add_argument(
+        "--transcoder-architecture", choices=["clt", "plt"], default=None
+    )
+    download_transcoders.add_argument("--model-name", default=None)
+    download_transcoders.add_argument("--transcoder-repo-id", default=None)
+    download_transcoders.add_argument("--transcoder-revision", default=None)
+    download_transcoders.add_argument("--clt-subfolder", default=None)
+    download_transcoders.add_argument("--plt-subfolder-template", default=None)
+    download_transcoders.add_argument("--transcoder-layer-count", default=None)
+    download_transcoders.add_argument("--feature-input-hook", default=None)
+    download_transcoders.add_argument("--feature-output-hook", default=None)
+    download_transcoders.add_argument(
+        "--cache-dir",
+        type=Path,
+        default=None,
+        help="Optional Hugging Face cache_dir forwarded to snapshot_download",
+    )
+    download_transcoders.add_argument(
+        "--env-file",
+        type=Path,
+        default=REPO_ROOT / ".env",
+        help="Optional .env with HF_TOKEN; values are loaded without printing secrets",
+    )
+    download_transcoders.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print repo/patterns without downloading",
+    )
+    download_transcoders.add_argument(
+        "--allow-local-download",
+        action="store_true",
+        help="Override the SLURM guard for intentional local cache prep",
+    )
+    download_transcoders.set_defaults(func=_cmd_download_transcoders)
 
     metric_calibration = subparsers.add_parser(
         "run-metric-calibration",
