@@ -1,0 +1,37 @@
+{
+  "created_at": "2026-07-01T20:19:45.476102-04:00",
+  "purpose": "Neutral canonical inventory for the 19 real-prompt correct/wrong full-token trace pairs. No role labels or graph similarity metrics are computed here.",
+  "output_dir": "/users/PAS2119/andreykopanev/worktrees_opt/analysis/nlp_research_project/reports/real_prompt_19_inventory_20260701",
+  "sources": {
+    "v1_pair_manifest": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/real-prompt-screen-v1/trace_launch_prep_fullseq_wreuse_w1600/analysis_pair_manifest_20260617_9pairs.json",
+    "v1_selection": "/users/PAS2119/andreykopanev/worktrees_opt/analysis/nlp_research_project/experiments/real_prompt_selected_pairs_20260615.json",
+    "v1_prefix_audit_summary": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/real-prompt-screen-v1/trace_launch_prep_fullseq_wreuse_w1600/metric_analysis_20260617_real_prompt_9pairs/prefix_audits/combined_prefix_audit_summary.json",
+    "v2_pair_manifest": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/real-prompt-screen-v2/trace_launch_prep_fullseq_wreuse_w1600_combined10/analysis_prefix_role_matched_20260625/analysis_pair_manifest_combined10_20260625.json",
+    "v2_selection": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/real-prompt-screen-v2/proposed_trace_pairs_combined10_20260622.json",
+    "v2_aggregate_summary": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/real-prompt-screen-v2/trace_launch_prep_fullseq_wreuse_w1600_combined10/aggregate_done_summary_20260624_combined10.json",
+    "prior_unified_metric_root": "/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/real-prompt-role-matched-pct20-19prompts-20260626"
+  },
+  "counts": {
+    "prompt_pair_count": 19,
+    "trajectory_count": 38,
+    "token_count": 7714,
+    "token_count_by_wave": {
+      "v1_prior9": 3723,
+      "v2_combined10": 3991
+    },
+    "trajectory_count_by_wave": {
+      "v1_prior9": 18,
+      "v2_combined10": 20
+    },
+    "all_trajectories_ok": true,
+    "warnings": []
+  },
+  "files": {
+    "prompt_pairs_csv": "/users/PAS2119/andreykopanev/worktrees_opt/analysis/nlp_research_project/reports/real_prompt_19_inventory_20260701/prompt_pairs.csv",
+    "prompt_pairs_md": "/users/PAS2119/andreykopanev/worktrees_opt/analysis/nlp_research_project/reports/real_prompt_19_inventory_20260701/prompt_pairs.md",
+    "trajectories_csv": "/users/PAS2119/andreykopanev/worktrees_opt/analysis/nlp_research_project/reports/real_prompt_19_inventory_20260701/trajectories.csv",
+    "tokens_csv": "/users/PAS2119/andreykopanev/worktrees_opt/analysis/nlp_research_project/reports/real_prompt_19_inventory_20260701/tokens.csv",
+    "trajectory_texts_jsonl": "/users/PAS2119/andreykopanev/worktrees_opt/analysis/nlp_research_project/reports/real_prompt_19_inventory_20260701/trajectory_texts.jsonl",
+    "trajectory_texts_md": "/users/PAS2119/andreykopanev/worktrees_opt/analysis/nlp_research_project/reports/real_prompt_19_inventory_20260701/trajectory_texts.md"
+  }
+}
