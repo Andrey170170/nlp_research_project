@@ -53,15 +53,6 @@ def _mapped_logit_id(graph: Any, row_id: int) -> int:
     return int(row_id)
 
 
-def _iter_edge_arrays(rows: Any, cols: Any, weights: Any) -> zip:
-    if not (len(rows) == len(cols) == len(weights)):
-        raise ValueError(
-            "bucket edge arrays have mismatched lengths: "
-            f"rows={len(rows)}, cols={len(cols)}, weights={len(weights)}"
-        )
-    return zip(rows, cols, weights)
-
-
 def _maps(path: str) -> tuple[dict[str, dict[Any, float]], int]:
     g = load_signed_graph(path)
     n_pos = infer_n_pos(g)
@@ -74,7 +65,7 @@ def _maps(path: str) -> tuple[dict[str, dict[Any, float]], int]:
     errors = 0
     for bucket in ("feature<-token", "logit<-feature", "feature<-feature"):
         rows, cols, ws = g.bucket_edge_arrays(bucket)
-        for r, c, w in _iter_edge_arrays(rows, cols, ws):
+        for r, c, w in zip(rows, cols, ws, strict=True):
             try:
                 if bucket == "feature<-token":
                     ep = decode_feature_endpoint(int(r), n_pos)
