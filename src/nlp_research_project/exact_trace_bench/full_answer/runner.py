@@ -576,7 +576,9 @@ def _model_load_knobs(specs: list[TraceSpec]) -> dict[str, Any]:
         knobs = spec["graph_knobs"]
         if not isinstance(knobs, Mapping):
             raise ValueError("trace spec graph_knobs must be an object")
-        config = transcoder_config_to_json(resolve_transcoder_load_config(knobs))
+        config = transcoder_config_to_json(
+            resolve_transcoder_load_config(knobs, preserve_default_values=True)
+        )
         if config["decoder_chunk_size"] <= 0:
             raise ValueError("decoder_chunk_size must be a positive int")
         if config["cross_batch_decoder_cache_bytes"] < 0:
@@ -609,6 +611,11 @@ def _attribute_performance_kwargs(knobs: Mapping[str, Any]) -> dict[str, Any]:
         "feature_batch_target_reserved_fraction",
         "feature_batch_min_free_fraction",
         "feature_batch_probe_batches",
+        "chunked_feature_replay_window",
+        "error_vector_prefetch_lookahead",
+        "stage_encoder_vecs_on_cpu",
+        "stage_error_vectors_on_cpu",
+        "exact_encoder_residency",
         "phase4_scheduler_mode",
         "phase4_scheduler_telemetry_detail",
         "phase4_refresh_optimization",

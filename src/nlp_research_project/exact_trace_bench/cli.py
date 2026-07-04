@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from .config import (
     DEFAULT_EXTRACTED_DIR,
@@ -581,6 +582,8 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
         ("--logit-batch-size", args.logit_batch_size),
         ("--feature-batch-size-max", args.feature_batch_size_max),
         ("--row-subchunk-size", args.row_subchunk_size),
+        ("--chunked-feature-replay-window", args.chunked_feature_replay_window),
+        ("--error-vector-prefetch-lookahead", args.error_vector_prefetch_lookahead),
     )
     for flag_name, value in (
         ("--max-feature-nodes", args.max_feature_nodes),
@@ -669,6 +672,11 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
             "plan_feature_batch_size": args.plan_feature_batch_size,
             "feature_batch_size_max": args.feature_batch_size_max,
             "row_subchunk_size": args.row_subchunk_size,
+            "chunked_feature_replay_window": args.chunked_feature_replay_window,
+            "error_vector_prefetch_lookahead": args.error_vector_prefetch_lookahead,
+            "stage_encoder_vecs_on_cpu": args.stage_encoder_vecs_on_cpu,
+            "stage_error_vectors_on_cpu": args.stage_error_vectors_on_cpu,
+            "exact_encoder_residency": args.exact_encoder_residency,
             "verbose_attribution": args.verbose_attribution,
             "profile_attribution": args.profile_attribution,
             "input_context_mode": args.input_context_mode,
@@ -699,7 +707,12 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
     }
     if provider_inputs:
         graph_overrides.update(
-            transcoder_config_to_json(resolve_transcoder_load_config(provider_inputs))
+            transcoder_config_to_json(
+                resolve_transcoder_load_config(
+                    provider_inputs,
+                    preserve_default_values=True,
+                )
+            )
         )
     specs = build_trace_specs(
         trajectory,
@@ -886,7 +899,7 @@ def _cmd_download_transcoders(args: argparse.Namespace) -> None:
             "--allow-local-download for an explicit local override"
         )
     env_loaded = load_env_file(args.env_file)
-    common_overrides = {
+    common_overrides: dict[str, Any] = {
         "transcoder_architecture": args.transcoder_architecture,
         "model_name": args.model_name,
         "repo_id": args.transcoder_repo_id,
@@ -1249,6 +1262,39 @@ def build_parser() -> argparse.ArgumentParser:
         "--feature-batch-size-max", type=int, default=None
     )
     full_answer_trace_specs.add_argument("--row-subchunk-size", type=int, default=None)
+    full_answer_trace_specs.add_argument(
+        "--chunked-feature-replay-window", type=int, default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--error-vector-prefetch-lookahead", type=int, default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--stage-encoder-vecs-on-cpu",
+        dest="stage_encoder_vecs_on_cpu",
+        action="store_true",
+        default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--no-stage-encoder-vecs-on-cpu",
+        dest="stage_encoder_vecs_on_cpu",
+        action="store_false",
+    )
+    full_answer_trace_specs.add_argument(
+        "--stage-error-vectors-on-cpu",
+        dest="stage_error_vectors_on_cpu",
+        action="store_true",
+        default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--no-stage-error-vectors-on-cpu",
+        dest="stage_error_vectors_on_cpu",
+        action="store_false",
+    )
+    full_answer_trace_specs.add_argument(
+        "--exact-encoder-residency",
+        choices=["lazy", "active_cpu", "active_pinned_cpu"],
+        default=None,
+    )
     full_answer_trace_specs.add_argument(
         "--verbose-attribution",
         dest="verbose_attribution",

@@ -421,6 +421,21 @@ SLURM smoke sequence:
 4. 4B PLT width_262k one-token smoke only after the 1B profile is understood,
 5. 4B PLT width_262k five-token benchmark only if memory is tractable.
 
+Current confirmation-stage note (2026-07-02): the next five-example / selected
+position confirmation stage should run a corrected-hook CLT trace alongside the
+PLT traces. Do not reuse old GemmaScope2 CLT artifacts that used the legacy
+`hook_resid_mid` input site; they are wrong-hook contaminated relative to the
+correct `feature_input_hook=mlp.hook_in` regime. For PLT confirmation runs,
+intentionally spend more memory to test whether the current memory-saving knobs
+are throttling Phase 4: use nonzero `cross_batch_decoder_cache_bytes` (start with
+8--16 GiB), raise `chunked_feature_replay_window` to 8 or 16 if VRAM permits, and
+consider `decoder_chunk_size=4096` or `8192` after a one-token telemetry check.
+Keep corrected hooks, fp32, `phase4_row_executor=batched`, and
+`phase4_row_reduction=gpu_v1`. Record Phase-4 batch timings, chunked replay
+seconds, decoder cache hits/misses/load seconds, CUDA reserved/allocated, and
+SLURM MaxRSS so this memory-for-speed probe can be compared against the batch64
+and batch1024 telemetry before promoting any new defaults.
+
 ## 6. Testing strategy
 
 ### Login-safe

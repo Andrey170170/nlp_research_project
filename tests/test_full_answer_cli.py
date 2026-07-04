@@ -193,6 +193,14 @@ def test_full_answer_trace_spec_perf_knob_overrides(tmp_path: Path) -> None:
         "64",
         "--row-subchunk-size",
         "32",
+        "--chunked-feature-replay-window",
+        "16",
+        "--error-vector-prefetch-lookahead",
+        "8",
+        "--no-stage-encoder-vecs-on-cpu",
+        "--no-stage-error-vectors-on-cpu",
+        "--exact-encoder-residency",
+        "active_pinned_cpu",
         "--input-context-mode",
         "full_sequence",
         "--verbose-attribution",
@@ -229,6 +237,11 @@ def test_full_answer_trace_spec_perf_knob_overrides(tmp_path: Path) -> None:
     assert knobs["plan_feature_batch_size"] is True
     assert knobs["feature_batch_size_max"] == 64
     assert knobs["row_subchunk_size"] == 32
+    assert knobs["chunked_feature_replay_window"] == 16
+    assert knobs["error_vector_prefetch_lookahead"] == 8
+    assert knobs["stage_encoder_vecs_on_cpu"] is False
+    assert knobs["stage_error_vectors_on_cpu"] is False
+    assert knobs["exact_encoder_residency"] == "active_pinned_cpu"
     assert knobs["input_context_mode"] == "full_sequence"
     assert knobs["verbose_attribution"] is True
     assert knobs["profile_attribution"] is True

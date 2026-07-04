@@ -58,6 +58,7 @@ PROVIDER_PRESETS: dict[str, TranscoderLoadConfig] = {
 for _size, _model, _repo, _layers in (
     ("1b", "google/gemma-3-1b-it", "google/gemma-scope-2-1b-it", 26),
     ("4b", "google/gemma-3-4b-it", "google/gemma-scope-2-4b-it", 34),
+    ("12b", "google/gemma-3-12b-it", "google/gemma-scope-2-12b-it", 48),
 ):
     for _variant in ("small", "small_affine", "big", "big_affine"):
         PROVIDER_PRESETS[f"gemmascope2-plt-{_size}-{_variant.replace('_', '-')}"] = (
@@ -75,7 +76,10 @@ PUBLIC_TRANSCODER_KNOB_KEYS = tuple(TranscoderLoadConfig.__dataclass_fields__.ke
 
 
 def resolve_transcoder_load_config(
-    mapping: Mapping[str, Any] | None = None, **overrides: Any
+    mapping: Mapping[str, Any] | None = None,
+    *,
+    preserve_default_values: bool = False,
+    **overrides: Any,
 ) -> TranscoderLoadConfig:
     default = TranscoderLoadConfig()
     explicit_override_keys = {k for k, v in overrides.items() if v is not None}
@@ -111,7 +115,12 @@ def resolve_transcoder_load_config(
     data = asdict(preset)
     for key in PUBLIC_TRANSCODER_KNOB_KEYS:
         if key in values and values[key] is not None:
-            if preset != default and values[key] == getattr(default, key):
+            if (
+                preset != default
+                and not preserve_default_values
+                and key not in explicit_override_keys
+                and values[key] == getattr(default, key)
+            ):
                 continue
             data[key] = values[key]
     if isinstance(data["layer_count"], str) and data["layer_count"] != "infer":

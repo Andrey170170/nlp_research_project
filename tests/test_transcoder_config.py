@@ -44,6 +44,32 @@ def test_plt_4b_provider_selects_4b_model_and_repo() -> None:
     assert payload["feature_input_hook"] == "mlp.hook_in"
 
 
+def test_plt_12b_provider_selects_12b_model_and_repo() -> None:
+    config = resolve_transcoder_load_config(
+        {"transcoder_provider_family": "gemmascope2-plt-12b-small-affine"}
+    )
+    payload = transcoder_config_to_json(config)
+    assert payload["transcoder_architecture"] == "plt"
+    assert payload["model_name"] == "google/gemma-3-12b-it"
+    assert payload["repo_id"] == "google/gemma-scope-2-12b-it"
+    assert payload["layer_count"] == 48
+    assert payload["feature_input_hook"] == "mlp.hook_in"
+    assert payload["cross_batch_decoder_cache_bytes"] == 0
+
+
+def test_plt_provider_can_preserve_explicit_default_valued_cache_override() -> None:
+    config = resolve_transcoder_load_config(
+        {
+            "transcoder_provider_family": "gemmascope2-plt-12b-small-affine",
+            "cross_batch_decoder_cache_bytes": 8589934592,
+        },
+        preserve_default_values=True,
+    )
+    payload = transcoder_config_to_json(config)
+    assert payload["transcoder_provider_family"] == "gemmascope2-plt-12b-small-affine"
+    assert payload["cross_batch_decoder_cache_bytes"] == 8589934592
+
+
 def test_architecture_family_conflicts_are_rejected() -> None:
     try:
         resolve_transcoder_load_config(

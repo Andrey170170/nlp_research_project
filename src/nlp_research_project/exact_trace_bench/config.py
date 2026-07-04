@@ -59,6 +59,7 @@ def base_trace_defaults() -> dict[str, Any]:
         "stage_encoder_vecs_on_cpu": None,
         "stage_error_vectors_on_cpu": None,
         "row_subchunk_size": None,
+        "exact_encoder_residency": "lazy",
         "decoder_chunk_size": 256,
         "cross_batch_decoder_cache_bytes": 8589934592,
         "exact_trace_internal_dtype": "fp32",
