@@ -175,6 +175,11 @@ def test_attribute_performance_kwargs_forward_safe_knobs() -> None:
             "decoder_chunk_size": 256,
             "cross_batch_decoder_cache_bytes": 8589934592,
             "feature_batch_size": None,
+            "chunked_feature_replay_window": 16,
+            "error_vector_prefetch_lookahead": 8,
+            "stage_encoder_vecs_on_cpu": False,
+            "stage_error_vectors_on_cpu": False,
+            "exact_encoder_residency": "active_pinned_cpu",
         }
     )
     assert kwargs == {
@@ -195,6 +200,11 @@ def test_attribute_performance_kwargs_forward_safe_knobs() -> None:
         "phase4_frontier_buffer_max_extra_total": 128,
         "row_store_cache_control": "fadvise_dontneed_after_append_v1",
         "row_store_preallocate": True,
+        "chunked_feature_replay_window": 16,
+        "error_vector_prefetch_lookahead": 8,
+        "stage_encoder_vecs_on_cpu": False,
+        "stage_error_vectors_on_cpu": False,
+        "exact_encoder_residency": "active_pinned_cpu",
         "cross_cluster_debug": True,
         "capture_phase0_donor_bundle": True,
         "capture_phase3_seed_bundle": True,
@@ -385,6 +395,11 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
     assert trace["phase4_frontier_buffer_metadata"] == {
         "extra_feature_count_total": 3,
     }
+    assert trace["transcoder"]["requested"]["transcoder_architecture"] == "clt"
+    assert (
+        trace["transcoder"]["requested"]["transcoder_provider_family"]
+        == "gemmascope2-clt-1b-medium-affine"
+    )
     assert (
         tmp_path
         / "run"

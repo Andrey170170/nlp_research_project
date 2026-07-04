@@ -71,6 +71,7 @@ def test_full_answer_cli_help_is_login_safe() -> None:
     assert run_cli("build-role-matched-calibration-manifest", "--help").returncode == 0
     assert run_cli("apply-role-classification-reviews", "--help").returncode == 0
     assert run_cli("build-decoder-signature-cache", "--help").returncode == 0
+    assert run_cli("download-transcoders", "--help").returncode == 0
     assert run_cli("run-metric-calibration", "--help").returncode == 0
     assert run_cli("plot-metric-calibration", "--help").returncode == 0
     assert run_cli("compare-full-answer-stability", "--help").returncode == 0
@@ -109,6 +110,10 @@ def test_full_answer_cli_writes_planning_artifacts(tmp_path: Path) -> None:
     assert knobs["profile_attribution"] is False
     assert knobs["decoder_chunk_size"] == 256
     assert knobs["cross_batch_decoder_cache_bytes"] == 8589934592
+    assert knobs["transcoder_architecture"] == "clt"
+    assert knobs["transcoder_provider_family"] == "gemmascope2-clt-1b-medium-affine"
+    assert knobs["repo_id"] == "google/gemma-scope-2-1b-it"
+    assert knobs["clt_subfolder"] == "clt/width_262k_l0_medium_affine"
     assert knobs["phase4_row_reduction"] == "gpu_v1"
     assert knobs["phase4_refresh_optimization"] == "v1"
     assert knobs["phase4_refresh_active_row_accumulation"] == "direct_v1"
@@ -146,6 +151,10 @@ def test_full_answer_trace_spec_perf_knob_overrides(tmp_path: Path) -> None:
         "128",
         "--cross-batch-decoder-cache-bytes",
         "0",
+        "--transcoder-architecture",
+        "plt",
+        "--transcoder-provider-family",
+        "gemmascope2-plt-1b-big-affine",
         "--phase4-refresh-optimization",
         "off",
         "--phase4-refresh-active-row-accumulation",
@@ -184,6 +193,14 @@ def test_full_answer_trace_spec_perf_knob_overrides(tmp_path: Path) -> None:
         "64",
         "--row-subchunk-size",
         "32",
+        "--chunked-feature-replay-window",
+        "16",
+        "--error-vector-prefetch-lookahead",
+        "8",
+        "--no-stage-encoder-vecs-on-cpu",
+        "--no-stage-error-vectors-on-cpu",
+        "--exact-encoder-residency",
+        "active_pinned_cpu",
         "--input-context-mode",
         "full_sequence",
         "--verbose-attribution",
@@ -194,6 +211,11 @@ def test_full_answer_trace_spec_perf_knob_overrides(tmp_path: Path) -> None:
     knobs = spec["graph_knobs"]
     assert knobs["decoder_chunk_size"] == 128
     assert knobs["cross_batch_decoder_cache_bytes"] == 0
+    assert knobs["transcoder_architecture"] == "plt"
+    assert knobs["transcoder_provider_family"] == "gemmascope2-plt-1b-big-affine"
+    assert knobs["model_name"] == "google/gemma-3-1b-it"
+    assert knobs["repo_id"] == "google/gemma-scope-2-1b-it"
+    assert knobs["layer_count"] == 26
     assert knobs["phase4_refresh_optimization"] == "off"
     assert knobs["phase4_refresh_active_row_accumulation"] == "zero_fill"
     assert knobs["phase4_row_reduction"] == "off"
@@ -215,9 +237,110 @@ def test_full_answer_trace_spec_perf_knob_overrides(tmp_path: Path) -> None:
     assert knobs["plan_feature_batch_size"] is True
     assert knobs["feature_batch_size_max"] == 64
     assert knobs["row_subchunk_size"] == 32
+    assert knobs["chunked_feature_replay_window"] == 16
+    assert knobs["error_vector_prefetch_lookahead"] == 8
+    assert knobs["stage_encoder_vecs_on_cpu"] is False
+    assert knobs["stage_error_vectors_on_cpu"] is False
+    assert knobs["exact_encoder_residency"] == "active_pinned_cpu"
     assert knobs["input_context_mode"] == "full_sequence"
     assert knobs["verbose_attribution"] is True
     assert knobs["profile_attribution"] is True
+
+
+def test_full_answer_trace_spec_provider_family_resolves_complete_plt_config(
+    tmp_path: Path,
+) -> None:
+    trajectory_path = tmp_path / "trajectory.json"
+    out_dir = tmp_path / "out"
+    trajectory_path.write_text(json.dumps(tiny_trajectory()), encoding="utf-8")
+
+    proc = run_cli(
+        "build-full-answer-trace-specs",
+        "--trajectory",
+        str(trajectory_path),
+        "--indices",
+        "0",
+        "--output-dir",
+        str(out_dir),
+        "--transcoder-provider-family",
+        "gemmascope2-plt-4b-small-affine",
+    )
+    assert proc.returncode == 0, proc.stderr
+    spec = json.loads((out_dir / "trace_specs.jsonl").read_text(encoding="utf-8"))
+    knobs = spec["graph_knobs"]
+    assert knobs["transcoder_architecture"] == "plt"
+    assert knobs["transcoder_provider_family"] == "gemmascope2-plt-4b-small-affine"
+    assert knobs["model_name"] == "google/gemma-3-4b-it"
+    assert knobs["repo_id"] == "google/gemma-scope-2-4b-it"
+    assert knobs["layer_count"] == 34
+    assert knobs["cross_batch_decoder_cache_bytes"] == 0
+
+
+def test_full_answer_trace_spec_rejects_partial_transcoder_identity_override(
+    tmp_path: Path,
+) -> None:
+    trajectory_path = tmp_path / "trajectory.json"
+    out_dir = tmp_path / "out"
+    trajectory_path.write_text(json.dumps(tiny_trajectory()), encoding="utf-8")
+
+    proc = run_cli(
+        "build-full-answer-trace-specs",
+        "--trajectory",
+        str(trajectory_path),
+        "--indices",
+        "0",
+        "--output-dir",
+        str(out_dir),
+        "--model-name",
+        "google/gemma-3-4b-it",
+    )
+    assert proc.returncode != 0
+    assert "model/checkpoint override conflicts" in proc.stderr
+
+
+def test_download_transcoders_dry_run_is_login_safe(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("HF_TOKEN=fake-token-for-dry-run\n", encoding="utf-8")
+    proc = run_cli(
+        "download-transcoders",
+        "--provider-family",
+        "gemmascope2-plt-1b-big-affine",
+        "--provider-family",
+        "gemmascope2-plt-4b-big-affine",
+        "--env-file",
+        str(env_file),
+        "--dry-run",
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "fake-token-for-dry-run" not in proc.stdout
+    assert "fake-token-for-dry-run" not in proc.stderr
+    payload = json.loads(proc.stdout)
+    assert payload["status"] == "dry_run"
+    assert payload["env_file_loaded"] is True
+    downloads = payload["downloads"]
+    assert [item["config"]["transcoder_provider_family"] for item in downloads] == [
+        "gemmascope2-plt-1b-big-affine",
+        "gemmascope2-plt-4b-big-affine",
+    ]
+    assert downloads[0]["pattern_count"] == 26
+    assert downloads[1]["pattern_count"] == 34
+    assert downloads[1]["config"]["model_name"] == "google/gemma-3-4b-it"
+
+
+def test_download_transcoders_rejects_local_non_dry_run(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("HF_TOKEN=fake-token-for-guard\n", encoding="utf-8")
+    proc = run_cli(
+        "download-transcoders",
+        "--provider-family",
+        "gemmascope2-plt-1b-big-affine",
+        "--env-file",
+        str(env_file),
+    )
+    assert proc.returncode != 0
+    assert "run under SLURM" in proc.stderr
+    assert "fake-token-for-guard" not in proc.stdout
+    assert "fake-token-for-guard" not in proc.stderr
 
 
 def test_full_answer_trajectory_print_only_plan_uses_snapshot_template(

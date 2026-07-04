@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from .config import (
     DEFAULT_EXTRACTED_DIR,
@@ -73,6 +75,12 @@ from .scenarios import (
     write_wave0_baseline_config,
 )
 from .semantic_feature_compare import compare_semantic_feature_descriptors_to_json
+from .transcoder_config import (
+    PUBLIC_TRANSCODER_KNOB_KEYS,
+    resolve_transcoder_load_config,
+    transcoder_config_to_json,
+)
+from .transcoder_download import download_transcoder_snapshot, load_env_file
 from .workspace import (
     DEFAULT_SNAPSHOT_ROOT,
     create_workspace_snapshot,
@@ -574,6 +582,8 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
         ("--logit-batch-size", args.logit_batch_size),
         ("--feature-batch-size-max", args.feature_batch_size_max),
         ("--row-subchunk-size", args.row_subchunk_size),
+        ("--chunked-feature-replay-window", args.chunked_feature_replay_window),
+        ("--error-vector-prefetch-lookahead", args.error_vector_prefetch_lookahead),
     )
     for flag_name, value in (
         ("--max-feature-nodes", args.max_feature_nodes),
@@ -662,6 +672,11 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
             "plan_feature_batch_size": args.plan_feature_batch_size,
             "feature_batch_size_max": args.feature_batch_size_max,
             "row_subchunk_size": args.row_subchunk_size,
+            "chunked_feature_replay_window": args.chunked_feature_replay_window,
+            "error_vector_prefetch_lookahead": args.error_vector_prefetch_lookahead,
+            "stage_encoder_vecs_on_cpu": args.stage_encoder_vecs_on_cpu,
+            "stage_error_vectors_on_cpu": args.stage_error_vectors_on_cpu,
+            "exact_encoder_residency": args.exact_encoder_residency,
             "verbose_attribution": args.verbose_attribution,
             "profile_attribution": args.profile_attribution,
             "input_context_mode": args.input_context_mode,
@@ -671,9 +686,34 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
             "phase0_window_scope": args.phase0_window_scope,
             "phase0_window_max_prefix_policy": args.phase0_window_max_prefix_policy,
             "phase0_window_reference_checks": args.phase0_window_reference_checks,
+            "transcoder_architecture": args.transcoder_architecture,
+            "transcoder_provider_family": args.transcoder_provider_family,
+            "model_name": args.model_name,
+            "repo_id": args.transcoder_repo_id,
+            "revision": args.transcoder_revision,
+            "clt_subfolder": args.clt_subfolder,
+            "plt_subfolder_template": args.plt_subfolder_template,
+            "layer_count": args.transcoder_layer_count,
+            "feature_input_hook": args.feature_input_hook,
+            "feature_output_hook": args.feature_output_hook,
+            "transcoder_cache_dir": args.transcoder_cache_dir,
         }.items()
         if value is not None
     }
+    provider_inputs = {
+        key: graph_overrides[key]
+        for key in PUBLIC_TRANSCODER_KNOB_KEYS
+        if key in graph_overrides
+    }
+    if provider_inputs:
+        graph_overrides.update(
+            transcoder_config_to_json(
+                resolve_transcoder_load_config(
+                    provider_inputs,
+                    preserve_default_values=True,
+                )
+            )
+        )
     specs = build_trace_specs(
         trajectory,
         selection,
@@ -848,6 +888,49 @@ def _cmd_build_decoder_signature_cache(args: argparse.Namespace) -> None:
     print(json.dumps(summary, indent=2))
 
 
+def _cmd_download_transcoders(args: argparse.Namespace) -> None:
+    if (
+        not args.dry_run
+        and not args.allow_local_download
+        and os.environ.get("SLURM_JOB_ID") is None
+    ):
+        raise RuntimeError(
+            "download-transcoders may fetch large HF artifacts; run under SLURM or pass "
+            "--allow-local-download for an explicit local override"
+        )
+    env_loaded = load_env_file(args.env_file)
+    common_overrides: dict[str, Any] = {
+        "transcoder_architecture": args.transcoder_architecture,
+        "model_name": args.model_name,
+        "repo_id": args.transcoder_repo_id,
+        "revision": args.transcoder_revision,
+        "clt_subfolder": args.clt_subfolder,
+        "plt_subfolder_template": args.plt_subfolder_template,
+        "layer_count": args.transcoder_layer_count,
+        "feature_input_hook": args.feature_input_hook,
+        "feature_output_hook": args.feature_output_hook,
+        "transcoder_cache_dir": None if args.cache_dir is None else str(args.cache_dir),
+    }
+    families = args.provider_family or [None]
+    downloads = []
+    for family in families:
+        config = resolve_transcoder_load_config(
+            transcoder_provider_family=family,
+            **common_overrides,
+        )
+        downloads.append(download_transcoder_snapshot(config, dry_run=args.dry_run))
+    print(
+        json.dumps(
+            {
+                "status": "dry_run" if args.dry_run else "ok",
+                "env_file_loaded": env_loaded,
+                "downloads": downloads,
+            },
+            indent=2,
+        )
+    )
+
+
 def _cmd_run_metric_calibration(args: argparse.Namespace) -> None:
     from .full_answer.calibration import run_metric_calibration
 
@@ -1020,6 +1103,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--cross-batch-decoder-cache-bytes", type=int, default=None
     )
     full_answer_trace_specs.add_argument(
+        "--transcoder-architecture", choices=["clt", "plt"], default=None
+    )
+    full_answer_trace_specs.add_argument("--transcoder-provider-family", default=None)
+    full_answer_trace_specs.add_argument("--model-name", default=None)
+    full_answer_trace_specs.add_argument("--transcoder-repo-id", default=None)
+    full_answer_trace_specs.add_argument("--transcoder-revision", default=None)
+    full_answer_trace_specs.add_argument("--clt-subfolder", default=None)
+    full_answer_trace_specs.add_argument("--plt-subfolder-template", default=None)
+    full_answer_trace_specs.add_argument("--transcoder-layer-count", default=None)
+    full_answer_trace_specs.add_argument("--feature-input-hook", default=None)
+    full_answer_trace_specs.add_argument("--feature-output-hook", default=None)
+    full_answer_trace_specs.add_argument("--transcoder-cache-dir", default=None)
+    full_answer_trace_specs.add_argument(
         "--attribution-batch-size", type=int, default=None
     )
     full_answer_trace_specs.add_argument("--feature-batch-size", type=int, default=None)
@@ -1166,6 +1262,39 @@ def build_parser() -> argparse.ArgumentParser:
         "--feature-batch-size-max", type=int, default=None
     )
     full_answer_trace_specs.add_argument("--row-subchunk-size", type=int, default=None)
+    full_answer_trace_specs.add_argument(
+        "--chunked-feature-replay-window", type=int, default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--error-vector-prefetch-lookahead", type=int, default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--stage-encoder-vecs-on-cpu",
+        dest="stage_encoder_vecs_on_cpu",
+        action="store_true",
+        default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--no-stage-encoder-vecs-on-cpu",
+        dest="stage_encoder_vecs_on_cpu",
+        action="store_false",
+    )
+    full_answer_trace_specs.add_argument(
+        "--stage-error-vectors-on-cpu",
+        dest="stage_error_vectors_on_cpu",
+        action="store_true",
+        default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--no-stage-error-vectors-on-cpu",
+        dest="stage_error_vectors_on_cpu",
+        action="store_false",
+    )
+    full_answer_trace_specs.add_argument(
+        "--exact-encoder-residency",
+        choices=["lazy", "active_cpu", "active_pinned_cpu"],
+        default=None,
+    )
     full_answer_trace_specs.add_argument(
         "--verbose-attribution",
         dest="verbose_attribution",
@@ -2099,6 +2228,51 @@ def build_parser() -> argparse.ArgumentParser:
         help="Overwrite existing chunk files and metadata",
     )
     decoder_cache.set_defaults(func=_cmd_build_decoder_signature_cache)
+
+    download_transcoders = subparsers.add_parser(
+        "download-transcoders",
+        help="SLURM-safe Hugging Face pre-download for CLT/PLT transcoder weights",
+    )
+    download_transcoders.add_argument(
+        "--provider-family",
+        action="append",
+        default=None,
+        help="Provider preset to download; repeatable",
+    )
+    download_transcoders.add_argument(
+        "--transcoder-architecture", choices=["clt", "plt"], default=None
+    )
+    download_transcoders.add_argument("--model-name", default=None)
+    download_transcoders.add_argument("--transcoder-repo-id", default=None)
+    download_transcoders.add_argument("--transcoder-revision", default=None)
+    download_transcoders.add_argument("--clt-subfolder", default=None)
+    download_transcoders.add_argument("--plt-subfolder-template", default=None)
+    download_transcoders.add_argument("--transcoder-layer-count", default=None)
+    download_transcoders.add_argument("--feature-input-hook", default=None)
+    download_transcoders.add_argument("--feature-output-hook", default=None)
+    download_transcoders.add_argument(
+        "--cache-dir",
+        type=Path,
+        default=None,
+        help="Optional Hugging Face cache_dir forwarded to snapshot_download",
+    )
+    download_transcoders.add_argument(
+        "--env-file",
+        type=Path,
+        default=REPO_ROOT / ".env",
+        help="Optional .env with HF_TOKEN; values are loaded without printing secrets",
+    )
+    download_transcoders.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print repo/patterns without downloading",
+    )
+    download_transcoders.add_argument(
+        "--allow-local-download",
+        action="store_true",
+        help="Override the SLURM guard for intentional local cache prep",
+    )
+    download_transcoders.set_defaults(func=_cmd_download_transcoders)
 
     metric_calibration = subparsers.add_parser(
         "run-metric-calibration",

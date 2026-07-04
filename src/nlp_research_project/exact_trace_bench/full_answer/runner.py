@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import Any, Mapping, cast
 
 from ..io_utils import ensure_dir, write_json, write_jsonl
+from ..transcoder_config import (
+    PUBLIC_TRANSCODER_KNOB_KEYS,
+    resolve_transcoder_load_config,
+    transcoder_config_to_json,
+)
 from .schemas import TraceSpec, load_shards, load_trace_specs, load_trajectory
 
 
@@ -566,43 +571,28 @@ def _graph_summary(
 
 
 def _model_load_knobs(specs: list[TraceSpec]) -> dict[str, Any]:
-    decoder_chunk_size: int | None = None
-    cross_batch_decoder_cache_bytes: int | None = None
+    resolved: dict[str, Any] | None = None
     for spec in specs:
         knobs = spec["graph_knobs"]
         if not isinstance(knobs, Mapping):
             raise ValueError("trace spec graph_knobs must be an object")
-        spec_decoder_chunk_size = knobs.get("decoder_chunk_size")
-        spec_cache_bytes = knobs.get("cross_batch_decoder_cache_bytes")
-        if spec_decoder_chunk_size is not None:
-            if (
-                not isinstance(spec_decoder_chunk_size, int)
-                or spec_decoder_chunk_size <= 0
-            ):
-                raise ValueError("decoder_chunk_size must be a positive int")
-            if (
-                decoder_chunk_size is not None
-                and spec_decoder_chunk_size != decoder_chunk_size
-            ):
-                raise ValueError("all specs in a shard must share decoder_chunk_size")
-            decoder_chunk_size = spec_decoder_chunk_size
-        if spec_cache_bytes is not None:
-            if not isinstance(spec_cache_bytes, int) or spec_cache_bytes < 0:
-                raise ValueError(
-                    "cross_batch_decoder_cache_bytes must be a non-negative int"
-                )
-            if (
-                cross_batch_decoder_cache_bytes is not None
-                and spec_cache_bytes != cross_batch_decoder_cache_bytes
-            ):
-                raise ValueError(
-                    "all specs in a shard must share cross_batch_decoder_cache_bytes"
-                )
-            cross_batch_decoder_cache_bytes = spec_cache_bytes
-    return {
-        "decoder_chunk_size": decoder_chunk_size or 256,
-        "cross_batch_decoder_cache_bytes": cross_batch_decoder_cache_bytes,
-    }
+        config = transcoder_config_to_json(
+            resolve_transcoder_load_config(knobs, preserve_default_values=True)
+        )
+        if config["decoder_chunk_size"] <= 0:
+            raise ValueError("decoder_chunk_size must be a positive int")
+        if config["cross_batch_decoder_cache_bytes"] < 0:
+            raise ValueError(
+                "cross_batch_decoder_cache_bytes must be a non-negative int"
+            )
+        if resolved is not None and any(
+            config[k] != resolved[k] for k in PUBLIC_TRANSCODER_KNOB_KEYS
+        ):
+            raise ValueError(
+                "all specs in a shard must share transcoder provider/load config"
+            )
+        resolved = config
+    return resolved or transcoder_config_to_json(resolve_transcoder_load_config())
 
 
 def _attribute_performance_kwargs(knobs: Mapping[str, Any]) -> dict[str, Any]:
@@ -621,6 +611,11 @@ def _attribute_performance_kwargs(knobs: Mapping[str, Any]) -> dict[str, Any]:
         "feature_batch_target_reserved_fraction",
         "feature_batch_min_free_fraction",
         "feature_batch_probe_batches",
+        "chunked_feature_replay_window",
+        "error_vector_prefetch_lookahead",
+        "stage_encoder_vecs_on_cpu",
+        "stage_error_vectors_on_cpu",
+        "exact_encoder_residency",
         "phase4_scheduler_mode",
         "phase4_scheduler_telemetry_detail",
         "phase4_refresh_optimization",
@@ -786,11 +781,13 @@ def run_real_shard(
     model_load_knobs = _model_load_knobs(specs)
     model = base.load_model(
         exact_chunked_decoder=True,
-        decoder_chunk_size=model_load_knobs["decoder_chunk_size"],
-        cross_batch_decoder_cache_bytes=model_load_knobs[
-            "cross_batch_decoder_cache_bytes"
-        ],
+        **model_load_knobs,
     )
+    get_metadata = getattr(base, "get_model_transcoder_metadata", None)
+    transcoder_metadata = (get_metadata(model) if callable(get_metadata) else None) or {
+        "requested": model_load_knobs
+    }
+    metadata = {**metadata, "transcoder": transcoder_metadata}
     offload = "cpu"
     rows: list[dict[str, Any]] = []
     full_sequence_cache = prepare_full_sequence_cache(trajectory, specs)

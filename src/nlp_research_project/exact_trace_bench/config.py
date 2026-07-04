@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from .transcoder_config import transcoder_config_to_json, TranscoderLoadConfig
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -37,6 +39,7 @@ DEFAULT_LOGS_DIR = REPO_ROOT / "logs"
 
 def base_trace_defaults() -> dict[str, Any]:
     return {
+        **transcoder_config_to_json(TranscoderLoadConfig()),
         "completions": 1,
         "temperature": 0.0,
         "max_feature_nodes": 8192,
@@ -56,8 +59,7 @@ def base_trace_defaults() -> dict[str, Any]:
         "stage_encoder_vecs_on_cpu": None,
         "stage_error_vectors_on_cpu": None,
         "row_subchunk_size": None,
-        "decoder_chunk_size": 256,
-        "cross_batch_decoder_cache_bytes": 8589934592,
+        "exact_encoder_residency": "lazy",
         "exact_trace_internal_dtype": "fp32",
         "phase0_activation_threshold_compare_mode": "baseline",
         "plan_feature_batch_size": False,

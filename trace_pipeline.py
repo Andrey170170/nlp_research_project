@@ -49,12 +49,84 @@ from circuit_utils import (
     save_compact,
     sparsify_edges,
 )
+from nlp_research_project.exact_trace_bench.transcoder_config import (
+    provider_metadata,
+    resolve_transcoder_load_config,
+)
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 DTYPE = torch.bfloat16
 
 HF_REPO = "google/gemma-scope-2-1b-it"
 CLT_SUBFOLDER = "clt/width_262k_l0_medium_affine"
+
+
+def get_model_transcoder_metadata(model: ReplacementModel) -> dict[str, Any] | None:
+    return getattr(model, "_nlp_research_transcoder_metadata", None)
+
+
+def _checkpoint_identity(config: Any) -> str:
+    revision = config.revision or "main"
+    path = config.clt_subfolder or config.plt_subfolder_template or ""
+    return f"{config.repo_id}@{revision}:{path}"
+
+
+def _detect_transcoder_provider_metadata(
+    transcoders: Any, checkpoint_identity: str
+) -> dict[str, Any]:
+    detected: dict[str, Any] = {
+        "exact_chunked_decoder": getattr(transcoders, "exact_chunked_decoder", None),
+        "exact_chunked_provider": getattr(transcoders, "exact_chunked_provider", None),
+    }
+    try:
+        from circuit_tracer.transcoder.provider import (
+            get_transcoder_capabilities,
+            provider_fingerprint,
+        )
+
+        capabilities = get_transcoder_capabilities(transcoders)
+        detected["capabilities"] = dict(capabilities.__dict__)
+        detected["provider_fingerprint"] = provider_fingerprint(
+            transcoders,
+            checkpoint_identity=checkpoint_identity,
+        )
+    except (
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+    ) as exc:  # pragma: no cover - metadata best effort across forks
+        detected["provider_metadata_error"] = repr(exc)
+    return detected
+
+
+def _infer_plt_layer_paths(
+    *,
+    local_dir: Path,
+    template: str,
+) -> dict[int, str]:
+    prefix, suffix = template.split("{layer}", maxsplit=1)
+    candidates = sorted(local_dir.glob(template.replace("{layer}", "*")))
+    paths: dict[int, str] = {}
+    for path in candidates:
+        rel = path.relative_to(local_dir).as_posix()
+        if not rel.startswith(prefix) or not rel.endswith(suffix):
+            continue
+        layer_text = rel[len(prefix) : len(rel) - len(suffix)]
+        if not layer_text.isdigit():
+            continue
+        paths[int(layer_text)] = str(path)
+    if not paths:
+        raise FileNotFoundError(
+            f"No PLT params matched template after snapshot_download: {template}"
+        )
+    expected = set(range(max(paths) + 1))
+    if set(paths) != expected:
+        raise ValueError(
+            "PLT layer files must be contiguous from 0; found "
+            f"{sorted(paths)} for template {template!r}"
+        )
+    return paths
 
 
 def parse_exact_trace_internal_dtype(value: str) -> str:
@@ -136,6 +208,7 @@ def load_gemma_scope_2_clt_native(
     paths: dict[int, str],
     feature_input_hook: str = "hook_resid_mid",
     feature_output_hook: str = "hook_mlp_out",
+    scan: str | None = None,
     device: torch.device | None = None,
     dtype: torch.dtype = torch.bfloat16,
     *,
@@ -154,6 +227,7 @@ def load_gemma_scope_2_clt_native(
         "paths": paths,
         "feature_input_hook": feature_input_hook,
         "feature_output_hook": feature_output_hook,
+        "scan": scan,
         "device": device,
         "dtype": dtype,
         "lazy_encoder": lazy_encoder,
@@ -170,56 +244,148 @@ def load_gemma_scope_2_clt_native(
 
 def load_model(
     *,
+    model_name: str | None = None,
+    transcoder_architecture: str | None = None,
+    transcoder_provider_family: str | None = None,
+    repo_id: str | None = None,
+    revision: str | None = None,
+    clt_subfolder: str | None = None,
+    plt_subfolder_template: str | None = None,
+    layer_count: int | str | None = None,
+    feature_input_hook: str | None = None,
+    feature_output_hook: str | None = None,
+    transcoder_cache_dir: str | None = None,
     lazy_encoder: bool = True,
     lazy_decoder: bool = True,
     decoder_chunk_size: int = 256,
     exact_chunked_decoder: bool = True,
     cross_batch_decoder_cache_bytes: int | None = None,
 ) -> ReplacementModel:
-    print("Loading Gemma-3-1B-IT with transcoders...")
+    config = resolve_transcoder_load_config(
+        model_name=model_name,
+        transcoder_architecture=transcoder_architecture,
+        transcoder_provider_family=transcoder_provider_family,
+        repo_id=repo_id,
+        revision=revision,
+        clt_subfolder=clt_subfolder,
+        plt_subfolder_template=plt_subfolder_template,
+        layer_count=layer_count,
+        feature_input_hook=feature_input_hook,
+        feature_output_hook=feature_output_hook,
+        transcoder_cache_dir=transcoder_cache_dir,
+        lazy_encoder=lazy_encoder,
+        lazy_decoder=lazy_decoder,
+        decoder_chunk_size=decoder_chunk_size,
+        cross_batch_decoder_cache_bytes=cross_batch_decoder_cache_bytes,
+    )
+    print(f"Loading {config.model_name} with transcoders...")
     print(f"  Device: {DEVICE}, Dtype: {DTYPE}")
     print(
-        "  Transcoder loader: fork-native GemmaScope-2 CLT "
-        f"(lazy_encoder={lazy_encoder}, lazy_decoder={lazy_decoder}, "
-        f"decoder_chunk_size={decoder_chunk_size}, "
+        f"  Transcoder loader: {config.transcoder_provider_family} "
+        f"({config.transcoder_architecture}, lazy_encoder={config.lazy_encoder}, "
+        f"lazy_decoder={config.lazy_decoder}, "
+        f"decoder_chunk_size={config.decoder_chunk_size}, "
         f"exact_chunked_decoder={exact_chunked_decoder}, "
-        f"cross_batch_decoder_cache_bytes={cross_batch_decoder_cache_bytes or 0})"
+        f"cross_batch_decoder_cache_bytes={config.cross_batch_decoder_cache_bytes})"
     )
     if torch.cuda.is_available():
         print(f"  GPU memory before load: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
 
     from huggingface_hub import snapshot_download
 
-    local_dir = snapshot_download(
-        HF_REPO,
-        allow_patterns=[f"{CLT_SUBFOLDER}/params_layer_*.safetensors"],
-    )
-    clt_dir = Path(local_dir) / CLT_SUBFOLDER
-    layer_files = sorted(
-        clt_dir.glob("params_layer_*.safetensors"), key=_layer_file_index
-    )
-    paths = {i: str(path) for i, path in enumerate(layer_files)}
-    print(f"  Found {len(paths)} transcoder layer files")
+    if config.transcoder_architecture == "clt":
+        local_dir = snapshot_download(
+            config.repo_id,
+            revision=config.revision,
+            cache_dir=config.transcoder_cache_dir,
+            allow_patterns=[f"{config.clt_subfolder}/params_layer_*.safetensors"],
+        )
+        clt_dir = Path(local_dir) / str(config.clt_subfolder)
+        layer_files = sorted(
+            clt_dir.glob("params_layer_*.safetensors"), key=_layer_file_index
+        )
+        paths = {i: str(path) for i, path in enumerate(layer_files)}
+        print(f"  Found {len(paths)} transcoder layer files")
+        transcoders = load_gemma_scope_2_clt_native(
+            paths=paths,
+            feature_input_hook=config.feature_input_hook,
+            feature_output_hook=config.feature_output_hook,
+            scan=_checkpoint_identity(config),
+            device=torch.device(DEVICE),
+            dtype=DTYPE,
+            lazy_encoder=config.lazy_encoder,
+            lazy_decoder=config.lazy_decoder,
+            decoder_chunk_size=config.decoder_chunk_size,
+            cross_batch_decoder_cache_bytes=config.cross_batch_decoder_cache_bytes,
+        )
+    else:
+        from circuit_tracer.transcoder.single_layer_transcoder import (
+            load_transcoder_set,
+        )
 
-    transcoders = load_gemma_scope_2_clt_native(
-        paths=paths,
-        feature_input_hook="hook_resid_mid",
-        feature_output_hook="hook_mlp_out",
-        device=torch.device(DEVICE),
-        dtype=DTYPE,
-        lazy_encoder=lazy_encoder,
-        lazy_decoder=lazy_decoder,
-        decoder_chunk_size=decoder_chunk_size,
-        cross_batch_decoder_cache_bytes=cross_batch_decoder_cache_bytes,
-    )
+        if not config.plt_subfolder_template:
+            raise ValueError("PLT requires plt_subfolder_template")
+        if isinstance(config.layer_count, int):
+            allow_patterns = [
+                config.plt_subfolder_template.format(layer=i)
+                for i in range(config.layer_count)
+            ]
+        else:
+            allow_patterns = [config.plt_subfolder_template.format(layer="*")]
+        local_dir = snapshot_download(
+            config.repo_id,
+            revision=config.revision,
+            cache_dir=config.transcoder_cache_dir,
+            allow_patterns=allow_patterns,
+        )
+        if isinstance(config.layer_count, int):
+            paths = {
+                i: str(Path(local_dir) / pattern)
+                for i, pattern in enumerate(allow_patterns)
+            }
+            missing_paths = [
+                path for path in paths.values() if not Path(path).is_file()
+            ]
+            if missing_paths:
+                raise FileNotFoundError(
+                    "Missing PLT layer file(s) after snapshot_download: "
+                    + ", ".join(missing_paths[:5])
+                    + (" ..." if len(missing_paths) > 5 else "")
+                )
+        else:
+            paths = _infer_plt_layer_paths(
+                local_dir=Path(local_dir),
+                template=config.plt_subfolder_template,
+            )
+        transcoders = load_transcoder_set(
+            transcoder_paths=paths,
+            scan=_checkpoint_identity(config),
+            feature_input_hook=config.feature_input_hook,
+            feature_output_hook=config.feature_output_hook,
+            device=torch.device(DEVICE),
+            dtype=DTYPE,
+            special_load_fn="gemma-scope-2",
+            exact_chunked_provider=True,
+            lazy_encoder=config.lazy_encoder,
+            lazy_decoder=config.lazy_decoder,
+            decoder_chunk_size=config.decoder_chunk_size,
+            cross_batch_decoder_cache_bytes=config.cross_batch_decoder_cache_bytes,
+        )
     transcoders.exact_chunked_decoder = exact_chunked_decoder
 
     model = ReplacementModel.from_pretrained_and_transcoders(
-        model_name="google/gemma-3-1b-it",
+        model_name=config.model_name,
         transcoders=transcoders,
         device=torch.device(DEVICE),
         dtype=DTYPE,
         backend="nnsight",
+    )
+    model._nlp_research_transcoder_metadata = provider_metadata(
+        config,
+        detected=_detect_transcoder_provider_metadata(
+            transcoders,
+            _checkpoint_identity(config),
+        ),
     )
 
     if torch.cuda.is_available():
@@ -762,7 +928,10 @@ def graph_to_step_data(
 
     activation_values = getattr(graph, "activation_values", None)  # NEW
     row_idx, col_idx, weights = sparsify_edges(
-        adj, n_features, max_edges=max_edges, activation_values=activation_values  # NEW
+        adj,
+        n_features,
+        max_edges=max_edges,
+        activation_values=activation_values,  # NEW
     )
 
     return StepData(

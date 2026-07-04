@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import sys
 import importlib
+import json
+import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -36,7 +37,10 @@ from nlp_research_project.exact_trace_bench.scenarios import (  # noqa: E402
     build_wave3_interaction_confirmation_config,
     build_wave4_generalization_config,
 )
-from experiments.run_sparsification_experiment import build_command  # noqa: E402
+from experiments.run_sparsification_experiment import (  # noqa: E402
+    build_command,
+    load_scenarios,
+)
 
 
 CLUSTERS = ("ascend", "cardinal")
@@ -84,19 +88,21 @@ CANONICAL_TIER_SUMMARIES = {
     ("fast", "ascend"): {
         "stage": "exact_trace_bench_fast",
         "resource_profile": "standard",
-        "fixtures": ("828_base", "361_base"),
+        "fixtures": ("828_base", "361_base", "94_base"),
         "names": (
             "ascend_fast_828_base_b128_c2048_cache0g",
             "ascend_fast_361_base_b128_c2048_cache0g",
+            "ascend_fast_94_base_b128_c2048_cache0g",
         ),
     },
     ("fast", "cardinal"): {
         "stage": "exact_trace_bench_fast",
         "resource_profile": "standard",
-        "fixtures": ("828_base", "361_base"),
+        "fixtures": ("828_base", "361_base", "94_base"),
         "names": (
             "cardinal_fast_828_base_b128_c4096_cache0g",
             "cardinal_fast_361_base_b128_c4096_cache0g",
+            "cardinal_fast_94_base_b128_c4096_cache0g",
         ),
     },
     ("anomaly", "ascend"): {
@@ -239,7 +245,7 @@ def test_canonical_exact_bench_defaults_are_stable() -> None:
         assert defaults["phase4_scheduler_mode"] == "locality"
         assert defaults["phase4_scheduler_debug"] is False
         assert defaults["phase4_scheduler_telemetry_detail"] == "normal"
-        assert defaults["phase4_refresh_optimization"] == "off"
+        assert defaults["phase4_refresh_optimization"] == "v1"
         assert defaults["phase4_row_executor"] == "batched"
         assert defaults["telemetry_max_events"] is None
 
@@ -307,6 +313,77 @@ def test_canonical_commands_do_not_enable_debug_or_replay_knobs() -> None:
 
             assert "--decoder-chunk-size" in command
             assert "--cross-batch-decoder-cache-bytes" in command
+
+
+def test_command_builder_resolves_provider_family_to_coherent_plt_config() -> None:
+    scenario = {
+        **build_tier_config(tier="fast", cluster="ascend")["defaults"],
+        "name": "plt_4b_smoke",
+        "method": "exact",
+        "completions": 1,
+        "temperature": 0.0,
+        "max_feature_nodes": 128,
+        "max_edges": 128,
+        "max_steps": 1,
+        "attribution_batch_size": 1,
+        "max_n_logits": 1,
+        "desired_logit_prob": 1.0,
+        "attribution_update_interval": 1,
+        "prepared_prompt_file": "/tmp/prompt.txt",
+        "transcoder_provider_family": "gemmascope2-plt-4b-small-affine",
+    }
+    command = build_command(Path("/tmp/exact-bench-taxonomy"), scenario)
+
+    def flag_value(flag: str) -> str:
+        return command[command.index(flag) + 1]
+
+    assert flag_value("--transcoder-architecture") == "plt"
+    assert (
+        flag_value("--transcoder-provider-family") == "gemmascope2-plt-4b-small-affine"
+    )
+    assert flag_value("--model-name") == "google/gemma-3-4b-it"
+    assert flag_value("--transcoder-repo-id") == "google/gemma-scope-2-4b-it"
+    assert flag_value("--transcoder-layer-count") == "34"
+    assert flag_value("--cross-batch-decoder-cache-bytes") == "0"
+
+
+def test_command_builder_preserves_explicit_default_valued_plt_cache_budget(
+    tmp_path: Path,
+) -> None:
+    payload = {
+        "defaults": build_tier_config(tier="fast", cluster="ascend")["defaults"],
+        "scenarios": [
+            {
+                "name": "plt_cache_probe",
+                "method": "exact",
+                "completions": 1,
+                "temperature": 0.0,
+                "max_feature_nodes": 128,
+                "max_edges": 128,
+                "max_steps": 1,
+                "attribution_batch_size": 1,
+                "max_n_logits": 1,
+                "desired_logit_prob": 1.0,
+                "attribution_update_interval": 1,
+                "prepared_prompt_file": "/tmp/prompt.txt",
+                "transcoder_provider_family": "gemmascope2-plt-4b-small-affine",
+                "cross_batch_decoder_cache_bytes": 8589934592,
+            }
+        ],
+    }
+    scenario_file = tmp_path / "scenarios.json"
+    scenario_file.write_text(json.dumps(payload))
+    scenarios, _metadata = load_scenarios(scenario_file)
+    command = build_command(Path("/tmp/exact-bench-taxonomy"), scenarios[0])
+
+    def flag_value(flag: str) -> str:
+        return command[command.index(flag) + 1]
+
+    assert flag_value("--transcoder-architecture") == "plt"
+    assert (
+        flag_value("--transcoder-provider-family") == "gemmascope2-plt-4b-small-affine"
+    )
+    assert flag_value("--cross-batch-decoder-cache-bytes") == "8589934592"
 
 
 def test_wave0_baseline_scenario_counts_and_tiers() -> None:
