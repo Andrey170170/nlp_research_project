@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from nlp_research_project.exact_trace_bench.transcoder_config import (
     TranscoderLoadConfig,
     resolve_transcoder_load_config,
@@ -96,6 +98,52 @@ def test_architecture_family_conflicts_with_unregistered_family_are_rejected() -
         raise AssertionError(
             "expected conflicting architecture/provider family to fail"
         )
+
+
+def test_partial_model_or_repo_overrides_are_rejected() -> None:
+    cases: tuple[dict[str, Any], ...] = (
+        {"model_name": "google/gemma-3-4b-it"},
+        {"repo_id": "google/gemma-scope-2-4b-it"},
+    )
+    for kwargs in cases:
+        try:
+            resolve_transcoder_load_config(**kwargs)
+        except ValueError as exc:
+            assert "model/checkpoint override conflicts" in str(exc)
+        else:  # pragma: no cover - explicit assertion path
+            raise AssertionError("expected partial model/repo override to fail")
+
+
+def test_known_provider_rejects_mismatched_explicit_model_or_repo() -> None:
+    cases: tuple[dict[str, Any], ...] = (
+        {
+            "transcoder_provider_family": "gemmascope2-plt-4b-small-affine",
+            "model_name": "google/gemma-3-12b-it",
+        },
+        {
+            "transcoder_provider_family": "gemmascope2-plt-4b-small-affine",
+            "repo_id": "google/gemma-scope-2-12b-it",
+        },
+    )
+    for kwargs in cases:
+        try:
+            resolve_transcoder_load_config(**kwargs)
+        except ValueError as exc:
+            assert "model/checkpoint override conflicts" in str(exc)
+        else:  # pragma: no cover - explicit assertion path
+            raise AssertionError("expected mismatched provider identity to fail")
+
+
+def test_known_provider_allows_matching_explicit_model_and_repo() -> None:
+    config = resolve_transcoder_load_config(
+        transcoder_provider_family="gemmascope2-plt-4b-small-affine",
+        model_name="google/gemma-3-4b-it",
+        repo_id="google/gemma-scope-2-4b-it",
+    )
+    payload = transcoder_config_to_json(config)
+    assert payload["transcoder_provider_family"] == "gemmascope2-plt-4b-small-affine"
+    assert payload["model_name"] == "google/gemma-3-4b-it"
+    assert payload["repo_id"] == "google/gemma-scope-2-4b-it"
 
 
 def test_baked_clt_defaults_do_not_override_plt_architecture_request() -> None:

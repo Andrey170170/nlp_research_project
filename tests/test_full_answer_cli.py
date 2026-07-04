@@ -276,6 +276,28 @@ def test_full_answer_trace_spec_provider_family_resolves_complete_plt_config(
     assert knobs["cross_batch_decoder_cache_bytes"] == 0
 
 
+def test_full_answer_trace_spec_rejects_partial_transcoder_identity_override(
+    tmp_path: Path,
+) -> None:
+    trajectory_path = tmp_path / "trajectory.json"
+    out_dir = tmp_path / "out"
+    trajectory_path.write_text(json.dumps(tiny_trajectory()), encoding="utf-8")
+
+    proc = run_cli(
+        "build-full-answer-trace-specs",
+        "--trajectory",
+        str(trajectory_path),
+        "--indices",
+        "0",
+        "--output-dir",
+        str(out_dir),
+        "--model-name",
+        "google/gemma-3-4b-it",
+    )
+    assert proc.returncode != 0
+    assert "model/checkpoint override conflicts" in proc.stderr
+
+
 def test_download_transcoders_dry_run_is_login_safe(tmp_path: Path) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text("HF_TOKEN=fake-token-for-dry-run\n", encoding="utf-8")

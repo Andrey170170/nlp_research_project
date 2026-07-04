@@ -73,6 +73,7 @@ for _size, _model, _repo, _layers in (
 
 
 PUBLIC_TRANSCODER_KNOB_KEYS = tuple(TranscoderLoadConfig.__dataclass_fields__.keys())
+_PRESET_IDENTITY_KEYS = ("model_name", "repo_id")
 
 
 def _provider_family_architecture_hint(family: str | None) -> Architecture | None:
@@ -84,6 +85,29 @@ def _provider_family_architecture_hint(family: str | None) -> Architecture | Non
     if "clt" in tokens:
         return "clt"
     return None
+
+
+def _validate_preset_identity_overrides(
+    *,
+    preset: TranscoderLoadConfig,
+    family: str | None,
+    values: Mapping[str, Any],
+    explicit_keys: set[str],
+) -> None:
+    conflicts = []
+    for key in _PRESET_IDENTITY_KEYS:
+        if key not in explicit_keys or values.get(key) is None:
+            continue
+        expected = getattr(preset, key)
+        if values[key] != expected:
+            conflicts.append(f"{key}={values[key]!r} (preset expects {expected!r})")
+    if conflicts:
+        details = "; ".join(conflicts)
+        raise ValueError(
+            "transcoder model/checkpoint override conflicts with "
+            f"transcoder_provider_family {family!r}: {details}. "
+            "Use a matching provider family instead of partial model/repo overrides."
+        )
 
 
 def resolve_transcoder_load_config(
@@ -119,7 +143,8 @@ def resolve_transcoder_load_config(
         )
     ):
         family = "gemmascope2-plt-1b-big-affine"
-    preset = PROVIDER_PRESETS.get(family or "gemmascope2-clt-1b-medium-affine")
+    family_for_lookup = family or default.transcoder_provider_family
+    preset = PROVIDER_PRESETS.get(family_for_lookup)
     family_architecture = (
         preset.transcoder_architecture
         if preset is not None
@@ -139,7 +164,14 @@ def resolve_transcoder_load_config(
         preset = TranscoderLoadConfig(
             transcoder_architecture=family_architecture
             or default.transcoder_architecture,
-            transcoder_provider_family=str(family),
+            transcoder_provider_family=str(family_for_lookup),
+        )
+    else:
+        _validate_preset_identity_overrides(
+            preset=preset,
+            family=family_for_lookup,
+            values=values,
+            explicit_keys=explicit_keys,
         )
     data = asdict(preset)
     for key in PUBLIC_TRANSCODER_KNOB_KEYS:
