@@ -84,6 +84,20 @@ def test_architecture_family_conflicts_are_rejected() -> None:
         )
 
 
+def test_architecture_family_conflicts_with_unregistered_family_are_rejected() -> None:
+    try:
+        resolve_transcoder_load_config(
+            transcoder_architecture="clt",
+            transcoder_provider_family="experimental-plt-family",
+        )
+    except ValueError as exc:
+        assert "conflicts" in str(exc)
+    else:  # pragma: no cover - explicit assertion path
+        raise AssertionError(
+            "expected conflicting architecture/provider family to fail"
+        )
+
+
 def test_baked_clt_defaults_do_not_override_plt_architecture_request() -> None:
     baked_defaults = transcoder_config_to_json(TranscoderLoadConfig())
     config = resolve_transcoder_load_config(

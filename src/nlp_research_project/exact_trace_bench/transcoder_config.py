@@ -75,6 +75,17 @@ for _size, _model, _repo, _layers in (
 PUBLIC_TRANSCODER_KNOB_KEYS = tuple(TranscoderLoadConfig.__dataclass_fields__.keys())
 
 
+def _provider_family_architecture_hint(family: str | None) -> Architecture | None:
+    if family is None:
+        return None
+    tokens = family.split("-")
+    if "plt" in tokens:
+        return "plt"
+    if "clt" in tokens:
+        return "clt"
+    return None
+
+
 def resolve_transcoder_load_config(
     mapping: Mapping[str, Any] | None = None,
     *,
@@ -82,35 +93,53 @@ def resolve_transcoder_load_config(
     **overrides: Any,
 ) -> TranscoderLoadConfig:
     default = TranscoderLoadConfig()
+    mapping_keys = {
+        k
+        for k, v in dict(mapping or {}).items()
+        if v is not None
+        and (
+            preserve_default_values
+            or k not in PUBLIC_TRANSCODER_KNOB_KEYS
+            or v != getattr(default, k)
+        )
+    }
     explicit_override_keys = {k for k, v in overrides.items() if v is not None}
+    explicit_keys = mapping_keys | explicit_override_keys
     values = {
         **dict(mapping or {}),
         **{k: v for k, v in overrides.items() if v is not None},
     }
     arch = values.get("transcoder_architecture")
     family = values.get("transcoder_provider_family")
-    if arch == "plt" and family in (None, default.transcoder_provider_family):
+    if arch == "plt" and (
+        family is None
+        or (
+            family == default.transcoder_provider_family
+            and "transcoder_provider_family" not in explicit_keys
+        )
+    ):
         family = "gemmascope2-plt-1b-big-affine"
     preset = PROVIDER_PRESETS.get(family or "gemmascope2-clt-1b-medium-affine")
-    if preset is None:
-        preset = TranscoderLoadConfig(transcoder_provider_family=str(family))
-    elif (
+    family_architecture = (
+        preset.transcoder_architecture
+        if preset is not None
+        else _provider_family_architecture_hint(family)
+    )
+    if (
         arch is not None
-        and arch != preset.transcoder_architecture
-        and (
-            (
-                "transcoder_architecture" in explicit_override_keys
-                and "transcoder_provider_family" in explicit_override_keys
-            )
-            or not (
-                arch == default.transcoder_architecture
-                and family != default.transcoder_provider_family
-            )
-        )
+        and "transcoder_architecture" in explicit_keys
+        and family_architecture is not None
+        and arch != family_architecture
     ):
         raise ValueError(
             "transcoder_architecture conflicts with transcoder_provider_family "
             f"{family!r}"
+        )
+    if preset is None:
+        preset = TranscoderLoadConfig(
+            transcoder_architecture=family_architecture
+            or default.transcoder_architecture,
+            transcoder_provider_family=str(family),
         )
     data = asdict(preset)
     for key in PUBLIC_TRANSCODER_KNOB_KEYS:
@@ -118,7 +147,7 @@ def resolve_transcoder_load_config(
             if (
                 preset != default
                 and not preserve_default_values
-                and key not in explicit_override_keys
+                and key not in explicit_keys
                 and values[key] == getattr(default, key)
             ):
                 continue

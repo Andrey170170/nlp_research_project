@@ -90,7 +90,12 @@ def _detect_transcoder_provider_metadata(
             transcoders,
             checkpoint_identity=checkpoint_identity,
         )
-    except Exception as exc:  # pragma: no cover - metadata best effort across forks
+    except (
+        ImportError,
+        AttributeError,
+        TypeError,
+        ValueError,
+    ) as exc:  # pragma: no cover - metadata best effort across forks
         detected["provider_metadata_error"] = repr(exc)
     return detected
 
@@ -338,6 +343,15 @@ def load_model(
                 i: str(Path(local_dir) / pattern)
                 for i, pattern in enumerate(allow_patterns)
             }
+            missing_paths = [
+                path for path in paths.values() if not Path(path).is_file()
+            ]
+            if missing_paths:
+                raise FileNotFoundError(
+                    "Missing PLT layer file(s) after snapshot_download: "
+                    + ", ".join(missing_paths[:5])
+                    + (" ..." if len(missing_paths) > 5 else "")
+                )
         else:
             paths = _infer_plt_layer_paths(
                 local_dir=Path(local_dir),
@@ -352,8 +366,8 @@ def load_model(
             dtype=DTYPE,
             special_load_fn="gemma-scope-2",
             exact_chunked_provider=True,
-            lazy_encoder=True,
-            lazy_decoder=True,
+            lazy_encoder=config.lazy_encoder,
+            lazy_decoder=config.lazy_decoder,
             decoder_chunk_size=config.decoder_chunk_size,
             cross_batch_decoder_cache_bytes=config.cross_batch_decoder_cache_bytes,
         )

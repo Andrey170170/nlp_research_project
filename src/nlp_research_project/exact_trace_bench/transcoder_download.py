@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +57,40 @@ def _count_matching_files(local_dir: Path, allow_patterns: list[str]) -> int:
     return count
 
 
+def _is_transient_download_error(exc: BaseException) -> bool:
+    transient_names = {
+        "ConnectionError",
+        "ConnectTimeout",
+        "ReadTimeout",
+        "Timeout",
+        "TimeoutError",
+    }
+    for current in (
+        exc,
+        getattr(exc, "__cause__", None),
+        getattr(exc, "__context__", None),
+    ):
+        if current is not None and type(current).__name__ in transient_names:
+            return True
+    message = str(exc).lower()
+    return any(text in message for text in ("connection", "timed out", "timeout"))
+
+
+def _snapshot_download_with_retry(*args: Any, attempts: int = 3, **kwargs: Any) -> str:
+    from huggingface_hub import snapshot_download
+
+    last_exc: BaseException | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return snapshot_download(*args, **kwargs)
+        except Exception as exc:
+            if not _is_transient_download_error(exc) or attempt == attempts:
+                raise
+            last_exc = exc
+            time.sleep(2 ** (attempt - 1))
+    raise RuntimeError("snapshot_download retry loop exhausted") from last_exc
+
+
 def download_transcoder_snapshot(
     config: TranscoderLoadConfig,
     *,
@@ -74,10 +109,8 @@ def download_transcoder_snapshot(
     if dry_run:
         return summary
 
-    from huggingface_hub import snapshot_download
-
     local_dir = Path(
-        snapshot_download(
+        _snapshot_download_with_retry(
             config.repo_id,
             revision=config.revision,
             cache_dir=config.transcoder_cache_dir,

@@ -368,6 +368,7 @@ Suggested project-side config shape:
 TranscoderLoadConfig:
   model_name: str
   transcoder_architecture: "clt" | "plt"
+  transcoder_provider_family: str
   repo_id: str
   revision: str | None
   clt_subfolder: str | None
@@ -379,6 +380,7 @@ TranscoderLoadConfig:
   lazy_decoder: bool
   decoder_chunk_size: int
   cross_batch_decoder_cache_bytes: int
+  transcoder_cache_dir: str | None
 ```
 
 GemmaScope2 PLT path template to support initially:

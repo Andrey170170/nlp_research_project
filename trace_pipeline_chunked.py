@@ -4705,10 +4705,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--cross-batch-decoder-cache-bytes",
         type=int,
-        default=8589934592,
+        default=None,
         help=(
             "Phase-4 cross-batch decoder cache budget in bytes "
-            "(default 8589934592; set 0 for strict cache0 fallback)"
+            "(provider preset default; set explicitly to override)"
         ),
     )
     parser.add_argument(

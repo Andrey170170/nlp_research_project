@@ -1,11 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=download-transcoders
 #SBATCH --account=PAS2836
-#SBATCH --partition=gpu
+#SBATCH --partition=serial
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --gpus-per-task=1
 #SBATCH --mem=64G
 #SBATCH --time=04:00:00
 #SBATCH --output=logs/slurm-%x-%j.out
