@@ -32,6 +32,7 @@ docs/*
 !docs/phase4_refresh_optimization_spec.md
 !docs/phase4_scheduler_v2_spec.md
 !docs/plt_clt_optimization_parity_spec.md
+!docs/memory_governor_rearchitecture_spec.md
 !docs/next_exact_optimization_paths_spec.md
 !docs/tracing_profiling_spec.md
 !docs/history/

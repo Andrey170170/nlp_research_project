@@ -33,6 +33,7 @@ plans.
 | File | Role |
 |---|---|
 | `current_project_roadmap.md` | Current scratch roadmap for the active cleanup phase |
+| `memory_governor_rearchitecture_spec.md` | Target design: budget-driven memory governor + library rearchitecture, with execution plan (PLT merge first, then probe campaign) |
 | `knob_api_taxonomy.md` | Exact-trace knob/API taxonomy and Phase-3 cleanup map |
 | `full_answer_harness_spec.md` | Track-2 full-answer / multi-token tracing harness design |
 | `exact_trace_sweep_campaign_spec.md` | Next exact-trace sweep campaign plan and wave structure |
