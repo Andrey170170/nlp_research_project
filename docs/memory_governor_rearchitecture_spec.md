@@ -1,7 +1,7 @@
 # Memory Governor and Library Rearchitecture Spec
 
 Status: Target design, agreed 2026-07-03; not yet implemented
-Last updated: 2026-07-03
+Last updated: 2026-07-06
 
 This is the "how it is supposed to be" document for the next major rework of
 the sibling library `../circuit-tracer_chunked` and its project-side harness
@@ -63,7 +63,7 @@ recommends, given a concrete job description.
 > Teach the circuit-tracing library to be aware of its own weight and manage
 > it inside a provided envelope — and give it granular instruments to do so.
 
-Two principles:
+Three principles:
 
 1. **Mechanism/policy separation.** Each subsystem's job is to expose a
    ladder of *semantically identical* residency/execution modes (mechanism).
@@ -75,6 +75,41 @@ Two principles:
    Memory stops being a cause of run death; **walltime becomes the honest
    binding constraint**, which the planner must therefore also estimate and
    warn about (the 12B pilot died of walltime, not memory).
+3. **Provider-agnostic coverage.** The governor is for every model/transcoder
+   pair the library can currently run through the exact/chunked provider path,
+   not just the Gemma/GemmaScope2 pairs that motivated the work. If Gemma 3
+   12B + PLT, GPT-OSS 20B + PLT, or Llama 3.1 8B + a top-k transcoder is a
+   supported provider pair, it should receive the same planning, ladder, and
+   telemetry machinery. The governor may require a provider to declare
+   capabilities/cost metadata; it must not require a governor-code special case
+   for each model family or transcoder architecture.
+
+### 2.1 Supported-provider coverage contract
+
+The target boundary is **provider-semantics preserving**:
+
+- For a fixed prompt, scenario, model, transcoder provider, checkpoint, hooks,
+  dtype/caste settings, and explicit semantics knobs, governor decisions may
+  only change residency/execution strategy, not the compact output. If a
+  provider is approximate by construction (for example, a top-k transcoder), the
+  governor preserves that provider's existing semantics; it does not decide the
+  top-k threshold/cap from memory pressure.
+- The governor core consumes a provider profile/capability object, not strings
+  such as `gemma`, `GemmaScope2`, `clt`, or `plt` as policy branches. CLT vs PLT
+  and future topologies are expressed as provider topology/capability fields
+  (`decoder_output_topology`, lazy decoder/encoder support, row materialization
+  support, checkpoint byte sizes, hook map, layer/feature dimensions, dtype, and
+  measured/declared unit costs).
+- A new model/transcoder pair should become governor-eligible by implementing or
+  adapting to the provider contract. It should not require adding a new branch to
+  the governor planner unless it introduces a genuinely new mechanism/ladder.
+- Missing capabilities degrade cleanly. A provider that cannot support a fast
+  rung (for example, no lazy encoder rows or no decoder cache) still gets a
+  valid plan using the supported rungs or a clearly reported compatibility mode;
+  unsupported capabilities are telemetry/admission facts, not hidden fallbacks.
+- Cost formulas are parameterized by provider metadata and measurements. The
+  Gemma/GemmaScope2 1B/4B/12B data calibrate constants and validate the first
+  implementation, but they are not a lookup table defining the governor's scope.
 
 ## 3. Memory model
 
@@ -133,16 +168,18 @@ actually touched + row store + caches) against the host allowance.
 ## 4. Correctness invariant and knob castes
 
 **The governor may only dynamically control knobs that are proven
-output-invariant under the currently validated regime. Anything
-semantics-touching is derived deterministically from (model, scenario) —
-never from runtime conditions like free memory.**
+output-invariant under the currently validated provider regime. Anything
+semantics-touching is derived deterministically from (model, transcoder
+provider, scenario) — never from runtime conditions like free memory.**
 
 Knobs therefore split into two castes:
 
 - **Semantics-touching** (fixed per scenario, deterministic): batch sizes
   (backprop is pre-initialized on them and cannot change mid-run), internal
   dtype, row-store *content* policy, and — pending revalidation —
-  `decoder_chunk_size`.
+  `decoder_chunk_size`. Provider-defined approximation knobs, such as top-k
+  feature caps in a top-k transcoder, are also semantics-touching unless
+  separately proven invariant.
 - **Performance-only** (governor-controllable, even mid-run): cache byte
   budgets, replay window, prefetch lookahead, read caches, fadvise
   eagerness, residency modes, ladder rung selection, spill targets.
@@ -165,22 +202,24 @@ Corrected-regime scale is structurally different:
 
 Consequently the knob taxonomy (`docs/knob_api_taxonomy.md`, to be extended)
 gets per-knob columns: **tier, bytes-cost formula, caste, validated-under**
-(hook regime, architecture, scenario family). Contaminated-era evidence does
-not count as validation. Unproven knobs are treated as semantics-caste until
-cleared. If `decoder_chunk_size` is cleared, the governor gains its single
-most powerful VRAM lever — this is the biggest open fork in the design and
-is resolved by the probe campaign (section 10, step 2).
+(hook regime, provider family/topology, model family where relevant, scenario
+family). Contaminated-era evidence does not count as validation. Unproven knobs
+are treated as semantics-caste until cleared. If `decoder_chunk_size` is
+cleared, the governor gains its single most powerful VRAM lever — this is the
+biggest open fork in the design and is resolved by the probe campaign (section
+10, step 2).
 
 ## 5. Plan epochs
 
 The governor is not a continuous memory manager. It acts at a small number
 of discrete decision points, each with strictly more information:
 
-1. **Admission (before load).** Inputs: model config, transcoder preset,
-   prompt/prefix length, hardware (VRAM queried; host budget auto-discovered
-   from the SLURM/cgroup limit — not typed by the user). Only closed-form
-   estimates are available. All *irrevocable* (semantics-caste) knobs are
-   fixed here from the deterministic scenario formula, conservatively.
+1. **Admission (before load).** Inputs: model config, transcoder provider
+   profile/capabilities (or a preset resolving to them), prompt/prefix length,
+   hardware (VRAM queried; host budget auto-discovered from the SLURM/cgroup
+   limit — not typed by the user). Only closed-form estimates are available.
+   All *irrevocable* (semantics-caste) knobs are fixed here from the
+   deterministic scenario/provider formula, conservatively.
    Output: a plan statement — predicted per-tier rigid/elastic demand,
    selected ladder rungs, estimated phase times vs walltime — or an early,
    explicit "will not finish / must shrink X" instead of a death 90 minutes
@@ -200,15 +239,18 @@ of discrete decision points, each with strictly more information:
 
 The hand-tuned size-aware presets for the 1B/4B/12B stress campaign (batch
 1024/512/256, chunk 8192/4096/2048, cache 32/16/8 GiB) are a lookup-table
-compilation of epochs 1–2; the governor is the generalization of that table
-into formulas plus measurement, and reproducing those presets is one of its
-acceptance tests.
+compilation of epochs 1–2 for one provider family; the governor is the
+generalization of that table into provider-parameterized formulas plus
+measurement, and reproducing those presets is one of its acceptance tests.
 
 ## 6. Degradation ladders (mechanism catalog)
 
 Each large structure exposes ordered modes; **all rungs must produce
-bitwise-identical outputs**. Rung selection is policy (governor); rung
-implementation is mechanism (subsystem).
+bitwise-identical outputs for the fixed provider semantics**. Rung selection is
+policy (governor); rung implementation is mechanism (subsystem). Rung catalogs
+are capability-filtered: if a provider lacks a fast mechanism, the governor
+selects a supported slower rung or reports compatibility mode rather than
+special-casing the provider name.
 
 | Structure | Rungs (fast → survivable) |
 |---|---|
@@ -218,6 +260,11 @@ implementation is mechanism (subsystem).
 | Row store (dense) | RAM-resident → file-backed full memmap (today) → **tiled/windowed** (bounded materialized slice, stream the rest) → recompute-on-demand (store nothing; re-derive rows when Phase 4 asks) |
 | Spill target | host RAM → node NVMe `/tmp` → project scratch |
 | Transfer overlap | double-buffered prefetch pipelines (one shared mechanism, per-phase configured), generalizing today's scattered `error_vector_prefetch_lookahead` / replay-window lookahead |
+
+The table is a mechanism catalog, not a CLT/PLT matrix. Provider adapters map
+their topology onto the catalog: cross-layer CLTs, same-layer PLTs, and future
+top-k/other transcoders expose the chunks, rows, cacheability, and spillability
+they actually support.
 
 ### 6.1 The tiled row store
 
@@ -255,6 +302,10 @@ spill_roots:        auto          # tmp -> scratch ladder; explicit override all
   read caches as the only deliberate retention), **bounded** in between.
 - All existing per-mechanism knobs survive as explicit *overrides* of the
   governor's derived values, not as the primary interface.
+- Existing explicit model/transcoder/provider selection remains outside the
+  budget surface. The governor receives the resolved provider profile and plans
+  from capabilities; it does not infer policy from repo names or model family
+  strings.
 
 ## 8. Telemetry contract
 
@@ -279,6 +330,10 @@ Every run reports, per phase and per tier:
 6. the Phase-0 sanity gate: `active_features ≈ tokens x layers x trained
    L0`, as a hard screaming check — the structural fix for the class of
    error that let the wrong-hook contamination shape conclusions for weeks.
+7. provider identity and capabilities: architecture/topology, hook map,
+   checkpoint/provider fingerprint, declared/measured dimensions and bytes,
+   selected compatibility fallbacks, and any missing capability that forced a
+   slower rung.
 
 ## 9. Relation to the module-split restructure
 
@@ -293,8 +348,15 @@ From the scout report's deepening candidates:
   for the row store lands.
 - The provider contract from the PLT parity work
   (`docs/plt_clt_optimization_parity_spec.md`) already made capabilities
-  architecture-neutral; the governor consumes `TranscoderCapabilities` and
-  per-provider cost formulas rather than CLT/PLT special cases.
+  architecture-neutral; the governor consumes `TranscoderCapabilities`, a
+  provider runtime profile, and per-provider cost formulas rather than CLT/PLT,
+  Gemma/GPT/Llama, or checkpoint-name special cases.
+
+Implementation rule: the governor package must be unit-testable with synthetic
+providers that cover at least cross-layer, same-layer, and top-k/approximate
+provider semantics. If a new supported model/transcoder pair requires editing
+governor branching instead of supplying provider metadata or a new mechanism
+rung, the abstraction has failed.
 
 Public `attribute(...)` remains a compatibility facade during migration.
 
@@ -326,28 +388,33 @@ One campaign, two axes, on corrected hooks:
   yield the nnz-vs-tokens curve, unit decoder-chunk/encoder-row timings,
   and rigid/elastic memory curves — the empirical constants for admission
   estimates, measured clean instead of inherited from contaminated
-  telemetry.
+  telemetry. Store these as provider-profile calibration data, not as
+  GemmaScope2-only constants.
 
 ### Step 3 — Taxonomy pass (login-safe)
 
 Extend `docs/knob_api_taxonomy.md`: for every knob — tier, bytes-cost
-formula, caste, validated-under provenance. This is the requirements doc
-for the governor.
+formula, caste, validated-under provenance, and whether it is provider-declared,
+scenario-declared, or governor-derived. This is the requirements doc for the
+governor and the guardrail that keeps provider semantics knobs out of memory
+policy.
 
 ### Step 4 — Governor v0 as a pure resolver, project-side
 
-A pure function (model, scenario, hardware) → existing knob values, living
-next to `transcoder_config.py`. No library changes. The hand-tuned
-1B/4B/12B presets become test fixtures: the resolver must reproduce them
-within tolerance, and must beat them where the probe data says they were
-too conservative.
+A pure function (model config, provider profile/capabilities, scenario,
+hardware) → existing knob values, living next to `transcoder_config.py`. No
+library changes. The hand-tuned 1B/4B/12B presets become test fixtures: the
+resolver must reproduce them within tolerance, and must beat them where the
+probe data says they were too conservative. Add synthetic provider fixtures so
+the resolver is tested without Gemma/GemmaScope-specific branches.
 
 ### Step 5 — Library restructure with the governor as a deep module
 
-The module split per the scout report, with the ledger, epoch model, and
-ladder mechanisms (including the tiled row store) landing behind the new
-seams. Existing login-safe tests listed in the scout report are the safety
-rails; parity runs on canonical prompts guard exact outputs.
+The module split per the scout report, with the ledger, epoch model, provider
+runtime profile, and ladder mechanisms (including the tiled row store) landing
+behind the new seams. Existing login-safe tests listed in the scout report are
+the safety rails; parity runs on canonical prompts guard exact outputs, and
+provider-contract tests guard non-Gemma/top-k extensibility.
 
 ### Step 6 — Dynamic post-Phase-0 spending
 
@@ -369,6 +436,10 @@ Enable epoch-3 re-planning, gated per knob on parity proofs from step 2
 6. The row store completes (slower) at problem sizes where full
    materialization would exceed node NVMe capacity, via tiled/recompute
    rungs spilling toward scratch.
+7. Any model/transcoder pair supported by the exact/chunked provider contract
+   can obtain a governor plan from provider metadata. Unsupported/missing
+   provider capabilities are explicit in the plan and telemetry; they are not
+   hidden Gemma/CLT/PLT special cases.
 
 ## 12. Open questions
 

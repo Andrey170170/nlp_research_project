@@ -1,8 +1,25 @@
 # Harness architecture scout: `nlp_research_project`
 
 Date: 2026-06-30
+R0 refresh: 2026-07-06, after PLT parity merge into project `main`
+(`e020a34`; current plan/spec commit `45976be`).
 
 Status: scouting/research only. No code changes.
+
+## R0 post-merge delta note
+
+- Rechecked the harness map after PLT parity work. The cleanup ordering is
+  unchanged in substance: sibling cleanup should still come first; then split the
+  runner adapter, CLI command families, and launch surfaces.
+- Current high-friction spans: `full_answer/runner.py` is 1,203 lines with
+  prefix/full-sequence helpers at 210-258, model-load knob resolution at
+  573-595, and `run_real_shard()` at 712-1136; `cli.py` is 2,696 lines with
+  `_cmd_download_transcoders()` at 891-931 and `build_parser()` at 1071-2686.
+- PLT parity adds a supporting policy seam in `transcoder_config.py` (207 lines)
+  and `transcoder_download.py` (126 lines): architecture/provider-family preset
+  resolution, corrected hook defaults, identity validation, download allowlists,
+  and provider metadata serialization. This is the natural project-side staging
+  area for Phase B's pure governor resolver, not a reason to reorder Phase D.
 
 Priority note: the sibling `circuit_tracer` library should be cleaned first. The
 harness has several cleanup opportunities, but many are symptoms of the sibling
@@ -18,6 +35,8 @@ src/nlp_research_project/exact_trace_bench/
 ├── jobs.py                        # SLURM launch-plan rendering
 ├── presets.py                     # named preset submission wrapper
 ├── workspace.py                   # sibling/project snapshot + import verification
+├── transcoder_config.py           # architecture/provider-family preset resolver
+├── transcoder_download.py         # provider-aware download allowlists
 ├── baselines.py                   # baseline registry and validation
 ├── extract.py, graph_compare.py   # extraction and graph comparison helpers
 ├── scenarios/
@@ -43,6 +62,8 @@ Domain concepts:
 - clusters: `ascend`, `cardinal`
 - canonical prompt gates: `828_base`, `361_base`, `94_base`
 - scenario waves and exact-trace knob taxonomy
+- architecture/provider-family transcoder config, corrected hook defaults, and
+  provider metadata passed to sibling loaders
 - immutable project + sibling workspace snapshots
 - full-answer trajectory generation, token selection, trace specs, shards,
   aggregation, audits, temporal/stability analysis
@@ -59,7 +80,11 @@ Observed outline:
   target-logit forcing, runtime metadata, graph summary, model load knobs,
   attribution performance kwargs, debug sidecar serialization, real shard run,
   summary rows, and exception/trace payloads.
-- `run_real_shard()` spans roughly lines 717 through 1137.
+- Prefix/full-sequence metadata helpers span roughly lines 210 through 258.
+- Model-load knob resolution spans roughly lines 573 through 595.
+- `run_real_shard()` spans roughly lines 712 through 1136.
+- Post-merge, the runner consumes architecture-aware config resolution and
+  provider metadata rather than forwarding only CLT-oriented sibling knobs.
 
 Why it is shallow:
 
@@ -81,7 +106,12 @@ Deletion test:
 Observed outline:
 
 - 30+ `_cmd_*` command handlers.
-- `build_parser()` spans roughly lines 988 through 2512.
+- 40+ `_cmd_*` command handlers.
+- Full-answer trace-spec config handling starts around line 577.
+- `_cmd_download_transcoders()` spans roughly lines 891 through 931.
+- `build_parser()` spans roughly lines 1071 through 2686.
+- Post-merge, the CLI owns provider-family, architecture, and hook propagation
+  for trace-spec generation plus download/prefetch paths.
 
 Why it is shallow:
 
@@ -174,6 +204,7 @@ Deletion test:
 Files/modules involved:
 
 - `src/nlp_research_project/exact_trace_bench/full_answer/runner.py`
+- `src/nlp_research_project/exact_trace_bench/transcoder_config.py`
 - sibling `circuit_tracer.attribution.attribute_nnsight`
 - `trace_pipeline_chunked.py`, `circuit_utils.py` where imported by the runner
 
@@ -182,6 +213,8 @@ Problem:
 - The runner mixes shard orchestration with direct sibling library runtime calls,
   graph saving, target forcing, metadata emission, debug sidecars, and error
   handling. It has too much knowledge of sibling internals.
+- It now also consumes architecture-aware transcoder load config and provider
+  metadata, making the eventual runtime adapter boundary more important.
 
 Solution direction, without detailed new interfaces:
 
@@ -208,22 +241,29 @@ Recommendation strength: **Strong**.
 Files/modules involved:
 
 - `src/nlp_research_project/exact_trace_bench/cli.py`
+- `src/nlp_research_project/exact_trace_bench/transcoder_config.py`
+- `src/nlp_research_project/exact_trace_bench/transcoder_download.py`
 - Tests: `tests/test_full_answer_cli.py`, package/import smoke tests.
 
 Problem:
 
 - One giant CLI file owns all parser groups and command handlers. The interface
   is broad by nature, but the implementation does not need to be in one module.
+- Provider-family/architecture/hook propagation now appears in both trace-spec
+  generation and download command paths.
 
 Solution direction, without detailed new interfaces:
 
 - Group command families behind deeper modules while keeping the installed
   `exact-trace-bench` entrypoint stable.
+- Keep the architecture-aware transcoder resolver as shared policy rather than
+  duplicating provider defaults inside CLI command handlers.
 
 Benefits:
 
 - Locality: full-answer, baseline, scenario, launch, and calibration commands can
   change independently.
+- Locality: provider/hook default changes stay in the resolver and its tests.
 - Leverage: adding a new experiment command becomes a local change.
 - Testability: parser smoke tests can focus on command groups.
 

@@ -30,6 +30,15 @@ The governor is not an add-on: it is the scout report's "exact-trace
 policy/config seam" (sibling candidate #2) with a concrete job description,
 so both efforts share one migration.
 
+Coverage invariant: the rework is **provider-agnostic**. The memory governor
+and speedups must apply to any model/transcoder pair already supported by the
+exact/chunked provider contract, not only the Gemma/GemmaScope2 combinations
+used for initial evidence. Gemma 3 12B + PLT, GPT-OSS 20B + PLT, and Llama 3.1
+8B + a top-k transcoder should all use the same planner if their providers
+declare the required capabilities/metadata. The governor may branch on provider
+capabilities and topology; it must not branch on model-family or checkpoint-name
+special cases.
+
 ## Step 0 — Merge PLT parity + hook fix into main (DONE 2026-07-03)
 
 - Project: PR #3 merged as `e020a34` (PLT optimization parity harness); PR #2
@@ -45,7 +54,7 @@ so both efforts share one migration.
   contaminated provenance; nothing that touched `hook_resid_mid` counts as a
   baseline or as knob-caste validation evidence.
 
-## Phase R0 — Scouting refresh (login-safe, small)
+## Phase R0 — Scouting refresh (DONE 2026-07-06, login-safe, small)
 
 The scout reports predate the PLT parity merge. Before Phase C relies on
 their line references and module inventories:
@@ -62,6 +71,12 @@ their line references and module inventories:
 
 Done when: scout reports carry a post-merge delta note and Phase C tasks can
 cite current line references.
+
+R0 result: `reports/circuit_tracer_architecture_scout.md` and
+`reports/harness_architecture_scout.md` now carry post-merge delta notes. The
+deepening order is unchanged in substance; the main delta is the new
+provider/capability/cache-metadata seam from PLT parity, which broadens the
+transcoder/HF cleanup notes without changing the attribution-first ordering.
 
 ## Phase A — Corrected-regime validation + calibration (SLURM, before rewrite)
 
@@ -93,7 +108,9 @@ One campaign, two axes, per the spec section 10 step 2:
   determinism control; diff compact outputs; read selection margins.
 - Calibration axis: prefix-length spread yields nnz-vs-tokens curves, unit
   decoder-chunk/encoder-row timings, rigid-vs-elastic memory curves
-  (cgroup anon vs file, confirmed visible in Grafana).
+  (cgroup anon vs file, confirmed visible in Grafana). Record calibration data
+  against provider profile fields (topology, dimensions, dtype, checkpoint bytes,
+  capability flags), not as GemmaScope2-only constants.
 
 Decision gate out of Phase A:
 
@@ -109,18 +126,24 @@ Decision gate out of Phase A:
 ### B1. Knob taxonomy extension
 
 Extend `docs/knob_api_taxonomy.md` with per-knob columns: tier, bytes-cost
-formula, caste, validated-under (regime/architecture/scenario family).
-Populate formulas from code reading; populate caste from Phase A evidence
-only. This is the governor's requirements document.
+formula, caste, validated-under (regime/provider topology/model family where
+relevant/scenario family), and ownership (provider-declared vs scenario-declared
+vs governor-derived). Populate formulas from code reading; populate caste from
+Phase A evidence only. This is the governor's requirements document and the
+guardrail that keeps provider semantics knobs out of memory policy.
 
 ### B2. Governor v0 as a pure resolver
 
-Pure function (model, scenario, hardware) -> current knob values, next to
-`transcoder_config.py`. No sibling changes. Fixtures:
+Pure function (model config, provider profile/capabilities, scenario, hardware)
+-> current knob values, next to `transcoder_config.py`. No sibling changes.
+Fixtures:
 
 - must reproduce the hand-tuned 1B/4B/12B stress presets within tolerance,
 - must beat them where Phase A data shows they were too conservative
   (12B pilot: ~35 GiB idle VRAM, replay window 4, 8 GiB cache),
+- must include synthetic provider fixtures covering cross-layer, same-layer, and
+  top-k/approximate provider semantics so the resolver cannot hardcode
+  Gemma/GemmaScope2/CLT/PLT names,
 - host budget auto-discovery from the SLURM/cgroup limit,
 - admission-style plan output (predicted per-tier rigid/elastic demand,
   walltime estimate) as a printable report even before anything consumes it.
@@ -149,8 +172,9 @@ full-sequence session. Mechanical extraction first; no behavior change.
   headroom pool).
 - Phases become governor consumers: declare working sets, receive grants.
 - Existing knobs become overrides of derived values.
-- Provider capabilities/cost formulas consumed per-architecture (CLT/PLT
-  neutral, building on the parity-merge provider contract).
+- Provider runtime profiles and cost formulas consumed by capability/topology,
+  not by CLT/PLT/Gemma special cases, building on the parity-merge provider
+  contract.
 
 ### C3. Row-store + replay locality and degradation ladders (scout #3 + spec §6)
 
@@ -166,7 +190,9 @@ full-sequence session. Mechanical extraction first; no behavior change.
 
 Extract decoder cache, diagnostics, fingerprints, loaders out of
 `cross_layer_transcoder.py`; keep math objects central; same treatment for
-the PLT side where applicable.
+PLT and other provider implementations where applicable. The provider adapter,
+not the governor, owns topology-specific details such as cross-layer vs
+same-layer vs top-k semantics.
 
 ### C5. Smaller strong/worth-exploring items (scout #5-#7)
 
@@ -218,6 +244,9 @@ projected size exceeds tmp budget). Acceptance criteria: spec section 11.
   pytest sets plus `ruff`/`ty`.
 - Contaminated-era evidence never counts as caste validation
   (validated-under column is mandatory, not decorative).
+- No model-family/checkpoint-name special cases in governor policy. New
+  supported model/transcoder pairs must enter through provider metadata,
+  capability flags, and mechanism rungs.
 
 ## Ordering rationale and risks
 
@@ -232,4 +261,6 @@ projected size exceeds tmp budget). Acceptance criteria: spec section 11.
   estimator is part of B2/C2); (2) mechanical splits touching
   12.6k-line modules risk silent behavior drift — parity runs after every
   landing, not just at phase ends; (3) schema/artifact compatibility for
-  Track-A replay machinery — keep loaders compatible or version explicitly.
+  Track-A replay machinery — keep loaders compatible or version explicitly;
+  (4) overfitting the governor to the initial Gemma/GemmaScope2 evidence — use
+  provider-contract fixtures and capability-based formulas from B onward.

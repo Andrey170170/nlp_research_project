@@ -1,7 +1,7 @@
 # Exact-trace knob/API taxonomy map
 
-Status: Phase 3 mapping draft
-Last updated: 2026-05-16
+Status: Phase 3 mapping draft; pending Phase B governor extension
+Last updated: 2026-07-06
 
 This document maps the exact-trace knobs that currently exist across the project
 repo and sibling `../circuit-tracer_chunked` library. It is intentionally detailed:
@@ -18,6 +18,15 @@ Scope of this pass:
 This pass is a map, not yet a code change. The next Phase 3 step should convert
 the decisions in the `Recommended cleanup actions` section into small tests and
 mechanical changes.
+
+Governor rework note (2026-07-06): the Phase B extension must classify each knob
+by **tier**, **bytes-cost formula**, **caste**, **validated-under provenance**,
+and **ownership** (`provider-declared`, `scenario-declared`, or
+`governor-derived`). `validated-under` must include the provider regime
+(topology/capability flags and model family where relevant), not just CLT/PLT
+architecture labels. Provider semantics knobs — for example a top-k transcoder's
+top-k/cap setting — stay scenario/provider-owned unless explicitly proven
+output-invariant; memory pressure must not change them.
 
 ## Intended taxonomy
 

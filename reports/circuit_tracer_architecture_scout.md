@@ -1,8 +1,27 @@
 # Sibling library architecture scout: `../circuit-tracer_chunked`
 
 Date: 2026-06-30
+R0 refresh: 2026-07-06, after PLT parity merge into sibling `main`
+(`3abdc98`; post-review cache-metadata fix `d77f5cc`).
 
 Status: scouting/research only. No code changes.
+
+## R0 post-merge delta note
+
+- Rechecked the report after the PLT parity merge. The attribution mega-module is
+  still the dominant cleanup target: `attribute_nnsight.py` is 12,557 lines, with
+  `attribute()` at lines 7144-7496, `FullSequenceWindowAttributionSession` at
+  7499-7635, and `_run_attribution()` at 7638-12557.
+- The merge adds a real provider/capability seam around transcoders:
+  `transcoder/provider.py` (160 lines), `single_layer_transcoder.py` (962 lines),
+  `utils/hf_utils.py` (450 lines), and `utils/caching.py` (624 lines). This does
+  not change the top priority ordering, but it does broaden candidates 4 and 7
+  from CLT-only runtime/loading cleanup into provider-aware runtime, fingerprint,
+  and cache-metadata cleanup.
+- Deepening candidates are unchanged in substance: split attribution/policy and
+  row-store/replay first; keep the public `attribute()` facade during migration;
+  treat provider-aware transcoder loading as the smaller supporting seam for the
+  governor/provider contract.
 
 ## Package map
 
@@ -25,10 +44,11 @@ circuit_tracer/
 │   └── replacement_model_transformerlens.py
 ├── transcoder/
 │   ├── cross_layer_transcoder.py       # CLT math, cache, diagnostics, loading
-│   ├── single_layer_transcoder.py
+│   ├── single_layer_transcoder.py      # PLT/same-layer math and load dispatch
+│   ├── provider.py                     # provider capabilities/fingerprints
 │   └── activation_functions.py
 ├── utils/
-│   ├── hf_utils.py                     # URI/config/cache/HF loading helpers
+│   ├── hf_utils.py                     # URI/config/cache/HF + provider metadata
 │   ├── caching.py, disk_offload.py, telemetry.py, ...
 │   └── MAPPING_INFO.md
 └── frontend/
@@ -41,6 +61,8 @@ Likely domain concepts:
 - `Graph`, logit targets, feature nodes, token nodes, graph pruning/influence.
 - `ReplacementModel` backend abstraction: TransformerLens vs NNSight.
 - `CrossLayerTranscoder`, decoder chunks, encoder vectors, sparse activations.
+- Transcoder provider capabilities, fingerprints, and exact-provider cache
+  metadata across CLT/PLT providers.
 - `AttributionContext`, exact/chunked phases, row-store, replay validation.
 - Prefix/full-sequence attribution sessions for repeated trajectory windows.
 - HF model/transcoder URI resolution and cache loading.
@@ -53,11 +75,13 @@ This is the central architecture problem.
 
 Observed outline:
 
-- `attribute()` starts around line 7140 and takes a very wide keyword-only knob
-  surface through line 7223.
-- `_run_attribution()` spans roughly line 7634 through 12538.
-- `_FileBackedFeatureRowStore` alone spans roughly line 829 through 1619.
-- The module also contains prefix-view metadata validation, phase-4 scheduler
+- Prefix-view metadata validation spans roughly lines 240 through 511.
+- `_FileBackedFeatureRowStore` alone spans roughly lines 833 through 1623.
+- `attribute()` starts at line 7144 and takes a very wide keyword-only knob
+  surface through line 7227.
+- `FullSequenceWindowAttributionSession` starts at line 7499.
+- `_run_attribution()` spans roughly line 7638 through 12557.
+- The module also contains phase-4 scheduler
   configs/plans, row-store cache-control, exact encoder residency policy,
   dtype/precision policy, phase-0/phase-3 donor bundle loading, semantic
   descriptor capture, telemetry payload construction, and `FullSequenceWindowAttributionSession`.
@@ -83,7 +107,7 @@ Deletion test:
 
 Observed outline:
 
-- `AttributionContext` spans roughly lines 58 through 1545.
+- `AttributionContext` spans roughly lines 60 through 1577.
 - It mixes setup state, tensor staging, encoder residency, prefix-view context
   derivation, decoder cache lifecycle, diagnostic stats, feature attribution
   computation, residual caching, score computation, and batch execution.
@@ -106,11 +130,14 @@ Deletion test:
 Observed outline:
 
 - `DecoderChunkCache` is defined in the same file as `CrossLayerTranscoder`.
-- `CrossLayerTranscoder` spans roughly lines 72 through 1805.
+- `CrossLayerTranscoder` spans roughly lines 73 through 1869.
 - Loaders `load_clt`, `load_gemma_scope_2_clt`, and `_load_state_dict` follow
-  the model class in the same module.
+  the model class at roughly lines 1872, 1938, and 2046.
 - The class mixes core encoding/decoding math, decoder block caching, diagnostics,
   trace logging, sparse membership fingerprints, and serialization/loading.
+- Post-merge provider work adds adjacent seams in `provider.py`,
+  `single_layer_transcoder.py`, `hf_utils.py`, and `caching.py` for provider
+  capabilities, fingerprints, exact-provider metadata, and CLT/PLT dispatch.
 
 Why it is shallow:
 
@@ -128,7 +155,7 @@ Deletion test:
 
 Observed outline:
 
-- `NNSightReplacementModel` spans roughly lines 178 through 1404.
+- `NNSightReplacementModel` spans roughly lines 182 through 1412.
 - It includes construction helpers, model configuration, activation fetching,
   tokenization, attribution setup, freeze/intervention logic, generation, and
   model hook location accessors.
@@ -285,32 +312,41 @@ Deletion-test assessment:
 
 Recommendation strength: **Strong**.
 
-### 4. Cross-layer transcoder runtime helpers
+### 4. Transcoder runtime helpers and provider-capability seam
 
 Files/modules involved:
 
 - `circuit_tracer/transcoder/cross_layer_transcoder.py`
+- `circuit_tracer/transcoder/provider.py`
+- `circuit_tracer/transcoder/single_layer_transcoder.py`
+- `circuit_tracer/utils/hf_utils.py`
+- `circuit_tracer/utils/caching.py`
 - Tests under `tests/transcoder/` and exact-chunked decoder tests.
 
 Problem:
 
 - Core CLT math is mixed with lazy decoder caches, diagnostic snapshots, trace
   logging, fingerprinting, and loading.
+- PLT parity introduced a provider-capability/fingerprint contract plus exact
+  provider cache metadata. That seam is conceptually separate from transcoder
+  math, but it currently crosses loader, HF utility, and cache modules.
 
 Solution direction, without detailed new interfaces:
 
-- Keep the transcoder math object central, but move runtime/cache/diagnostic and
-  loading concerns behind deeper adjacent modules.
+- Keep the transcoder math objects central, but move runtime/cache/diagnostic,
+  provider-capability, fingerprinting, and loading concerns behind deeper
+  adjacent modules.
 
 Benefits:
 
-- Locality: cache changes do not require editing the math class.
+- Locality: cache/provider changes do not require editing the math classes.
 - Leverage: exact-chunked performance work becomes easier to reason about.
-- Testability: cache behavior can be tested without full model loading.
+- Testability: cache metadata, provider fingerprints, and runtime cache behavior
+  can be tested without full model loading.
 
 Deletion-test assessment:
 
-- Strong for cache/diagnostics; medium for loading.
+- Strong for cache/diagnostics and provider metadata; medium for loader behavior.
 
 Recommendation strength: **Worth exploring**.
 
@@ -372,20 +408,24 @@ Deletion-test assessment:
 
 Recommendation strength: **Worth exploring**.
 
-### 7. HF config/loading adapter cleanup
+### 7. Provider-aware HF config/loading adapter cleanup
 
 Files/modules involved:
 
 - `circuit_tracer/utils/hf_utils.py`
+- `circuit_tracer/utils/caching.py`
+- `circuit_tracer/transcoder/provider.py`
 - `tests/utils/test_hf_utils.py`, `tests/utils/test_caching.py`
 
 Problem:
 
-- Pure normalization logic and I/O-heavy loading logic share one seam.
+- Pure normalization logic, provider-capability/fingerprint resolution,
+  exact-provider cache metadata, and I/O-heavy loading logic share adjacent seams.
 
 Solution direction, without detailed new interfaces:
 
-- Separate pure URI/config normalization from cache/HF/network loading adapters.
+- Separate pure URI/config normalization from provider capability resolution,
+  cache-metadata validation, and HF/network loading adapters.
 
 Benefits:
 
