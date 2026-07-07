@@ -99,6 +99,16 @@ outputs move, not just whether.
   contaminated provenance in `EXPERIMENTS.md`.
 - Sanity gate on every run: `active_features ≈ tokens x layers x trained L0`.
 
+A2 result (2026-07-07): complete. Cardinal job `12242778_[0-2]` and Ascend job
+`6242253_[0-2]` all completed with `ExitCode=0:0`. The corrected-hook CLT fast
+artifacts for `828_base`, `361_base`, and `94_base` are under:
+
+- `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/phase-a2-corrected-clt-fast-cardinal-20260706`
+- `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/phase-a2-corrected-clt-fast-ascend-20260706`
+
+Use these as the current corrected-hook CLT fast baselines. Older
+`hook_resid_mid` CLT/PLT artifacts remain contaminated provenance only.
+
 ### A3. FP-sensitivity + cost-model probe campaign (1B/4B)
 
 One campaign, two axes, per the spec section 10 step 2:
@@ -120,6 +130,50 @@ Decision gate out of Phase A:
   `docs/knob_api_taxonomy.md` and `EXPERIMENTS.md`.
 - Whether PLT ~10:1 selection binding shows FP sensitivity at all, and
   whether tolerance-aware tie-breaking needs to enter the restructure scope.
+
+A3 interim result (2026-07-07): partial, not sufficient for the final Phase-A
+decision gate. The Cardinal matrix `12242814`--`12242853` used the launch
+snapshot recorded on 2026-07-06. It produced `8` successful traces and `32` CUDA
+OOM failures:
+
+- success scope: only `t00_828_det_g000` (`prefix_token_count=73`) succeeded for
+  both `plt_1b_small` and `plt_4b_small` across the chunk sweep plus the
+  provider-default repeat;
+- failure scope: every target with `prefix_token_count>=424` failed with
+  `torch.cuda.OutOfMemoryError` during the Gemma MLP forward, across both
+  providers and all requested chunks/repeats. These failures used aggressive
+  memory-for-speed knobs (`cross_batch_decoder_cache_bytes` 16--32 GiB,
+  prepared refresh cache 8--16 GiB, replay windows 8--16, and active pinned CPU
+  encoder residency), so they need lower-memory reruns before being interpreted
+  as inherent long-prefix infeasibility;
+- shortest-prefix cost signal: larger chunks were much faster (`plt_1b_small`
+  roughly `918s -> 438s -> 247s` for `2048 -> 4096 -> 8192`; `plt_4b_small`
+  roughly `2639s -> 1683s -> 991s`), but compact artifacts drifted across chunk
+  sizes.
+
+Instrumentation caveat: the A1 ranker-frontier selection-margin telemetry is
+present in ordinary `trace_pipeline_chunked.py` telemetry output, but the A3
+full-answer runner did not persist generic `telemetry_events` into the per-token
+`trace_results.jsonl`/`trace.json` artifacts. Project-side fix landed locally on
+2026-07-07: compact full-answer traces now write per-token `telemetry.jsonl`
+sidecars and record `telemetry_event_count` / `telemetry_events_path` in the
+trace row.
+
+Survival pilot launch (2026-07-07): submitted a two-job Cardinal pilot for the
+failed `t01_361_s1002_g300` target after the telemetry fix, with lower
+memory-for-speed knobs (`cross_batch_decoder_cache_bytes=0`, prepared refresh
+cache `0`, replay window `4`, prefetch `2`, lazy encoder residency, no row-store
+preallocation). Initial 400G/4h submissions `12255831` and `12255832` were
+canceled while pending; active queued submissions are `12255846` (`plt_1b_small`,
+chunk `8192`, 250G/2h) and `12255847` (`plt_4b_small`, chunk `4096`, 250G/2h).
+Cardinal is busy; read these out when they run before finalizing the Phase-A
+chunk-caste conclusion.
+
+Phase-A decision status: provisional. Keep `decoder_chunk_size` scenario-pinned
+for the next rerun wave; do not treat it as a governor-derived performance-only
+VRAM lever yet. Before Phase B treats it differently, rerun A3 long-prefix
+coverage with lower model/prefix memory pressure and compare outputs with
+tolerance-aware typed-bucket metrics plus persisted A1 selection-margin telemetry.
 
 ## Phase B — Taxonomy + governor v0 (login-safe, project-side)
 

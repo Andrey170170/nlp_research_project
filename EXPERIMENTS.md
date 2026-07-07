@@ -1,7 +1,7 @@
 # Experiments inventory
 
 Status: Current compact index and interpretation summary
-Last updated: 2026-07-02
+Last updated: 2026-07-07
 
 This file is the readable front page for experiment provenance. It should stay
 small enough to edit by hand.
@@ -25,9 +25,9 @@ For important future launches, baseline decisions, and reinterpretations:
 | Item | Current value |
 |---|---|
 | Project workspace | `/users/PAS2119/andreykopanev/nlp_research_project` |
-| Project branch / commit | `main` / `9314f30` (`Record post-consolidation cleanup plan`) |
+| Project branch / commit | `main` / `fe4d0e8` (`Record Phase A2 A3 launches`) |
 | Sibling library workspace | `/users/PAS2119/andreykopanev/circuit-tracer_chunked` |
-| Sibling branch / commit | `main` / `e91370a` (`Fix Phase-3 row replay effective state`) |
+| Sibling branch / commit | `main` / `6e81aff` (`Add Phase-4 selection margin telemetry`) |
 | Editable dependency path | `../circuit-tracer_chunked` |
 | Canonical exact-trace dtype | `exact_trace_internal_dtype=fp32` |
 | Canonical prompt tiers | `828_base`, `361_base`, and `94_base` in `fast` for new work |
@@ -45,6 +45,9 @@ Baseline preservation notes:
 - Within a fixed `decoder_chunk_size`, cache-size changes were exact; changing
   `decoder_chunk_size` can cause small compact-output drift relative to the
   current `c2048` reference.
+- Corrected-hook CLT fast baselines were regenerated on 2026-07-06/07 for
+  `828_base`, `361_base`, and `94_base` on both Cardinal and Ascend. Treat older
+  GemmaScope-2 `hook_resid_mid` CLT/PLT artifacts as contaminated provenance only.
 
 ## Current interpretation
 
@@ -178,6 +181,57 @@ Full-sequence telemetry pilot (June 2026):
 | historical `matched_debug` artifacts | Old matched-debug campaign outputs/configs | Historical only; do not use as an ordinary bucket |
 
 ## Recent durable decisions
+
+### 2026-07-07 — Phase A2/A3 corrected-regime interim readout
+
+Phase A2 completed corrected-hook CLT fast re-baselines for `828_base`,
+`361_base`, and `94_base` on Cardinal (`12242778_[0-2]`) and Ascend
+(`6242253_[0-2]`); all six runs succeeded with `feature_input_hook=mlp.hook_in`
+and `exact_trace_internal_dtype=fp32`.
+
+Phase A3 was partial, not a final caste decision. The PLT small-affine chunk/cost
+matrix succeeded only for the shortest-prefix `t00_828_det_g000` target
+(`prefix_token_count=73`) and failed with CUDA OOM for every longer-prefix target
+(`prefix_token_count>=424`) across both 1B/4B providers and all requested
+chunks/repeats. The failures happened under aggressive memory-for-speed knobs
+(large decoder caches, prepared refresh cache, high replay/prefetch, active pinned
+encoder residency), so rerun the failed targets with a survival profile before
+turning this into a durable governor conclusion.
+
+Instrumentation caveat: the A1 ranker-frontier selection-margin telemetry is
+present in ordinary `trace_pipeline_chunked.py` telemetry artifacts, but the A3
+full-answer runner did not persist generic `telemetry_events` into
+`trace_results.jsonl`/`trace.json`; only disabled frontier-buffer metadata was
+recorded. This was fixed project-side on 2026-07-07 so compact full-answer
+traces now write per-token `telemetry.jsonl` sidecars and include
+`telemetry_event_count` / `telemetry_events_path` in the trace row.
+
+Pending survival pilot: Cardinal jobs `12255846` and `12255847` were submitted
+with lower memory-for-speed knobs (`cross_batch_decoder_cache_bytes=0`, prepared
+refresh cache `0`, replay window `4`, prefetch `2`, lazy encoder residency) for
+the failed `t01_361_s1002_g300` target. Cardinal is busy, so the jobs are queued;
+read them out before finalizing the Phase-A chunk-caste conclusion.
+
+Interim decision:
+
+- Keep `decoder_chunk_size` scenario-pinned for the next rerun wave. Do not let
+  the governor auto-change it as a purely performance/VRAM lever until a broader
+  low-memory corrected-regime rerun proves tolerance-stable behavior.
+- A3 is insufficient to answer broad PLT FP sensitivity. The completed
+  shortest-prefix chunk sweep is useful as a warning signal, not a final verdict:
+  larger chunks substantially reduce wall time and compact artifacts differ across
+  chunk sizes, but long-prefix evidence is still missing.
+
+Key roots:
+
+- A2 Cardinal:
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/fast/phase-a2-corrected-clt-fast-cardinal-20260706`
+- A2 Ascend:
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/ascend/fast/phase-a2-corrected-clt-fast-ascend-20260706`
+- A3 manifest:
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/manual_scenarios/phase-a3-fp-cost-plt-small-affine-20260706/manifest.json`
+- A3 output base:
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/long_eval/phase-a3-fp-cost-plt-small-affine-20260706`
 
 ### 2026-07-02 — GemmaScope-2 CLT/PLT hook correction
 

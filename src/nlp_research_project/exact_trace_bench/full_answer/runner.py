@@ -709,6 +709,42 @@ def _save_compact_debug_sidecars(
     return sidecars
 
 
+def _persist_compact_telemetry_events(
+    *,
+    token_dir: Path,
+    compact_result: Mapping[str, Any],
+    trace: Mapping[str, Any],
+) -> dict[str, Any]:
+    events = compact_result.get("telemetry_events")
+    if not events:
+        return {"telemetry_event_count": 0, "telemetry_events_path": None}
+    if not isinstance(events, list):
+        events = [events]
+
+    path = token_dir / "telemetry.jsonl"
+    context = {
+        "run_id": trace.get("run_id"),
+        "shard_id": trace.get("shard_id"),
+        "trace_id": trace.get("trace_id"),
+        "trajectory_id": trace.get("trajectory_id"),
+        "generated_index": trace.get("generated_index"),
+        "target_position": trace.get("target_position"),
+        "target_token_id": trace.get("target_token_id"),
+        "target_token_text": trace.get("target_token_text"),
+    }
+    rows = []
+    for index, event in enumerate(events):
+        rows.append(
+            {
+                **context,
+                "telemetry_event_index": index,
+                "event": _json_ready(event),
+            }
+        )
+    write_jsonl(path, rows)
+    return {"telemetry_event_count": len(rows), "telemetry_events_path": str(path)}
+
+
 def run_real_shard(
     *,
     trajectory_path: Path,
@@ -1017,6 +1053,13 @@ def run_real_shard(
                         step = bucketed.step
                         graph_summary = _graph_summary(step, graph_path)
                         graph_summary["format"] = "typed_bucketed"
+                        trace.update(
+                            _persist_compact_telemetry_events(
+                                token_dir=token_dir,
+                                compact_result=compact_result,
+                                trace=trace,
+                            )
+                        )
                     trace.update(
                         {
                             "status": "ok",

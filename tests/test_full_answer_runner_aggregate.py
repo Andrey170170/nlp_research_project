@@ -310,6 +310,17 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
     def fake_attribute(**kwargs):
         captured.update(kwargs)
         return {
+            "telemetry_events": [
+                {
+                    "event_type": "ranker_frontier",
+                    "attrs": {
+                        "ranker_frontier_cutoff_gap": 0.125,
+                        "ranker_frontier_relative_cutoff_gap": 0.25,
+                        "ranker_frontier_near_cutoff_count": 7,
+                        "ranker_frontier_max_feature_nodes_cap_bound": True,
+                    },
+                }
+            ],
             "phase3_frontier_buffer_metadata": {
                 "status": "expanded",
                 "extra_feature_count": 2,
@@ -394,6 +405,24 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
     }
     assert trace["phase4_frontier_buffer_metadata"] == {
         "extra_feature_count_total": 3,
+    }
+    assert trace["telemetry_event_count"] == 1
+    telemetry_path = Path(trace["telemetry_events_path"])
+    assert telemetry_path == (
+        tmp_path / "run" / "shards" / "shard_000" / "token_000001" / "telemetry.jsonl"
+    )
+    telemetry_rows = [
+        json.loads(line)
+        for line in telemetry_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert telemetry_rows[0]["trace_id"] == "traj_runner_tok000001"
+    assert telemetry_rows[0]["generated_index"] == 1
+    assert telemetry_rows[0]["target_token_id"] == 202
+    assert telemetry_rows[0]["event"]["attrs"] == {
+        "ranker_frontier_cutoff_gap": 0.125,
+        "ranker_frontier_relative_cutoff_gap": 0.25,
+        "ranker_frontier_near_cutoff_count": 7,
+        "ranker_frontier_max_feature_nodes_cap_bound": True,
     }
     assert trace["transcoder"]["requested"]["transcoder_architecture"] == "clt"
     assert (

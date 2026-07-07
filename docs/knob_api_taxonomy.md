@@ -1,7 +1,7 @@
 # Exact-trace knob/API taxonomy map
 
 Status: Phase 3 mapping draft; pending Phase B governor extension
-Last updated: 2026-07-06
+Last updated: 2026-07-07
 
 This document maps the exact-trace knobs that currently exist across the project
 repo and sibling `../circuit-tracer_chunked` library. It is intentionally detailed:
@@ -27,6 +27,14 @@ and **ownership** (`provider-declared`, `scenario-declared`, or
 architecture labels. Provider semantics knobs — for example a top-k transcoder's
 top-k/cap setting — stay scenario/provider-owned unless explicitly proven
 output-invariant; memory pressure must not change them.
+
+Phase-A readout note (2026-07-07): corrected-hook A3 PLT small-affine evidence is
+partial and must be rerun before a durable caste decision. Only the
+shortest-prefix PLT target completed; across completed chunk sizes, wall time
+improved but compact artifacts drifted. Longer-prefix targets OOMed before graph
+completion under aggressive memory-for-speed knobs. Until a broader low-memory
+rerun proves tolerance-stable behavior, keep `decoder_chunk_size` scenario-pinned
+and do not let the governor auto-change it as a purely performance/VRAM lever.
 
 ## Intended taxonomy
 
@@ -65,6 +73,8 @@ These are the knobs a normal user should expect to see first:
    - `fp64` retained for targeted parity/diagnostic spot checks.
 2. `decoder_chunk_size`
    - resource/performance knob passed to model/transcoder loading,
+   - semantics-sensitive / scenario-pinned under current corrected-regime
+     evidence,
    - changing it can change compact outputs relative to the current `c2048`
      reference, so comparisons must hold it fixed unless testing chunk behavior.
 3. `cross_batch_decoder_cache_bytes`
@@ -631,7 +641,7 @@ location or a `historical` marker so users do not copy them as current defaults.
 |---|---|---|---|---|---|
 | `exact_trace_internal_dtype` | scenario defaults, CLI, run config | public wrapper + NNSight backend | `fp32` | Canonical default / public precision | Keep; add project scenario/default tests. |
 | `internal_precision` | derived only by project compact wrapper | NNSight backend public param; sibling public wrapper does not pass it today | `float64` in backend signature | Deprecated/compatibility | Hide/deprecate direct public use; decide whether sibling public wrapper should derive/pass it. |
-| `decoder_chunk_size` | canonical scenarios, CLI, model load | model/transcoder loading outside attribution API | CLI `256`, canonical `2048/4096` | Public resource/perf | Keep; document that changes can affect compact references. |
+| `decoder_chunk_size` | canonical scenarios, CLI, model load | model/transcoder loading outside attribution API | CLI `256`, canonical `2048/4096` | Public resource/perf; currently semantics-sensitive and scenario-pinned | Keep; document that changes can affect compact references; do not make governor-derived until broader corrected-regime evidence proves tolerance-stable behavior. |
 | `cross_batch_decoder_cache_bytes` | canonical scenarios, CLI, model load | model/transcoder loading outside attribution API | CLI `None`, canonical `0`, cache probes `8 GiB` | Public resource/perf | Keep; document exactness within fixed chunk size. |
 | `phase0_activation_threshold_compare_mode` | CLI/scenario bridge/run config | NNSight backend | `baseline` | Debug/replay public | Keep surfaced; ensure canonical defaults stay `baseline` unless a compare-mode sweep opts in. |
 | `cross_cluster_debug` | defaults, CLI, scenario bridge | NNSight backend | `False` | Debug/replay public | Keep surfaced; canonical scenarios must not enable by accident. |
