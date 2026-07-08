@@ -251,15 +251,55 @@ plumbing fixes, submitted a less-drastic all-main-batch pilot on Cardinal:
 `12263598` (4B c4096, all main batches `128`). These use immutable snapshots of
 project commit `5d855de` and sibling commit `690fc04`.
 
+Outcome (2026-07-08): both survival-v3 all-main-batch jobs completed and saved
+compact graphs for the failed long-prefix `t01_361_s1002_g300` target:
+
+- `12263597`: `COMPLETED|0:0`, elapsed `00:15:05`, MaxRSS `79193196K`,
+  trace `ok`, trace time `857.36s`, telemetry events `4623`, graph artifact
+  `9.80 MiB`. Effective trace capacity was `256`, bound equally by source,
+  feature, and logit batches. Phase-0 active features `227051`, precompute
+  `57.63s`, Phase-1 forward `1.23s`, forward CUDA peak allocated/reserved
+  `79.69/85.90 GiB`.
+- `12263598`: `COMPLETED|0:0`, elapsed `01:34:05`, MaxRSS `211938236K`,
+  trace `ok`, trace time `5557.93s`, telemetry events `16551`, graph artifact
+  `9.92 MiB`. Effective trace capacity was `128`, bound equally by source,
+  feature, and logit batches. Phase-0 active features `313100`, precompute
+  `170.30s`, Phase-1 forward `1.44s`, forward CUDA peak allocated/reserved
+  `65.30/75.35 GiB`.
+
+Runtime emphasis: Phase 1 is an admission/survival gate, not the performance
+bottleneck in these completed runs. Phase 3 + Phase 4 dominate wall time:
+
+- 1B b256: Phase-3 logit attribution `44.63s` and Phase-4 feature attribution
+  `744.66s`, about `92%` of trace time together; Phase 1 was only `1.23s`.
+- 4B b128: Phase-3 logit attribution `147.25s` and Phase-4 feature attribution
+  `5220.87s`, about `97%` of trace time together; Phase 1 was only `1.44s`.
+
+During Phase 3/4, sampled CUDA allocated memory stayed near `23.0 GiB` for 1B
+and `33.2 GiB` for 4B while PyTorch retained the earlier forward-pass reserve.
+For governor/performance work, optimize Phase-3/4 throughput and refresh cadence;
+use Phase-1 peaks mainly as an admission constraint.
+
+Conclusion update: coherent all-main-batch reduction can make this long-prefix
+PLT target survive where legacy and source-only caps OOMed, but the actionable
+performance target is Phase 3/4, especially Phase 4. The batch-coupling
+interpretation is still supported: `phase1_trace_batch_size_max` only reduced the
+NNSight trace-capacity reserve once feature/logit/attribution batches were
+lowered together. This is a survival and throughput-tuning result, not broad PLT
+chunk-sensitivity evidence; use Phase-3/4 timing, refresh count, and memory
+samples to choose an upward bracket or bounded relaunch before any broad A3
+matrix rerun.
+
 Interim decision:
 
 - Keep `decoder_chunk_size` scenario-pinned for the next rerun wave. Do not let
   the governor auto-change it as a purely performance/VRAM lever until a broader
   low-memory corrected-regime rerun proves tolerance-stable behavior.
 - A3 is insufficient to answer broad PLT FP sensitivity. The completed
-  shortest-prefix chunk sweep is useful as a warning signal, not a final verdict:
-  larger chunks substantially reduce wall time and compact artifacts differ across
-  chunk sizes, but long-prefix evidence is still missing.
+  shortest-prefix chunk sweep and the single survival-v3 long-prefix success are
+  useful as warning/survival signals, not a final verdict: larger chunks
+  substantially reduce wall time and compact artifacts differ across chunk sizes,
+  but broad long-prefix tolerance evidence is still missing.
 
 Key roots:
 

@@ -223,12 +223,95 @@ unchanged:
 Launch provenance is under
 `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/manual_scenarios/phase-a3-survival-v3-allbatch-lessdrastic-20260707/manifest.json`.
 
+Survival-v3 allbatch result (2026-07-08): both coherent all-main-batch jobs
+completed and saved compact graphs for the failed long-prefix t01 target:
+
+- `12263597` (`plt_1b_small`, c8192, all main batches `256`) completed `0:0`
+  after `00:15:05`, MaxRSS `79193196K`, trace time `857.36s`, telemetry events
+  `4623`, graph artifact `9.80 MiB`; trace capacity was `256` bound equally by
+  source/feature/logit, Phase-0 active features `227051`, Phase-1 forward
+  `1.23s`, forward CUDA peak allocated/reserved `79.69/85.90 GiB`.
+- `12263598` (`plt_4b_small`, c4096, all main batches `128`) completed `0:0`
+  after `01:34:05`, MaxRSS `211938236K`, trace time `5557.93s`, telemetry events
+  `16551`, graph artifact `9.92 MiB`; trace capacity was `128` bound equally by
+  source/feature/logit, Phase-0 active features `313100`, Phase-1 forward
+  `1.44s`, forward CUDA peak allocated/reserved `65.30/75.35 GiB`.
+
+Runtime breakdown: Phase 1 should be treated as an admission/survival gate, not
+the optimization target. The completed traces are dominated by Phase 3/4:
+
+- 1B b256: Phase-3 logit attribution `44.63s`, Phase-4 feature attribution
+  `744.66s`, together about `92%` of trace time; Phase 1 `1.23s`.
+- 4B b128: Phase-3 logit attribution `147.25s`, Phase-4 feature attribution
+  `5220.87s`, together about `97%` of trace time; Phase 1 `1.44s`.
+
+Phase-3/4 sampled CUDA allocation stayed around `23.0 GiB` for 1B and `33.2 GiB`
+for 4B, while PyTorch retained the earlier forward-pass reserve. Governor work
+should therefore use Phase-1 peaks as admission constraints but optimize Phase-3
+and especially Phase-4 throughput, microbatch count, and refresh cadence.
+
+Guidance update: coherent all-main-batch reduction is sufficient for this t01
+long-prefix PLT target, while source-only caps are not. Treat this as survival
+and Phase-3/4 throughput evidence, not broad PLT chunk-tolerance evidence. Before
+relaunching A3 broadly, choose an upward bracket or a bounded subset using the
+observed Phase-3/4 timings, refresh counts, MaxRSS, and trace-capacity margins.
+
 Phase-A decision status: provisional. Keep `decoder_chunk_size` scenario-pinned
 for the next rerun wave; do not treat it as a governor-derived performance-only
-VRAM lever yet. The survival-v2 Phase-1 source cap pilot did not survive, so
-there are still no long-prefix PLT compact outputs for tolerance-aware chunk
-comparison. Persisted error-path telemetry is now proven and should be kept as
-validation infrastructure.
+VRAM lever yet. Survival-v3 provides one long-prefix PLT compact output per
+provider, but broad long-prefix tolerance coverage is still missing. Persisted
+success/error telemetry is now proven and should be kept as validation
+infrastructure.
+
+### A4. Frontier sensitivity / knob-caste validation sweep
+
+Purpose: answer the semantic/frontier-stability question that A3 could not answer
+after the OOMs. This is **not** a memory-fitting sweep; the governor should own
+batch/split selection. A4 tests whether candidate governor-controlled knobs are
+actually safe to move, or whether they must remain scenario-pinned.
+
+Baseline anchors are the completed survival-v3 long-prefix traces:
+
+- 1B PLT small, `t01_361_s1002_g300`, c8192, all main batches `256`, Cardinal,
+  `per_token`;
+- 4B PLT small, `t01_361_s1002_g300`, c4096, all main batches `128`, Cardinal,
+  `per_token`.
+
+Bounded first-pass axes, changing one axis at a time where possible:
+
+1. **Decoder chunk sensitivity:** rerun the 1B long-prefix target at c4096 with
+   the same survival profile and all main batches `256`; compare against the
+   c8192 baseline. Add c2048 only if the first comparison suggests a meaningful
+   caste boundary worth resolving.
+2. **Batch/refresh sensitivity:** rerun the 1B c8192 target with all main
+   batches `128`; this tests whether smaller `feature_batch_size` / more Phase-4
+   microbatches or refresh cadence changes move the compact frontier.
+3. **Cluster sensitivity:** rerun the same 1B baseline config on Ascend to compare
+   Cardinal vs Ascend under the corrected survival regime.
+4. **Session/full-answer sensitivity:** compare `trajectory_session_mode=per_token`
+   against `window_reuse_v1` with `reuse_phase0_window_state=true` and
+   `reuse_target_logits=true` on a tiny multi-token window. This answers whether
+   full-window reuse/independent-token execution changes target logits or frontier
+   membership.
+5. **4B confirmation:** only repeat the sensitive axis/axes on 4B if the 1B pilot
+   shows drift, or if provider/model-size-specific validation is needed before
+   changing taxonomy ownership.
+
+Primary readout metrics:
+
+- top feature-node and top edge overlap,
+- weighted edge correlation / L1 deltas,
+- graph node/edge counts and compact artifact hashes,
+- `ranker_frontier_cutoff_gap`, `ranker_frontier_relative_cutoff_gap`,
+  `ranker_frontier_near_cutoff_count`, and cap-bound/frontier metadata,
+- whether differences live only near the cutoff or affect the high-rank core.
+
+Done when: `docs/knob_api_taxonomy.md` records validated-under evidence for
+`decoder_chunk_size`, coupled batch-family controls, cluster/runtime execution
+mode, and trajectory session mode as one of: governor-derived performance knob,
+scenario-pinned semantics knob, or governor-derived only under explicit
+tolerance/frontier-margin guardrails. Do not relaunch broad A3/A4 matrices until
+this small caste pilot says which axes are worth expanding.
 
 ## Phase B — Taxonomy + governor v0 (login-safe, project-side)
 
@@ -307,8 +390,38 @@ full-sequence session. Mechanical extraction first; no behavior change.
   of governor authority.
 - Generalize prefetch into one double-buffered mechanism configured
   per-phase.
+- Phase-3/Phase-4 scale target: avoid mandatory materialization of dense matrices
+  whose size grows as selected rows x active features / prompt length. Large
+  prompts with tens of millions of active features must degrade into bounded
+  tiled/lazy/recompute modes instead of attempting TB-scale allocations. The
+  governor can only choose these modes after the row-store module exposes them.
 
-### C4. Transcoder runtime helpers (scout #4)
+### C4. Phase-1 admission + Phase-3/4 bounded execution rewrites
+
+Implement the mechanisms that the governor will select as it moves from a pure
+resolver to a real allocator. Treat Phase 1 and Phase 3/4 differently:
+
+- **Phase 1 admission:** reduce or split the NNSight forward trace-capacity peak
+  when a prompt/provider would otherwise fail admission. Slower is acceptable;
+  Phase 1 is seconds while Phase 4 dominates wall time. Candidate mechanisms:
+  split/rebuilt trace sessions, narrower source/logit/feature trace families,
+  and explicit fallback plans that trade extra forward work for lower peak
+  reserve.
+- **Phase 3/4 throughput and scale:** optimize the actual runtime bottleneck.
+  The governor should choose microbatch sizes, row-store rung, prefetch depth,
+  and refresh cadence based on measured/predicted VRAM, host RAM, file-backed
+  cache, and walltime. `feature_batch_size` must remain guarded until A4 proves
+  how much refresh/frontier behavior it can change.
+- **Bounded dense operators:** Phase-4 refresh/frontier planning and influence
+  matmuls must have streaming/tiled implementations. Full dense materialization
+  can stay as the fast rung for small problems, but large projected working sets
+  must automatically choose bounded modes.
+- **Telemetry contract:** every bounded mode reports working-set estimates,
+  actual peak allocated/reserved VRAM, cgroup anon/file pressure, row-store bytes,
+  refresh counts, and walltime so the governor can recalibrate rather than act as
+  a static preset table.
+
+### C5. Transcoder runtime helpers (scout #4)
 
 Extract decoder cache, diagnostics, fingerprints, loaders out of
 `cross_layer_transcoder.py`; keep math objects central; same treatment for
@@ -316,7 +429,7 @@ PLT and other provider implementations where applicable. The provider adapter,
 not the governor, owns topology-specific details such as cross-layer vs
 same-layer vs top-k semantics.
 
-### C5. Smaller strong/worth-exploring items (scout #5-#7)
+### C6. Smaller strong/worth-exploring items (scout #5-#7)
 
 As capacity allows, in this order: hf_utils pure-parsing split (strong,
 small), replacement-model adapter deepening, graph value-object vs
