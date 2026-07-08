@@ -245,6 +245,12 @@ Phase-1 pressure surface, not just source batch size: start with smaller source
 caps plus lower feature/logit/attribution batch sizes, or wait for governor
 admission estimates before relaunching a broad A3 matrix.
 
+Follow-up launch: after committing the error-path telemetry and Phase-1 cap
+plumbing fixes, submitted a less-drastic all-main-batch pilot on Cardinal:
+`12263597` (1B c8192, source/feature/logit/attribution batches all `256`) and
+`12263598` (4B c4096, all main batches `128`). These use immutable snapshots of
+project commit `5d855de` and sibling commit `690fc04`.
+
 Interim decision:
 
 - Keep `decoder_chunk_size` scenario-pinned for the next rerun wave. Do not let
@@ -273,6 +279,8 @@ Key roots:
   `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/manual_scenarios/phase-a3-survival-v2-phase1cap-20260707/manifest.json`
 - A3 survival-v2 phase1cap output base:
   `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/long_eval/phase-a3-survival-v2-phase1cap-20260707`
+- A3 survival-v3 allbatch manifest:
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/manual_scenarios/phase-a3-survival-v3-allbatch-lessdrastic-20260707/manifest.json`
 
 ### 2026-07-02 — GemmaScope-2 CLT/PLT hook correction
 

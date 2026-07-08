@@ -208,6 +208,21 @@ bounded pilot should lower the whole Phase-1 pressure surface: smaller source ca
 plus lower feature/logit/attribution batch sizes. Do not relaunch the broad A3
 failed matrix yet.
 
+Survival-v3 allbatch launch (2026-07-07): committed the telemetry/cap plumbing
+fixes, then submitted the less-drastic first bracket with all main batches
+coherently lowered while keeping `max_feature_nodes` and `update_interval`
+unchanged:
+
+- `12263597` (`plt_1b_small`, chunk `8192`): `attribution_batch_size=256`,
+  `feature_batch_size=256`, `logit_batch_size=256`,
+  `phase1_trace_batch_size_max=256`.
+- `12263598` (`plt_4b_small`, chunk `4096`): `attribution_batch_size=128`,
+  `feature_batch_size=128`, `logit_batch_size=128`,
+  `phase1_trace_batch_size_max=128`.
+
+Launch provenance is under
+`/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/manual_scenarios/phase-a3-survival-v3-allbatch-lessdrastic-20260707/manifest.json`.
+
 Phase-A decision status: provisional. Keep `decoder_chunk_size` scenario-pinned
 for the next rerun wave; do not treat it as a governor-derived performance-only
 VRAM lever yet. The survival-v2 Phase-1 source cap pilot did not survive, so
