@@ -241,6 +241,16 @@ vs governor-derived). Populate formulas from code reading; populate caste from
 Phase A evidence only. This is the governor's requirements document and the
 guardrail that keeps provider semantics knobs out of memory policy.
 
+Must capture the NNSight batch-coupling invariant from the A3 survival-v2/v3
+pilots: current trace capacity is `max(source_batch_size, feature_batch_size,
+logit_batch_size)`, and Phase-3/Phase-4 `compute_batch` calls reuse that cached
+forward trace capacity. The taxonomy should therefore classify
+`attribution_batch_size` / source batch, `feature_batch_size`,
+`logit_batch_size`, and `phase1_trace_batch_size_max` as a coupled planning
+family, not independent dials. Also record that `feature_batch_size` influences
+Phase-4 refresh/frontier cadence, so lowering it may be semantics-sensitive
+until validated under the target scenario.
+
 ### B2. Governor v0 as a pure resolver
 
 Pure function (model config, provider profile/capabilities, scenario, hardware)
@@ -253,6 +263,9 @@ Fixtures:
 - must include synthetic provider fixtures covering cross-layer, same-layer, and
   top-k/approximate provider semantics so the resolver cannot hardcode
   Gemma/GemmaScope2/CLT/PLT names,
+- must emit an explicit derived `trace_capacity` with binding reason
+  (`source`, `feature`, or `logit`) and reject or warn on plans that claim to
+  lower Phase-1 memory while a larger feature/logit batch still binds,
 - host budget auto-discovery from the SLURM/cgroup limit,
 - admission-style plan output (predicted per-tier rigid/elastic demand,
   walltime estimate) as a printable report even before anything consumes it.

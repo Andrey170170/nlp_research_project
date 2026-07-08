@@ -1,7 +1,7 @@
 # Memory Governor and Library Rearchitecture Spec
 
 Status: Target design, agreed 2026-07-03; not yet implemented
-Last updated: 2026-07-06
+Last updated: 2026-07-08
 
 This is the "how it is supposed to be" document for the next major rework of
 the sibling library `../circuit-tracer_chunked` and its project-side harness
@@ -164,6 +164,39 @@ Small problems should be allowed to run "warm" (let cache grow, everything
 effectively RAM-speed); large problems must stream. That decision is
 automatable: compare projected total file working set (checkpoint bytes
 actually touched + row store + caches) against the host allowance.
+
+### 3.5 Coupled NNSight trace-capacity constraint
+
+The governor must not treat the current batch knobs as independent scalar
+limits. In the current NNSight exact backend, the initial forward pass creates a
+single trace capacity by expanding the prompt batch to:
+
+```text
+trace_capacity = max(source_batch_size, feature_batch_size, logit_batch_size)
+```
+
+Later Phase-3 and Phase-4 `compute_batch(...)` calls reuse the cached NNSight
+activations from that forward pass, so their backward batch dimension cannot
+exceed this trace capacity without rebuilding the trace/session. This means:
+
+- lowering only `phase1_trace_batch_size_max` / source batch does **not** reduce
+  Phase-1 forward VRAM if `feature_batch_size` or `logit_batch_size` remain
+  larger;
+- lowering Phase-3/Phase-4 microbatches below trace capacity can reduce later
+  working sets and runtime shapes, but it does not recover the initial forward
+  trace-capacity memory;
+- any governor plan that intends to reduce trace-capacity memory must coordinate
+  `attribution_batch_size` / source batch, `feature_batch_size`,
+  `logit_batch_size`, and `phase1_trace_batch_size_max` as one coupled batch
+  family;
+- `feature_batch_size` additionally affects Phase-4 refresh/frontier cadence, so
+  changing it is not merely a free memory dial unless validated for the scenario.
+
+The plan output should therefore include an explicit `trace_capacity` line item
+and a binding-reason report, e.g. `trace_capacity=max(...)=1024, binding=feature`
+or `binding=logit`. A configuration that lowers one member of the family while
+another still binds should be reported as such, not presented as a successful
+memory reduction.
 
 ## 4. Correctness invariant and knob castes
 

@@ -1,7 +1,7 @@
 # Exact-trace knob/API taxonomy map
 
 Status: Phase 3 mapping draft; pending Phase B governor extension
-Last updated: 2026-07-07
+Last updated: 2026-07-08
 
 This document maps the exact-trace knobs that currently exist across the project
 repo and sibling `../circuit-tracer_chunked` library. It is intentionally detailed:
@@ -35,6 +35,18 @@ improved but compact artifacts drifted. Longer-prefix targets OOMed before graph
 completion under aggressive memory-for-speed knobs. Until a broader low-memory
 rerun proves tolerance-stable behavior, keep `decoder_chunk_size` scenario-pinned
 and do not let the governor auto-change it as a purely performance/VRAM lever.
+
+Batch-coupling note (A3 survival-v2/v3): the NNSight exact backend currently
+pre-initializes one forward/backward trace capacity as
+`max(source_batch_size, feature_batch_size, logit_batch_size)`. Therefore
+`phase1_trace_batch_size_max` is not an independent Phase-1 VRAM cap if
+`feature_batch_size` or `logit_batch_size` remain larger. Phase B must model the
+batch knobs as a coupled family: `attribution_batch_size` / source batch,
+`feature_batch_size`, `logit_batch_size`, and `phase1_trace_batch_size_max`.
+Lowering Phase-3/Phase-4 microbatches below the trace capacity may still affect
+later working sets, but it does not lower the initial NNSight trace-capacity
+allocation. The governor should emit an explicit `trace_capacity` and binding
+reason so inconsistent configs are visible.
 
 ## Intended taxonomy
 
@@ -89,6 +101,12 @@ protected by default-preserving tests:
 - Phase-1 trace-batch sizing:
   - `phase1_trace_batch_policy`,
   - `phase1_trace_batch_size_max`.
+- Coupled NNSight batch-family controls:
+  - `attribution_batch_size` / source batch,
+  - `feature_batch_size`,
+  - `logit_batch_size`,
+  - `phase1_trace_batch_size_max`.
+  These must be planned together when the goal is reducing trace-capacity VRAM.
 - Phase-4 execution/planning:
   - `phase4_scheduler_mode`,
   - `phase4_refresh_policy`,
