@@ -301,6 +301,21 @@ Interim decision:
   substantially reduce wall time and compact artifacts differ across chunk sizes,
   but broad long-prefix tolerance evidence is still missing.
 
+A4 launch (2026-07-08): after committing the A3 outcome/A4 plan at project
+`700b408` with sibling `690fc04` clean, submitted a bounded first-pass
+frontier/caste sweep from immutable snapshots. This is not a memory-fitting
+sweep; it tests whether candidate governor knobs move compact graph/frontier
+membership for the long-prefix 1B PLT target.
+
+- `12275056` Cardinal: decoder-chunk axis, c4096 vs existing c8192/b256 anchor.
+- `12275057` Cardinal: coupled batch/refresh axis, c8192 all main batches `128`
+  vs existing c8192/b256 anchor.
+- `6260319` Ascend: cluster axis, c8192/b256 vs existing Cardinal anchor.
+- `12275058` Cardinal: tiny full-sequence multi-token `per_token` control for
+  generated indices `298,299,300`.
+- `12275061` Cardinal: matching tiny-window `window_reuse_v1` run with
+  Phase-0 window-state reuse and target-logit reuse enabled.
+
 Key roots:
 
 - A2 Cardinal:
@@ -321,6 +336,8 @@ Key roots:
   `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/long_eval/phase-a3-survival-v2-phase1cap-20260707`
 - A3 survival-v3 allbatch manifest:
   `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/manual_scenarios/phase-a3-survival-v3-allbatch-lessdrastic-20260707/manifest.json`
+- A4 frontier/caste manifest:
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/manual_scenarios/phase-a4-frontier-caste-v1-20260708/manifest.json`
 
 ### 2026-07-02 — GemmaScope-2 CLT/PLT hook correction
 
