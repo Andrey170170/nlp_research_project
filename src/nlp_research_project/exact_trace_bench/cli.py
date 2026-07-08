@@ -580,6 +580,7 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
         ("--attribution-batch-size", args.attribution_batch_size),
         ("--feature-batch-size", args.feature_batch_size),
         ("--logit-batch-size", args.logit_batch_size),
+        ("--phase1-trace-batch-size-max", args.phase1_trace_batch_size_max),
         ("--feature-batch-size-max", args.feature_batch_size_max),
         ("--row-subchunk-size", args.row_subchunk_size),
         ("--chunked-feature-replay-window", args.chunked_feature_replay_window),
@@ -649,6 +650,8 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
             "attribution_batch_size": args.attribution_batch_size,
             "feature_batch_size": args.feature_batch_size,
             "logit_batch_size": args.logit_batch_size,
+            "phase1_trace_batch_policy": args.phase1_trace_batch_policy,
+            "phase1_trace_batch_size_max": args.phase1_trace_batch_size_max,
             "phase4_refresh_optimization": args.phase4_refresh_optimization,
             "phase4_refresh_active_row_accumulation": args.phase4_refresh_active_row_accumulation,
             "phase4_row_reduction": args.phase4_row_reduction,
@@ -1120,6 +1123,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     full_answer_trace_specs.add_argument("--feature-batch-size", type=int, default=None)
     full_answer_trace_specs.add_argument("--logit-batch-size", type=int, default=None)
+    full_answer_trace_specs.add_argument(
+        "--phase1-trace-batch-policy",
+        choices=["legacy", "cap_effective_batches"],
+        default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--phase1-trace-batch-size-max", type=int, default=None
+    )
     full_answer_trace_specs.add_argument(
         "--exact-trace-internal-dtype",
         choices=["fp32", "fp64", "float32", "float64"],

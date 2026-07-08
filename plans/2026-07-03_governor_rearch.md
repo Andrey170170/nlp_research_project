@@ -154,26 +154,66 @@ OOM failures:
 Instrumentation caveat: the A1 ranker-frontier selection-margin telemetry is
 present in ordinary `trace_pipeline_chunked.py` telemetry output, but the A3
 full-answer runner did not persist generic `telemetry_events` into the per-token
-`trace_results.jsonl`/`trace.json` artifacts. Project-side fix landed locally on
-2026-07-07: compact full-answer traces now write per-token `telemetry.jsonl`
-sidecars and record `telemetry_event_count` / `telemetry_events_path` in the
-trace row.
+`trace_results.jsonl`/`trace.json` artifacts. Project commit `620e781` fixed the
+compact success path by writing per-token `telemetry.jsonl` sidecars and
+recording `telemetry_event_count` / `telemetry_events_path` in the trace row.
+The first post-fix pilot still failed before a compact result was available, so
+error-path telemetry persistence is still not proven.
 
-Survival pilot launch (2026-07-07): submitted a two-job Cardinal pilot for the
-failed `t01_361_s1002_g300` target after the telemetry fix, with lower
-memory-for-speed knobs (`cross_batch_decoder_cache_bytes=0`, prepared refresh
-cache `0`, replay window `4`, prefetch `2`, lazy encoder residency, no row-store
-preallocation). Initial 400G/4h submissions `12255831` and `12255832` were
-canceled while pending; active queued submissions are `12255846` (`plt_1b_small`,
-chunk `8192`, 250G/2h) and `12255847` (`plt_4b_small`, chunk `4096`, 250G/2h).
-Cardinal is busy; read these out when they run before finalizing the Phase-A
-chunk-caste conclusion.
+Survival pilot result (2026-07-07): the two-job Cardinal pilot for failed target
+`t01_361_s1002_g300` finished, still with CUDA OOM. Initial 400G/4h submissions
+`12255831` and `12255832` were canceled while pending; replacement 250G/2h jobs
+used lower memory-for-speed knobs (`cross_batch_decoder_cache_bytes=0`, prepared
+refresh cache `0`, replay window `4`, prefetch `2`, lazy encoder residency, no
+row-store preallocation):
+
+- `12255846` (`plt_1b_small`, chunk `8192`) failed `FAILED|1:0` after `00:02:01`
+  with MaxRSS `66124448K`; the trace row captured an `OutOfMemoryError`
+  allocating `5.59 GiB`, Phase-0 active features `227051`, precompute `60.21s`,
+  and CUDA peak allocated `91.14 GiB`.
+- `12255847` (`plt_4b_small`, chunk `4096`) failed `FAILED|1:0` after `00:04:14`
+  with MaxRSS `189595184K`; the trace row captured an `OutOfMemoryError`
+  allocating `4.14 GiB`, Phase-0 active features `313100`, precompute `172.59s`,
+  and CUDA peak allocated `89.65 GiB`.
+
+The pilot ruled out the aggressive cache/residency knobs as the only blocker, but
+it did not exercise the existing Phase-1 trace-batch cap: both jobs used
+`phase1_trace_batch_policy=legacy` with effective source batch `1024` (1B) or
+`512` (4B). Next pilot should keep the survival profile and add
+`phase1_trace_batch_policy=cap_effective_batches`, starting with
+`phase1_trace_batch_size_max=128` for 1B and `64` for 4B, before any broad A3
+relaunch. This survival-v2 pilot was submitted on 2026-07-07 as Cardinal jobs
+`12260794` (1B c8192 cap128) and `12260795` (4B c4096 cap64), using immutable
+dirty-workspace snapshots with the error-path telemetry fix and full-answer
+Phase-1 cap plumbing.
+
+Survival-v2 phase1cap result (2026-07-07): both jobs still failed with CUDA OOM
+during Phase 1 forward, but the cap plumbing and error-path telemetry persistence
+were validated on real failed GPU artifacts:
+
+- `12260794` (`plt_1b_small`, chunk `8192`, cap128) applied the source batch cap
+  (`1024 -> 128`) and failed `FAILED|1:0` after `00:01:55`, MaxRSS `66121944K`,
+  `OutOfMemoryError` allocating `5.59 GiB`; Phase-0 active features `227051`,
+  precompute `62.45s`, CUDA peak allocated `91.14 GiB`, token telemetry sidecar
+  persisted 4 events.
+- `12260795` (`plt_4b_small`, chunk `4096`, cap64) applied the source batch cap
+  (`512 -> 64`) and failed `FAILED|1:0` after `00:04:11`, MaxRSS `189633676K`,
+  `OutOfMemoryError` allocating `4.14 GiB`; Phase-0 active features `313100`,
+  precompute `175.01s`, CUDA peak allocated `89.65 GiB`, token telemetry sidecar
+  persisted 4 events.
+
+Resulting A3 guidance: Phase-1 source-batch capping alone is not enough for this
+long-prefix PLT target. If A3 is continued before the governor rewrite, the next
+bounded pilot should lower the whole Phase-1 pressure surface: smaller source cap
+plus lower feature/logit/attribution batch sizes. Do not relaunch the broad A3
+failed matrix yet.
 
 Phase-A decision status: provisional. Keep `decoder_chunk_size` scenario-pinned
 for the next rerun wave; do not treat it as a governor-derived performance-only
-VRAM lever yet. Before Phase B treats it differently, rerun A3 long-prefix
-coverage with lower model/prefix memory pressure and compare outputs with
-tolerance-aware typed-bucket metrics plus persisted A1 selection-margin telemetry.
+VRAM lever yet. The survival-v2 Phase-1 source cap pilot did not survive, so
+there are still no long-prefix PLT compact outputs for tolerance-aware chunk
+comparison. Persisted error-path telemetry is now proven and should be kept as
+validation infrastructure.
 
 ## Phase B — Taxonomy + governor v0 (login-safe, project-side)
 

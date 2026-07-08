@@ -606,6 +606,8 @@ def _attribute_performance_kwargs(knobs: Mapping[str, Any]) -> dict[str, Any]:
         "semantic_descriptor_top_k",
         "semantic_descriptor_dim",
         "row_subchunk_size",
+        "phase1_trace_batch_policy",
+        "phase1_trace_batch_size_max",
         "plan_feature_batch_size",
         "feature_batch_size_max",
         "feature_batch_target_reserved_fraction",
@@ -743,6 +745,48 @@ def _persist_compact_telemetry_events(
         )
     write_jsonl(path, rows)
     return {"telemetry_event_count": len(rows), "telemetry_events_path": str(path)}
+
+
+_TELEMETRY_EXCEPTION_SUMMARY_ATTR = "circuit_tracer_telemetry_summary"
+_TELEMETRY_EXCEPTION_EVENTS_ATTR = "circuit_tracer_telemetry_events"
+
+
+def _iter_exception_chain(exc: BaseException) -> list[BaseException]:
+    pending: list[BaseException | None] = [exc]
+    seen: set[int] = set()
+    chain: list[BaseException] = []
+    while pending:
+        current = pending.pop(0)
+        if current is None or id(current) in seen:
+            continue
+        seen.add(id(current))
+        chain.append(current)
+        pending.extend(
+            [
+                getattr(current, "original", None),
+                current.__cause__,
+                current.__context__,
+            ]
+        )
+    return chain
+
+
+def _exception_telemetry_payload(exc: BaseException) -> dict[str, Any] | None:
+    for candidate in _iter_exception_chain(exc):
+        summary = getattr(candidate, _TELEMETRY_EXCEPTION_SUMMARY_ATTR, None)
+        events = getattr(candidate, _TELEMETRY_EXCEPTION_EVENTS_ATTR, None)
+        if summary is None and events is None:
+            continue
+        if events is None:
+            events = []
+        elif not isinstance(events, list):
+            events = [events]
+        return {
+            "telemetry_summary": _json_ready(summary),
+            "telemetry_events": events,
+            "telemetry_exception_type": type(candidate).__name__,
+        }
+    return None
 
 
 def run_real_shard(
@@ -1123,6 +1167,21 @@ def run_real_shard(
                     Exception
                 ) as exc:  # pragma: no cover - exercised only in SLURM real mode
                     trace.update(_exception_payload(exc))
+                    exception_telemetry = _exception_telemetry_payload(exc)
+                    if exception_telemetry is not None:
+                        trace["telemetry_summary"] = exception_telemetry[
+                            "telemetry_summary"
+                        ]
+                        trace["telemetry_exception_type"] = exception_telemetry[
+                            "telemetry_exception_type"
+                        ]
+                        trace.update(
+                            _persist_compact_telemetry_events(
+                                token_dir=token_dir,
+                                compact_result=exception_telemetry,
+                                trace=trace,
+                            )
+                        )
                     trace.update(
                         {
                             "status": "error",

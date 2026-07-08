@@ -289,6 +289,8 @@ def test_prefix_view_metadata_full_sequence_mode(tmp_path: Path) -> None:
     )
     spec = specs[0]
     spec["graph_knobs"]["input_context_mode"] = "full_sequence"
+    spec["graph_knobs"]["phase1_trace_batch_policy"] = "cap_effective_batches"
+    spec["graph_knobs"]["phase1_trace_batch_size_max"] = 16
     prefix = reconstruct_prefix_token_ids(trajectory, spec)
 
     metadata = prefix_view_metadata(trajectory, spec, prefix)
@@ -305,6 +307,18 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
     tmp_path: Path, monkeypatch
 ) -> None:
     trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    specs_rows = [
+        json.loads(line)
+        for line in specs_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    for spec_row in specs_rows:
+        spec_row["graph_knobs"]["phase1_trace_batch_policy"] = "cap_effective_batches"
+        spec_row["graph_knobs"]["phase1_trace_batch_size_max"] = 16
+    specs_path.write_text(
+        "\n".join(json.dumps(row) for row in specs_rows) + "\n",
+        encoding="utf-8",
+    )
     captured: dict[str, object] = {}
 
     def fake_attribute(**kwargs):
@@ -389,6 +403,8 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
 
     assert result["status"] == "complete"
     metadata = cast(dict[str, Any], captured["prefix_view_metadata"])
+    assert captured["phase1_trace_batch_policy"] == "cap_effective_batches"
+    assert captured["phase1_trace_batch_size_max"] == 16
     assert metadata["trace_id"] == "traj_runner_tok000001"
     assert metadata["target_position"] == 3
     assert metadata["prefix_token_count"] == 3
@@ -437,6 +453,94 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
         / "token_000001"
         / "feature_semantic_descriptors.npz"
     ).exists()
+
+
+def test_real_shard_persists_exception_attached_telemetry(
+    tmp_path: Path, monkeypatch
+) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+
+    def fake_attribute(**_kwargs):
+        exc = RuntimeError("synthetic attribution failure")
+        setattr(
+            exc,
+            "circuit_tracer_telemetry_summary",
+            {"event_count": 1, "stored_event_count": 1, "dropped_event_count": 0},
+        )
+        setattr(
+            exc,
+            "circuit_tracer_telemetry_events",
+            [
+                {
+                    "scope": "phase",
+                    "name": "phase1.forward",
+                    "phase": "phase1",
+                    "attrs": {"active_features": 227051},
+                }
+            ],
+        )
+        raise exc
+
+    monkeypatch.setenv("SLURM_JOB_ID", "test-job")
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        types.SimpleNamespace(
+            tensor=lambda data, dtype=None: data,
+            long=object(),
+            Tensor=type("FakeTensor", (), {}),
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "circuit_utils",
+        types.SimpleNamespace(save_compact=lambda *_args, **_kwargs: None),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "trace_pipeline",
+        types.SimpleNamespace(load_model=lambda **_kwargs: object()),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "trace_pipeline_chunked",
+        types.SimpleNamespace(
+            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: (
+                types.SimpleNamespace(step={})
+            ),
+            resolve_internal_precision=lambda _dtype: "float32",
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "circuit_tracer.attribution.attribute_nnsight",
+        types.SimpleNamespace(attribute=fake_attribute),
+    )
+
+    result = run_real_shard(
+        trajectory_path=trajectory_path,
+        trace_specs_path=specs_path,
+        shards_path=shards_path,
+        shard_id=0,
+        output_root=tmp_path / "run",
+    )
+
+    assert result["status"] == "error"
+    trace_path = (
+        tmp_path / "run" / "shards" / "shard_000" / "token_000001" / "trace.json"
+    )
+    trace = json.loads(trace_path.read_text(encoding="utf-8"))
+    assert trace["status"] == "error"
+    assert trace["telemetry_summary"]["event_count"] == 1
+    assert trace["telemetry_event_count"] == 1
+    telemetry_path = Path(trace["telemetry_events_path"])
+    telemetry_rows = [
+        json.loads(line)
+        for line in telemetry_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert telemetry_rows[0]["trace_id"] == "traj_runner_tok000001"
+    assert telemetry_rows[0]["event"]["name"] == "phase1.forward"
+    assert telemetry_rows[0]["event"]["attrs"] == {"active_features": 227051}
 
 
 def test_real_shard_forwards_full_sequence_prompt_and_output_position(

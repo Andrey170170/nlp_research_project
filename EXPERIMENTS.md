@@ -25,7 +25,7 @@ For important future launches, baseline decisions, and reinterpretations:
 | Item | Current value |
 |---|---|
 | Project workspace | `/users/PAS2119/andreykopanev/nlp_research_project` |
-| Project branch / commit | `main` / `fe4d0e8` (`Record Phase A2 A3 launches`) |
+| Project branch / commit | `main` / `620e781` (`Persist full-answer telemetry events`) |
 | Sibling library workspace | `/users/PAS2119/andreykopanev/circuit-tracer_chunked` |
 | Sibling branch / commit | `main` / `6e81aff` (`Add Phase-4 selection margin telemetry`) |
 | Editable dependency path | `../circuit-tracer_chunked` |
@@ -200,17 +200,50 @@ turning this into a durable governor conclusion.
 
 Instrumentation caveat: the A1 ranker-frontier selection-margin telemetry is
 present in ordinary `trace_pipeline_chunked.py` telemetry artifacts, but the A3
-full-answer runner did not persist generic `telemetry_events` into
-`trace_results.jsonl`/`trace.json`; only disabled frontier-buffer metadata was
-recorded. This was fixed project-side on 2026-07-07 so compact full-answer
-traces now write per-token `telemetry.jsonl` sidecars and include
-`telemetry_event_count` / `telemetry_events_path` in the trace row.
+full-answer runner originally did not persist generic `telemetry_events` into
+`trace_results.jsonl`/`trace.json`. Project commit `620e781` fixed the success
+path by writing per-token `telemetry.jsonl` sidecars plus
+`telemetry_event_count` / `telemetry_events_path` fields. The subsequent failed
+pilot still exited before a compact result was available, so error-path telemetry
+persistence remains a follow-up.
 
-Pending survival pilot: Cardinal jobs `12255846` and `12255847` were submitted
-with lower memory-for-speed knobs (`cross_batch_decoder_cache_bytes=0`, prepared
-refresh cache `0`, replay window `4`, prefetch `2`, lazy encoder residency) for
-the failed `t01_361_s1002_g300` target. Cardinal is busy, so the jobs are queued;
-read them out before finalizing the Phase-A chunk-caste conclusion.
+Survival pilot result: Cardinal jobs `12255846` (`plt_1b_small`, chunk `8192`)
+and `12255847` (`plt_4b_small`, chunk `4096`) reran `t01_361_s1002_g300`
+(`prefix_token_count=424`) with lower memory-for-speed knobs
+(`cross_batch_decoder_cache_bytes=0`, prepared refresh cache `0`, replay window
+`4`, prefetch `2`, lazy encoder residency, no row-store preallocation). Both
+failed with CUDA OOM during Phase 1 forward, not host OOM or timeout:
+
+- `12255846`: `FAILED|1:0`, elapsed `00:02:01`, MaxRSS `66124448K`, trace row
+  `OutOfMemoryError` allocating `5.59 GiB`; Phase-0 active features `227051`,
+  precompute `60.21s`, CUDA peak allocated `91.14 GiB`.
+- `12255847`: `FAILED|1:0`, elapsed `00:04:14`, MaxRSS `189595184K`, trace row
+  `OutOfMemoryError` allocating `4.14 GiB`; Phase-0 active features `313100`,
+  precompute `172.59s`, CUDA peak allocated `89.65 GiB`.
+
+The lower memory-for-speed knobs did reduce noncritical residency/caches but did
+not change the Phase-1 source trace batch (`legacy`, effective `1024` for 1B and
+`512` for 4B). The survival-v2 pilot then capped Phase-1 source batches on the
+same target with `phase1_trace_batch_policy=cap_effective_batches`, using
+`phase1_trace_batch_size_max=128` for 1B and `64` for 4B. Cardinal jobs
+`12260794` (1B c8192 cap128) and `12260795` (4B c4096 cap64) still failed with
+CUDA OOM during Phase 1 forward, but the cap was applied and the new error-path
+telemetry persistence was proven on real failed GPU artifacts:
+
+- `12260794`: effective Phase-1 source batch `1024 -> 128`; `FAILED|1:0`,
+  elapsed `00:01:55`, MaxRSS `66121944K`, CUDA OOM allocating `5.59 GiB`,
+  Phase-0 active features `227051`, precompute `62.45s`, CUDA peak allocated
+  `91.14 GiB`; token `telemetry.jsonl` contains 4 events.
+- `12260795`: effective Phase-1 source batch `512 -> 64`; `FAILED|1:0`,
+  elapsed `00:04:11`, MaxRSS `189633676K`, CUDA OOM allocating `4.14 GiB`,
+  Phase-0 active features `313100`, precompute `175.01s`, CUDA peak allocated
+  `89.65 GiB`; token `telemetry.jsonl` contains 4 events.
+
+Conclusion: Phase-1 source-batch capping alone is insufficient for this
+long-prefix PLT target. Any next survival pilot should reduce the broader
+Phase-1 pressure surface, not just source batch size: start with smaller source
+caps plus lower feature/logit/attribution batch sizes, or wait for governor
+admission estimates before relaunching a broad A3 matrix.
 
 Interim decision:
 
@@ -232,6 +265,14 @@ Key roots:
   `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/manual_scenarios/phase-a3-fp-cost-plt-small-affine-20260706/manifest.json`
 - A3 output base:
   `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/long_eval/phase-a3-fp-cost-plt-small-affine-20260706`
+- A3 survival pilot manifest:
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/manual_scenarios/phase-a3-survival-telemetry-lowmem-mem250-20260707/manifest.json`
+- A3 survival pilot output base:
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/long_eval/phase-a3-survival-telemetry-lowmem-mem250-20260707`
+- A3 survival-v2 phase1cap manifest:
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/manual_scenarios/phase-a3-survival-v2-phase1cap-20260707/manifest.json`
+- A3 survival-v2 phase1cap output base:
+  `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/cardinal/long_eval/phase-a3-survival-v2-phase1cap-20260707`
 
 ### 2026-07-02 — GemmaScope-2 CLT/PLT hook correction
 
