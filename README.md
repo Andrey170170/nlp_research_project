@@ -19,15 +19,15 @@ Use this README for orientation, `AGENTS.md` for durable operating rules, and
 | Model stack | Gemma-3-1B-IT + GemmaScope-2 cross-layer transcoders |
 | Canonical exact-trace dtype | `exact_trace_internal_dtype=fp32` |
 | Current benchmark harness | `src/nlp_research_project/exact_trace_bench/` |
-| Scratch root | `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/` |
+| Scratch root | `/scratch/general/vast/$USER/nlp_research_project/exact_trace_bench/` |
 
 Every serious run depends on **both** this repository and the sibling
 `../circuit-tracer_chunked` checkout. Record both branch/commit states before
 launching SLURM jobs.
 
-## OSC safety boundary
+## CHPC safety boundary
 
-This project runs on Ohio Supercomputer Center systems. Do **not** load models,
+This project now runs primarily on Utah CHPC Granite. Do **not** load models,
 download weights, run nnsight tracing, or launch heavy CPU/GPU work on login
 nodes.
 
@@ -63,7 +63,7 @@ Python requirement: `>=3.12,<3.13`.
 Use `uv`:
 
 ```bash
-uv sync
+UV_CACHE_DIR=.uv-cache uv sync
 uv run python --version
 ```
 
@@ -88,17 +88,17 @@ uv run exact-trace-bench build-scenarios --all-tiers --all-clusters
 
 # Render a launch plan before submitting.
 uv run exact-trace-bench launch-plan \
-  --cluster ascend \
-  --scenarios-file experiments/generated/exact_trace_bench/exact_trace_bench_fast_ascend_scenarios.json \
+  --cluster granite \
+  --scenarios-file experiments/generated/exact_trace_bench/exact_trace_bench_fast_granite_scenarios.json \
   --immutable-workspace
 ```
 
 Submit GPU/model-loading work only via SLURM. Preset helpers and wrapper scripts
 are documented in `src/nlp_research_project/exact_trace_bench/README.md`.
 
-Run placement convention:
+Run placement convention for new work:
 
-- cluster: `ascend` / `cardinal`
+- cluster: `granite`
 - tier: `fast` / `anomaly` / `long_eval`
 
 Use `run_id`, `run_name`, `run_description`, `run_goal`, and scenario names to

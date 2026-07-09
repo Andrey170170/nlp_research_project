@@ -18,11 +18,13 @@ plans.
 
 | File | Role |
 |---|---|
-| `../README.md` | Contributor orientation and safe OSC workflow |
+| `../README.md` | Contributor orientation and safe CHPC workflow |
 | `../AGENTS.md` | Durable repo policy and operating conventions |
 | `../CLAUDE.md` | Pointer back to `AGENTS.md` |
 | `../EXPERIMENTS.md` | Compact experiment baseline/index and current interpretation |
 | `harness.md` | Current exact-bench harness overview |
+| `chpc_setup.md` | CHPC Granite setup, caches, SLURM profiles, and migration checklist |
+| `chpc_resource_pools.md` | CHPC GPU pool candidates and job-class routing |
 | `metric_calibration.md` | Phase-0/Phase-1 decoder-cache and metric calibration workflow |
 | `../scripts/README.md` | Script entry-point notes |
 | `../experiments/logs/README.md` | Structured experiment log guidance |

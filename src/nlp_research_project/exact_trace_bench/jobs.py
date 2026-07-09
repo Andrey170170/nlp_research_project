@@ -43,6 +43,14 @@ SBATCH_SCRIPTS: dict[tuple[str, str], Path] = {
     / "slurm"
     / "exact_trace_bench"
     / "trace_weekend_exact_chunked_long_eval.cardinal.sbatch",
+    ("granite", RESOURCE_PROFILE_STANDARD): REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "trace_weekend_exact_chunked.granite.sbatch",
+    ("granite", RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM): REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "trace_weekend_exact_chunked_long_eval.granite.sbatch",
 }
 
 SBATCH_FIXTURE_PREP_SCRIPTS: dict[str, Path] = {
@@ -54,6 +62,10 @@ SBATCH_FIXTURE_PREP_SCRIPTS: dict[str, Path] = {
     / "slurm"
     / "exact_trace_bench"
     / "prepare_weekend_prefix_fixtures.cardinal.sbatch",
+    "granite": REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "prepare_weekend_prefix_fixtures.granite.sbatch",
 }
 
 SBATCH_FULL_ANSWER_TRAJECTORY_SCRIPTS: dict[str, Path] = {
@@ -65,6 +77,10 @@ SBATCH_FULL_ANSWER_TRAJECTORY_SCRIPTS: dict[str, Path] = {
     / "slurm"
     / "exact_trace_bench"
     / "full_answer_prepare.cardinal.sbatch",
+    "granite": REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "full_answer_prepare.granite.sbatch",
 }
 
 FULL_ANSWER_TRACE_RESOURCE_PROFILES: tuple[str, ...] = ("standard", "quad")
@@ -82,6 +98,10 @@ SBATCH_FULL_ANSWER_TRACE_SCRIPTS: dict[tuple[str, str], Path] = {
     / "slurm"
     / "exact_trace_bench"
     / "full_answer_trace.cardinal.sbatch",
+    ("granite", "standard"): REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "full_answer_trace.granite.sbatch",
 }
 
 GOAL_BY_TIER: dict[str, str] = {

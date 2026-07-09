@@ -24,12 +24,22 @@ from .workspace import (
 PRESET_DEFS: dict[str, dict[str, tuple[str, ...]]] = {
     "fast-ascend": {"clusters": ("ascend",), "tiers": ("fast", "anomaly")},
     "fast-cardinal": {"clusters": ("cardinal",), "tiers": ("fast", "anomaly")},
+    "fast-granite": {"clusters": ("granite",), "tiers": ("fast", "anomaly")},
+    "fast-chpc": {"clusters": ("granite",), "tiers": ("fast", "anomaly")},
     "full-ascend": {
         "clusters": ("ascend",),
         "tiers": ("fast", "anomaly", "long_eval"),
     },
     "full-cardinal": {
         "clusters": ("cardinal",),
+        "tiers": ("fast", "anomaly", "long_eval"),
+    },
+    "full-granite": {
+        "clusters": ("granite",),
+        "tiers": ("fast", "anomaly", "long_eval"),
+    },
+    "full-chpc": {
+        "clusters": ("granite",),
         "tiers": ("fast", "anomaly", "long_eval"),
     },
     "fast-all": {

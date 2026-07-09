@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -8,7 +9,15 @@ from .transcoder_config import transcoder_config_to_json, TranscoderLoadConfig
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-DEFAULT_SCRATCH_ROOT = Path("/fs/scratch/PAS2836/kopanev.1/exact_trace_bench")
+DEFAULT_CHPC_SCRATCH_ROOT = (
+    Path("/scratch/general/vast")
+    / os.environ.get("USER", "u1653998")
+    / "nlp_research_project"
+    / "exact_trace_bench"
+)
+DEFAULT_SCRATCH_ROOT = Path(
+    os.environ.get("EXACT_TRACE_BENCH_SCRATCH_ROOT", DEFAULT_CHPC_SCRATCH_ROOT)
+)
 DEFAULT_GENERATED_DIR = REPO_ROOT / "experiments" / "generated" / "exact_trace_bench"
 DEFAULT_EXTRACTED_DIR = REPO_ROOT / "experiments" / "extracted" / "exact_trace_bench"
 DEFAULT_FIXTURE_CATALOG = (

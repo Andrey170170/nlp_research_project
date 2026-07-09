@@ -54,6 +54,7 @@ from .phase3_seed_bundle_compare import compare_phase3_seed_bundles_to_json
 from .presets import preset_names, run_preset
 from .scenarios import (
     SCENARIO_TIERS,
+    SUPPORTED_CLUSTERS,
     WAVE2A_PHASE1_TIERS,
     WAVE2B_PHASE4_TIERS,
     WAVE2C_ROW_ENCODER_TIERS,
@@ -90,7 +91,7 @@ from .workspace import (
 
 
 def _cmd_build_scenarios(args: argparse.Namespace) -> None:
-    clusters = [args.cluster] if not args.all_clusters else ["ascend", "cardinal"]
+    clusters = [args.cluster] if not args.all_clusters else list(SUPPORTED_CLUSTERS)
     tiers = [args.tier] if not args.all_tiers else list(SCENARIO_TIERS)
 
     fixture_catalog = args.fixture_catalog
@@ -124,7 +125,7 @@ def _cmd_build_scenarios(args: argparse.Namespace) -> None:
 
 
 def _cmd_build_wave0_scenarios(args: argparse.Namespace) -> None:
-    clusters = [args.cluster] if not args.all_clusters else ["ascend", "cardinal"]
+    clusters = [args.cluster] if not args.all_clusters else list(SUPPORTED_CLUSTERS)
     tiers = [args.tier] if not args.all_tiers else list(SCENARIO_TIERS)
 
     if not args.fixture_catalog.exists():
@@ -161,7 +162,7 @@ def _cmd_build_wave0_scenarios(args: argparse.Namespace) -> None:
 
 
 def _cmd_build_wave2a_phase1_scenarios(args: argparse.Namespace) -> None:
-    clusters = [args.cluster] if not args.all_clusters else ["ascend", "cardinal"]
+    clusters = [args.cluster] if not args.all_clusters else list(SUPPORTED_CLUSTERS)
     tiers = [args.tier] if not args.all_tiers else list(WAVE2A_PHASE1_TIERS)
 
     if not args.fixture_catalog.exists():
@@ -199,7 +200,7 @@ def _cmd_build_wave2a_phase1_scenarios(args: argparse.Namespace) -> None:
 
 
 def _cmd_build_wave2b_phase4_scenarios(args: argparse.Namespace) -> None:
-    clusters = [args.cluster] if not args.all_clusters else ["ascend", "cardinal"]
+    clusters = [args.cluster] if not args.all_clusters else list(SUPPORTED_CLUSTERS)
     tiers = [args.tier] if not args.all_tiers else list(WAVE2B_PHASE4_TIERS)
 
     if not args.fixture_catalog.exists():
@@ -237,7 +238,7 @@ def _cmd_build_wave2b_phase4_scenarios(args: argparse.Namespace) -> None:
 
 
 def _cmd_build_wave2c_row_encoder_scenarios(args: argparse.Namespace) -> None:
-    clusters = [args.cluster] if not args.all_clusters else ["ascend", "cardinal"]
+    clusters = [args.cluster] if not args.all_clusters else list(SUPPORTED_CLUSTERS)
     tiers = [args.tier] if not args.all_tiers else list(WAVE2C_ROW_ENCODER_TIERS)
 
     if not args.fixture_catalog.exists():
@@ -277,7 +278,7 @@ def _cmd_build_wave2c_row_encoder_scenarios(args: argparse.Namespace) -> None:
 def _cmd_build_wave3_interaction_confirmation_scenarios(
     args: argparse.Namespace,
 ) -> None:
-    clusters = [args.cluster] if not args.all_clusters else ["ascend", "cardinal"]
+    clusters = [args.cluster] if not args.all_clusters else list(SUPPORTED_CLUSTERS)
     tiers = (
         [args.tier]
         if not args.all_tiers
@@ -320,7 +321,7 @@ def _cmd_build_wave3_interaction_confirmation_scenarios(
 
 
 def _cmd_build_wave4_generalization_scenarios(args: argparse.Namespace) -> None:
-    clusters = [args.cluster] if not args.all_clusters else ["ascend", "cardinal"]
+    clusters = [args.cluster] if not args.all_clusters else list(SUPPORTED_CLUSTERS)
     tiers = [args.tier] if not args.all_tiers else list(WAVE4_GENERALIZATION_TIERS)
 
     if not args.fixture_catalog.exists():
@@ -363,7 +364,7 @@ def _cmd_build_baseline_registry(args: argparse.Namespace) -> None:
     if args.run_root:
         run_roots = [Path(path) for path in args.run_root]
     else:
-        clusters = [args.cluster] if not args.all_clusters else ["ascend", "cardinal"]
+        clusters = [args.cluster] if not args.all_clusters else list(SUPPORTED_CLUSTERS)
         tiers = [args.tier] if not args.all_tiers else list(SCENARIO_TIERS)
         run_roots = wave0_run_roots(
             run_id=args.run_id,
@@ -1445,7 +1446,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Render or submit a SLURM array for full-answer trace shards",
     )
     full_answer_launch.add_argument(
-        "--cluster", choices=["ascend", "cardinal"], default="ascend"
+        "--cluster", choices=SUPPORTED_CLUSTERS, default="ascend"
     )
     full_answer_launch.add_argument(
         "--trace-resource-profile",
@@ -1506,7 +1507,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Render or submit a SLURM job to prepare a full-answer trajectory",
     )
     full_answer_trajectory_submit.add_argument(
-        "--cluster", choices=["ascend", "cardinal"], default="ascend"
+        "--cluster", choices=SUPPORTED_CLUSTERS, default="ascend"
     )
     full_answer_trajectory_submit.add_argument("--prompt-path", type=Path, default=None)
     full_answer_trajectory_submit.add_argument(
@@ -1595,7 +1596,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build_scenarios.add_argument(
         "--cluster",
-        choices=["ascend", "cardinal"],
+        choices=SUPPORTED_CLUSTERS,
         default="ascend",
         help="Cluster profile to target",
     )
@@ -1641,7 +1642,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build_wave0_scenarios.add_argument(
         "--cluster",
-        choices=["ascend", "cardinal"],
+        choices=SUPPORTED_CLUSTERS,
         default="ascend",
         help="Cluster profile to target",
     )
@@ -1687,7 +1688,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build_wave2a_phase1.add_argument(
         "--cluster",
-        choices=["ascend", "cardinal"],
+        choices=SUPPORTED_CLUSTERS,
         default="ascend",
         help="Cluster profile to target",
     )
@@ -1739,7 +1740,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build_wave2b_phase4.add_argument(
         "--cluster",
-        choices=["ascend", "cardinal"],
+        choices=SUPPORTED_CLUSTERS,
         default="ascend",
         help="Cluster profile to target",
     )
@@ -1791,7 +1792,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build_wave2c_row_encoder.add_argument(
         "--cluster",
-        choices=["ascend", "cardinal"],
+        choices=SUPPORTED_CLUSTERS,
         default="ascend",
         help="Cluster profile to target",
     )
@@ -1843,7 +1844,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build_wave3_interaction.add_argument(
         "--cluster",
-        choices=["ascend", "cardinal"],
+        choices=SUPPORTED_CLUSTERS,
         default="ascend",
         help="Cluster profile to target",
     )
@@ -1902,7 +1903,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build_wave4_generalization.add_argument(
         "--cluster",
-        choices=["ascend", "cardinal"],
+        choices=SUPPORTED_CLUSTERS,
         default="ascend",
         help="Cluster profile to target",
     )
@@ -1955,7 +1956,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build_baseline_registry.add_argument(
         "--cluster",
-        choices=["ascend", "cardinal"],
+        choices=SUPPORTED_CLUSTERS,
         default="ascend",
         help="Cluster to include when --all-clusters is not set",
     )
@@ -2477,7 +2478,7 @@ def build_parser() -> argparse.ArgumentParser:
         "launch-plan",
         help="Render a scratch-rooted sbatch launch plan for a scenarios file",
     )
-    launch_plan.add_argument("--cluster", choices=["ascend", "cardinal"], required=True)
+    launch_plan.add_argument("--cluster", choices=SUPPORTED_CLUSTERS, required=True)
     launch_plan.add_argument("--scenarios-file", type=Path, required=True)
     launch_plan.add_argument(
         "--output-root",
@@ -2548,7 +2549,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     fixture_prep.add_argument(
         "--cluster",
-        choices=["ascend", "cardinal"],
+        choices=SUPPORTED_CLUSTERS,
         default="ascend",
         help="Cluster profile to use for fixture preparation",
     )

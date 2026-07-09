@@ -8,6 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+.uv-cache/
 data/
 experiments/traces/
 experiments/explore/
@@ -20,6 +21,8 @@ docs/
 !docs/
 docs/*
 !docs/README.md
+!docs/chpc_setup.md
+!docs/chpc_resource_pools.md
 !docs/current_state.md
 !docs/architecture/
 !docs/architecture/*.md

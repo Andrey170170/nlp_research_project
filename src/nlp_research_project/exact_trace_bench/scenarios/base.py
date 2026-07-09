@@ -330,7 +330,39 @@ CLUSTER_SETTINGS: dict[str, dict[str, Any]] = {
             ],
         },
     },
+    "granite": {
+        "fast": {
+            "batch": 128,
+            "chunk": 4096,
+            "cache_gib": 0,
+        },
+        "anomaly": {
+            "batch": 256,
+            "chunk": 4096,
+            "cache_gib": 0,
+        },
+        "long_eval": {
+            "runs": [
+                {
+                    "label": "no_cache",
+                    "batch": 256,
+                    "chunk": 4096,
+                    "cache_gib": 0,
+                    "fixtures": ("361_late", "828_late", "94_late"),
+                },
+                {
+                    "label": "cache_probe",
+                    "batch": 256,
+                    "chunk": 4096,
+                    "cache_gib": 8,
+                    "fixtures": ("361_late",),
+                },
+            ],
+        },
+    },
 }
+
+SUPPORTED_CLUSTERS = tuple(CLUSTER_SETTINGS)
 
 
 def _require_cluster(cluster: str) -> None:

@@ -1,7 +1,7 @@
 # Agent operating instructions
 
 Status: Durable repo policy
-Last updated: 2026-05-16
+Last updated: 2026-07-09
 
 This file is the source of truth for agents working in this repository. Keep
 `CLAUDE.md` as a pointer only.
@@ -9,9 +9,13 @@ This file is the source of truth for agents working in this repository. Keep
 ## Project context
 
 - Research project: temporal circuit stability for LLM reliability, with most
-  current work centered on exact/chunked attribution tracing and validation.
+  current work centered on a large-scale circuit-tracing harness: scenario
+  generation, batching, SLURM orchestration, provenance, extraction, validation,
+  and cross-run analysis.
 - Model stack: Gemma-3-1B-IT with GemmaScope-2 cross-layer transcoders.
-- Local editable library dependency: sibling checkout `../circuit-tracer_chunked`.
+- Local editable library dependency: sibling checkout `../circuit-tracer_chunked`;
+  that library owns the in-round tracing implementation while this repo owns the
+  experiment harness around it.
 - Environment manager: `uv`; run Python as `uv run ...` unless already inside the
   uv-managed `.venv`.
 
@@ -26,10 +30,17 @@ parent_directory/
 The project repo alone is not enough for provenance. Exact-trace results depend
 on both this repo and the sibling library checkout.
 
-## OSC / login-node safety
+Possible future direction: reusable harness pieces such as batched tracing
+orchestration may move into `../circuit-tracer_chunked` so the library can run
+more independently. Until that is an explicit task, keep this repo as the
+orchestration/provenance layer and avoid opportunistic cross-repo merges.
 
-This repo runs on Ohio Supercomputer Center systems. GPU/model work must happen
-inside SLURM jobs, never on login nodes.
+## CHPC / login-node safety
+
+This repo now runs primarily on Utah CHPC Granite. Historical Ascend/Cardinal
+OSC paths remain in the codebase for provenance, but new launches should use the
+`granite` cluster profile unless intentionally reconstructing old OSC work.
+GPU/model work must happen inside SLURM jobs, never on login nodes.
 
 Filesystem search safety on HPC:
 
@@ -102,12 +113,21 @@ Current harness:
 
 Scratch outputs should be organized by cluster and tier only:
 
-- cluster: `ascend` / `cardinal`
-- tier: `fast` / `anomaly` / `long_eval` (`anomaly` is retained for historical scratch/provenance, not new default `94_base` placement)
+- cluster: `granite` for new CHPC work; `ascend` / `cardinal` only for historical OSC provenance
+- tier: legacy scenario tiers still exist in code as `fast` / `anomaly` /
+  `long_eval`, but new planning should classify work by operational resource
+  class instead: `setup_prefetch`, `smoke`, `baseline`, `sweep`,
+  `long_trace`, `full_answer`, and `analysis`.
 
 Use `run_id`, `run_name`, `run_description`, `run_goal`, and scenario names to
 distinguish debug campaigns. Do not introduce ordinary scratch buckets like
 `matched_debug`; those are historical provenance only.
+
+Preferred CHPC GPU pools for large traces are documented in
+`docs/chpc_resource_pools.md`. In short: use Granite `rai-gpu-grn` H200 nodes for
+large high-memory traces when possible, Granite `granite-gpu-guest` for flexible
+H200/H200NVL guest capacity, and Notchpeak `marasovic-gpu-np` A100 nodes for lab
+smokes/baselines that do not need 1T+ host RAM.
 
 Before any serious run, record:
 

@@ -1,7 +1,7 @@
 # Current exact-bench harness
 
 Status: Current harness overview
-Last updated: 2026-05-16
+Last updated: 2026-07-09
 
 The current exact-trace benchmark harness is centered on the package-style module:
 
@@ -21,13 +21,33 @@ scripts do not look like the canonical path.
 3. Run GPU/model-loading work only inside SLURM jobs.
 4. Let the CLI select templates from `slurm/exact_trace_bench/` and execute from
    immutable workspace snapshots by default.
-5. Write artifacts to `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/`.
+5. Write artifacts to `/scratch/general/vast/$USER/nlp_research_project/exact_trace_bench/`
+   unless `EXACT_TRACE_BENCH_SCRATCH_ROOT` is set.
 6. Extract and compare compact outputs with the exact-bench extraction/comparison
    helpers.
 7. Record baseline-changing results in root `EXPERIMENTS.md` and append structured
    records under `experiments/logs/`.
 
-## Current fixture/tier convention
+## Current Job Classes
+
+The code still has legacy scenario tiers named `fast`, `anomaly`, and
+`long_eval`. For new CHPC work, use operational job classes when planning and
+naming runs:
+
+| Job class | Purpose | Typical pool |
+|---|---|---|
+| `setup_prefetch` | Download model/transcoder weights and build caches | CPU partition |
+| `smoke` | Minimal model/load/trace sanity checks | lab A100 or guest GPU |
+| `baseline` | Rebuild canonical validated traces | H200/H200NVL or A100 80GB |
+| `sweep` | Parameter/resource sweeps over the harness | H200/H200NVL |
+| `long_trace` | Large-context or high-memory traces | H200/H200NVL with 1T+ host RAM |
+| `full_answer` | Multi-token/full-answer trace campaigns | H200/H200NVL with 1T+ host RAM |
+| `analysis` | Extraction, comparison, plotting | CPU or high-memory CPU |
+
+Keep the legacy tier field in scenario JSON when the current generator needs it,
+but do not let `fast/anomaly/full` be the conceptual split for new campaigns.
+
+## Current fixture convention
 
 | Fixture | Tier | Purpose |
 |---|---|---|
@@ -37,6 +57,12 @@ scripts do not look like the canonical path.
 | late fixtures | `long_eval` | longer exact-bench evaluation tier |
 
 Scratch output placement should stay organized by cluster and tier only:
+
+- `granite/fast`
+- `granite/anomaly`
+- `granite/long_eval`
+
+Historical OSC provenance may still contain:
 
 - `ascend/fast`
 - `ascend/anomaly`
