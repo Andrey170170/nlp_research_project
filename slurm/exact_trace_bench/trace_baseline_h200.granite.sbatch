@@ -17,9 +17,20 @@ set -euo pipefail
 
 WORKSPACE_ROOT="${WORKSPACE_ROOT:-$SLURM_SUBMIT_DIR}"
 LIB_WORKSPACE_ROOT="${LIB_WORKSPACE_ROOT:-$WORKSPACE_ROOT/../circuit-tracer_chunked}"
+ENV_FILE="${ENV_FILE:-$WORKSPACE_ROOT/.env}"
 
 cd "$WORKSPACE_ROOT"
 source "$WORKSPACE_ROOT/slurm/exact_trace_bench/chpc_env.sh"
+
+if [[ -f "$ENV_FILE" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
+fi
+if [[ -n "${HF_TOKEN:-}" && -z "${HUGGING_FACE_HUB_TOKEN:-}" ]]; then
+    export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"
+fi
 
 SCENARIOS_FILE="${SCENARIOS_FILE:-experiments/generated/exact_trace_bench/exact_trace_bench_baseline_gemma3_1b_clt_granite_scenarios.json}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-/scratch/general/vast/${USER}/nlp_research_project/exact_trace_bench/granite/baseline/manual}"
@@ -68,8 +79,6 @@ export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export PYTHONUNBUFFERED=1
-export HF_HUB_OFFLINE=1
-export TRANSFORMERS_OFFLINE=1
 export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-$SLURM_SUBMIT_DIR/.venv}"
 export PYTHONPATH="$WORKSPACE_ROOT/src:$WORKSPACE_ROOT:$LIB_WORKSPACE_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
@@ -92,8 +101,8 @@ echo "UV cache dir: ${UV_CACHE_DIR}"
 echo "HF home: ${HF_HOME}"
 echo "HF hub cache: ${HF_HUB_CACHE}"
 echo "Transformers cache: ${TRANSFORMERS_CACHE}"
-echo "HF hub offline: ${HF_HUB_OFFLINE}"
-echo "Transformers offline: ${TRANSFORMERS_OFFLINE}"
+echo "Env file present: $(if [[ -f "$ENV_FILE" ]]; then echo yes; else echo no; fi)"
+echo "HF token available: $(if [[ -n "${HUGGING_FACE_HUB_TOKEN:-${HF_TOKEN:-}}" ]]; then echo yes; else echo no; fi)"
 echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-unset}"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
 
