@@ -1,7 +1,7 @@
 # Experiments inventory
 
 Status: Current compact index and interpretation summary
-Last updated: 2026-07-07
+Last updated: 2026-07-10
 
 This file is the readable front page for experiment provenance. It should stay
 small enough to edit by hand.
@@ -24,16 +24,16 @@ For important future launches, baseline decisions, and reinterpretations:
 
 | Item | Current value |
 |---|---|
-| Project workspace | `/users/PAS2119/andreykopanev/nlp_research_project` |
-| Project branch / commit | `main` / `620e781` (`Persist full-answer telemetry events`) |
-| Sibling library workspace | `/users/PAS2119/andreykopanev/circuit-tracer_chunked` |
-| Sibling branch / commit | `main` / `6e81aff` (`Add Phase-4 selection margin telemetry`) |
+| Project workspace | `/uufs/chpc.utah.edu/common/home/u1653998/projects/nlp_research_project` |
+| Project branch / run commit | `chpc-granite-baseline-setup` / `5cb554a` |
+| Sibling library workspace | `/uufs/chpc.utah.edu/common/home/u1653998/projects/circuit-tracer_chunked` |
+| Sibling branch / run commit | `chpc-incremental-telemetry` / `3ad7fc9` |
 | Editable dependency path | `../circuit-tracer_chunked` |
 | Canonical exact-trace dtype | `exact_trace_internal_dtype=fp32` |
 | Canonical prompt tiers | `828_base`, `361_base`, and `94_base` in `fast` for new work |
 | GemmaScope-2 feature input hook | `mlp.hook_in` (`pre_feedforward_layernorm.output`) for CLT and PLT |
-| Scratch root | `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench` |
-| Run placement | cluster (`ascend`/`cardinal`) × tier (`fast`/`anomaly`/`long_eval`) |
+| Scratch root | `/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench` |
+| New-run placement | Granite plus operational class (`smoke`, `baseline`, `sweep`, `long_trace`, `full_answer`, or `analysis`) |
 
 Baseline preservation notes:
 
@@ -48,6 +48,19 @@ Baseline preservation notes:
 - Corrected-hook CLT fast baselines were regenerated on 2026-07-06/07 for
   `828_base`, `361_base`, and `94_base` on both Cardinal and Ascend. Treat older
   GemmaScope-2 `hook_resid_mid` CLT/PLT artifacts as contaminated provenance only.
+- The first CHPC Gemma-3-12B PLT strict baseline completed successfully on
+  Granite H200 from one immutable snapshot:
+
+  | Fixture | Trace duration | Phase 4 | Slurm MaxRSS | Compact graph |
+  |---|---:|---:|---:|---:|
+  | `828_base` | 20,878.41s | 20,417.06s | 38,719,956K | 8,192 features / 20,000 edges |
+  | `361_base` | 23,051.72s | 20,787.43s | 244,429,132K | 8,192 features / 20,000 edges |
+  | `94_base` | 22,588.42s | 20,324.72s | 208,527,604K | 8,192 features / 20,000 edges |
+
+  Run root:
+  `/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma3-12b-20260710-04`.
+  Keep the 600G request until the large fixture-dependent RSS spread is
+  understood and repeated.
 
 ## Current interpretation
 
