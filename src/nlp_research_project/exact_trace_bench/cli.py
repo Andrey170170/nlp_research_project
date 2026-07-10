@@ -516,6 +516,7 @@ def _cmd_launch_plan(args: argparse.Namespace) -> None:
         snapshot_root=args.snapshot_root,
         source_root=args.source_root,
         workspace_label=args.workspace_label,
+        live_workspace_rationale=args.live_workspace_rationale,
         walltime=args.walltime,
         baseline_registry=args.baseline_registry,
         fail_on_baseline_missing=args.fail_on_baseline_missing,
@@ -531,10 +532,11 @@ def _cmd_submit_fixture_prep(args: argparse.Namespace) -> None:
         output_dir=args.output_dir,
         decoder_chunk_size=args.decoder_chunk_size,
         cross_batch_decoder_cache_bytes=args.cross_batch_decoder_cache_bytes,
-        immutable_workspace=not args.no_immutable_workspace,
+        immutable_workspace=not args.live_workspace,
         snapshot_root=args.snapshot_root,
         source_root=args.source_root,
         workspace_label=args.workspace_label,
+        live_workspace_rationale=args.live_workspace_rationale,
         walltime=args.walltime,
         run_name=args.run_name,
     )
@@ -561,10 +563,11 @@ def _cmd_submit_preset(args: argparse.Namespace) -> None:
         generated_dir=args.generated_dir,
         fixture_catalog=args.fixture_catalog,
         scratch_root=args.scratch_root,
-        immutable_workspace=not args.no_immutable_workspace,
+        immutable_workspace=not args.live_workspace,
         snapshot_root=args.snapshot_root,
         source_root=args.source_root,
         workspace_label_prefix=args.workspace_label_prefix,
+        live_workspace_rationale=args.live_workspace_rationale,
         walltime=args.walltime,
         run_id=args.run_id,
         run_name=args.run_name,
@@ -1012,10 +1015,11 @@ def _cmd_submit_full_answer_trajectory(args: argparse.Namespace) -> None:
         temperature=args.temperature,
         seed=args.seed,
         include_prompt_text=args.include_prompt_text,
-        immutable_workspace=not args.no_immutable_workspace,
+        immutable_workspace=not args.live_workspace,
         snapshot_root=args.snapshot_root,
         source_root=args.source_root,
         workspace_label=args.workspace_label,
+        live_workspace_rationale=args.live_workspace_rationale,
         walltime=args.walltime,
         run_name=args.run_name,
     )
@@ -1055,10 +1059,11 @@ def _cmd_launch_full_answer_shards(args: argparse.Namespace) -> None:
         shards_path=args.shards,
         output_root=args.output_root,
         array_range=args.array_range,
-        immutable_workspace=not args.no_immutable_workspace,
+        immutable_workspace=not args.live_workspace,
         snapshot_root=args.snapshot_root,
         source_root=args.source_root,
         workspace_label=args.workspace_label,
+        live_workspace_rationale=args.live_workspace_rationale,
         walltime=args.walltime,
         mem=args.mem,
         partition=args.partition,
@@ -1463,7 +1468,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional SLURM array range subset, e.g. 0-39",
     )
-    full_answer_launch.add_argument("--no-immutable-workspace", action="store_true")
+    full_answer_launch.add_argument(
+        "--live-workspace",
+        "--no-immutable-workspace",
+        dest="live_workspace",
+        action="store_true",
+        help="Use the live workspace (legacy alias: --no-immutable-workspace)",
+    )
+    full_answer_launch.add_argument(
+        "--live-workspace-rationale",
+        default=None,
+        help="Required non-empty rationale when --live-workspace is used",
+    )
     full_answer_launch.add_argument(
         "--snapshot-root", type=Path, default=DEFAULT_SNAPSHOT_ROOT
     )
@@ -1541,7 +1557,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--include-prompt-text", action="store_true"
     )
     full_answer_trajectory_submit.add_argument(
-        "--no-immutable-workspace", action="store_true"
+        "--live-workspace",
+        "--no-immutable-workspace",
+        dest="live_workspace",
+        action="store_true",
+        help="Use the live workspace (legacy alias: --no-immutable-workspace)",
+    )
+    full_answer_trajectory_submit.add_argument(
+        "--live-workspace-rationale",
+        default=None,
+        help="Required non-empty rationale when --live-workspace is used",
     )
     full_answer_trajectory_submit.add_argument(
         "--snapshot-root", type=Path, default=DEFAULT_SNAPSHOT_ROOT
@@ -2506,10 +2531,25 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Free-text run goal stored with the run artifacts",
     )
-    launch_plan.add_argument(
+    launch_workspace_mode = launch_plan.add_mutually_exclusive_group()
+    launch_workspace_mode.add_argument(
         "--immutable-workspace",
+        dest="immutable_workspace",
         action="store_true",
-        help="Launch from a read-only workspace snapshot",
+        help="Launch from a read-only workspace snapshot (default)",
+    )
+    launch_workspace_mode.add_argument(
+        "--live-workspace",
+        "--no-immutable-workspace",
+        dest="immutable_workspace",
+        action="store_false",
+        help="Use the live workspace (legacy alias: --no-immutable-workspace)",
+    )
+    launch_plan.set_defaults(immutable_workspace=True)
+    launch_plan.add_argument(
+        "--live-workspace-rationale",
+        default=None,
+        help="Required non-empty rationale when --live-workspace is used",
     )
     launch_plan.add_argument(
         "--snapshot-root",
@@ -2578,9 +2618,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional decoder cache budget used for fixture prep model loading",
     )
     fixture_prep.add_argument(
+        "--live-workspace",
         "--no-immutable-workspace",
+        dest="live_workspace",
         action="store_true",
-        help="Run against the live workspace instead of a workspace snapshot",
+        help="Use the live workspace (legacy alias: --no-immutable-workspace)",
+    )
+    fixture_prep.add_argument(
+        "--live-workspace-rationale",
+        default=None,
+        help="Required non-empty rationale when --live-workspace is used",
     )
     fixture_prep.add_argument(
         "--snapshot-root",
@@ -2632,9 +2679,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Scratch root used for recommended output_root metadata",
     )
     submit_preset.add_argument(
+        "--live-workspace",
         "--no-immutable-workspace",
+        dest="live_workspace",
         action="store_true",
-        help="Submit against the live workspace instead of snapshotting by default",
+        help="Use the live workspace (legacy alias: --no-immutable-workspace)",
+    )
+    submit_preset.add_argument(
+        "--live-workspace-rationale",
+        default=None,
+        help="Required non-empty rationale when --live-workspace is used",
     )
     submit_preset.add_argument(
         "--snapshot-root",

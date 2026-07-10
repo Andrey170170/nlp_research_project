@@ -30,3 +30,10 @@ circuit-stability-analysis = "nlp_research_project.circuit_stability_analysis.cl
 
 [tool.uv.sources]
 circuit-tracer = { path = "../circuit-tracer_chunked", editable = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.15.21",
+    "ty>=0.0.58",
+]

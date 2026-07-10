@@ -19,14 +19,48 @@ scripts do not look like the canonical path.
 1. Build or select scenarios under `experiments/generated/exact_trace_bench/`.
 2. Render or submit a launch plan through `nlp_research_project.exact_trace_bench`.
 3. Run GPU/model-loading work only inside SLURM jobs.
-4. Let the CLI select templates from `slurm/exact_trace_bench/` and execute from
-   immutable workspace snapshots by default.
+4. Let the CLI select templates from `slurm/exact_trace_bench/`, create or reuse
+   an immutable read-only project+sibling snapshot, and execute only from the
+   resolved snapshot paths.
 5. Write artifacts to `/scratch/general/vast/$USER/nlp_research_project/exact_trace_bench/`
    unless `EXACT_TRACE_BENCH_SCRATCH_ROOT` is set.
 6. Extract and compare compact outputs with the exact-bench extraction/comparison
    helpers.
 7. Record baseline-changing results in root `EXPERIMENTS.md` and append structured
    records under `experiments/logs/`.
+
+## Target runtime boundary
+
+The project remains the experiment harness. It owns fixtures and scenarios,
+campaign construction, SLURM/CHPC policy, workspace snapshots, two-repository
+provenance, experiment directory layouts, extraction, comparison, and scientific
+interpretation.
+
+Reusable tracing runtime behavior should move behind first-class sibling-library
+APIs in `../circuit-tracer_chunked`:
+
+- `trace_one(...)` for one independent request;
+- `trace_batch(...)` for multiple independent requests sharing one loaded
+  model/provider runtime;
+- `open_session(...)` for sequenced tracing and explicit full-sequence/window
+  reuse.
+
+The sibling target also owns typed request/semantics/resource/plan/result
+contracts, model/transcoder provider loading, the memory governor, execution
+mechanisms, and streaming telemetry sinks. Existing `attribute(...)` remains a
+compatibility facade during migration. Experiment-specific token selection,
+sharding, SLURM submission, artifact layout, and analysis stay here.
+
+This boundary is a Python package API, not a Git submodule boundary. Continue to
+use the editable sibling dependency during development. Every SLURM launch that
+executes project code uses an immutable two-repo snapshot by default, including
+smokes and analysis jobs.
+
+Direct `sbatch` submission must not rely on a template's
+`WORKSPACE_ROOT=$SLURM_SUBMIT_DIR` fallback. Supply verified snapshot
+`WORKSPACE_ROOT` and `LIB_WORKSPACE_ROOT` values explicitly. A live-workspace
+override is exceptional and must be labeled and recorded with a rationale and
+both dirty states; neither live checkout may be edited while such a job runs.
 
 ## Current Job Classes
 
@@ -119,13 +153,15 @@ SLURM-only:
 - exact attribution runs,
 - heavy extraction/analysis over large scratch trees.
 
-Before any serious run, record both repository states:
+Before any serious run, record:
 
 1. project repo branch/commit/dirty files,
-2. sibling `../circuit-tracer_chunked` branch/commit/dirty files.
+2. sibling `../circuit-tracer_chunked` branch/commit/dirty files,
+3. snapshot manifest and project/library snapshot roots,
+4. output root and SLURM job IDs.
 
 The sibling library is part of the experiment definition because SLURM launches
-import the editable checkout at that relative path.
+import its snapshot through the resolved editable-source layout.
 
 ## Historical harness artifacts
 

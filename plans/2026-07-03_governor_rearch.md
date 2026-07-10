@@ -1,7 +1,7 @@
 # Memory governor + rearchitecture execution plan
 
-Status: active execution plan  
-Date: 2026-07-03  
+Status: active execution plan; A4 decision recorded 2026-07-09
+Date: 2026-07-03; last updated 2026-07-09
 Scope: sibling library `../circuit-tracer_chunked` rewrite + project harness
 restructure + validation campaigns
 
@@ -30,7 +30,7 @@ The governor is not an add-on: it is the scout report's "exact-trace
 policy/config seam" (sibling candidate #2) with a concrete job description,
 so both efforts share one migration.
 
-Coverage invariant: the rework is **provider-agnostic**. The memory governor
+Architecture coverage invariant: the rework is **provider-agnostic**. The memory governor
 and speedups must apply to any model/transcoder pair already supported by the
 exact/chunked provider contract, not only the Gemma/GemmaScope2 combinations
 used for initial evidence. Gemma 3 12B + PLT, GPT-OSS 20B + PLT, and Llama 3.1
@@ -38,6 +38,12 @@ used for initial evidence. Gemma 3 12B + PLT, GPT-OSS 20B + PLT, and Llama 3.1
 declare the required capabilities/metadata. The governor may branch on provider
 capabilities and topology; it must not branch on model-family or checkpoint-name
 special cases.
+
+Validation-scope caveat: the A4 caste decision below is intentionally narrow.
+It applies only to corrected-hook Gemma-3-1B + GemmaScope2 PLT-small on
+Cardinal in fp32 for `t01_361_s1002_g300` (and the explicit 298--300 window)
+under the listed configurations. It is not evidence for 4B, 12B, CLT, another
+cluster, another dtype, or another provider regime.
 
 ## Step 0 — Merge PLT parity + hook fix into main (DONE 2026-07-03)
 
@@ -256,64 +262,72 @@ and Phase-3/4 throughput evidence, not broad PLT chunk-tolerance evidence. Befor
 relaunching A3 broadly, choose an upward bracket or a bounded subset using the
 observed Phase-3/4 timings, refresh counts, MaxRSS, and trace-capacity margins.
 
-Phase-A decision status: provisional. Keep `decoder_chunk_size` scenario-pinned
-for the next rerun wave; do not treat it as a governor-derived performance-only
-VRAM lever yet. Survival-v3 provides one long-prefix PLT compact output per
-provider, but broad long-prefix tolerance coverage is still missing. Persisted
-success/error telemetry is now proven and should be kept as validation
-infrastructure.
+Historical A3 decision status (superseded by A4 on 2026-07-09): provisional;
+keep `decoder_chunk_size` scenario-pinned. A3 survival-v3 supplied the A4
+anchor and proved success/error telemetry persistence, but did not itself clear
+any semantics-sensitive knob.
 
-### A4. Frontier sensitivity / knob-caste validation sweep
+### A4. Cardinal caste evidence (SUFFICIENT TO PROCEED 2026-07-09)
 
-Purpose: answer the semantic/frontier-stability question that A3 could not answer
-after the OOMs. This is **not** a memory-fitting sweep; the governor should own
-batch/split selection. A4 tests whether candidate governor-controlled knobs are
-actually safe to move, or whether they must remain scenario-pinned.
+A4 is split into three independent evidence tracks so environment reproduction
+cannot block the architecture decision:
 
-Baseline anchors are the completed survival-v3 long-prefix traces:
+Source status: the comparison metrics below were transcribed from the OSC-side
+Codex readout supplied by the user. The Cardinal artifacts and generated campaign
+files still need transfer to CHPC for path verification and report regeneration.
+That provenance follow-up does not block interface/mechanism implementation, but
+no validation profile may be promoted as a shipped runtime default until its
+source artifacts and derived report are locally reproducible.
 
-- 1B PLT small, `t01_361_s1002_g300`, c8192, all main batches `256`, Cardinal,
-  `per_token`;
-- 4B PLT small, `t01_361_s1002_g300`, c4096, all main batches `128`, Cardinal,
-  `per_token`.
+1. **Execution-caste evidence (complete, decision-bearing).** Corrected-hook
+   Gemma-3-1B + GemmaScope2 PLT-small, Cardinal, fp32,
+   `t01_361_s1002_g300` and the indicated 298--300 window/configurations.
+2. **Environment reproducibility (deferred, non-blocking).** Ascend job
+   `6260319` is optional follow-up for historical OSC environment comparison.
+   It is not required to proceed and cannot broaden the Cardinal caste result.
+3. **Session regression (complete for the tested window).** Per-token and
+   window-reuse results below validate the first session implementation target.
 
-Bounded first-pass axes, changing one axis at a time where possible:
+Recorded A4 Cardinal metrics use the order **feature overlap / edge overlap /
+weighted-edge similarity**, followed by **top64 / top256 / top1024 / top5000**:
 
-1. **Decoder chunk sensitivity:** rerun the 1B long-prefix target at c4096 with
-   the same survival profile and all main batches `256`; compare against the
-   c8192 baseline. Add c2048 only if the first comparison suggests a meaningful
-   caste boundary worth resolving.
-2. **Batch/refresh sensitivity:** rerun the 1B c8192 target with all main
-   batches `128`; this tests whether smaller `feature_batch_size` / more Phase-4
-   microbatches or refresh cadence changes move the compact frontier.
-3. **Cluster sensitivity:** rerun the same 1B baseline config on Ascend to compare
-   Cardinal vs Ascend under the corrected survival regime.
-4. **Session/full-answer sensitivity:** compare `trajectory_session_mode=per_token`
-   against `window_reuse_v1` with `reuse_phase0_window_state=true` and
-   `reuse_target_logits=true` on a tiny multi-token window. This answers whether
-   full-window reuse/independent-token execution changes target logits or frontier
-   membership.
-5. **4B confirmation:** only repeat the sensitive axis/axes on 4B if the 1B pilot
-   shows drift, or if provider/model-size-specific validation is needed before
-   changing taxonomy ownership.
+| Comparison | Feature / edge / weighted | Top64 / 256 / 1024 / 5000 |
+|---|---:|---:|
+| chunk c4096/b256 vs A3 c8192/b256 | .994643 / .988269 / .987517 | 1 / .996 / .993 / .992 |
+| batch c8192/b128 vs A3 c8192/b256 | .990040 / .987479 / .984281 | .969 / .984 / .989 / .991 |
+| per-token g300 vs A3 | .998292 / .992627 / .992163 | 1 / 1 / .995 / .995 |
+| window-reuse g300 vs A3 | 1 / 1 / 1 | 1 / 1 / 1 / 1 |
+| window-reuse vs per-token g298 | 1 / 1 / 1 | 1 / 1 / 1 / 1 |
+| window-reuse vs per-token g299 | .984737 / .973165 / .976543 | 1 / .992 / .992 / .991 |
+| window-reuse vs per-token g300 | .998292 / .992627 / .992163 | 1 / 1 / .995 / .995 |
 
-Primary readout metrics:
+Decision: Cardinal A4 is sufficient to begin the sibling implementation. The
+observed drift is validation evidence, not a guarantee of invariance and not a
+license for unconstrained runtime adaptation. Frontier-margin telemetry remains
+a validation diagnostic and warning only; free memory or a measured frontier
+margin must never select runtime semantics.
 
-- top feature-node and top edge overlap,
-- weighted edge correlation / L1 deltas,
-- graph node/edge counts and compact artifact hashes,
-- `ranker_frontier_cutoff_gap`, `ranker_frontier_relative_cutoff_gap`,
-  `ranker_frontier_near_cutoff_count`, and cap-bound/frontier metadata,
-- whether differences live only near the cutoff or affect the high-rank core.
+The implementation therefore exposes three fidelity modes:
 
-Done when: `docs/knob_api_taxonomy.md` records validated-under evidence for
-`decoder_chunk_size`, coupled batch-family controls, cluster/runtime execution
-mode, and trajectory session mode as one of: governor-derived performance knob,
-scenario-pinned semantics knob, or governor-derived only under explicit
-tolerance/frontier-margin guardrails. Do not relaunch broad A3/A4 matrices until
-this small caste pilot says which axes are worth expanding.
+- `strict` (default): preserve the request's logical semantics and refuse with
+  an actionable admission report if no semantics-preserving plan fits.
+- `validated_relaxed`: permit only named semantic substitutions on an explicit
+  allowlist, each tied to versioned validation evidence whose scope includes the
+  request. No inference from “small drift” or frontier margins is allowed.
+- `research`: explicit per-request overrides, fully fingerprinted and labeled;
+  no claim of equivalence.
 
-## Phase B — Taxonomy + governor v0 (login-safe, project-side)
+### A5. Promote validation evidence and calibration profiles
+
+Project-side tooling generates calibration and comparison artifacts. Promote
+approved cost/resource calibration into versioned provider profiles consumed by
+the sibling; keep the A4 caste evidence separately versioned because it governs
+fidelity allowlists, not cost. CHPC Granite/H200 is the current calibration
+target. Cardinal/Ascend OSC records are historical; future CHPC baselines may
+calibrate cost and resource envelopes but do not become matched A4 caste
+evidence without a dedicated validation campaign.
+
+## Phase B — Taxonomy + sibling resolver contract (login-safe)
 
 ### B1. Knob taxonomy extension
 
@@ -334,11 +348,13 @@ family, not independent dials. Also record that `feature_batch_size` influences
 Phase-4 refresh/frontier cadence, so lowering it may be semantics-sensitive
 until validated under the target scenario.
 
-### B2. Governor v0 as a pure resolver
+### B2. Governor v0 as a pure resolver in the sibling
 
-Pure function (model config, provider profile/capabilities, scenario, hardware)
--> current knob values, next to `transcoder_config.py`. No sibling changes.
-Fixtures:
+After A4, implement the pure resolver directly in `../circuit-tracer_chunked`;
+do not build a disposable project-side resolver next to `transcoder_config.py`.
+The pure function maps `TraceSemantics`, provider profile, and
+`ResourceEnvelope` to a `TracePlan`. Project-generated calibration enters only
+through promoted, versioned provider profiles. Fixtures:
 
 - must reproduce the hand-tuned 1B/4B/12B stress presets within tolerance,
 - must beat them where Phase A data shows they were too conservative
@@ -353,16 +369,33 @@ Fixtures:
 - admission-style plan output (predicted per-tier rigid/elastic demand,
   walltime estimate) as a printable report even before anything consumes it.
 
-Validate v0 against a small SLURM matrix (1B/4B PLT + corrected CLT) before
-promoting resolver outputs as launch defaults.
+Validate v0 arithmetically with synthetic and recorded profiles, then against a
+small SLURM matrix before promoting resolver outputs as launch defaults. Such
+coverage validates planning and resource calibration; it does not broaden A4's
+semantic-caste scope.
 
 ## Phase C — Sibling library restructure (the main rewrite)
 
 Order follows the sibling scout's strong recommendations, with the governor
 landing as the policy seam. Every landing preserves compact outputs on
 canonical prompts (parity runs) and keeps the login-safe test rails green
-(scout report lists them). `attribute()` stays a compatibility facade
-throughout.
+(scout report lists them).
+
+The sibling owns the tracing runtime and its public contract:
+
+- value objects: `TraceRequest`, `TraceSemantics`, `ResourceEnvelope`,
+  `TracePlan`, and `TraceResult`;
+- provider loading, provider profiles, and promoted profile-version checks;
+- the pure resolver, governor policy, execution mechanisms, and streaming
+  telemetry;
+- first-class `trace_one`, `trace_batch`, and `open_session` APIs, with session
+  operations for sequence tracing and explicit window reuse.
+
+`attribute(...)` remains a compatibility facade over this API; it is not the
+new architectural center. Do not use a git submodule to bind the repos. Keep the
+editable sibling package for development and immutable two-repo snapshots for
+runs. A third shared package or plugin system is deferred until duplication is
+demonstrated after this boundary lands.
 
 ### C1. Attribution mega-module split (scout #1)
 
@@ -380,6 +413,35 @@ full-sequence session. Mechanical extraction first; no behavior change.
 - Provider runtime profiles and cost formulas consumed by capability/topology,
   not by CLT/PLT/Gemma special cases, building on the parity-merge provider
   contract.
+- Logical semantics and physical execution are distinct in the request and plan:
+  decoder reduction tile/order is logical while fetch/cache chunking is
+  physical; frontier refresh stride/checkpoints are logical while physical
+  microbatch size is execution-only. The planner may vary only the latter.
+- Frontier margins are emitted as warnings/validation telemetry. They never
+  create a free-memory-dependent semantic gate.
+- “Never die; degrade” applies only across semantics-preserving mechanism
+  rungs. In `strict`, admission may refuse actionably instead of silently
+  changing logical semantics.
+
+### C2a. Compatibility migration for conflated knobs
+
+The current knobs conflate logical and physical behavior. Migrate them in a
+versioned compatibility layer:
+
+1. Inventory each legacy knob and split it into logical `TraceSemantics` fields
+   and physical `ResourceEnvelope`/`TracePlan` fields. At minimum separate
+   decoder reduction tile/order from decoder fetch/cache chunk, and frontier
+   refresh stride/checkpoints from execution microbatch.
+2. Translate legacy arguments deterministically into both fields and emit a
+   structured deprecation event containing the translation and compatibility
+   schema version. Conflicting old/new fields fail before model load.
+3. Preserve the legacy translation for one documented compatibility window;
+   make `attribute(...)` call the same resolver/runtime as the new APIs.
+4. Compare a **semantic fingerprint** (logical fields, provider/checkpoint/hook,
+   dtype, fidelity mode and evidence version) separately from an **execution
+   fingerprint** (plan/profile version, physical chunks, caches, microbatches,
+   ladder rungs and environment). Never use an execution fingerprint as an
+   equivalence claim.
 
 ### C3. Row-store + replay locality and degradation ladders (scout #3 + spec §6)
 
@@ -409,9 +471,11 @@ resolver to a real allocator. Treat Phase 1 and Phase 3/4 differently:
   reserve.
 - **Phase 3/4 throughput and scale:** optimize the actual runtime bottleneck.
   The governor should choose microbatch sizes, row-store rung, prefetch depth,
-  and refresh cadence based on measured/predicted VRAM, host RAM, file-backed
-  cache, and walltime. `feature_batch_size` must remain guarded until A4 proves
-  how much refresh/frontier behavior it can change.
+  and physical fetch/cache behavior based on measured/predicted VRAM, host RAM,
+  file-backed cache, and walltime. A4 shows that the legacy
+  `feature_batch_size`/refresh coupling can drift; keep the legacy field pinned
+  and separate logical refresh checkpoints from physical microbatch before the
+  governor controls the latter.
 - **Bounded dense operators:** Phase-4 refresh/frontier planning and influence
   matmuls must have streaming/tiled implementations. Full dense materialization
   can stay as the fast rung for small problems, but large projected working sets
@@ -437,13 +501,20 @@ algorithms split. None block the governor.
 
 ## Phase D — Project harness restructure (after C stabilizes)
 
-Per the harness scout (its own priority note: sibling first):
+The project owns experiment policy and interpretation: scenarios, fixtures,
+campaign definitions, SLURM/CHPC resource policy, workspace snapshots and
+two-repo provenance, experiment layout, extraction, comparison, and scientific
+interpretation. It consumes the sibling API and streaming telemetry but does not
+reimplement provider loading, planning, tracing mechanisms, or sessions.
 
 ### D1. Runner runtime adapter (harness scout #1)
 
 Deepen "run one trace spec against the sibling runtime" out of
 `full_answer/runner.py`; shard orchestration stays the caller. Do this
-against the post-C sibling seam so it adapts in one place.
+against the post-C sibling seam so it adapts in one place. The adapter maps
+scenario plus CHPC allocation into `TraceRequest` and `ResourceEnvelope`, calls
+`trace_one`/`trace_batch`/`open_session`, and persists streamed events without
+buffering the full event history in memory.
 
 ### D2. CLI command-family modules (harness scout #2)
 
@@ -471,8 +542,13 @@ projected size exceeds tmp budget). Acceptance criteria: spec section 11.
 
 ## Cross-cutting rules
 
+- Every SLURM run that executes project code uses an immutable read-only
+  project+sibling snapshot by default. Packaged launchers create or reuse it;
+  direct `sbatch` launches must receive verified snapshot roots explicitly.
+  Any live-workspace exception is labeled, justified, provenance-recorded, and
+  blocks edits to both runtime checkouts until termination.
 - Two-repo provenance on every SLURM run: both SHAs, dirty files, snapshot
-  status, per `AGENTS.md`.
+  manifest/roots, output root, and job IDs, per `AGENTS.md`.
 - Baseline-changing decisions -> `EXPERIMENTS.md`; verbose records ->
   `experiments/logs/2026-MM.jsonl`.
 - No GPU/model work on login nodes; login-safe rails are the scout-listed
@@ -482,13 +558,45 @@ projected size exceeds tmp budget). Acceptance criteria: spec section 11.
 - No model-family/checkpoint-name special cases in governor policy. New
   supported model/transcoder pairs must enter through provider metadata,
   capability flags, and mechanism rungs.
+- Granite/H200 is current operational policy; OSC Cardinal/Ascend material is
+  historical evidence. Ascend `6260319` is optional and non-blocking.
+- A4 validation never generalizes beyond its named 1B PLT-small Cardinal fp32
+  scope. Validation evidence and cost/resource calibration have separate
+  versions and promotion paths.
+- No git submodule. Use the editable sibling checkout locally and immutable
+  project+sibling snapshots for experiment provenance.
+
+## Migration acceptance gates
+
+1. New and legacy entry points produce the same semantic fingerprint for the
+   same logical request; compatibility translation is deterministic, versioned,
+   warned, and rejects conflicts.
+2. Physical plan changes alter only the execution fingerprint in `strict`;
+   canonical parity tests cover decoder fetch/cache chunking and microbatching
+   independently from logical decoder reduction and frontier refresh semantics.
+3. `validated_relaxed` accepts only named, versioned, scope-matched evidence;
+   `research` overrides are explicit in request, result, and provenance.
+4. Telemetry streams incrementally for success and failure and includes request,
+   semantic, execution, provider-profile, evidence, and event-schema versions.
+   Consumers tolerate unknown additive events and detect dropped/truncated
+   streams.
+5. `trace_one` parity is followed by mixed-shape `trace_batch` tests and
+   `open_session` tests for independent sequence steps, explicit state reuse,
+   298--300 window reuse, cleanup, cancellation, and failure recovery. Reuse is
+   never inferred from free memory.
+6. Granite SLURM smoke/baseline runs record both repo SHAs/dirty state or
+   immutable snapshot IDs, allocation/resource envelope, semantic and execution
+   fingerprints, profile/evidence versions, job IDs, and output roots.
+7. Strict admission demonstrates both outcomes: a semantics-preserving degraded
+   plan when a rung fits, and an actionable pre-load refusal when none fits.
 
 ## Ordering rationale and risks
 
 - A before C: rewriting around unvalidated caste assumptions would bake the
   contaminated-era worldview into the new architecture.
-- B2 before C2: the governor's arithmetic gets proven as a harmless pure
-  resolver before it owns real allocations.
+- B2 is the first C2 landing: the governor's arithmetic is proven as a pure
+  sibling resolver before it owns real allocations, avoiding a disposable
+  project-side implementation.
 - C before D: the harness scout's own conclusion; harness cleanup first
   would bake in current sibling internals.
 - Main risks: (1) Phase 3 on 12B may be compute-bound — governor telemetry

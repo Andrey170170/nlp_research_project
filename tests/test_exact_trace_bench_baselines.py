@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 import sys
 from pathlib import Path
 
@@ -10,7 +11,10 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from nlp_research_project.exact_trace_bench import baselines  # noqa: E402
 from nlp_research_project.exact_trace_bench.config import base_trace_defaults  # noqa: E402
-from nlp_research_project.exact_trace_bench.jobs import render_fixture_prep_plan  # noqa: E402
+from nlp_research_project.exact_trace_bench.jobs import (  # noqa: E402
+    render_fixture_prep_plan,
+    render_launch_plan,
+)
 from experiments.run_sparsification_experiment import run_scenario  # noqa: E402
 
 
@@ -114,6 +118,7 @@ def test_fixture_prep_plan_uses_cluster_script_and_exports(tmp_path: Path) -> No
         / "exact_trace_wave0_fixture_targets.json",
         output_dir=tmp_path / "fixtures",
         immutable_workspace=False,
+        live_workspace_rationale="bounded fixture debugging",
         decoder_chunk_size=512,
         cross_batch_decoder_cache_bytes=1024,
         run_name="wave0 fixture smoke",
@@ -125,6 +130,48 @@ def test_fixture_prep_plan_uses_cluster_script_and_exports(tmp_path: Path) -> No
     assert "TARGET_SPEC_FILE=" in plan["sbatch_command"]
     assert "OUTPUT_DIR=" in plan["sbatch_command"]
     assert "CROSS_BATCH_DECODER_CACHE_BYTES=1024" in plan["sbatch_command"]
+    assert "EXACT_TRACE_WORKSPACE_MODE=live" in plan["sbatch_command"]
+    assert "EXACT_TRACE_ALLOW_LIVE_WORKSPACE=1" in plan["sbatch_command"]
+    assert "UV_PROJECT_ENVIRONMENT=" in plan["sbatch_command"]
+    assert "ENV_FILE=" in plan["sbatch_command"]
+    assert plan["workspace_provenance"]["project_repo_state"]["commit"]
+    assert plan["workspace_provenance"]["library_repo_state"]["commit"]
+
+
+def test_fixture_prep_plan_rejects_live_workspace_without_rationale() -> None:
+    try:
+        render_fixture_prep_plan(cluster="cardinal", immutable_workspace=False)
+    except ValueError as exc:
+        assert "non-empty rationale" in str(exc)
+    else:
+        raise AssertionError("Expected live workspace without rationale to fail")
+
+
+def test_launch_renderers_default_immutable_and_require_live_rationale(
+    tmp_path: Path,
+) -> None:
+    assert (
+        inspect.signature(render_launch_plan)
+        .parameters["immutable_workspace"]
+        .default
+        is True
+    )
+    assert (
+        inspect.signature(render_fixture_prep_plan)
+        .parameters["immutable_workspace"]
+        .default
+        is True
+    )
+    try:
+        render_launch_plan(
+            cluster="granite",
+            scenarios_file=tmp_path / "missing.json",
+            immutable_workspace=False,
+        )
+    except ValueError as exc:
+        assert "non-empty rationale" in str(exc)
+    else:
+        raise AssertionError("Expected live launch plan without rationale to fail")
 
 
 def test_build_baseline_registry_from_wave0_roots(tmp_path: Path) -> None:

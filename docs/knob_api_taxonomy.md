@@ -1,7 +1,7 @@
 # Exact-trace knob/API taxonomy map
 
 Status: Phase 3 mapping draft; pending Phase B governor extension
-Last updated: 2026-07-08
+Last updated: 2026-07-09
 
 This document maps the exact-trace knobs that currently exist across the project
 repo and sibling `../circuit-tracer_chunked` library. It is intentionally detailed:
@@ -28,13 +28,18 @@ architecture labels. Provider semantics knobs — for example a top-k transcoder
 top-k/cap setting — stay scenario/provider-owned unless explicitly proven
 output-invariant; memory pressure must not change them.
 
-Phase-A readout note (2026-07-07): corrected-hook A3 PLT small-affine evidence is
-partial and must be rerun before a durable caste decision. Only the
-shortest-prefix PLT target completed; across completed chunk sizes, wall time
-improved but compact artifacts drifted. Longer-prefix targets OOMed before graph
-completion under aggressive memory-for-speed knobs. Until a broader low-memory
-rerun proves tolerance-stable behavior, keep `decoder_chunk_size` scenario-pinned
-and do not let the governor auto-change it as a purely performance/VRAM lever.
+Phase-A readout note (updated 2026-07-09): corrected-hook A4 Cardinal evidence
+establishes a narrow validated-relaxed envelope for Gemma-3-1B with the
+GemmaScope2 PLT-small provider on `t01_361_s1002_g300`. Changing decoder chunk
+size from `8192` to `4096` at batch `256` retained feature/edge/weighted-edge
+Jaccards of `0.994643/0.988269/0.987517`, with exact Top64 overlap. Changing the
+coupled batch family from `256` to `128` at chunk `8192` retained
+`0.990040/0.987479/0.984281`, but Top64 overlap fell to `0.969`. These are scoped
+drift measurements, not output-invariance proofs and not guarantees for other
+providers, models, prompts, or hardware. Strict mode therefore keeps both
+logical choices scenario-pinned; an explicit validated-relaxed policy may
+authorize named axes under a versioned validation profile. The delayed Ascend
+axis is a non-blocking environment follow-up, not a prerequisite for Phase B.
 
 Batch-coupling note (A3 survival-v2/v3): the NNSight exact backend currently
 pre-initializes one forward/backward trace capacity as
@@ -47,6 +52,32 @@ Lowering Phase-3/Phase-4 microbatches below the trace capacity may still affect
 later working sets, but it does not lower the initial NNSight trace-capacity
 allocation. The governor should emit an explicit `trace_capacity` and binding
 reason so inconsistent configs are visible.
+
+### Governor fidelity and logical/physical split
+
+The target governor API has three fidelity modes:
+
+- `strict` (default): only output-invariant residency and execution mechanisms
+  may be selected from resource conditions;
+- `validated_relaxed`: the user explicitly authorizes named semantic-relaxation
+  axes under a versioned `validated_under` profile;
+- `research`: explicit low-level overrides, with no stability claim.
+
+Observed Jaccard deltas are validation evidence, not a runtime error bound. Live
+frontier margins may produce diagnostics and warnings, but they must not silently
+authorize semantics changes based on free memory.
+
+Two current knobs conflate logical semantics with physical execution and should
+be split during the sibling-library restructure:
+
+| Current coupled knob | Scenario-owned logical contract | Governor-owned physical mechanism |
+|---|---|---|
+| `decoder_chunk_size` | deterministic decoder reduction tile and accumulation order | decoder fetch/cache chunk and prefetch granularity |
+| `feature_batch_size` plus refresh interval | deterministic frontier refresh checkpoints expressed in logical work units | compute microbatch size used between checkpoints |
+
+Compatibility adapters may continue accepting the current names, but every
+resolved plan must report both logical and physical values plus separate
+`semantic_fingerprint` and `execution_fingerprint` values.
 
 ## Intended taxonomy
 
@@ -659,7 +690,7 @@ location or a `historical` marker so users do not copy them as current defaults.
 |---|---|---|---|---|---|
 | `exact_trace_internal_dtype` | scenario defaults, CLI, run config | public wrapper + NNSight backend | `fp32` | Canonical default / public precision | Keep; add project scenario/default tests. |
 | `internal_precision` | derived only by project compact wrapper | NNSight backend public param; sibling public wrapper does not pass it today | `float64` in backend signature | Deprecated/compatibility | Hide/deprecate direct public use; decide whether sibling public wrapper should derive/pass it. |
-| `decoder_chunk_size` | canonical scenarios, CLI, model load | model/transcoder loading outside attribution API | CLI `256`, canonical `2048/4096` | Public resource/perf; currently semantics-sensitive and scenario-pinned | Keep; document that changes can affect compact references; do not make governor-derived until broader corrected-regime evidence proves tolerance-stable behavior. |
+| `decoder_chunk_size` | canonical scenarios, CLI, model load | model/transcoder loading outside attribution API | CLI `256`, canonical `2048/4096` | Current compatibility knob conflating semantics and execution; strict scenario-pinned, scoped validated-relaxed opt-in | Split into logical reduction tile/order and physical fetch/cache chunk; do not generalize the 1B PLT-small A4 envelope to other regimes. |
 | `cross_batch_decoder_cache_bytes` | canonical scenarios, CLI, model load | model/transcoder loading outside attribution API | CLI `None`, canonical `0`, cache probes `8 GiB` | Public resource/perf | Keep; document exactness within fixed chunk size. |
 | `phase0_activation_threshold_compare_mode` | CLI/scenario bridge/run config | NNSight backend | `baseline` | Debug/replay public | Keep surfaced; ensure canonical defaults stay `baseline` unless a compare-mode sweep opts in. |
 | `cross_cluster_debug` | defaults, CLI, scenario bridge | NNSight backend | `False` | Debug/replay public | Keep surfaced; canonical scenarios must not enable by accident. |

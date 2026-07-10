@@ -96,6 +96,7 @@ def base_trace_defaults() -> dict[str, Any]:
         "phase0_window_reference_checks": "off",
         "cross_cluster_debug": False,
         "telemetry_max_events": None,
+        "incremental_telemetry_jsonl": False,
         "max_steps": 1,
         "method": "exact",
     }

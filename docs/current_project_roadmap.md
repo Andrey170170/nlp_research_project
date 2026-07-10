@@ -1,7 +1,99 @@
-# Current Execution Plan — Post-Consolidation Cleanup
+# Current Project Roadmap
 
 Status: Current scratch roadmap
-Last updated: 2026-05-30
+Last updated: 2026-07-09
+
+## Active priority — governor and reusable tracing runtime
+
+The active execution plan is
+`plans/2026-07-03_governor_rearch.md`, with the target contract in
+`docs/memory_governor_rearchitecture_spec.md`. The immediate sequence is:
+
+1. finish and record the Granite 1B/4B/12B baseline readout as CHPC
+   resource/cost calibration;
+2. promote the completed Cardinal A4 comparisons into the knob taxonomy;
+   delayed Ascend job `6260319` is optional environment-reproducibility evidence
+   and does not block implementation;
+3. introduce sibling-library `TraceRequest`, `TraceSemantics`,
+   `ResourceEnvelope`, `TracePlan`, and `TraceResult` contracts;
+4. provide first-class `trace_one`, `trace_batch`, and `open_session` execution
+   paths while preserving `attribute()` compatibility;
+5. split logical decoder reduction/refresh semantics from physical
+   fetch/cache/microbatch execution before allowing the governor to tune them;
+6. implement the pure governor directly in the sibling library, with `strict`
+   default fidelity and explicit validated-relaxed/research policies;
+7. replace project-side raw attribution-kwarg forwarding with the sibling runtime
+   adapter while retaining scenarios, SLURM, snapshots, artifacts, and analysis
+   in this repository.
+
+Acceptance gates for the first implementation slice:
+
+- login-safe plan resolution with synthetic provider profiles;
+- stable semantic and execution fingerprints in every resolved plan;
+- compatibility tests proving legacy `attribute()` requests resolve to the same
+  strict plan;
+- fake-runtime tests for independent batching and sequenced/window sessions;
+- streaming telemetry tests, including partial output on failure;
+- Granite SLURM parity against canonical strict scenarios before defaults move.
+
+### Immediate CHPC 12B rerun and workspace gate
+
+The `chpc-baseline-gemma-stack-20260709-03` arrays were submitted directly from
+the live project and sibling checkouts, not immutable workspace snapshots.
+Their logs resolve `WORKSPACE_ROOT` and `LIB_WORKSPACE_ROOT` to the active
+checkouts. Documentation-only edits are safe, but do not edit tracing/runtime
+Python or the sibling library until all remaining `1607770` tasks terminate.
+
+Before starting runtime implementation:
+
+1. let the current 12B tasks reach terminal state and identify only the failed
+   fixtures;
+2. create an immutable read-only snapshot containing both repositories and
+   verify that `circuit_tracer` and project imports resolve inside it;
+3. resubmit failed strict baselines from that snapshot with
+   `batch=64`, `decoder_chunk_size=4096`, at least `600G` host RAM, an
+   eight-hour harness timeout, and an 8.5-hour Slurm limit so result
+   serialization has a separate grace window;
+4. enable `verbose_attribution=true`, `profile_attribution=true`, and
+   `profile_log_interval=1`; keep `PYTHONUNBUFFERED=1`;
+5. record both repository SHAs/dirty state, snapshot root, scenario file,
+   output root, and replacement job IDs before runtime code changes begin.
+
+After the current live-workspace tasks terminate, make snapshot enforcement the
+first launcher safety patch:
+
+1. keep packaged launch commands snapshot-by-default and allow reuse of an
+   existing verified campaign snapshot;
+2. add one shared snapshot validator for manifest presence, project/sibling
+   roots, import resolution, and read-only state;
+3. make Granite trace/full-answer/baseline templates fail closed when snapshot
+   roots are absent or invalid instead of silently falling back to
+   `SLURM_SUBMIT_DIR`;
+4. retain an explicit live-workspace override only for exceptional debugging,
+   and emit its rationale plus repository dirty states into launch metadata;
+5. add login-safe launch-plan/template tests proving ordinary submissions cannot
+   resolve to the active checkout.
+
+### Incremental telemetry task
+
+The current sibling `TelemetryRecorder` retains events in memory and exports
+them only when attribution returns, so a timeout leaves an empty project-side
+`telemetry.jsonl`. Make incremental telemetry the first sibling runtime task:
+
+1. add an optional versioned event-sink protocol to `TelemetryRecorder`;
+2. emit each sanitized event with a monotonic sequence number while preserving
+   the bounded in-memory event list and final `export()` compatibility;
+3. provide a project JSONL sink that appends during execution and flushes at a
+   bounded interval, plus terminal flushes for success, failure, cancellation,
+   and timeout;
+4. make sink health, dropped events, sequence gaps, and truncation visible in
+   the final telemetry summary;
+5. add login-safe tests proving partial telemetry survives an interrupted trace
+   and that enabling a sink does not change attribution outputs.
+
+The older post-consolidation cleanup material below remains a secondary backlog;
+where it conflicts with the governor plan or current CHPC policy, the newer
+documents are authoritative.
 
 ## Problem statement
 

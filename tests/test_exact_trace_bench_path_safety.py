@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
-from nlp_research_project.exact_trace_bench import presets, workspace
+from nlp_research_project.exact_trace_bench import cli, presets, workspace
 
 
 def _fake_module(file_path: Path) -> SimpleNamespace:
@@ -100,6 +100,111 @@ def test_verify_import_paths_rejects_exact_trace_bench_outside_workspace_src(
         assert "workspace_root/src" in str(exc)
     else:
         raise AssertionError("Expected ImportError for out-of-tree exact_trace_bench")
+
+
+def _make_mutable_snapshot(tmp_path: Path) -> tuple[Path, Path]:
+    source_root = tmp_path / "project"
+    sibling_root = tmp_path / "circuit-tracer_chunked"
+    source_root.mkdir()
+    sibling_root.mkdir()
+    (source_root / "src").mkdir()
+    (source_root / "pyproject.toml").write_text(
+        "[tool.uv.sources]\n"
+        'circuit-tracer = { path = "../circuit-tracer_chunked", editable = true }\n',
+        encoding="utf-8",
+    )
+    (sibling_root / "library.py").write_text("VALUE = 1\n", encoding="utf-8")
+    snapshot = workspace.create_workspace_snapshot(
+        snapshot_root=tmp_path / "snapshots",
+        source_root=source_root,
+        read_only=False,
+    )
+    library_snapshot = workspace.sibling_library_root(snapshot)
+    assert library_snapshot is not None
+    return snapshot, library_snapshot
+
+
+def test_make_snapshot_read_only_updates_manifest_before_freezing(tmp_path: Path) -> None:
+    snapshot, _ = _make_mutable_snapshot(tmp_path)
+
+    workspace.make_snapshot_read_only(snapshot)
+
+    manifest = workspace.load_snapshot_manifest(snapshot)
+    assert manifest["read_only"] is True
+    assert snapshot.stat().st_mode & 0o222 == 0
+    assert workspace._manifest_path_for_workspace(snapshot).stat().st_mode & 0o222 == 0
+
+
+def test_validate_launch_snapshot_returns_provenance(tmp_path: Path) -> None:
+    snapshot, library_snapshot = _make_mutable_snapshot(tmp_path)
+    workspace.make_snapshot_read_only(snapshot)
+
+    provenance = workspace.validate_launch_snapshot(
+        workspace_root=snapshot,
+        library_root=library_snapshot,
+        import_roots=(snapshot / "src", snapshot, library_snapshot),
+    )
+
+    assert provenance["workspace_mode"] == "immutable"
+    assert provenance["workspace_root"] == str(snapshot.resolve())
+    assert provenance["library_workspace_root"] == str(library_snapshot.resolve())
+    assert provenance["read_only"] is True
+
+
+def test_validate_launch_snapshot_rejects_invalid_roots_and_manifest(
+    tmp_path: Path,
+) -> None:
+    snapshot, library_snapshot = _make_mutable_snapshot(tmp_path)
+    try:
+        workspace.validate_launch_snapshot(
+            workspace_root=snapshot,
+            library_root=library_snapshot,
+        )
+    except ValueError as exc:
+        assert "writable" in str(exc) or "read_only" in str(exc)
+    else:
+        raise AssertionError("Expected mutable snapshot validation to fail")
+
+    workspace.make_snapshot_read_only(snapshot)
+    try:
+        workspace.validate_launch_snapshot(
+            workspace_root=snapshot,
+            library_root=library_snapshot,
+            import_roots=(tmp_path / "outside",),
+        )
+    except ValueError as exc:
+        assert "outside supplied snapshot roots" in str(exc)
+    else:
+        raise AssertionError("Expected out-of-tree import root validation to fail")
+
+
+def test_launch_plan_cli_defaults_immutable_and_supports_live_alias(tmp_path: Path) -> None:
+    parser = cli.build_parser()
+    immutable = parser.parse_args(
+        [
+            "launch-plan",
+            "--cluster",
+            "granite",
+            "--scenarios-file",
+            str(tmp_path / "scenarios.json"),
+        ]
+    )
+    assert immutable.immutable_workspace is True
+
+    live = parser.parse_args(
+        [
+            "launch-plan",
+            "--cluster",
+            "granite",
+            "--scenarios-file",
+            str(tmp_path / "scenarios.json"),
+            "--no-immutable-workspace",
+            "--live-workspace-rationale",
+            "interactive diagnosis",
+        ]
+    )
+    assert live.immutable_workspace is False
+    assert live.live_workspace_rationale == "interactive diagnosis"
 
 
 def test_run_preset_freezes_snapshot_before_submitting_jobs(

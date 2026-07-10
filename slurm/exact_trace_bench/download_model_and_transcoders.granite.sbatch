@@ -13,8 +13,9 @@
 
 set -euo pipefail
 
-WORKSPACE_ROOT="${WORKSPACE_ROOT:-$SLURM_SUBMIT_DIR}"
-LIB_WORKSPACE_ROOT="${LIB_WORKSPACE_ROOT:-$WORKSPACE_ROOT/../circuit-tracer_chunked}"
+: "${WORKSPACE_ROOT:?WORKSPACE_ROOT is required}"
+# shellcheck disable=SC1091
+source "$WORKSPACE_ROOT/slurm/exact_trace_bench/require_snapshot_workspace.sh"
 ENV_FILE="${ENV_FILE:-$WORKSPACE_ROOT/.env}"
 MODEL_REPOS="${MODEL_REPOS:-google/gemma-3-1b-it,google/gemma-3-4b-it,google/gemma-3-12b-it}"
 PROVIDER_FAMILIES="${PROVIDER_FAMILIES:-gemmascope2-clt-1b-medium-affine,gemmascope2-plt-1b-small,gemmascope2-plt-4b-small,gemmascope2-plt-12b-small}"
@@ -25,7 +26,8 @@ source "$WORKSPACE_ROOT/slurm/exact_trace_bench/chpc_env.sh"
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 export TOKENIZERS_PARALLELISM=false
 export PYTHONUNBUFFERED=1
-export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-$SLURM_SUBMIT_DIR/.venv}"
+: "${UV_PROJECT_ENVIRONMENT:?UV_PROJECT_ENVIRONMENT must point to the external environment}"
+export UV_PROJECT_ENVIRONMENT
 export PYTHONPATH="$WORKSPACE_ROOT/src:$WORKSPACE_ROOT:$LIB_WORKSPACE_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 if [[ -f "$ENV_FILE" ]]; then

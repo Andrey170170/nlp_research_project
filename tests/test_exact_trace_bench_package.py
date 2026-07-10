@@ -37,7 +37,21 @@ def test_canonical_sbatch_templates_use_snapshot_import_paths() -> None:
             'export PYTHONPATH="$WORKSPACE_ROOT/src:$WORKSPACE_ROOT:$LIB_WORKSPACE_ROOT'
             in text
         )
-        assert "uv run --no-sync" in text
+        if path.name.endswith(".granite.sbatch"):
+            assert '"$UV_PROJECT_ENVIRONMENT/bin/python"' in text
+        else:
+            assert "uv run --no-sync" in text
+
+
+def test_granite_templates_source_snapshot_guard_without_submit_dir_fallback() -> None:
+    paths = sorted(
+        (PROJECT_ROOT / "slurm" / "exact_trace_bench").glob("*.granite.sbatch")
+    )
+    assert len(paths) == 8
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        assert 'source "$WORKSPACE_ROOT/slurm/exact_trace_bench/require_snapshot_workspace.sh"' in text
+        assert "SLURM_SUBMIT_DIR" not in text
 
 
 def test_wrapper_scripts_call_console_entrypoint() -> None:
@@ -58,7 +72,7 @@ def test_root_scripts_directory_only_contains_archive_and_readme() -> None:
     entries = {
         path.name for path in SCRIPTS_ROOT.iterdir() if path.name != "__pycache__"
     }
-    assert entries == {"README.md", "archive"}
+    assert entries == {"README.md", "archive", "transfer_scratch_pas2836.sh"}
 
 
 def test_module_entrypoint_help_is_login_safe() -> None:
@@ -100,3 +114,20 @@ def test_workspace_snapshot_manifest_records_repo_state(tmp_path: Path) -> None:
     assert set(manifest["repo_state"]) == {"branch", "commit", "dirty_files"}
     assert manifest["uv_source_snapshots"][0]["repo_state"]["dirty_files"] == []
     assert (snapshot / "module.py").exists()
+
+
+def test_workspace_snapshot_excludes_nested_uv_cache(tmp_path: Path) -> None:
+    source_root = tmp_path / "project"
+    uv_cache = source_root / "nested" / ".uv-cache"
+    uv_cache.mkdir(parents=True)
+    (uv_cache / "sentinel").write_text("must not be copied\n", encoding="utf-8")
+
+    snapshot = create_workspace_snapshot(
+        snapshot_root=tmp_path / "snapshots",
+        source_root=source_root,
+        read_only=False,
+    )
+    manifest = load_snapshot_manifest(snapshot)
+
+    assert not (snapshot / "nested" / ".uv-cache").exists()
+    assert ".uv-cache" in manifest["ignored_names"]

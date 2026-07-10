@@ -13,8 +13,9 @@
 
 set -euo pipefail
 
-WORKSPACE_ROOT="${WORKSPACE_ROOT:-$SLURM_SUBMIT_DIR}"
-LIB_WORKSPACE_ROOT="${LIB_WORKSPACE_ROOT:-$WORKSPACE_ROOT/../circuit-tracer_chunked}"
+: "${WORKSPACE_ROOT:?WORKSPACE_ROOT is required}"
+# shellcheck disable=SC1091
+source "$WORKSPACE_ROOT/slurm/exact_trace_bench/require_snapshot_workspace.sh"
 ENV_FILE="${ENV_FILE:-$WORKSPACE_ROOT/.env}"
 PROVIDER_FAMILIES="${PROVIDER_FAMILIES:-gemmascope2-plt-1b-big-affine,gemmascope2-plt-4b-big-affine}"
 
@@ -26,7 +27,8 @@ TRANSCODER_CACHE_DIR="${TRANSCODER_CACHE_DIR:-$HF_HOME}"
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 export TOKENIZERS_PARALLELISM=false
 export PYTHONUNBUFFERED=1
-export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-$SLURM_SUBMIT_DIR/.venv}"
+: "${UV_PROJECT_ENVIRONMENT:?UV_PROJECT_ENVIRONMENT must point to the external environment}"
+export UV_PROJECT_ENVIRONMENT
 export PYTHONPATH="$WORKSPACE_ROOT/src:$WORKSPACE_ROOT:$LIB_WORKSPACE_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 echo "Job ID: ${SLURM_JOB_ID}"

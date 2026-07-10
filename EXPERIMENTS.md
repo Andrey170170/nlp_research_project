@@ -316,6 +316,41 @@ membership for the long-prefix 1B PLT target.
 - `12275061` Cardinal: matching tiny-window `window_reuse_v1` run with
   Phase-0 window-state reuse and target-logit reuse enabled.
 
+A4 Cardinal readout (reported 2026-07-09; OSC artifacts pending transfer to
+CHPC): the completed Cardinal comparisons are sufficient to unblock the scoped
+knob-caste design. The delayed Ascend job `6260319` is now optional
+cross-environment reproducibility evidence rather than a Phase-B gate.
+
+| Pair | Feature J | Edge J | Weighted Edge J | Top64 | Top256 | Top1024 | Top5000 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| chunk c4096/b256 vs A3 c8192/b256 | 0.994643 | 0.988269 | 0.987517 | 1.000 | 0.996 | 0.993 | 0.992 |
+| batch c8192/b128 vs A3 c8192/b256 | 0.990040 | 0.987479 | 0.984281 | 0.969 | 0.984 | 0.989 | 0.991 |
+| per-token g300 vs A3 | 0.998292 | 0.992627 | 0.992163 | 1.000 | 1.000 | 0.995 | 0.995 |
+| window-reuse g300 vs A3 | 1.000000 | 1.000000 | 1.000000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| window-reuse vs per-token g298 | 1.000000 | 1.000000 | 1.000000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| window-reuse vs per-token g299 | 0.984737 | 0.973165 | 0.976543 | 1.000 | 0.992 | 0.992 | 0.991 |
+| window-reuse vs per-token g300 | 0.998292 | 0.992627 | 0.992163 | 1.000 | 1.000 | 0.995 | 0.995 |
+
+Validated-under scope: corrected-hook Gemma-3-1B with GemmaScope2 PLT-small,
+Cardinal, fp32, long-prefix `t01_361_s1002_g300` and full-sequence window indices
+`298--300`, using the listed chunk/batch settings. This does not validate 4B,
+12B, CLT, other prompts, or Granite/H200.
+
+Decision:
+
+- strict mode keeps decoder reduction order, coupled batch/refresh semantics,
+  and session mode scenario-pinned;
+- decoder chunk variation is eligible for an explicit validated-relaxed policy
+  in this narrow regime because the Top64 core was exact and weighted drift was
+  about 1.25%;
+- coupled batch/refresh variation needs a separate, stronger permission because
+  it changed the Top64 set (`0.969`) and had about 1.57% weighted drift;
+- `window_reuse_v1` remains the canonical full-answer session mode, not a memory
+  governor choice; its g300 output exactly matched the A3 anchor;
+- future implementation should decouple logical reduction/refresh checkpoints
+  from physical fetch chunks and compute microbatches so strict mode can recover
+  more performance without accepting semantic drift.
+
 Key roots:
 
 - A2 Cardinal:

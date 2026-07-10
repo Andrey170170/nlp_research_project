@@ -44,9 +44,9 @@ CHPC_BASELINE_VARIANTS: dict[str, dict[str, Any]] = {
         "provider_family": "gemmascope2-plt-12b-small",
         "batch": 64,
         "cache_gib": 0,
-        "timeout_minutes": 300,
-        "slurm_mem": "400G",
-        "slurm_time": "05:00:00",
+        "timeout_minutes": 480,
+        "slurm_mem": "600G",
+        "slurm_time": "08:30:00",
     },
 }
 
@@ -138,6 +138,10 @@ def build_chpc_baseline_config(
             "decoder_chunk_size": decoder_chunk_size,
             "cross_batch_decoder_cache_bytes": cache_bytes,
             "exact_trace_internal_dtype": "fp32",
+            "verbose_attribution": True,
+            "profile_attribution": True,
+            "profile_log_interval": 1,
+            "incremental_telemetry_jsonl": True,
             "capture_phase0_donor_bundle": True,
             "capture_phase3_seed_bundle": True,
             "capture_feature_semantic_descriptors": False,

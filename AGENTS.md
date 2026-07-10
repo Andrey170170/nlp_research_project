@@ -129,12 +129,29 @@ large high-memory traces when possible, Granite `granite-gpu-guest` for flexible
 H200/H200NVL guest capacity, and Notchpeak `marasovic-gpu-np` A100 nodes for lab
 smokes/baselines that do not need 1T+ host RAM.
 
+Workspace immutability is the default for every SLURM launch that executes
+project code, including smoke, baseline, sweep, long-trace, full-answer, and
+analysis jobs:
+
+- create one immutable read-only snapshot containing both the project and the
+  sibling library, and reuse it across a campaign when the code state is shared;
+- packaged launch commands must snapshot automatically unless an existing
+  verified snapshot is supplied;
+- direct `sbatch` use must set `WORKSPACE_ROOT` and `LIB_WORKSPACE_ROOT` to
+  the verified snapshot paths instead of relying on `SLURM_SUBMIT_DIR`;
+- environments, secrets, model caches, and output roots remain external to the
+  snapshot;
+- a live-workspace launch is an explicit exceptional override only. Record the
+  reason and both dirty states, label the run as live, and do not edit either
+  runtime checkout until the job terminates.
+
 Before any serious run, record:
 
 1. project repo branch, commit, and dirty files,
 2. sibling `../circuit-tracer_chunked` branch, commit, and dirty files,
-3. whether the launch uses a live workspace or immutable workspace snapshot,
-4. scratch output root and SLURM job IDs.
+3. immutable snapshot container/project/library roots and manifest,
+4. any explicit live-workspace override and its rationale,
+5. scratch output root and SLURM job IDs.
 
 ## Git hygiene
 

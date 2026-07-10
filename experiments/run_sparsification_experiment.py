@@ -687,6 +687,8 @@ def build_command(
             cmd.extend(
                 ["--telemetry-max-events", str(scenario["telemetry_max_events"])]
             )
+        if scenario.get("incremental_telemetry_jsonl", False):
+            cmd.append("--incremental-telemetry-jsonl")
 
     if scenario.get("verbose_attribution", False):
         cmd.append("--verbose-attribution")

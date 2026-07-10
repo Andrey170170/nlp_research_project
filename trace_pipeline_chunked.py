@@ -984,6 +984,8 @@ def extract_compact_chunked_attribution(
     semantic_descriptor_top_k: int = 2048,
     semantic_descriptor_dim: int = 64,
     telemetry_max_events: int | None = None,
+    telemetry_jsonl_path: str | Path | None = None,
+    telemetry_context: dict[str, Any] | None = None,
     phase4_refresh_policy: str = "standard",
     phase4_refresh_interval_multiplier: int = 1,
     phase4_refresh_prepared_chunk_cache_bytes: int = 0,
@@ -1052,6 +1054,8 @@ def extract_compact_chunked_attribution(
         semantic_descriptor_top_k=semantic_descriptor_top_k,
         semantic_descriptor_dim=semantic_descriptor_dim,
         telemetry_max_events=telemetry_max_events,
+        telemetry_jsonl_path=telemetry_jsonl_path,
+        telemetry_context=telemetry_context,
         phase0_donor_bundle=phase0_donor_bundle,
         phase0_replay_mode=phase0_replay_mode,
         phase0_donor_context_policy=phase0_donor_context_policy,
@@ -1537,6 +1541,7 @@ def trace_completion_compact_chunked(
     semantic_descriptor_top_k: int = 2048,
     semantic_descriptor_dim: int = 64,
     telemetry_max_events: int | None = None,
+    incremental_telemetry_jsonl: bool = False,
     phase4_refresh_policy: str = "standard",
     phase4_refresh_interval_multiplier: int = 1,
     phase4_refresh_prepared_chunk_cache_bytes: int = 0,
@@ -1628,6 +1633,12 @@ def trace_completion_compact_chunked(
     telemetry_jsonl_path = completion_dir / "telemetry.jsonl"
     telemetry_jsonl_path.write_text("")
     telemetry_events_written = 0
+    live_telemetry_jsonl_path = completion_dir / "telemetry.live.jsonl"
+    if incremental_telemetry_jsonl:
+        live_telemetry_jsonl_path.write_text("")
+    live_telemetry_event_count = 0
+    live_telemetry_error_count = 0
+    live_telemetry_statuses: list[str] = []
     phase4_anomaly_debug_path = completion_dir / "phase4_anomaly_debug.json"
     phase4_anomaly_debug_artifact = None
     cross_cluster_debug_path = completion_dir / "cross_cluster_debug_summary.json"
@@ -1723,6 +1734,19 @@ def trace_completion_compact_chunked(
             semantic_descriptor_top_k=semantic_descriptor_top_k,
             semantic_descriptor_dim=semantic_descriptor_dim,
             telemetry_max_events=telemetry_max_events,
+            telemetry_jsonl_path=(
+                live_telemetry_jsonl_path if incremental_telemetry_jsonl else None
+            ),
+            telemetry_context=(
+                {
+                    "schema_version": 1,
+                    "prompt_id": prompt_id,
+                    "completion_id": completion_id,
+                    "trace_step_index": step_idx,
+                }
+                if incremental_telemetry_jsonl
+                else None
+            ),
             phase4_refresh_policy=phase4_refresh_policy,
             phase4_refresh_interval_multiplier=phase4_refresh_interval_multiplier,
             phase4_refresh_prepared_chunk_cache_bytes=phase4_refresh_prepared_chunk_cache_bytes,
@@ -1741,6 +1765,19 @@ def trace_completion_compact_chunked(
             row_store_preallocate=row_store_preallocate,
         )
         attribution_seconds = time.perf_counter() - attribution_start
+
+        if incremental_telemetry_jsonl:
+            live_summary = compact_result.get("telemetry_summary")
+            if isinstance(live_summary, dict):
+                live_telemetry_event_count += int(
+                    live_summary.get("sink_event_count", 0) or 0
+                )
+                live_telemetry_error_count += int(
+                    live_summary.get("sink_error_count", 0) or 0
+                )
+                sink_status = live_summary.get("sink_status")
+                if isinstance(sink_status, str):
+                    live_telemetry_statuses.append(sink_status)
 
         resolved_phase4_feature_batch_size = int(
             compact_result.get(
@@ -3801,6 +3838,24 @@ def trace_completion_compact_chunked(
         "graph_packaging_mode": "compact_chunked_no_full_graph",
         "telemetry_events_path": telemetry_jsonl_path.name,
         "telemetry_event_count": telemetry_events_written,
+        "incremental_telemetry_jsonl": bool(incremental_telemetry_jsonl),
+        "incremental_telemetry_jsonl_path": (
+            live_telemetry_jsonl_path.name if incremental_telemetry_jsonl else None
+        ),
+        "incremental_telemetry_event_count": int(live_telemetry_event_count),
+        "incremental_telemetry_sink_status": (
+            "error"
+            if live_telemetry_error_count
+            else (
+                "closed"
+                if live_telemetry_statuses
+                and all(status == "closed" for status in live_telemetry_statuses)
+                else (live_telemetry_statuses[-1] if live_telemetry_statuses else "not_started")
+            )
+            if incremental_telemetry_jsonl
+            else "disabled"
+        ),
+        "incremental_telemetry_sink_error_count": int(live_telemetry_error_count),
         "phase4_anomaly_debug_enabled": bool(phase4_anomaly_debug),
         "phase4_anomaly_debug_path": (
             phase4_anomaly_debug_path.name
@@ -4301,6 +4356,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "semantic_descriptor_top_k": args.semantic_descriptor_top_k,
         "semantic_descriptor_dim": args.semantic_descriptor_dim,
         "telemetry_max_events": args.telemetry_max_events,
+        "incremental_telemetry_jsonl": args.incremental_telemetry_jsonl,
         "phase4_scheduler_mode": args.phase4_scheduler_mode,
         "phase4_scheduler_requested_mode": args.phase4_scheduler_mode,
         "phase4_scheduler_mode_requested": args.phase4_scheduler_mode,
@@ -4537,6 +4593,9 @@ def run_pipeline(args: argparse.Namespace) -> None:
                         ),
                         "semantic_descriptor_top_k": args.semantic_descriptor_top_k,
                         "semantic_descriptor_dim": args.semantic_descriptor_dim,
+                        "incremental_telemetry_jsonl": (
+                            args.incremental_telemetry_jsonl
+                        ),
                         "phase1_trace_batch_policy": args.phase1_trace_batch_policy,
                         "phase1_trace_batch_size_max": args.phase1_trace_batch_size_max,
                         "phase4_refresh_policy": args.phase4_refresh_policy,
@@ -5039,6 +5098,14 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Optional in-memory telemetry event cap override for fork attribution",
+    )
+    parser.add_argument(
+        "--incremental-telemetry-jsonl",
+        action="store_true",
+        help=(
+            "Stream crash-surviving attribution events to telemetry.live.jsonl "
+            "for compact traces"
+        ),
     )
     parser.add_argument(
         "--no-lazy-encoder",
