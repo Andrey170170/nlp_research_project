@@ -1,7 +1,7 @@
 # Memory governor + rearchitecture execution plan
 
-Status: active execution plan; A4 decision recorded 2026-07-09
-Date: 2026-07-03; last updated 2026-07-09
+Status: active execution plan; Phase B complete, Phase C next
+Date: 2026-07-03; last updated 2026-07-10
 Scope: sibling library `../circuit-tracer_chunked` rewrite + project harness
 restructure + validation campaigns
 
@@ -327,9 +327,17 @@ target. Cardinal/Ascend OSC records are historical; future CHPC baselines may
 calibrate cost and resource envelopes but do not become matched A4 caste
 evidence without a dedicated validation campaign.
 
-## Phase B — Taxonomy + sibling resolver contract (login-safe)
+A5 calibration result (2026-07-10): Granite H200 strict baselines completed for
+the 1B CLT, 1B PLT, 4B PLT, and 12B PLT stack across the three canonical base
+fixtures. The immutable 12B rerun completed at b64/c4096 in 5.8--6.4 hours with
+38--244 GiB observed MaxRSS. Promote these observations as versioned arithmetic
+fixtures, retain 600G as the conservative 12B envelope, and keep resource
+repeatability analysis as a post-B2 calibration task rather than an
+implementation gate.
 
-### B1. Knob taxonomy extension
+## Phase B — Taxonomy + sibling resolver contract (COMPLETE 2026-07-10)
+
+### B1. Knob taxonomy extension (COMPLETE)
 
 Extend `docs/knob_api_taxonomy.md` with per-knob columns: tier, bytes-cost
 formula, caste, validated-under (regime/provider topology/model family where
@@ -348,7 +356,7 @@ family, not independent dials. Also record that `feature_batch_size` influences
 Phase-4 refresh/frontier cadence, so lowering it may be semantics-sensitive
 until validated under the target scenario.
 
-### B2. Governor v0 as a pure resolver in the sibling
+### B2. Governor v0 as a pure resolver in the sibling (COMPLETE)
 
 After A4, implement the pure resolver directly in `../circuit-tracer_chunked`;
 do not build a disposable project-side resolver next to `transcoder_config.py`.
@@ -362,6 +370,9 @@ through promoted, versioned provider profiles. Fixtures:
 - must include synthetic provider fixtures covering cross-layer, same-layer, and
   top-k/approximate provider semantics so the resolver cannot hardcode
   Gemma/GemmaScope2/CLT/PLT names,
+- must reproduce the recorded Granite baseline batch/chunk/resource envelopes
+  and report the observed 12B 5.8--6.4 hour walltime range without treating the
+  CHPC runs as semantic-equivalence evidence,
 - must emit an explicit derived `trace_capacity` with binding reason
   (`source`, `feature`, or `logit`) and reject or warn on plans that claim to
   lower Phase-1 memory while a larger feature/logit batch still binds,
@@ -373,6 +384,15 @@ Validate v0 arithmetically with synthetic and recorded profiles, then against a
 small SLURM matrix before promoting resolver outputs as launch defaults. Such
 coverage validates planning and resource calibration; it does not broaden A4's
 semantic-caste scope.
+
+B2 completion record: sibling `phase-b-governor-contract@0ce3f96` implements
+the immutable contracts, separate semantic/execution/evidence fingerprints,
+empty package-owned trusted-evidence registry, provider/dimension/cost profiles,
+nested cgroup plus Slurm host discovery, per-tier estimates, coupled-batch
+diagnostics, capacity-driven row-store planning, and deterministic advisory
+admission reports. Validation passed 38 focused tests, 51 existing
+telemetry/provider regressions, Ruff, and uv-based Pyright. No runtime path
+consumes the plan yet; Granite integration/parity remains a Phase C gate.
 
 ## Phase C — Sibling library restructure (the main rewrite)
 

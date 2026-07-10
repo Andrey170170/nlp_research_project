@@ -87,12 +87,14 @@ Clean/current toy parity follow-up (May 2026):
 - The observed batch sensitivity is not attributed to the exact-chunked decoder
   implementation itself; it appears to be general NNSight/replacement behavior.
 
-Near-term cleanup focus:
+Near-term implementation focus:
 
-1. keep the current exact-trace baseline readable and reproducible,
-2. keep docs and scenario defaults from drifting,
-3. separate normal benchmark workflow from Track-A replay/debug tooling,
-4. add lightweight tests before deeper harness or library refactors.
+1. begin Phase C by introducing the sibling runtime contract and compatibility
+   facade around the completed Phase B resolver (`0ce3f96`),
+2. keep logical semantics distinct from physical execution choices,
+3. make runtime phases consume advisory plans only after mechanism support and
+   fixed-semantics tests exist,
+4. preserve the current baselines through incremental Granite parity checks.
 
 Track-2 full-answer typed-bucketed interpretation (May 2026):
 
@@ -186,10 +188,14 @@ Full-sequence telemetry pilot (June 2026):
 
 | Family | Meaning | Current status |
 |---|---|---|
-| `exact_trace_bench/ascend/fast` | Ascend quick validation/debug for normal prompts | Current |
-| `exact_trace_bench/cardinal/fast` | Cardinal quick validation/debug for normal prompts | Current |
-| `exact_trace_bench/{ascend,cardinal}/anomaly` | Historical `94_base` anomaly/debug/parity work | Historical/current-readable; do not use for new default placement |
-| `exact_trace_bench/{ascend,cardinal}/long_eval` | Longer exact-bench evaluation tier | Current but SLURM-only |
+| `exact_trace_bench/granite/setup_prefetch` | Model/transcoder download and cache preparation | Current CHPC operational class |
+| `exact_trace_bench/granite/smoke` | Minimal load/trace validation | Current CHPC operational class |
+| `exact_trace_bench/granite/baseline` | Canonical strict baseline rebuilds, including the 12B `20260710-04` run | Current CHPC operational class |
+| `exact_trace_bench/granite/sweep` | Parameter/resource campaigns | Current CHPC operational class |
+| `exact_trace_bench/granite/long_trace` | Large-context/high-memory traces | Current CHPC operational class |
+| `exact_trace_bench/granite/full_answer` | Multi-token/full-answer campaigns | Current CHPC operational class |
+| `exact_trace_bench/granite/analysis` | Extraction, comparison, and plotting | Current CHPC operational class |
+| `exact_trace_bench/{ascend,cardinal}/{fast,anomaly,long_eval}` | OSC baselines, parity, and historical evaluation tiers | Historical provenance; do not use for new placement |
 | `workspace_snapshots/` | Immutable project + sibling-library launch snapshots | Current provenance mechanism |
 | historical `matched_debug` artifacts | Old matched-debug campaign outputs/configs | Historical only; do not use as an ordinary bucket |
 

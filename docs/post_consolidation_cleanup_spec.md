@@ -1,9 +1,13 @@
 # Post-Consolidation Cleanup Spec
 
-Status: Current cleanup strategy
+Status: Reference cleanup strategy; current roadmap supersedes execution order
 Date: 2026-05-15
 Applies to: project `main` + sibling `../circuit-tracer_chunked` `main` after
 Track-0B consolidation
+
+This document preserves the consolidation rationale and constraints. Active
+work sequencing lives in `docs/current_project_roadmap.md` and
+`plans/2026-07-03_governor_rearch.md`.
 
 ## 1. Problem statement
 

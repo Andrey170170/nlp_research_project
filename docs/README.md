@@ -1,7 +1,7 @@
 # Documentation index
 
 Status: Current docs map
-Last updated: 2026-07-01
+Last updated: 2026-07-10
 
 This directory mixes current-state references, active specs, and historical
 material. Use the sections below to separate descriptive maps from working
@@ -30,21 +30,22 @@ plans.
 | `../experiments/logs/README.md` | Structured experiment log guidance |
 | `../src/nlp_research_project/exact_trace_bench/README.md` | Package-level harness notes |
 
-## Active specs and scratch docs
+## Active plan and specs
 
 | File | Role |
 |---|---|
-| `current_project_roadmap.md` | Current scratch roadmap for the active cleanup phase |
-| `memory_governor_rearchitecture_spec.md` | Target design: budget-driven memory governor + library rearchitecture, with execution plan (PLT merge first, then probe campaign) |
-| `knob_api_taxonomy.md` | Exact-trace knob/API taxonomy and Phase-3 cleanup map |
-| `full_answer_harness_spec.md` | Track-2 full-answer / multi-token tracing harness design |
-| `exact_trace_sweep_campaign_spec.md` | Next exact-trace sweep campaign plan and wave structure |
-| `post_consolidation_cleanup_spec.md` | Durable cleanup strategy after Track-0B consolidation |
-| `plt_clt_optimization_parity_spec.md` | Current PLT/CLT optimization parity plan and validation strategy |
-| `phase4_refresh_optimization_spec.md` | Current Phase-4 normalization/RSS optimization guidance |
-| `next_exact_optimization_paths_spec.md` | Current optimization option map |
-| `tracing_profiling_spec.md` | Current profiling/telemetry design |
-| `phase4_scheduler_v2_spec.md` | Proposed/deferred Phase-4 scheduler-v2 design |
+| `current_project_roadmap.md` | Current Phase B/C/D execution roadmap |
+| `memory_governor_rearchitecture_spec.md` | Implementation-ready target design for the budget-driven governor and sibling runtime |
+| `knob_api_taxonomy.md` | Phase B requirements document for knob ownership, caste, validation, and cost formulas |
+
+## Reference and deferred designs
+
+| File | Role |
+|---|---|
+| `post_consolidation_cleanup_spec.md` | Consolidation rationale and cleanup constraints; current roadmap supersedes its sequence |
+| `phase4_refresh_optimization_spec.md` | Historical Phase-4 memory/refresh evidence and constraints |
+| `tracing_profiling_spec.md` | Implemented telemetry schema/tooling reference; governor spec owns extensions |
+| `phase4_scheduler_v2_spec.md` | Deferred scheduler-v2 design; not active Phase B work |
 
 ## Reports and scouting outputs
 
@@ -54,8 +55,10 @@ plans.
 
 ## Historical docs
 
-Historical plans, old proposals, superseded specs, and duplicate inventories
-live in `history/`.
+Historical plans, completed implementation specs, old proposals, and duplicate
+inventories live in `history/`. This includes the completed full-answer and
+PLT/CLT parity plans, the old sweep campaign, and the pre-governor optimization
+ordering.
 
 Use them for provenance only. Do not treat them as current workflow unless a
 current doc explicitly points to a section there.

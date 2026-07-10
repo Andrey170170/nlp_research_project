@@ -5,19 +5,21 @@ circuits during autoregressive generation can predict answer correctness in math
 reasoning. The current codebase is also the project harness for exact/chunked
 attribution tracing, cross-cluster parity diagnostics, and optimization work.
 
-The repo is experimental, but `main` is now the consolidated working baseline.
-Use this README for orientation, `AGENTS.md` for durable operating rules, and
-`EXPERIMENTS.md` for current experiment provenance and interpretation.
+The repo is experimental. Use this README for orientation, `AGENTS.md` for
+durable operating rules, and `EXPERIMENTS.md` for the exact project and sibling
+commits that define the current baseline. Do not infer experiment provenance
+from whichever local branches happen to be checked out.
 
 ## Current baseline
 
 | Item | Current value |
 |---|---|
-| Project repo | `nlp_research_project` on local `main` |
-| Sibling library | `../circuit-tracer_chunked` on local `main` |
+| Project repo | `nlp_research_project`; exact branch/commit recorded per run |
+| Sibling library | `../circuit-tracer_chunked`; exact branch/commit recorded per run |
 | Editable dependency | `circuit-tracer = { path = "../circuit-tracer_chunked", editable = true }` |
-| Model stack | Gemma-3-1B-IT + GemmaScope-2 cross-layer transcoders |
+| Current calibration stack | Gemma 3 1B/4B/12B + GemmaScope-2 CLT/PLT providers |
 | Canonical exact-trace dtype | `exact_trace_internal_dtype=fp32` |
+| Governor status | Phase B pure advisory resolver complete in sibling `0ce3f96`; Phase C integration next |
 | Current benchmark harness | `src/nlp_research_project/exact_trace_bench/` |
 | Scratch root | `/scratch/general/vast/$USER/nlp_research_project/exact_trace_bench/` |
 
@@ -83,7 +85,7 @@ Typical flow:
 # Inspect CLI options.
 uv run exact-trace-bench --help
 
-# Generate current scenario configs.
+# Generate legacy-tier scenario configs.
 uv run exact-trace-bench build-scenarios --all-tiers --all-clusters
 
 # Render a launch plan before submitting.
@@ -99,7 +101,12 @@ are documented in `src/nlp_research_project/exact_trace_bench/README.md`.
 Run placement convention for new work:
 
 - cluster: `granite`
-- tier: `fast` / `anomaly` / `long_eval`
+- operational class: `setup_prefetch`, `smoke`, `baseline`, `sweep`,
+  `long_trace`, `full_answer`, or `analysis`
+
+The scenario schema still contains legacy `fast` / `anomaly` / `long_eval`
+tiers. Treat those as fixture metadata, not as the project-level split for new
+scratch roots or campaign planning.
 
 Use `run_id`, `run_name`, `run_description`, `run_goal`, and scenario names to
 distinguish campaigns. Do not introduce new ordinary scratch buckets like
@@ -113,7 +120,7 @@ distinguish campaigns. Do not introduce new ordinary scratch buckets like
 - `experiments/logs/` — append-only structured experiment records.
 - `docs/README.md` — documentation index.
 - `docs/harness.md` — current exact-bench harness overview.
-- `docs/current_project_roadmap.md` — current scratch roadmap for active cleanup.
+- `docs/current_project_roadmap.md` — current Phase B/C/D execution roadmap.
 - `docs/history/` — archived/superseded plans and long-form investigation logs.
 
 ## Repository layout

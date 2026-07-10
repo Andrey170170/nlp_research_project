@@ -1,7 +1,7 @@
 # Memory Governor and Library Rearchitecture Spec
 
-Status: Implementation-ready target design; A4 gate passed on Cardinal
-Last updated: 2026-07-09
+Status: Phase B contract/resolver implemented; Phase C runtime integration next
+Last updated: 2026-07-10
 
 This is the "how it is supposed to be" document for the next major rework of
 the sibling library `../circuit-tracer_chunked` and its project-side harness
@@ -51,6 +51,14 @@ Concrete exhibit: the corrected-hook 12B PLT pilot (SLURM `12190937_0`,
 The pilot burned its budget in the file-cache tier while the GPU starved —
 and no single existing knob owns that tradeoff. Only a budget-level planner
 can make it.
+
+Current Granite calibration addendum (2026-07-10): the immutable strict
+Gemma-3-12B PLT baseline completed all three canonical fixtures on H200 at
+b64/c4096 in 5.8--6.4 hours. Slurm MaxRSS ranged from roughly 38 to 244 GiB
+across fixtures, so comparable launches retain a conservative 600G request
+until repeated measurements explain the spread. This run calibrates resource
+and walltime profiles only; it does not broaden the Cardinal A4 semantic-caste
+scope.
 
 Separately, the whole library is being restructured anyway (see the scout
 reports: `attribute_nnsight.py` is a ~12.5k-line mega-module with low
@@ -530,7 +538,7 @@ execution-caste and session evidence in section 4.3. Cardinal is sufficient to
 proceed. Ascend `6260319` is optional environment reproducibility follow-up and
 does not block implementation.
 
-### Step 3 — Freeze semantics, evidence, and profile schemas (login-safe)
+### Step 3 — Freeze semantics, evidence, and profile schemas (DONE 2026-07-10)
 
 Extend `docs/knob_api_taxonomy.md`: for every knob — tier, bytes-cost
 formula, caste, validated-under provenance, and whether it is provider-declared,
@@ -539,13 +547,19 @@ governor. Define `TraceSemantics`, semantic/execution fingerprint schemas,
 fidelity allowlist evidence schema, provider calibration profile schema, and the
 legacy translation table before mechanisms move.
 
-### Step 4 — Governor v0 as a pure resolver in the sibling
+### Step 4 — Governor v0 as a pure resolver in the sibling (DONE 2026-07-10)
 
 Implement the pure `TraceSemantics` + provider profile + `ResourceEnvelope` ->
 `TracePlan` resolver directly in `../circuit-tracer_chunked`. Do not create a
 disposable project-side resolver. The project generates calibration; promoted,
 versioned profiles are sibling inputs. Recorded presets and synthetic providers
 are arithmetic fixtures, not semantic-equivalence evidence.
+
+Implemented at sibling `phase-b-governor-contract@0ce3f96`. Resolver outputs are
+explicitly advisory until a Phase C runtime consumes them. The package-owned
+trusted validation-evidence registry is empty; this intentionally prevents A4
+from authorizing `validated_relaxed` until the source artifacts are transferred,
+the report is regenerated, and a reviewed record is shipped.
 
 ### Step 5 — Runtime APIs, compatibility facade, and streaming telemetry
 

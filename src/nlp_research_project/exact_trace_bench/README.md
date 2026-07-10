@@ -5,9 +5,9 @@ and immutable workspace snapshots.
 
 ## What is included
 
-- Canonical fixture tiers:
-  - base: `828_base`, `361_base`
-  - anomaly: `94_base`
+- Canonical base fixtures: `828_base`, `361_base`, `94_base`
+- Legacy scenario tiers retained for compatibility/provenance:
+  - historical anomaly: `94_base`
   - late: `828_late`, `361_late`, `94_late`
 - Scenario generation for three tiers: `fast`, `anomaly`, `long_eval`
 - Scratch-root defaults under:
@@ -45,7 +45,9 @@ Writes JSON configs to:
 - `experiments/generated/exact_trace_bench/`
 
 The generated-config index at `experiments/generated/README.md` distinguishes
-current canonical templates from historical one-off debug/sweep configs.
+reusable templates from historical one-off debug/sweep configs. New CHPC
+campaign placement uses operational classes even when a scenario still carries
+a legacy tier.
 
 ### 1.1) Prepare Wave 0 prompt fixtures
 
@@ -185,7 +187,7 @@ This matters in particular for:
 For the common workflows, you can skip the long commands and use either the CLI
 presets or the wrapper scripts in `scripts/`.
 
-Preset meanings:
+Legacy preset meanings:
 
 - `fast-*` = submit `fast` + `anomaly`
 - `full-*` = submit `fast` + `anomaly` + `long_eval`
@@ -213,9 +215,10 @@ scripts/archive/exact_trace_bench_full_all.sh
 
 Prefer the CLI form above for new runs. The archived wrappers call
 `uv run exact-trace-bench submit-preset ...` if you need compatibility.
-Preset submitters default to immutable workspace snapshots. Add
-`--no-immutable-workspace` if you intentionally want to run against the live tree,
-or `--print-only` to inspect the generated plans without calling `sbatch`.
+Preset submitters default to immutable workspace snapshots. A live-workspace
+launch is exceptional and must include the explicit override and rationale
+required by the current CLI; use `--print-only` to inspect plans without calling
+`sbatch`.
 
 ### 2) Extract benchmark tables
 

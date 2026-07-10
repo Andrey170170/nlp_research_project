@@ -1,7 +1,7 @@
 # Current exact-bench harness
 
 Status: Current harness overview
-Last updated: 2026-07-09
+Last updated: 2026-07-10
 
 The current exact-trace benchmark harness is centered on the package-style module:
 
@@ -90,13 +90,26 @@ but do not let `fast/anomaly/full` be the conceptual split for new campaigns.
 | `94_base` | `fast` | normal base fixture for new work; historical anomaly paths remain historical provenance |
 | late fixtures | `long_eval` | longer exact-bench evaluation tier |
 
-Scratch output placement should stay organized by cluster and tier only:
+New scratch output placement is organized by cluster and operational class:
+
+- `granite/setup_prefetch`
+- `granite/smoke`
+- `granite/baseline`
+- `granite/sweep`
+- `granite/long_trace`
+- `granite/full_answer`
+- `granite/analysis`
+
+The validated 12B setup baseline is under
+`granite/baseline/chpc-baseline-gemma3-12b-20260710-04`. At b64/c4096 its
+fixtures required 5.8--6.4 hours. Keep the 600G host request for comparable
+12B strict baselines until repeated runs explain the observed RSS spread.
+
+Legacy scenario tiers and historical OSC provenance may still contain:
 
 - `granite/fast`
 - `granite/anomaly`
 - `granite/long_eval`
-
-Historical OSC provenance may still contain:
 
 - `ascend/fast`
 - `ascend/anomaly`
@@ -106,8 +119,8 @@ Historical OSC provenance may still contain:
 - `cardinal/long_eval`
 
 Use scenario names, `run_id`, `run_name`, `run_description`, and `run_goal` to
-distinguish debug campaigns. Do not introduce new ordinary buckets such as
-`matched_debug`.
+distinguish campaigns within an operational class. Do not introduce new
+ordinary buckets such as `matched_debug`.
 
 ## Canonical exact-trace knobs
 

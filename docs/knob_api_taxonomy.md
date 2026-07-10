@@ -1,7 +1,7 @@
 # Exact-trace knob/API taxonomy map
 
-Status: Phase 3 mapping draft; pending Phase B governor extension
-Last updated: 2026-07-09
+Status: Phase B requirements contract complete; governor v0 implemented
+Last updated: 2026-07-10
 
 This document maps the exact-trace knobs that currently exist across the project
 repo and sibling `../circuit-tracer_chunked` library. It is intentionally detailed:
@@ -15,9 +15,15 @@ Scope of this pass:
 - generated scenario files already present in the repo,
 - debug/replay artifact surfaces that look like knobs but are actually schemas.
 
-This pass is a map, not yet a code change. The next Phase 3 step should convert
-the decisions in the `Recommended cleanup actions` section into small tests and
-mechanical changes.
+The first sections are the binding Phase B requirements for governor v0. The
+later surface inventory remains the compatibility map for Phase C migration;
+its cleanup actions are follow-up work, not blockers for the pure resolver.
+
+Implementation record: sibling `phase-b-governor-contract@0ce3f96`. The
+package-owned trusted validation-evidence registry is intentionally empty, so
+caller-created records cannot self-authorize `validated_relaxed`. Recorded
+Granite profiles are resource calibration only and resolver plans remain
+advisory until Phase C runtime integration and parity validation.
 
 Governor rework note (2026-07-06): the Phase B extension must classify each knob
 by **tier**, **bytes-cost formula**, **caste**, **validated-under provenance**,
@@ -78,6 +84,131 @@ be split during the sibling-library restructure:
 Compatibility adapters may continue accepting the current names, but every
 resolved plan must report both logical and physical values plus separate
 `semantic_fingerprint` and `execution_fingerprint` values.
+
+## Phase B governor requirements
+
+### Formula notation
+
+Profiles supply calibrated coefficients; the resolver performs only closed-form
+arithmetic. A formula identifies ownership and scaling even where its calibrated
+coefficient is initially conservative:
+
+| Symbol | Meaning |
+|---|---|
+| `T` | prompt/prefix token count |
+| `L`, `D`, `F` | provider-declared layer count, model width, and feature width |
+| `N` | estimated or measured active-feature count (`nnz`) |
+| `K` | selected feature-node cap |
+| `b` | bytes per exact internal scalar |
+| `Bs`, `Bf`, `Bl` | source, feature, and logit batch sizes |
+| `C` | NNSight trace capacity: `max(Bs, Bf, Bl)` |
+| `O` | provider-declared decoder output span/topology cost |
+| `Qx` | profile-declared calibrated unit coefficient for quantity `x` |
+
+Demand classes are `rigid` (admission-blocking allocations) and `elastic`
+(file-backed/page-cache working sets that affect throughput). Logical fields
+have no governor-owned byte formula: they are fingerprinted request constraints.
+
+### Ownership and caste rules
+
+- `scenario-declared semantic`: fixed before admission. `strict` never changes
+  it. `validated_relaxed` requires a named, scope-matched evidence record;
+  `research` requires an explicit override.
+- `provider-declared semantic/capability`: part of provider identity and the
+  semantic fingerprint. The resolver consumes it but never invents it.
+- `governor-derived physical`: may be selected from resource conditions only
+  after the corresponding Phase C mechanism proves fixed-semantics parity.
+- `compatibility-mixed`: one legacy field currently controls both logical and
+  physical behavior. Phase B fingerprints the logical interpretation and may
+  only plan a separately named physical field. Phase C translates the legacy
+  field deterministically into both.
+- `telemetry/artifact/debug`: never a governor degradation lever. Its bounded
+  overhead may be reported, but memory pressure cannot disable requested
+  provenance or change a debug/replay operation.
+
+### Governor-relevant field matrix
+
+| Field / family | Tier and demand | Bytes/cost formula | Caste | Validated under | Owner | Governor v0 treatment |
+|---|---|---|---|---|---|---|
+| provider/checkpoint/hooks | VRAM + file; rigid + elastic | profile `model_vram + provider_vram`; checkpoint working set from declared bytes | provider semantic | provider contract/fingerprint tests | provider | profile input; never selected |
+| provider approximation/top-k/cap | logical | none | provider/scenario semantic | provider's own declared semantics only | provider + scenario | fingerprint and preserve |
+| `exact_trace_internal_dtype` | all tiers | scales tensor terms by `b` | scenario semantic | canonical corrected-hook baseline at fp32; fp64 diagnostic only | scenario | preserve; no pressure-based cast |
+| `internal_precision` | logical compatibility | derived from exact dtype | compatibility-mixed | legacy compatibility only | compatibility adapter | reject independent planning; Phase C deprecates |
+| `max_feature_nodes` (`K`) | file/VRAM; semantic cap | row store `(K + 1) * N * b`; graph/frontier terms profile-declared | scenario semantic | canonical cap 8192 | scenario | preserve |
+| `max_n_logits` / explicit targets | VRAM; semantic target set | profile target workspace `targets * Qtarget` | scenario semantic | scenario-specific | scenario | preserve |
+| `diagnostic_feature_cap` | logical | may lower `N`, but changes candidate set | research semantic | profiling only | scenario | research-only; never derive |
+| sparsification top-k/global cap | logical | may lower `N`, but changes candidate set | approximate semantic | explicit sparsification campaigns only | scenario/provider | preserve explicit values; never derive |
+| `phase0_activation_threshold_compare_mode` | logical | none | debug semantic | historical Track-A only | scenario | strict-pinned |
+| `decoder_chunk_size` (legacy) | VRAM + walltime | mixed: reduction order plus decoder work `chunk * D * O * b` | compatibility-mixed | A4 only: Cardinal 1B PLT-small fp32 named target/window | scenario + adapter | preserve logical tile; do not auto-change |
+| decoder reduction tile/order (new) | logical | none | scenario semantic | A4 drift evidence is not invariance | scenario | semantic fingerprint |
+| decoder fetch/cache chunk (new) | VRAM + walltime; rigid | `fetch_chunk * D * O * b` plus provider overhead | physical | requires Phase C fixed-semantics parity | governor from provider limits | derive conservatively; separate execution fingerprint |
+| `cross_batch_decoder_cache_bytes` | VRAM; rigid | requested/derived bytes exactly | physical override | exact within fixed decoder chunk in corrected-regime cache probes | governor or explicit override | clamp to available headroom/capability; 0 when unsupported |
+| `attribution_batch_size` / `Bs` | logical + VRAM | contributes to `C`; later workspace `Bs * Qsource` | compatibility-mixed | A4 batch drift within narrow 1B PLT scope | scenario | strict-pinned member of coupled family |
+| `feature_batch_size` / `Bf` | logical refresh + VRAM | contributes to `C`; workspace `Bf * Qfeature` | compatibility-mixed | A4 batch drift; Top64 changed | scenario | strict-pinned; separate physical microbatch in Phase C |
+| `logit_batch_size` / `Bl` | logical + VRAM | contributes to `C`; workspace `Bl * Qlogit` | compatibility-mixed | no broad invariance proof | scenario | strict-pinned member of coupled family |
+| `phase1_trace_batch_size_max` | VRAM intent | source candidate `min(Bs, cap)`; actual `C=max(Bs,Bf,Bl)` | compatibility/resource intent | A3 survival-v2/v3 coupling evidence | scenario | report binding; warn when another family member dominates |
+| derived `trace_capacity` | VRAM; rigid | `C=max(Bs,Bf,Bl)`; profile trace term `C * T * Qtrace` | derived fact | implementation invariant from NNSight path | governor report | always emit value and all binding reasons |
+| physical source/feature/logit microbatches (new) | VRAM + walltime; rigid | `microbatch * Qphase` | physical | requires Phase C parity after refresh split | governor | derive no larger than logical capacities |
+| frontier refresh stride/checkpoints (new) | logical | none; walltime profile may depend on refresh count | scenario semantic | A4 shows legacy batch/refresh sensitivity | scenario | preserve and fingerprint |
+| `phase4_refresh_policy` / multiplier | logical cadence | none directly; changes refresh count | scenario semantic | explicit optimization experiments only | scenario | strict-pinned; translate to checkpoints in Phase C |
+| `phase4_ranker` | logical frontier membership | profile workspace only | scenario semantic | non-default tie behavior not invariant | scenario | strict-pinned |
+| `phase4_scheduler_mode` | execution order, potentially semantic until proven | scheduler workspace `Qplanner` | unclassified -> semantic in strict | planner-specific tests only | scenario | preserve; no automatic rung in v0 |
+| `phase4_refresh_optimization` | VRAM/walltime | profile `Qrefresh`; prepared buffers if enabled | physical candidate | existing focused tests, not yet full fixed-semantics Phase C proof | scenario until promoted | explicit override only in v0 |
+| prepared refresh cache bytes | VRAM; rigid | requested bytes exactly | physical candidate | experimental/retired path | scenario | explicit 0 default; not auto-selected |
+| active-row accumulation / row reduction | VRAM/walltime | `microbatch * Qrow` | physical candidate | focused reference-path tests | scenario until promoted | explicit in v0; Phase C may promote |
+| `phase4_row_executor` | VRAM/file/walltime | batched `Bf * Qrow`; streaming bounded by tile | physical candidate | implementation tests; needs Granite parity before default movement | scenario until promoted | capability fact/override in v0 |
+| row-store content | logical/file | exact dense bytes `(K + 1) * N * b` | scenario semantic content | stable row-L1 baseline | scenario | preserve content exactly |
+| row-store rung (full/tiled/recompute) | file/disk/walltime; elastic | full `(K + 1) * N * b`; tiled `tile_cols * (K + 1) * b`; recompute profile cost | physical | tiled/recompute require Phase C parity | governor from capabilities/capacity | plan only supported rungs; refuse if none fit |
+| `row_store_cache_control` | file cache; elastic | retained page cache bounded by allowance | physical | fadvise experiments and CHPC telemetry | governor or explicit override | warm/bounded/streaming from file allowance |
+| row-store temp root/policy | disk | capacity must cover selected row-store rung | physical placement | filesystem behavior, output-invariant | governor or explicit operator constraint | choose capacity-first local then scratch |
+| `row_store_preallocate` | disk/walltime | row-store bytes | physical | implementation/platform behavior | scenario/operator | preserve explicit constraint in v0 |
+| `exact_encoder_residency` | VRAM/host; rigid | active rows `encoder_rows * D * b + Qencoder` | physical candidate | existing residency tests; Phase C parity gate remains | governor from capability | choose supported rung; lazy fallback |
+| encoder/error staging booleans | host/VRAM; rigid | staged tensor bytes from profile shapes | physical | implementation-level tests | governor or explicit override | derive only when capability/budget permits |
+| `chunked_feature_replay_window` | VRAM + walltime; rigid | `window * Qreplay` | physical candidate | A3 cost evidence; not a semantic relaxation | governor or explicit override | derive from residual VRAM within profile bounds |
+| `error_vector_prefetch_lookahead` | host/VRAM; rigid | `lookahead * Qprefetch` | physical candidate | implementation-level only | governor or explicit override | derive from headroom/capability |
+| `row_subchunk_size` | VRAM + walltime; rigid | `subchunk * Qrow` | physical candidate | requires fixed-semantics mechanism test | governor or override | derive within provider/profile bounds |
+| feature-batch planner flags/fractions/probes | planning only | fractions constrain usable VRAM; probes consume profile `Qprobe` | deprecated policy inputs | legacy planner experiments | compatibility adapter | translate to envelope/planner policy; not semantics |
+| `offload` | VRAM/host/disk | profile permanent/movable bytes | physical placement | backend-specific behavior | operator + governor | capability-filtered; explicit constraints win |
+| cache policy (`auto/warm/bounded/streaming`) | file cache; elastic | projected file working set versus host file allowance | physical policy | resource policy only | governor/operator | derive in auto; warning rather than file-only refusal |
+| spill roots/capacities | disk | selected rung bytes <= local or scratch capacity | physical constraint | platform fact | operator/envelope | discover/accept explicitly; report selected root class |
+| VRAM fraction/bytes | VRAM; rigid | usable `min(explicit_bytes, total * fraction)` | resource constraint | allocation fact | operator/envelope | admission boundary |
+| host rigid/file allowances | host; rigid + elastic | discovered finite limit split by envelope policy | resource constraint | cgroup/Slurm fact | operator/envelope | rigid admission; file allowance selects cache policy |
+| walltime | time | profile fixed + per-unit phase coefficients | resource constraint | Granite calibration profiles | operator/envelope | refuse actionably when predicted upper bound exceeds limit |
+
+### Non-governor fields
+
+All donor capture/replay paths and modes, cross-cluster debug, semantic
+descriptor capture/shape, scheduler debug/detail, anomaly debug, telemetry caps,
+`compact_output`, and environment compatibility overrides remain in the legacy
+inventory below. They are scenario/operator-owned telemetry, artifact, replay,
+or backend-routing fields. Governor v0 must not enable, disable, resize, or
+reinterpret them from resource pressure. Requested bounded telemetry overhead
+may appear as a host-rigid estimate once a calibrated event-size model exists.
+
+### Versioned profile and evidence boundary
+
+Provider calibration profiles contain only capability and cost/resource data:
+schema/profile version, topology, dimensions, supported physical mechanisms,
+checkpoint/model bytes, calibrated unit coefficients, observed resource ranges,
+and walltime ranges. Granite 1B/4B/12B baselines are profile fixtures.
+
+Semantic-relaxation evidence is a separate schema containing an evidence ID,
+provider/checkpoint/hooks, model, dtype, scenario/window, compared logical
+configurations, metrics, thresholds, and environment. Cardinal A4 may support an
+explicit named `validated_relaxed` request in its exact scope after artifacts are
+transferred and regenerated; it is not a calibration profile and is not a
+default. Profile IDs and evidence IDs are fingerprinted independently. Trusted
+evidence must be shipped in the sibling's immutable registry with source
+artifact/report fingerprints, compared configurations, metrics, and acceptance
+thresholds; a caller-supplied evidence object is never authority.
+
+### B1 completion decision
+
+B1 is complete for governor v0. Any field absent from the governor matrix is
+strict-pinned and non-governor-controlled by default. Promotion to a physical
+governor lever requires a named mechanism, a bytes/cost formula, capability
+metadata, and fixed-semantics validation. This fail-closed rule prevents future
+knobs from entering memory policy as unclassified dials.
 
 ## Intended taxonomy
 
@@ -590,8 +721,8 @@ Some names look like knobs in docs/tests but are emitted artifact fields.
 
 ## Generated scenario inventory
 
-The repo currently contains many generated JSON files, not all of which are
-canonical current templates.
+The repo contains many generated JSON files, not all of which are reusable
+current templates.
 
 Inventory command used for this pass:
 
@@ -616,7 +747,7 @@ for path in Path('experiments/generated').rglob('*.json'):
 PY
 ```
 
-High-level counts from the current tree:
+Initial cleanup inventory snapshot (2026-07-01; retained for provenance):
 
 - 87 generated JSON files were inspected.
 - `decoder_chunk_size` appears in 62 generated files.
@@ -638,17 +769,22 @@ High-level counts from the current tree:
   - `phase4_refresh_optimization`: 6 files,
   - `phase4_row_executor`: 6 files.
 
-### Current canonical exact-bench generated files
+### Current reusable Granite generated files
 
-These match the current package-style harness and should remain the ordinary
-template set:
+These match the current package-style harness. The baseline files are the
+current Granite calibration inputs; the legacy-tier files remain reusable
+scenario templates but do not define new scratch placement:
 
-- `experiments/generated/exact_trace_bench/exact_trace_bench_fast_ascend_scenarios.json`
-- `experiments/generated/exact_trace_bench/exact_trace_bench_fast_cardinal_scenarios.json`
-- `experiments/generated/exact_trace_bench/exact_trace_bench_anomaly_ascend_scenarios.json`
-- `experiments/generated/exact_trace_bench/exact_trace_bench_anomaly_cardinal_scenarios.json`
-- `experiments/generated/exact_trace_bench/exact_trace_bench_long_eval_ascend_scenarios.json`
-- `experiments/generated/exact_trace_bench/exact_trace_bench_long_eval_cardinal_scenarios.json`
+- `experiments/generated/exact_trace_bench/exact_trace_bench_baseline_gemma3_1b_clt_granite_scenarios.json`
+- `experiments/generated/exact_trace_bench/exact_trace_bench_baseline_gemma3_1b_plt_granite_scenarios.json`
+- `experiments/generated/exact_trace_bench/exact_trace_bench_baseline_gemma3_4b_plt_granite_scenarios.json`
+- `experiments/generated/exact_trace_bench/exact_trace_bench_baseline_gemma3_12b_plt_granite_scenarios.json`
+- `experiments/generated/exact_trace_bench/exact_trace_bench_fast_granite_scenarios.json`
+- `experiments/generated/exact_trace_bench/exact_trace_bench_anomaly_granite_scenarios.json`
+- `experiments/generated/exact_trace_bench/exact_trace_bench_long_eval_granite_scenarios.json`
+
+The equivalent Ascend/Cardinal generated files are historical OSC provenance,
+not current CHPC launch policy.
 
 Expected ordinary scenario-level knobs in these files:
 
@@ -684,9 +820,9 @@ campaign inputs, not normal templates:
 Cleanup implication: generated debug/optimization configs need either an archive
 location or a `historical` marker so users do not copy them as current defaults.
 
-## Current classification matrix
+## Legacy inventory and migration matrix
 
-| Knob / field | Project surfaces | Library surfaces | Current default | Classification | Phase 3 action |
+| Knob / field | Project surfaces | Library surfaces | Current default | Classification | Migration action |
 |---|---|---|---|---|---|
 | `exact_trace_internal_dtype` | scenario defaults, CLI, run config | public wrapper + NNSight backend | `fp32` | Canonical default / public precision | Keep; add project scenario/default tests. |
 | `internal_precision` | derived only by project compact wrapper | NNSight backend public param; sibling public wrapper does not pass it today | `float64` in backend signature | Deprecated/compatibility | Hide/deprecate direct public use; decide whether sibling public wrapper should derive/pass it. |
@@ -740,7 +876,7 @@ location or a `historical` marker so users do not copy them as current defaults.
 | `PHASE4_ANOMALY_DEBUG` | environment only | NNSight backend | unset | Deprecated env override | Remove/deprecate; use explicit CLI/scenario `phase4_anomaly_debug`. |
 | `CIRCUIT_TRACER_TELEMETRY_MAX_EVENTS` | environment only | NNSight backend | unset/backend policy | Deprecated env override | Remove/deprecate; use explicit CLI/scenario `telemetry_max_events`. |
 
-## Recommended cleanup actions
+## Post-Phase-B cleanup actions
 
 ### P3.1 Add project-side guard tests first
 
@@ -840,7 +976,7 @@ After guard tests exist, update:
   defaults from advanced sweep/debug scenarios,
 - root `EXPERIMENTS.md` only if the baseline interpretation changes.
 
-## Open questions before implementation
+## Open questions after Phase B
 
 Resolved / clarified decisions from review:
 

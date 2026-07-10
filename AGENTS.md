@@ -12,7 +12,8 @@ This file is the source of truth for agents working in this repository. Keep
   current work centered on a large-scale circuit-tracing harness: scenario
   generation, batching, SLURM orchestration, provenance, extraction, validation,
   and cross-run analysis.
-- Model stack: Gemma-3-1B-IT with GemmaScope-2 cross-layer transcoders.
+- Current calibration stack: Gemma 3 1B/4B/12B with GemmaScope-2 CLT and PLT
+  providers. The governor/runtime contract must remain provider-agnostic.
 - Local editable library dependency: sibling checkout `../circuit-tracer_chunked`;
   that library owns the in-round tracing implementation while this repo owns the
   experiment harness around it.
@@ -34,6 +35,10 @@ Possible future direction: reusable harness pieces such as batched tracing
 orchestration may move into `../circuit-tracer_chunked` so the library can run
 more independently. Until that is an explicit task, keep this repo as the
 orchestration/provenance layer and avoid opportunistic cross-repo merges.
+
+The Phase B pure governor resolver is advisory until Phase C wires it into the
+runtime and Granite strict parity passes. Do not treat a resolved plan as an
+executed configuration or promote its outputs to launch defaults yet.
 
 ## CHPC / login-node safety
 
@@ -111,16 +116,16 @@ Current harness:
 - overview: `docs/harness.md`
 - CLI help: `uv run exact-trace-bench --help`
 
-Scratch outputs should be organized by cluster and tier only:
+Scratch outputs should be organized by cluster and operational class:
 
 - cluster: `granite` for new CHPC work; `ascend` / `cardinal` only for historical OSC provenance
-- tier: legacy scenario tiers still exist in code as `fast` / `anomaly` /
+- operational class: legacy scenario tiers still exist in code as `fast` / `anomaly` /
   `long_eval`, but new planning should classify work by operational resource
   class instead: `setup_prefetch`, `smoke`, `baseline`, `sweep`,
   `long_trace`, `full_answer`, and `analysis`.
 
 Use `run_id`, `run_name`, `run_description`, `run_goal`, and scenario names to
-distinguish debug campaigns. Do not introduce ordinary scratch buckets like
+distinguish campaigns. Do not introduce ordinary scratch buckets like
 `matched_debug`; those are historical provenance only.
 
 Preferred CHPC GPU pools for large traces are documented in

@@ -1,7 +1,10 @@
 # Phase 4 Memory Stabilization and Refresh Optimization Spec
 
-Status: Current optimization guidance
-Last updated: 2026-05-16
+Status: Reference evidence and constraints; not active execution guidance
+Last updated: 2026-07-10
+
+The governor rearchitecture spec owns current policy. This document preserves
+the earlier Phase-4 memory/refresh evidence and rejected approaches.
 
 ## 1. Goal
 
