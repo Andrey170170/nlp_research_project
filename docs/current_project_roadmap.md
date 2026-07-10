@@ -69,37 +69,85 @@ Completion record (2026-07-10):
 - 38 focused governor tests and 51 existing telemetry/provider regressions pass;
 - Ruff and uv-based Pyright pass.
 
-Resolver outputs remain advisory until Phase C consumes them and Granite parity
-validates runtime integration. The trusted validation-evidence registry is
-intentionally empty until transferred A4 artifacts are reproduced and reviewed.
+Resolver outputs remain advisory through Phase C cleanup and Phase D mechanism
+work. Phase E is the first phase allowed to consume plans at runtime. The
+trusted validation-evidence registry is intentionally empty until transferred
+A4 artifacts are reproduced and reviewed.
 
-## Phase C - Active Next
+## Phase C - Active: Behavior-Preserving Sibling Cleanup
 
-The sibling owns the tracing runtime and public API. Land it in reviewable
-slices, preserving strict compact-output parity after each behavioral change:
+Make the runtime safe to edit before changing execution:
 
-1. split the attribution mega-module mechanically around runtime phases;
-2. add `TraceRequest`, `TraceResult`, `trace_one`, `trace_batch`, and
-   `open_session`, retaining `attribute(...)` as a compatibility facade;
-3. translate legacy conflated knobs into separate logical semantics and
-   physical execution fields with versioned deprecation telemetry;
-4. make phases consume governor grants and add semantics-preserving residency,
-   row-store, replay, prefetch, and bounded-execution ladders;
-5. validate each runtime landing on Granite from immutable two-repo snapshots.
+1. mechanically split `attribute_nnsight.py` into cohesive phase, lifecycle,
+   row-store, replay/prefix, decoder/cache, provider-helper, and result modules;
+2. extract observability into deep modules that own typed event schemas,
+   sequencing/timestamps, spans, memory sampling, JSONL sinks/flushing,
+   bounded retention, and human logging adapters;
+3. leave algorithm code with only a small number of typed domain-level
+   observability calls instead of inline event dictionaries and log plumbing;
+4. preserve `attribute(...)`, defaults, algorithms, artifacts, and current
+   incremental telemetry behavior exactly enough for parity;
+5. defer new controls, mechanisms, runtime APIs, and governor consumption.
 
-## Phase D - After the Sibling API Stabilizes
+**C gate:** after login-safe validation, run `361_base` for 1B CLT and 1B PLT
+on Granite H200 from one immutable snapshot. Require exact compact graph/artifact
+parity, required telemetry lifecycle/schema coverage, terminal live JSONL, and
+no unexplained peak-VRAM or walltime regression over 10% versus the recorded
+baseline; rerun an exceeded metric before classifying it as a regression.
 
-Keep experiment policy in this repository. Adapt the harness once to the stable
-sibling seam:
+## Phase D - Explicit Controls and Mechanisms
+
+After C passes:
+
+1. split logical decoder reduction and frontier-refresh semantics from physical
+   fetch/cache and microbatch controls, with deterministic legacy translation;
+2. implement explicit Phase-1 trace-capacity peak-reduction mechanisms;
+3. implement full/tiled/recompute row-store paths and bounded Phase-3/4 dense
+   operators so large active universes avoid mandatory full materialization;
+4. expose mechanisms directly through the sibling runtime API while the
+   governor remains advisory.
+
+**D gate:** immutable `361_base` 1B CLT/PLT runs must prove the default path
+still matches C; explicit selectors must force each implemented mechanism;
+Phase 1 must measurably lower peak allocated/reserved VRAM or survive a cap the
+reference cannot; at least one bounded Phase-3/4 path must avoid its full dense
+allocation while matching output; and only the execution fingerprint changes.
+Before E, also validate `trace_one`, mixed-shape `trace_batch`, and
+`open_session` sequence/reuse/cleanup/cancellation/failure behavior.
+
+## Phase E - Staged Governor Integration
+
+Only after D mechanisms pass parity:
+
+1. apply Phase B pre-load admission;
+2. measure permanent model VRAM and representative encoder/decoder costs after
+   load, then re-plan headroom;
+3. re-plan after Phase 0 using actual active-feature counts and distributions;
+4. grant and release phase/transient working sets at phase boundaries;
+5. compare predicted and actual resources and walltime for recalibration.
+
+**E gate:** `361_base` 1B CLT/PLT automatic plans must match equivalent explicit
+D runs, constrained envelopes must select expected rungs, all planning epochs
+must be recorded, and strict compact outputs/semantic fingerprints must match C.
+
+## Phase F - Project Harness Migration
+
+After E passes, adapt the project once to the stable governed sibling API:
 
 - map scenarios and CHPC allocations into sibling requests/envelopes;
-- persist streamed telemetry and both fingerprints;
-- keep fixtures, campaigns, SLURM policy, snapshots, artifact layout,
-  extraction, comparison, and scientific interpretation project-side;
-- consolidate launches through the packaged CLI and archive compatibility-only
-  wrappers.
+- use `trace_one`, `trace_batch`, and `open_session` while preserving explicit
+  sequence/window-reuse semantics;
+- configure project-owned artifact paths and consume streamed telemetry while
+  the sibling sink remains the sole serializer/sequencer/flusher;
+- consolidate launches through the packaged CLI without weakening snapshots;
+- keep fixtures, campaigns, SLURM policy, artifacts, extraction, comparison,
+  and scientific interpretation project-side.
 
-Do not begin broad Phase D refactors while Phase C contracts are still moving.
+**Final F gate:** run a `361_base` smoke for 1B CLT, 1B PLT, 4B PLT, and 12B
+PLT, followed by the canonical `828_base`/`361_base`/`94_base` matrix when
+promoting the runtime.
+Require graph/artifact parity, complete telemetry, plan-versus-actual reporting,
+batch/session correctness, and immutable two-repo provenance.
 
 ## Validation and Provenance
 
@@ -120,5 +168,5 @@ Do not begin broad Phase D refactors while Phase C contracts are still moving.
 - optionally reproduce A4 on Ascend for historical environment comparison;
 - repeat Granite calibration where needed to explain resource variance and
   tighten conservative envelopes;
-- revisit dynamic post-Phase-0 spending only after Phase C mechanisms prove
-  fixed-semantics parity.
+- do not enable post-load or post-Phase-0 spending until the Phase D mechanisms
+  pass fixed-semantics parity.

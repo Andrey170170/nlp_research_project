@@ -1,7 +1,7 @@
 # Agent operating instructions
 
 Status: Durable repo policy
-Last updated: 2026-07-09
+Last updated: 2026-07-10
 
 This file is the source of truth for agents working in this repository. Keep
 `CLAUDE.md` as a pointer only.
@@ -36,9 +36,16 @@ orchestration may move into `../circuit-tracer_chunked` so the library can run
 more independently. Until that is an explicit task, keep this repo as the
 orchestration/provenance layer and avoid opportunistic cross-repo merges.
 
-The Phase B pure governor resolver is advisory until Phase C wires it into the
-runtime and Granite strict parity passes. Do not treat a resolved plan as an
-executed configuration or promote its outputs to launch defaults yet.
+The Phase B pure governor resolver remains advisory through Phase C structural
+cleanup and Phase D explicit-mechanism work. Phase E is the first phase allowed
+to consume plans at runtime, after the Phase C and D immutable Granite gates
+pass. Do not treat a resolved plan as an executed configuration or promote its
+outputs to launch defaults before then.
+
+Phase C must extract logging and telemetry mechanics into deep sibling modules.
+Tracing algorithms should emit typed domain events or lifecycle spans; schema
+construction, sequencing, resource sampling, incremental sinks/flushing, and
+human log rendering belong to the observability subsystem.
 
 ## CHPC / login-node safety
 

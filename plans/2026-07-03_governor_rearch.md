@@ -392,173 +392,205 @@ nested cgroup plus Slurm host discovery, per-tier estimates, coupled-batch
 diagnostics, capacity-driven row-store planning, and deterministic advisory
 admission reports. Validation passed 38 focused tests, 51 existing
 telemetry/provider regressions, Ruff, and uv-based Pyright. No runtime path
-consumes the plan yet; Granite integration/parity remains a Phase C gate.
+consumes the plan yet; staged runtime integration remains a Phase E gate after
+Phase C structural parity and Phase D mechanism parity.
 
-## Phase C — Sibling library restructure (the main rewrite)
+## Phase C — Behavior-preserving sibling cleanup
 
-Order follows the sibling scout's strong recommendations, with the governor
-landing as the policy seam. Every landing preserves compact outputs on
-canonical prompts (parity runs) and keeps the login-safe test rails green
-(scout report lists them).
+Goal: make the tracing runtime safe to change before changing how it executes.
+Phase C is structural only: no governor consumption, no new memory mechanism,
+no changed defaults, and no semantic/physical compatibility migration. Every
+landing keeps the login-safe rails green; the phase ends with an immutable
+Granite parity gate.
 
-The sibling owns the tracing runtime and its public contract:
+### C1. Attribution mega-module decomposition
 
-- value objects: `TraceRequest`, `TraceSemantics`, `ResourceEnvelope`,
-  `TracePlan`, and `TraceResult`;
-- provider loading, provider profiles, and promoted profile-version checks;
-- the pure resolver, governor policy, execution mechanisms, and streaming
-  telemetry;
-- first-class `trace_one`, `trace_batch`, and `open_session` APIs, with session
-  operations for sequence tracing and explicit window reuse.
+Split `attribute_nnsight.py` into deep modules with cohesive ownership:
 
-`attribute(...)` remains a compatibility facade over this API; it is not the
-new architectural center. Do not use a git submodule to bind the repos. Keep the
-editable sibling package for development and immutable two-repo snapshots for
-runs. A third shared package or plugin system is deferred until duplication is
-demonstrated after this boundary lands.
+- phase orchestration and phase-specific algorithms;
+- runtime lifecycle and cleanup;
+- row-store access behind its existing behavior;
+- replay/prefix validation and session state;
+- decoder/cache access;
+- provider-facing helpers;
+- result assembly and artifact boundaries.
 
-### C1. Attribution mega-module split (scout #1)
+Keep `attribute(...)` and all current execution paths as compatibility entry
+points. Move code mechanically first; do not redesign an algorithm while
+extracting it. Prefer a small public surface per module over helper-file sprawl.
 
-Split `attribute_nnsight.py` around phase/runtime concepts: phase policy
-resolvers, row-store module, replay/prefix validation, telemetry builders,
-full-sequence session. Mechanical extraction first; no behavior change.
+### C2. Deep observability modules
 
-### C2. Policy seam = governor lands library-side (scout #2 + spec §5, §9)
+Remove logging/telemetry mechanics from algorithm code. Core tracing modules
+should make a small number of typed, domain-level calls or use lifecycle spans;
+they must not assemble event dictionaries, timestamps, memory snapshots, JSONL
+records, flush policies, and duplicate human log messages inline.
 
-- Ledger (tier x demand-class x lifetime), plan epochs 1-2 (admission with
-  closed-form estimates + post-load calibration, profile-then-claim
-  headroom pool).
-- Phases become governor consumers: declare working sets, receive grants.
-- Existing knobs become overrides of derived values.
-- Provider runtime profiles and cost formulas consumed by capability/topology,
-  not by CLT/PLT/Gemma special cases, building on the parity-merge provider
-  contract.
-- Logical semantics and physical execution are distinct in the request and plan:
-  decoder reduction tile/order is logical while fetch/cache chunking is
-  physical; frontier refresh stride/checkpoints are logical while physical
-  microbatch size is execution-only. The planner may vary only the latter.
-- Frontier margins are emitted as warnings/validation telemetry. They never
-  create a free-memory-dependent semantic gate.
-- “Never die; degrade” applies only across semantics-preserving mechanism
-  rungs. In `strict`, admission may refuse actionably instead of silently
-  changing logical semantics.
+The observability subsystem owns:
 
-### C2a. Compatibility migration for conflated knobs
+- versioned event schemas and typed phase/batch facades;
+- monotonic sequencing, timestamps, sanitization, and bounded retention;
+- phase/batch begin/done/error/cancel/cleanup spans;
+- CUDA and cgroup memory sampling;
+- incremental JSONL sinks and terminal flushing;
+- human-readable logging adapters derived from structured events;
+- no-op, collecting, and failure-injection observers for tests.
 
-The current knobs conflate logical and physical behavior. Migrate them in a
-versioned compatibility layer:
+Preserve current incremental telemetry compatibility and error survival. Avoid a
+generic global event bus: phase code depends on narrow observability interfaces,
+while sinks depend only on event schemas.
 
-1. Inventory each legacy knob and split it into logical `TraceSemantics` fields
-   and physical `ResourceEnvelope`/`TracePlan` fields. At minimum separate
-   decoder reduction tile/order from decoder fetch/cache chunk, and frontier
-   refresh stride/checkpoints from execution microbatch.
-2. Translate legacy arguments deterministically into both fields and emit a
-   structured deprecation event containing the translation and compatibility
-   schema version. Conflicting old/new fields fail before model load.
-3. Preserve the legacy translation for one documented compatibility window;
-   make `attribute(...)` call the same resolver/runtime as the new APIs.
-4. Compare a **semantic fingerprint** (logical fields, provider/checkpoint/hook,
-   dtype, fidelity mode and evidence version) separately from an **execution
-   fingerprint** (plan/profile version, physical chunks, caches, microbatches,
-   ladder rungs and environment). Never use an execution fingerprint as an
-   equivalence claim.
+The project supplies run-owned artifact paths and may consume emitted events;
+the sibling sink is the sole owner of canonical sequencing, serialization,
+incremental flushing, and terminal records. The harness must not build a second
+canonical JSONL stream from the same events.
 
-### C3. Row-store + replay locality and degradation ladders (scout #3 + spec §6)
+### C3. Supporting module cleanup
 
-- Row store behind a narrow module with the ladder: file-backed full
-  (today) -> tiled/windowed -> recompute-on-demand; spill roots
-  tmp -> scratch (capacity-first, bandwidth-second).
-- All rungs bitwise-identical outputs; write-time truncation explicitly out
-  of governor authority.
-- Generalize prefetch into one double-buffered mechanism configured
-  per-phase.
-- Phase-3/Phase-4 scale target: avoid mandatory materialization of dense matrices
-  whose size grows as selected rows x active features / prompt length. Large
-  prompts with tens of millions of active features must degrade into bounded
-  tiled/lazy/recompute modes instead of attempting TB-scale allocations. The
-  governor can only choose these modes after the row-store module exposes them.
+Extract transcoder decoder-cache, diagnostics, fingerprints, and loaders from
+math objects; keep provider topology details in provider adapters. As capacity
+allows, follow with the strong small scout items (`hf_utils` pure parsing,
+replacement-model adapter boundaries, graph value-object/algorithm split).
+None may introduce behavior changes during the Phase C gate.
 
-### C4. Phase-1 admission + Phase-3/4 bounded execution rewrites
+### Phase C validation gate — structural parity
 
-Implement the mechanisms that the governor will select as it moves from a pure
-resolver to a real allocator. Treat Phase 1 and Phase 3/4 differently:
+After login-safe tests, Ruff, and type checks pass, create one immutable
+project+sibling snapshot and run `361_base` on Granite H200 for:
 
-- **Phase 1 admission:** reduce or split the NNSight forward trace-capacity peak
-  when a prompt/provider would otherwise fail admission. Slower is acceptable;
-  Phase 1 is seconds while Phase 4 dominates wall time. Candidate mechanisms:
-  split/rebuilt trace sessions, narrower source/logit/feature trace families,
-  and explicit fallback plans that trade extra forward work for lower peak
-  reserve.
-- **Phase 3/4 throughput and scale:** optimize the actual runtime bottleneck.
-  The governor should choose microbatch sizes, row-store rung, prefetch depth,
-  and physical fetch/cache behavior based on measured/predicted VRAM, host RAM,
-  file-backed cache, and walltime. A4 shows that the legacy
-  `feature_batch_size`/refresh coupling can drift; keep the legacy field pinned
-  and separate logical refresh checkpoints from physical microbatch before the
-  governor controls the latter.
-- **Bounded dense operators:** Phase-4 refresh/frontier planning and influence
-  matmuls must have streaming/tiled implementations. Full dense materialization
-  can stay as the fast rung for small problems, but large projected working sets
-  must automatically choose bounded modes.
-- **Telemetry contract:** every bounded mode reports working-set estimates,
-  actual peak allocated/reserved VRAM, cgroup anon/file pressure, row-store bytes,
-  refresh counts, and walltime so the governor can recalibrate rather than act as
-  a static preset table.
+- Gemma 3 1B + GemmaScope2 CLT medium;
+- Gemma 3 1B + GemmaScope2 PLT small.
 
-### C5. Transcoder runtime helpers (scout #4)
+Use strict baseline parameters. Require exact compact graph/artifact parity,
+required telemetry event families and lifecycle ordering, valid incremental
+JSONL termination, and no unexplained peak-VRAM or walltime regression over 10%
+versus the recorded baseline. Rerun an exceeded metric before classifying it as
+a regression. Event counts or prose log lines need not be byte-identical. Phase
+D does not start until this gate is recorded.
 
-Extract decoder cache, diagnostics, fingerprints, loaders out of
-`cross_layer_transcoder.py`; keep math objects central; same treatment for
-PLT and other provider implementations where applicable. The provider adapter,
-not the governor, owns topology-specific details such as cross-layer vs
-same-layer vs top-k semantics.
+## Phase D — Explicit controls and memory mechanisms
 
-### C6. Smaller strong/worth-exploring items (scout #5-#7)
+Goal: implement and validate mechanisms before any governor selects them.
+Every mechanism is directly selectable by tests/operators; the Phase B resolver
+remains advisory and is not applied automatically.
 
-As capacity allows, in this order: hf_utils pure-parsing split (strong,
-small), replacement-model adapter deepening, graph value-object vs
-algorithms split. None block the governor.
+### D1. Logical/physical control split and compatibility translator
 
-## Phase D — Project harness restructure (after C stabilizes)
+- Separate decoder reduction tile/order from physical fetch/cache chunking.
+- Separate frontier refresh stride/checkpoints from physical compute
+  microbatches.
+- Represent source, feature, and logit execution batches independently.
+- Translate legacy arguments deterministically into logical and physical fields
+  with a versioned deprecation event; reject old/new conflicts before load.
+- Preserve separate semantic and execution fingerprints.
 
-The project owns experiment policy and interpretation: scenarios, fixtures,
-campaign definitions, SLURM/CHPC resource policy, workspace snapshots and
-two-repo provenance, experiment layout, extraction, comparison, and scientific
-interpretation. It consumes the sibling API and streaming telemetry but does not
-reimplement provider loading, planning, tracing mechanisms, or sessions.
+### D2. Phase-1 peak-VRAM mechanisms
 
-### D1. Runner runtime adapter (harness scout #1)
+Add explicit ways to reduce the NNSight forward trace-capacity peak: split or
+rebuild trace sessions, narrower source/feature/logit trace families, and
+fallback plans that trade extra forward work for a lower peak. These are
+physical mechanisms, not permission to change logical batches or refresh
+semantics.
 
-Deepen "run one trace spec against the sibling runtime" out of
-`full_answer/runner.py`; shard orchestration stays the caller. Do this
-against the post-C sibling seam so it adapts in one place. The adapter maps
-scenario plus CHPC allocation into `TraceRequest` and `ResourceEnvelope`, calls
-`trace_one`/`trace_batch`/`open_session`, and persists streamed events without
-buffering the full event history in memory.
+### D3. Bounded Phase-3/4 mechanisms
 
-### D2. CLI command-family modules (harness scout #2)
+- Put row storage behind full file-backed, tiled/windowed, and
+  recompute-on-demand implementations as they become real and parity-proven.
+- Add streaming/tiled influence, refresh, frontier, and dense-operator paths so
+  large active-feature universes do not require full dense materialization.
+- Generalize transfer overlap into explicit per-phase prefetch controls.
+- Keep full materialization as the fast path for small fitting problems.
+- Report working-set sizes and actual VRAM/host/file/disk use for each path.
 
-Split `cli.py` parser/handler groups by domain; keep the
-`exact-trace-bench` entrypoint stable.
+### D4. Explicit sibling runtime API
 
-### D3. Single launch path (harness scout #3)
+Introduce `TraceRequest`, `TraceResult`, `trace_one`, `trace_batch`, and
+`open_session` over the explicit mechanisms. Keep `attribute(...)` as a
+compatibility facade over the same implementation; do not maintain two runtimes.
 
-Consolidate launches through the packaged CLI; demote
-`experiments/run_sparsification_experiment.py` and stale sbatch templates
-to compatibility wrappers or archive them. Preserve run metadata and
-snapshot safety.
+### Phase D validation gate — mechanism parity
 
-### D4. Worth-exploring items (harness scout #4-#6)
+From an immutable snapshot, validate 1B CLT and 1B PLT on Granite:
 
-Launch policy vs rendering split, workspace snapshot/verification split,
-scenario/wave policy locality — opportunistic.
+- reference/default explicit configuration still matches the Phase C baseline;
+- explicit selectors force each implemented mechanism instead of silently
+  taking the fast path; envelope-driven selection remains disabled;
+- Phase-1 reduced-peak execution matches the reference and measurably lowers
+  peak allocated/reserved VRAM, or survives a cap the reference cannot meet;
+- at least one bounded Phase-3/4 path avoids its corresponding full dense
+  allocation while matching the full path;
+- semantic fingerprints remain fixed while execution fingerprints distinguish
+  mechanisms;
+- `trace_one`, mixed-shape `trace_batch`, and `open_session` pass sequence,
+  explicit reuse, cleanup, cancellation, and failure-recovery tests.
 
-## Phase E — Dynamic epoch-3 spending
+Phase E does not start until new mechanisms are stable, directly controllable,
+and parity-proven.
 
-Enable post-Phase-0 re-planning (spend measured headroom on cache bytes,
-replay window, prefetch depth), gated per knob on Phase A parity proofs.
-Then extend to the ladder rungs (tiled row store engaged automatically when
-projected size exceeds tmp budget). Acceptance criteria: spec section 11.
+## Phase E — Staged governor integration
+
+Goal: make the governor coordinate validated Phase D mechanisms, not define
+their behavior.
+
+1. **Pre-load:** consume the Phase B admission plan and refuse actionably when
+   no supported semantics-preserving plan can fit.
+2. **Post-model-load:** measure permanent model VRAM plus representative
+   encoder/decoder allocation and throughput; profile then claim headroom.
+3. **Post-Phase-0:** use actual active-feature counts/distribution to compute
+   row-store and dense working sets and re-plan caches, microbatches, replay,
+   prefetch, residency, and bounded rungs.
+4. **Phase transitions:** phases declare working sets, receive grants, and
+   release phase/transient reservations on exit.
+5. Compare predicted versus actual demand and walltime for profile refinement.
+
+Logical semantics remain fixed. The governor may choose only mechanisms that
+passed the Phase D gate; otherwise strict admission refuses.
+
+### Phase E validation gate — governed parity
+
+For 1B CLT and 1B PLT on Granite, require:
+
+- automatically selected plans match equivalent explicit Phase D executions;
+- constrained envelopes select the expected mechanism rungs;
+- planned and actual allocations plus every re-plan epoch are recorded;
+- strict semantic fingerprints and compact outputs match the Phase C baseline;
+- failures/refusals preserve incremental telemetry and actionable reports.
+
+## Phase F — Project harness migration
+
+The project continues to own scenarios, fixtures, campaigns, SLURM/CHPC
+resource policy, immutable snapshots, artifact layout, extraction, comparison,
+and scientific interpretation. Migrate it only after the governed sibling API
+passes Phase E.
+
+### F1. Runner runtime adapter
+
+Map scenario plus CHPC allocation into sibling requests/envelopes and call
+`trace_one`/`trace_batch`/`open_session`. Configure run-owned sink/artifact paths
+and consume streamed events/fingerprints without buffering complete histories
+or duplicating sibling-owned sequencing, serialization, and terminal flushing.
+
+### F2. CLI and launch consolidation
+
+Split CLI command families by domain while keeping `exact-trace-bench` stable.
+Consolidate launches through the packaged CLI; demote stale scripts/templates to
+compatibility wrappers or history without weakening snapshot enforcement.
+
+### F3. Harness-local cleanup
+
+Separate launch policy from rendering, snapshot creation from verification, and
+scenario/wave policy where this reduces demonstrated complexity. Do not move
+experiment interpretation into the sibling.
+
+### Final Phase F validation gate — complete stack
+
+First run a `361_base` smoke across 1B CLT, 1B PLT, 4B PLT, and 12B PLT. Then
+run the canonical `828_base`/`361_base`/`94_base` baseline matrix when promoting
+the integrated runtime. Require graph/artifact parity, complete telemetry,
+semantic/execution fingerprints, plan-versus-actual resource reports,
+batching/session behavior,
+and immutable two-repo provenance. No default migration is complete until this
+gate passes.
 
 ## Cross-cutting rules
 
@@ -588,42 +620,52 @@ projected size exceeds tmp budget). Acceptance criteria: spec section 11.
 
 ## Migration acceptance gates
 
-1. New and legacy entry points produce the same semantic fingerprint for the
-   same logical request; compatibility translation is deterministic, versioned,
-   warned, and rejects conflicts.
-2. Physical plan changes alter only the execution fingerprint in `strict`;
-   canonical parity tests cover decoder fetch/cache chunking and microbatching
-   independently from logical decoder reduction and frontier refresh semantics.
-3. `validated_relaxed` accepts only named, versioned, scope-matched evidence;
-   `research` overrides are explicit in request, result, and provenance.
-4. Telemetry streams incrementally for success and failure and includes request,
-   semantic, execution, provider-profile, evidence, and event-schema versions.
-   Consumers tolerate unknown additive events and detect dropped/truncated
-   streams.
-5. `trace_one` parity is followed by mixed-shape `trace_batch` tests and
-   `open_session` tests for independent sequence steps, explicit state reuse,
+1. **C structural gate:** existing entry points, compact outputs, artifacts,
+   and telemetry semantics survive the module split. Telemetry streams
+   incrementally through success and failure, and consumers detect dropped or
+   truncated streams.
+2. **D control gate:** compatibility translation is deterministic, versioned,
+   warned, and rejects conflicts. Physical changes alter only the execution
+   fingerprint in `strict`; decoder fetch/cache chunks and microbatches are
+   tested independently from logical reduction and refresh semantics.
+3. **D mechanism gate:** Phase-1 reduced-peak and Phase-3/4 bounded paths match
+   explicit reference paths, including tests that force each fallback.
+4. **E governor gate:** governed runs match equivalent explicit D runs. Strict
+   admission demonstrates a semantics-preserving degraded plan when a proven
+   rung fits and actionable pre-load refusal when none fits.
+5. **E evidence gate:** `validated_relaxed` accepts only named, versioned,
+   scope-matched evidence; `research` overrides are explicit in request,
+   result, and provenance.
+6. **D API gate:** `trace_one` parity is followed by mixed-shape `trace_batch`
+   and `open_session` tests for independent steps, explicit state reuse,
    298--300 window reuse, cleanup, cancellation, and failure recovery. Reuse is
-   never inferred from free memory.
-6. Granite SLURM smoke/baseline runs record both repo SHAs/dirty state or
-   immutable snapshot IDs, allocation/resource envelope, semantic and execution
-   fingerprints, profile/evidence versions, job IDs, and output roots.
-7. Strict admission demonstrates both outcomes: a semantics-preserving degraded
-   plan when a rung fits, and an actionable pre-load refusal when none fits.
+   never inferred from free memory. Phase F additionally proves that the project
+   adapter preserves those behaviors.
+7. **All GPU gates:** Granite runs record both repo SHAs/dirty state or immutable
+   snapshot IDs, allocation/resource envelope, fingerprints, profile/evidence
+   versions, job IDs, and output roots.
+8. **F completion gate:** pass the `361_base` smoke for 1B CLT, 1B
+   PLT, 4B PLT, and 12B PLT, then the canonical
+   `828_base`/`361_base`/`94_base` matrix before promoting launch defaults.
 
 ## Ordering rationale and risks
 
-- A before C: rewriting around unvalidated caste assumptions would bake the
+- A before B: rewriting around unvalidated caste assumptions would bake the
   contaminated-era worldview into the new architecture.
-- B2 is the first C2 landing: the governor's arithmetic is proven as a pure
-  sibling resolver before it owns real allocations, avoiding a disposable
-  project-side implementation.
-- C before D: the harness scout's own conclusion; harness cleanup first
-  would bake in current sibling internals.
+- B before C: governor arithmetic and contracts are proven as a pure sibling
+  resolver without coupling structural cleanup to runtime policy.
+- C before D: the attribution mega-module and inline observability make memory
+  mechanism edits difficult to review and easy to implement incompletely.
+- D before E: the governor may select only mechanisms that are explicit,
+  operator-testable, and already proven semantics-preserving.
+- E before F: the project harness adapts once to the stable governed runtime
+  instead of following a moving sibling API.
 - Main risks: (1) Phase 3 on 12B may be compute-bound — governor telemetry
   must be able to say so rather than promising memory wins (walltime
-  estimator is part of B2/C2); (2) mechanical splits touching
+  estimation begins in B2 and is recalibrated in E); (2) mechanical splits touching
   12.6k-line modules risk silent behavior drift — parity runs after every
-  landing, not just at phase ends; (3) schema/artifact compatibility for
+  landing where login-safe fixtures can cover it, plus Granite runs at phase
+  gates; (3) schema/artifact compatibility for
   Track-A replay machinery — keep loaders compatible or version explicitly;
   (4) overfitting the governor to the initial Gemma/GemmaScope2 evidence — use
   provider-contract fixtures and capability-based formulas from B onward.

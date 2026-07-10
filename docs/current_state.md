@@ -35,7 +35,7 @@ The current exact-trace workflow depends on both checkouts being present.
 | `docs/README.md` | Documentation index |
 | `docs/harness.md` | Current exact-bench harness overview |
 | `docs/memory_governor_rearchitecture_spec.md` | Current sibling governor/runtime target contract |
-| `plans/2026-07-03_governor_rearch.md` | Active Phase B/C/D execution plan |
+| `plans/2026-07-03_governor_rearch.md` | Active gated Phase B-F execution plan |
 | `docs/metric_calibration.md` | Metric calibration workflow |
 | `scripts/README.md` | Script entry-point notes |
 | `experiments/logs/README.md` | Structured experiment log guidance |
@@ -48,7 +48,7 @@ The current exact-trace workflow depends on both checkouts being present.
 | `docs/current_project_roadmap.md` | Active scratch roadmap |
 | `docs/memory_governor_rearchitecture_spec.md` | Governor/runtime target contract |
 | `docs/knob_api_taxonomy.md` | Knob/API taxonomy |
-| `plans/2026-07-03_governor_rearch.md` | Active Phase B/C/D execution plan |
+| `plans/2026-07-03_governor_rearch.md` | Active gated Phase B-F execution plan |
 
 ## Reference and deferred designs
 
@@ -73,8 +73,9 @@ The current exact-trace workflow depends on both checkouts being present.
   operational classes rather than those legacy scenario tiers.
 - Phase A is closed for implementation purposes. Phase B governor contracts and
   the pure resolver are complete at sibling `phase-b-governor-contract@0ce3f96`.
-  Phase C runtime integration is next; Phase D harness changes wait for the
-  sibling API to stabilize.
+  Phase C behavior-preserving runtime/observability cleanup is next, followed by
+  Phase D explicit mechanisms, Phase E staged governor integration, and Phase F
+  harness migration. Each phase is blocked on its immutable Granite gate.
 - Descriptive architecture details now live under `docs/architecture/`.
 - Current baseline decisions stay in `EXPERIMENTS.md`; active work stays in the owning spec.
 - Reports are not treated as source-of-truth unless a current doc explicitly cites them.

@@ -16,14 +16,15 @@ Scope of this pass:
 - debug/replay artifact surfaces that look like knobs but are actually schemas.
 
 The first sections are the binding Phase B requirements for governor v0. The
-later surface inventory remains the compatibility map for Phase C migration;
+later surface inventory remains the compatibility map for Phase D migration;
 its cleanup actions are follow-up work, not blockers for the pure resolver.
 
 Implementation record: sibling `phase-b-governor-contract@0ce3f96`. The
 package-owned trusted validation-evidence registry is intentionally empty, so
 caller-created records cannot self-authorize `validated_relaxed`. Recorded
 Granite profiles are resource calibration only and resolver plans remain
-advisory until Phase C runtime integration and parity validation.
+advisory through Phase C cleanup and Phase D mechanism validation. Phase E is
+the first runtime integration.
 
 Governor rework note (2026-07-06): the Phase B extension must classify each knob
 by **tier**, **bytes-cost formula**, **caste**, **validated-under provenance**,
@@ -117,10 +118,10 @@ have no governor-owned byte formula: they are fingerprinted request constraints.
 - `provider-declared semantic/capability`: part of provider identity and the
   semantic fingerprint. The resolver consumes it but never invents it.
 - `governor-derived physical`: may be selected from resource conditions only
-  after the corresponding Phase C mechanism proves fixed-semantics parity.
+  after the corresponding Phase D mechanism proves fixed-semantics parity.
 - `compatibility-mixed`: one legacy field currently controls both logical and
   physical behavior. Phase B fingerprints the logical interpretation and may
-  only plan a separately named physical field. Phase C translates the legacy
+  only plan a separately named physical field. Phase D translates the legacy
   field deterministically into both.
 - `telemetry/artifact/debug`: never a governor degradation lever. Its bounded
   overhead may be reported, but memory pressure cannot disable requested
@@ -133,7 +134,7 @@ have no governor-owned byte formula: they are fingerprinted request constraints.
 | provider/checkpoint/hooks | VRAM + file; rigid + elastic | profile `model_vram + provider_vram`; checkpoint working set from declared bytes | provider semantic | provider contract/fingerprint tests | provider | profile input; never selected |
 | provider approximation/top-k/cap | logical | none | provider/scenario semantic | provider's own declared semantics only | provider + scenario | fingerprint and preserve |
 | `exact_trace_internal_dtype` | all tiers | scales tensor terms by `b` | scenario semantic | canonical corrected-hook baseline at fp32; fp64 diagnostic only | scenario | preserve; no pressure-based cast |
-| `internal_precision` | logical compatibility | derived from exact dtype | compatibility-mixed | legacy compatibility only | compatibility adapter | reject independent planning; Phase C deprecates |
+| `internal_precision` | logical compatibility | derived from exact dtype | compatibility-mixed | legacy compatibility only | compatibility adapter | reject independent planning; Phase D deprecates |
 | `max_feature_nodes` (`K`) | file/VRAM; semantic cap | row store `(K + 1) * N * b`; graph/frontier terms profile-declared | scenario semantic | canonical cap 8192 | scenario | preserve |
 | `max_n_logits` / explicit targets | VRAM; semantic target set | profile target workspace `targets * Qtarget` | scenario semantic | scenario-specific | scenario | preserve |
 | `diagnostic_feature_cap` | logical | may lower `N`, but changes candidate set | research semantic | profiling only | scenario | research-only; never derive |
@@ -141,28 +142,28 @@ have no governor-owned byte formula: they are fingerprinted request constraints.
 | `phase0_activation_threshold_compare_mode` | logical | none | debug semantic | historical Track-A only | scenario | strict-pinned |
 | `decoder_chunk_size` (legacy) | VRAM + walltime | mixed: reduction order plus decoder work `chunk * D * O * b` | compatibility-mixed | A4 only: Cardinal 1B PLT-small fp32 named target/window | scenario + adapter | preserve logical tile; do not auto-change |
 | decoder reduction tile/order (new) | logical | none | scenario semantic | A4 drift evidence is not invariance | scenario | semantic fingerprint |
-| decoder fetch/cache chunk (new) | VRAM + walltime; rigid | `fetch_chunk * D * O * b` plus provider overhead | physical | requires Phase C fixed-semantics parity | governor from provider limits | derive conservatively; separate execution fingerprint |
+| decoder fetch/cache chunk (new) | VRAM + walltime; rigid | `fetch_chunk * D * O * b` plus provider overhead | physical | requires Phase D fixed-semantics parity | governor from provider limits | derive conservatively; separate execution fingerprint |
 | `cross_batch_decoder_cache_bytes` | VRAM; rigid | requested/derived bytes exactly | physical override | exact within fixed decoder chunk in corrected-regime cache probes | governor or explicit override | clamp to available headroom/capability; 0 when unsupported |
 | `attribution_batch_size` / `Bs` | logical + VRAM | contributes to `C`; later workspace `Bs * Qsource` | compatibility-mixed | A4 batch drift within narrow 1B PLT scope | scenario | strict-pinned member of coupled family |
-| `feature_batch_size` / `Bf` | logical refresh + VRAM | contributes to `C`; workspace `Bf * Qfeature` | compatibility-mixed | A4 batch drift; Top64 changed | scenario | strict-pinned; separate physical microbatch in Phase C |
+| `feature_batch_size` / `Bf` | logical refresh + VRAM | contributes to `C`; workspace `Bf * Qfeature` | compatibility-mixed | A4 batch drift; Top64 changed | scenario | strict-pinned; separate physical microbatch in Phase D |
 | `logit_batch_size` / `Bl` | logical + VRAM | contributes to `C`; workspace `Bl * Qlogit` | compatibility-mixed | no broad invariance proof | scenario | strict-pinned member of coupled family |
 | `phase1_trace_batch_size_max` | VRAM intent | source candidate `min(Bs, cap)`; actual `C=max(Bs,Bf,Bl)` | compatibility/resource intent | A3 survival-v2/v3 coupling evidence | scenario | report binding; warn when another family member dominates |
 | derived `trace_capacity` | VRAM; rigid | `C=max(Bs,Bf,Bl)`; profile trace term `C * T * Qtrace` | derived fact | implementation invariant from NNSight path | governor report | always emit value and all binding reasons |
-| physical source/feature/logit microbatches (new) | VRAM + walltime; rigid | `microbatch * Qphase` | physical | requires Phase C parity after refresh split | governor | derive no larger than logical capacities |
+| physical source/feature/logit microbatches (new) | VRAM + walltime; rigid | `microbatch * Qphase` | physical | requires Phase D parity after refresh split | governor | derive no larger than logical capacities |
 | frontier refresh stride/checkpoints (new) | logical | none; walltime profile may depend on refresh count | scenario semantic | A4 shows legacy batch/refresh sensitivity | scenario | preserve and fingerprint |
-| `phase4_refresh_policy` / multiplier | logical cadence | none directly; changes refresh count | scenario semantic | explicit optimization experiments only | scenario | strict-pinned; translate to checkpoints in Phase C |
+| `phase4_refresh_policy` / multiplier | logical cadence | none directly; changes refresh count | scenario semantic | explicit optimization experiments only | scenario | strict-pinned; translate to checkpoints in Phase D |
 | `phase4_ranker` | logical frontier membership | profile workspace only | scenario semantic | non-default tie behavior not invariant | scenario | strict-pinned |
 | `phase4_scheduler_mode` | execution order, potentially semantic until proven | scheduler workspace `Qplanner` | unclassified -> semantic in strict | planner-specific tests only | scenario | preserve; no automatic rung in v0 |
-| `phase4_refresh_optimization` | VRAM/walltime | profile `Qrefresh`; prepared buffers if enabled | physical candidate | existing focused tests, not yet full fixed-semantics Phase C proof | scenario until promoted | explicit override only in v0 |
+| `phase4_refresh_optimization` | VRAM/walltime | profile `Qrefresh`; prepared buffers if enabled | physical candidate | existing focused tests, not yet full fixed-semantics Phase D proof | scenario until promoted | explicit override only in v0 |
 | prepared refresh cache bytes | VRAM; rigid | requested bytes exactly | physical candidate | experimental/retired path | scenario | explicit 0 default; not auto-selected |
-| active-row accumulation / row reduction | VRAM/walltime | `microbatch * Qrow` | physical candidate | focused reference-path tests | scenario until promoted | explicit in v0; Phase C may promote |
+| active-row accumulation / row reduction | VRAM/walltime | `microbatch * Qrow` | physical candidate | focused reference-path tests | scenario until promoted | explicit in v0; Phase D may promote |
 | `phase4_row_executor` | VRAM/file/walltime | batched `Bf * Qrow`; streaming bounded by tile | physical candidate | implementation tests; needs Granite parity before default movement | scenario until promoted | capability fact/override in v0 |
 | row-store content | logical/file | exact dense bytes `(K + 1) * N * b` | scenario semantic content | stable row-L1 baseline | scenario | preserve content exactly |
-| row-store rung (full/tiled/recompute) | file/disk/walltime; elastic | full `(K + 1) * N * b`; tiled `tile_cols * (K + 1) * b`; recompute profile cost | physical | tiled/recompute require Phase C parity | governor from capabilities/capacity | plan only supported rungs; refuse if none fit |
+| row-store rung (full/tiled/recompute) | file/disk/walltime; elastic | full `(K + 1) * N * b`; tiled `tile_cols * (K + 1) * b`; recompute profile cost | physical | tiled/recompute require Phase D parity | governor from capabilities/capacity | plan only supported rungs; refuse if none fit |
 | `row_store_cache_control` | file cache; elastic | retained page cache bounded by allowance | physical | fadvise experiments and CHPC telemetry | governor or explicit override | warm/bounded/streaming from file allowance |
 | row-store temp root/policy | disk | capacity must cover selected row-store rung | physical placement | filesystem behavior, output-invariant | governor or explicit operator constraint | choose capacity-first local then scratch |
 | `row_store_preallocate` | disk/walltime | row-store bytes | physical | implementation/platform behavior | scenario/operator | preserve explicit constraint in v0 |
-| `exact_encoder_residency` | VRAM/host; rigid | active rows `encoder_rows * D * b + Qencoder` | physical candidate | existing residency tests; Phase C parity gate remains | governor from capability | choose supported rung; lazy fallback |
+| `exact_encoder_residency` | VRAM/host; rigid | active rows `encoder_rows * D * b + Qencoder` | physical candidate | existing residency tests; Phase D parity gate remains | governor from capability | choose supported rung; lazy fallback |
 | encoder/error staging booleans | host/VRAM; rigid | staged tensor bytes from profile shapes | physical | implementation-level tests | governor or explicit override | derive only when capability/budget permits |
 | `chunked_feature_replay_window` | VRAM + walltime; rigid | `window * Qreplay` | physical candidate | A3 cost evidence; not a semantic relaxation | governor or explicit override | derive from residual VRAM within profile bounds |
 | `error_vector_prefetch_lookahead` | host/VRAM; rigid | `lookahead * Qprefetch` | physical candidate | implementation-level only | governor or explicit override | derive from headroom/capability |

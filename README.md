@@ -19,7 +19,7 @@ from whichever local branches happen to be checked out.
 | Editable dependency | `circuit-tracer = { path = "../circuit-tracer_chunked", editable = true }` |
 | Current calibration stack | Gemma 3 1B/4B/12B + GemmaScope-2 CLT/PLT providers |
 | Canonical exact-trace dtype | `exact_trace_internal_dtype=fp32` |
-| Governor status | Phase B pure advisory resolver complete in sibling `0ce3f96`; Phase C integration next |
+| Governor status | Phase B advisory resolver complete in sibling `0ce3f96`; Phase C cleanup next, Phase E integration after gated mechanisms |
 | Current benchmark harness | `src/nlp_research_project/exact_trace_bench/` |
 | Scratch root | `/scratch/general/vast/$USER/nlp_research_project/exact_trace_bench/` |
 
@@ -120,7 +120,7 @@ distinguish campaigns. Do not introduce new ordinary scratch buckets like
 - `experiments/logs/` — append-only structured experiment records.
 - `docs/README.md` — documentation index.
 - `docs/harness.md` — current exact-bench harness overview.
-- `docs/current_project_roadmap.md` — current Phase B/C/D execution roadmap.
+- `docs/current_project_roadmap.md` — current gated Phase B-F execution roadmap.
 - `docs/history/` — archived/superseded plans and long-form investigation logs.
 
 ## Repository layout

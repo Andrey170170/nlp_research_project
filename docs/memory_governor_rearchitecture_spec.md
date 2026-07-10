@@ -1,6 +1,6 @@
 # Memory Governor and Library Rearchitecture Spec
 
-Status: Phase B contract/resolver implemented; Phase C runtime integration next
+Status: Phase B implemented; Phase C behavior-preserving cleanup next
 Last updated: 2026-07-10
 
 This is the "how it is supposed to be" document for the next major rework of
@@ -428,6 +428,20 @@ event-schema version, semantic fingerprint, execution fingerprint, provider
 profile version, and validation-evidence version (if any). Consumers tolerate
 unknown additive events and can detect gaps or a truncated stream.
 
+Observability is implemented as deep sibling modules rather than inline tracing
+plumbing. Algorithm modules emit a small number of typed domain events or enter
+phase/batch lifecycle spans. Dedicated observability modules own schema
+construction, timestamps/sequences, sanitization, CUDA/cgroup sampling,
+incremental sinks and flush policy, bounded retention, and human-readable log
+adapters. Human logs should normally be derived from structured events instead
+of duplicated beside them. Provide no-op, collecting, composite, and
+failure-injection observers for tests; avoid a global untyped event bus.
+
+The project configures artifact placement and may consume the event stream for
+run orchestration. The sibling sink remains the sole owner of event sequencing,
+serialization, incremental flushing, and terminal records; the harness must not
+re-serialize a competing canonical stream.
+
 Every run reports, per phase and per tier:
 
 1. predicted vs actual bytes, split rigid/elastic (the governor's own
@@ -484,10 +498,11 @@ The project owns the experiment harness:
 - generation of calibration observations. The sibling consumes only promoted,
   versioned provider profiles, never project-internal campaign objects.
 
-This follows the scout split: attribution phases become governor consumers,
-policy resolution becomes a deep sibling module, and row-store/replay mechanisms
-land beside the runtime that uses them. The governor consumes capabilities and
-profiles, not model/provider name special cases.
+This follows the scout split, but in dependency order: Phase C extracts deep
+runtime and observability modules without changing behavior; Phase D implements
+explicit mechanisms beside the phases that use them; only Phase E makes phases
+governor consumers. The governor consumes capabilities and profiles, not
+model/provider name special cases.
 
 Repository integration is an editable package during development and immutable
 project+sibling snapshots for runs. A git submodule is explicitly rejected: it
@@ -556,38 +571,67 @@ versioned profiles are sibling inputs. Recorded presets and synthetic providers
 are arithmetic fixtures, not semantic-equivalence evidence.
 
 Implemented at sibling `phase-b-governor-contract@0ce3f96`. Resolver outputs are
-explicitly advisory until a Phase C runtime consumes them. The package-owned
+explicitly advisory through Phase C cleanup and Phase D mechanism validation;
+Phase E is the first runtime consumer. The package-owned
 trusted validation-evidence registry is empty; this intentionally prevents A4
 from authorizing `validated_relaxed` until the source artifacts are transferred,
 the report is regenerated, and a reviewed record is shipped.
 
-### Step 5 — Runtime APIs, compatibility facade, and streaming telemetry
+### Step 5 / Phase C — Behavior-preserving sibling cleanup
 
-Land the five value objects and `trace_one`, then route `attribute(...)` through
-the versioned translator. Add incremental success/failure/refusal telemetry and
-separate fingerprints. Follow with `trace_batch` and `open_session`, including
-sequence and explicit window-reuse tests, before removing old internal paths.
+Mechanically decompose the attribution mega-module and supporting transcoder
+helpers. Extract observability as deep typed modules so tracing logic no longer
+contains event construction, timestamps, memory sampling, JSONL/flushing, and
+duplicate log formatting. Preserve existing algorithms, defaults, artifacts,
+entry points, and telemetry semantics. Do not apply governor plans or introduce
+new mechanisms in this phase.
 
-### Step 6 — Mechanism split and semantics-preserving ladders
+Gate C with immutable Granite H200 strict runs on `361_base` for 1B CLT and 1B
+PLT. Require exact compact graph/artifact parity, required telemetry
+lifecycle/schema coverage, terminal incremental JSONL, and no unexplained peak
+VRAM or walltime regression over 10% versus the recorded baseline; rerun an
+exceeded metric before classifying it as a regression.
 
-Split the attribution mega-module, row store, replay, provider loaders, and
-caches behind the new runtime. Implement bounded/tiled/recompute and admission
-rungs. In `strict`, each rung must preserve the semantic fingerprint and pass
-parity tests; otherwise it is unavailable, not an automatic degradation.
+### Step 6 / Phase D — Explicit controls and mechanisms
 
-### Step 7 — Project harness migration and CHPC validation
+Split legacy logical semantics from physical execution controls with a
+versioned compatibility translator. Implement explicit Phase-1 peak-reduction
+mechanisms and bounded Phase-3/4 row-store/dense-operator paths. Introduce the
+sibling runtime APIs over these explicit mechanisms while keeping the Phase B
+governor advisory.
 
-Map scenarios and Granite allocations into sibling requests/envelopes; persist
-streaming telemetry and both fingerprints. Keep scenarios, campaigns, SLURM
-policy, snapshots, extraction, comparison, and interpretation project-side.
-Validate on Granite/H200 and preserve Cardinal/Ascend records as historical.
+Gate D on immutable `361_base` 1B CLT/PLT comparisons. Force mechanisms through
+explicit selectors, not envelopes. Require default/reference parity; measurable
+Phase-1 peak allocated/reserved VRAM reduction or survival under a cap the
+reference cannot meet; at least one bounded Phase-3/4 path that avoids the full
+dense allocation while matching output; and stable semantic fingerprints.
+Before E, validate `trace_one`, mixed-shape `trace_batch`, and `open_session`
+sequence/reuse/cleanup/cancellation/failure behavior.
 
-### Step 8 — Dynamic post-Phase-0 spending
+### Step 7 / Phase E — Staged governor integration
 
-Enable epoch-3 re-planning only after the decoupled physical mechanisms pass
-strict fixed-semantics parity tests. A4 motivates the split but its observed
-drift is not such a proof. Dynamic decisions may change physical execution only;
-frontier margins remain warnings.
+Connect pre-load admission, post-model-load measurement/re-planning,
+post-Phase-0 active-universe re-planning, and phase-level grants/releases. The
+governor may select only Phase D mechanisms that passed parity; strict mode
+refuses when no such rung fits.
+
+Gate E on `361_base` 1B CLT/PLT governed-versus-explicit equivalence, expected
+rung selection under constrained envelopes, complete epoch telemetry, and
+strict compact-output/semantic-fingerprint parity.
+
+### Step 8 / Phase F — Project harness migration and final validation
+
+Map scenarios and Granite allocations into the stable sibling API; configure
+project-owned artifact paths and consume sibling-owned streaming telemetry and
+fingerprints; consolidate project launches without moving experiment
+policy/interpretation into the sibling.
+
+Gate F first with `361_base` for 1B CLT, 1B PLT, 4B PLT, and 12B PLT. Before
+promoting the integrated runtime, run the canonical
+`828_base`/`361_base`/`94_base` matrix and
+require graph/artifact parity, telemetry completeness, plan-versus-actual
+resource reports, batching/session correctness, and immutable two-repo
+provenance.
 
 ## 11. Acceptance criteria
 
@@ -628,6 +672,16 @@ frontier margins remain warnings.
 10. Any supported provider obtains a plan from capabilities/profile metadata;
     missing capabilities are explicit. No git submodule, third package, plugin
     system, or model-family governor branch is introduced in this phase.
+11. Phase C is demonstrably behavior-preserving: the 1B CLT/PLT immutable gate
+    passes before any explicit mechanism or governor integration lands.
+12. Phase D mechanisms are directly selectable and parity-proven before the
+    governor may select them, including Phase-1 peak reduction and bounded
+    Phase-3/4 execution.
+13. Phase E records and validates all four planning epochs: pre-load,
+    post-model-load, post-Phase-0, and phase-transition grants/releases.
+14. Phase F passes the `361_base` 1B CLT, 1B PLT, 4B PLT, and 12B PLT smoke and
+    then the canonical `828_base`/`361_base`/`94_base` matrix before launch
+    defaults or the project harness migration are declared done.
 
 ## 12. Open questions
 

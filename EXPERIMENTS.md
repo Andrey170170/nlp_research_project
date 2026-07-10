@@ -89,12 +89,14 @@ Clean/current toy parity follow-up (May 2026):
 
 Near-term implementation focus:
 
-1. begin Phase C by introducing the sibling runtime contract and compatibility
-   facade around the completed Phase B resolver (`0ce3f96`),
-2. keep logical semantics distinct from physical execution choices,
-3. make runtime phases consume advisory plans only after mechanism support and
-   fixed-semantics tests exist,
-4. preserve the current baselines through incremental Granite parity checks.
+1. complete Phase C as behavior-preserving sibling decomposition, including
+   deep observability modules, then pass immutable 1B CLT/PLT parity,
+2. implement Phase D logical/physical controls, Phase-1 peak reduction, and
+   bounded Phase-3/4 mechanisms as explicit operator-selectable paths,
+3. connect the Phase B resolver only in Phase E after those mechanisms pass
+   fixed-semantics parity, then validate governed-versus-explicit execution,
+4. migrate the project harness in Phase F and preserve the current baselines
+   through the gated Granite matrix.
 
 Track-2 full-answer typed-bucketed interpretation (May 2026):
 

@@ -34,7 +34,7 @@ plans.
 
 | File | Role |
 |---|---|
-| `current_project_roadmap.md` | Current Phase B/C/D execution roadmap |
+| `current_project_roadmap.md` | Current gated Phase B-F execution roadmap |
 | `memory_governor_rearchitecture_spec.md` | Implementation-ready target design for the budget-driven governor and sibling runtime |
 | `knob_api_taxonomy.md` | Phase B requirements document for knob ownership, caste, validation, and cost formulas |
 
