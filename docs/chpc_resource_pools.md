@@ -1,7 +1,7 @@
 # CHPC Resource Pools
 
 Status: Current submit-target notes
-Last updated: 2026-07-09
+Last updated: 2026-07-11
 
 This page records practical GPU pools for the large-scale circuit-tracing
 harness. Values come from Slurm `sinfo`, `scontrol`, and account associations on
@@ -55,6 +55,18 @@ showed both nodes as `MIXED` on 2026-07-09, each partly allocated.
 | `notchpeak` | `notchpeak-gpu` | `notchpeak-gpu` | V100/2080Ti/3090/A100 mix | ~188G-508G | 3d | Lower-priority fallback. |
 | `kingspeak` | `kingspeak-gpu` | `kingspeak-gpu` | TitanX | ~60G | 3d | Not suitable for current large GemmaScope traces. |
 | `lonepeak` | `lonepeak-gpu` | `lonepeak-gpu` | 1080Ti | ~60G | 3d | Not suitable for current large GemmaScope traces. |
+
+## Validated 1B Gate Sizing
+
+For H200 `361_base` validation with 16 CPUs:
+
+| Variant | Minimum request | Evidence |
+|---|---:|---|
+| Gemma 3 1B CLT, batch 1000 | `64G` | Job `1613108` reached essentially all of a `32G` request and entered a materially slower reclaim regime. |
+| Gemma 3 1B PLT, batch 128 | `100G` | Job `1613109` used about 67.2 GiB MaxRSS and completed within the baseline timing range. |
+
+These are validation floors, not governor estimates. Preserve additional
+headroom for profiling, larger fixtures, or concurrent artifact capture.
 
 ## Submit Examples
 

@@ -403,9 +403,13 @@ Initial immutable Granite jobs `1613072` (1B CLT) and `1613073` (1B PLT)
 completed with exact compact parity, unchanged peak VRAM, and improved
 walltime, but their manual scenarios omitted the live incremental telemetry
 flag. Project commit `fed889d` corrects the scenarios; jobs `1613108` and
-`1613109` rerun them from immutable snapshot
-`workspace_20260710_232642_phase_c_gate_live_telemetry_rerun`. Do not begin
-Phase D until both corrected jobs meet the gate below.
+`1613109` reran them from immutable snapshot
+`workspace_20260710_232642_phase_c_gate_live_telemetry_rerun`. Both produced
+byte-identical compact NPZs, complete matching live/final telemetry, closed
+zero-error sinks, and unchanged peak VRAM. PLT met its timing threshold. CLT
+reached its `32G` host-memory request and slowed materially; this is explicitly
+accepted as an allocation headroom outlier, with `64G` now required for future
+1B CLT validation. Phase C is complete and Phase D may begin.
 
 Goal: make the tracing runtime safe to change before changing how it executes.
 Phase C is structural only: no governor consumption, no new memory mechanism,

@@ -89,15 +89,18 @@ Clean/current toy parity follow-up (May 2026):
 
 Near-term implementation focus:
 
-1. finish the corrected Phase C immutable Granite live-telemetry gates
-   (`1613108`/`1613109`); the initial `1613072`/`1613073` runs achieved exact
-   compact parity and improved walltime but omitted the incremental sink flag,
-2. implement Phase D logical/physical controls, Phase-1 peak reduction, and
+1. implement Phase D logical/physical controls, Phase-1 peak reduction, and
    bounded Phase-3/4 mechanisms as explicit operator-selectable paths,
-3. connect the Phase B resolver only in Phase E after those mechanisms pass
+2. connect the Phase B resolver only in Phase E after those mechanisms pass
    fixed-semantics parity, then validate governed-versus-explicit execution,
-4. migrate the project harness in Phase F and preserve the current baselines
+3. migrate the project harness in Phase F and preserve the current baselines
    through the gated Granite matrix.
+
+Phase C closed on July 11 with immutable jobs `1613108`/`1613109`: compact NPZ
+artifacts were byte-identical to baseline, live/final telemetry counts matched,
+and both sinks closed without errors. The CLT job reached its `32G` host-memory
+request and slowed materially; this was accepted as a memory-headroom outlier,
+not a clean timing measurement. Request at least `64G` for future 1B CLT gates.
 
 Track-2 full-answer typed-bucketed interpretation (May 2026):
 

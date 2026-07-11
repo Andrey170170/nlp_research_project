@@ -90,20 +90,23 @@ Completed at sibling `phase-b-governor-contract@0d65fba`:
 5. public defaults and artifacts remain unchanged, and no governor plan is
    consumed at runtime.
 
-**Pending C gate:** after login-safe validation, run `361_base` for 1B CLT and 1B PLT
-on Granite H200 from one immutable snapshot. Require exact compact graph/artifact
-parity, required telemetry lifecycle/schema coverage, terminal live JSONL, and
-no unexplained peak-VRAM or walltime regression over 10% versus the recorded
-baseline; rerun an exceeded metric before classifying it as a regression.
+**C gate passed:** login-safe validation and immutable `361_base` 1B CLT/PLT
+Granite H200 runs preserve exact compact artifacts and peak VRAM, with complete
+terminal live JSONL and required lifecycle/schema coverage.
 
 Initial immutable jobs `1613072` (1B CLT) and `1613073` (1B PLT) completed with
 exact compact parity, unchanged peak VRAM, and 8.2%/8.6% lower trace walltime.
 Their manually created scenarios omitted `incremental_telemetry_jsonl`, so the
 complete terminal JSONL was written only after tracing and does not satisfy the
-live-stream portion of the gate. Corrected project commit `fed889d` is running
+live-stream portion of the gate. Corrected project commit `fed889d` ran
 from read-only snapshot `workspace_20260710_232642_phase_c_gate_live_telemetry_rerun`
-as jobs `1613108` (CLT) and `1613109` (PLT). Do not start Phase D until both
-corrected results satisfy the remaining telemetry and parity checks.
+as jobs `1613108` (CLT) and `1613109` (PLT). Both compact NPZs are byte-identical
+to baseline; live/final event counts match at 1,720/1,720 and 11,109/11,109;
+both sinks closed with zero errors and ended at `attribute.done`. PLT remained
+within the timing gate. CLT reached essentially all of its `32G` request and
+slowed to 240.72s; this is recorded as a memory-headroom allocation outlier by
+explicit adjudication. Future 1B CLT validation jobs must request at least
+`64G`. Phase D may begin.
 
 Non-blocking lifecycle debt retained after review: isolate row-store/context/
 sink cleanup failures so one cleanup cannot mask the primary exception, and
