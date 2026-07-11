@@ -481,6 +481,25 @@ Goal: implement and validate mechanisms before any governor selects them.
 Every mechanism is directly selectable by tests/operators; the Phase B resolver
 remains advisory and is not applied automatically.
 
+### D0. Lifecycle failure integrity
+
+Before adding mechanism branches, close the failure-path gaps exposed by the
+Phase C review:
+
+- perform row-store, context, terminal-event, and sink cleanup independently so
+  one failure cannot skip the remaining cleanup;
+- preserve and re-raise the primary tracing exception, while attaching or
+  reporting cleanup failures; raise an `ExceptionGroup` only when cleanup is the
+  sole failure;
+- perform pure request/config validation before observer and sink creation, and
+  report rejection at the API boundary without starting a run lifecycle; place
+  all later work under one terminal lifecycle boundary;
+- add injected failures for row-store cleanup, context cleanup, terminal-event
+  emission, recorder/sink closure, cancellation, and preflight rejection.
+
+This is the reliability prelude to Phase D, not a new phase and not permission
+to change tracing semantics.
+
 ### D1. Logical/physical control split and compatibility translator
 
 - Separate decoder reduction tile/order from physical fetch/cache chunking.
@@ -501,6 +520,16 @@ semantics.
 
 ### D3. Bounded Phase-3/4 mechanisms
 
+- Refine Phase 4 incrementally as mechanisms touch it. The main loop should
+  orchestrate cohesive operations: initialize frontier, plan refresh, plan
+  batch, execute batch, commit rows, update frontier, and finalize.
+- Hold evolving counters, buffers, frontier membership, and owned resources in
+  one explicit `Phase4RuntimeState`-style object. Extract an operation only when
+  it owns a real invariant or mechanism boundary; avoid one-method classes and
+  pass-through wrappers added solely to reduce line count.
+- Keep scheduler, row executor, reduction, and storage variants behind the
+  corresponding operation boundary rather than multiplying branches in the
+  orchestrator.
 - Put row storage behind full file-backed, tiled/windowed, and
   recompute-on-demand implementations as they become real and parity-proven.
 - Add streaming/tiled influence, refresh, frontier, and dense-operator paths so
@@ -515,6 +544,11 @@ Introduce `TraceRequest`, `TraceResult`, `trace_one`, `trace_batch`, and
 `open_session` over the explicit mechanisms. Keep `attribute(...)` as a
 compatibility facade over the same implementation; do not maintain two runtimes.
 
+Typing is opportunistic and boundary-driven during D: replace `Any` when a
+touched ownership or mechanism contract benefits from a protocol or concrete
+type, but do not run a separate typing cleanup campaign or block mechanism work
+on internal annotation completeness.
+
 ### Phase D validation gate — mechanism parity
 
 From an immutable snapshot, validate 1B CLT and 1B PLT on Granite:
@@ -528,6 +562,9 @@ From an immutable snapshot, validate 1B CLT and 1B PLT on Granite:
   allocation while matching the full path;
 - semantic fingerprints remain fixed while execution fingerprints distinguish
   mechanisms;
+- injected cleanup failures preserve the primary exception, attempt every
+  cleanup action, group cleanup-only errors, and close terminal telemetry when
+  the sink remains usable;
 - `trace_one`, mixed-shape `trace_batch`, and `open_session` pass sequence,
   explicit reuse, cleanup, cancellation, and failure-recovery tests.
 
@@ -588,6 +625,14 @@ compatibility wrappers or history without weakening snapshot enforcement.
 Separate launch policy from rendering, snapshot creation from verification, and
 scenario/wave policy where this reduces demonstrated complexity. Do not move
 experiment interpretation into the sibling.
+
+### F4. Compatibility-surface reduction
+
+After the project runner and tests use stable sibling APIs/modules, remove their
+dependence on private helpers re-exported from `attribute_nnsight.py`. Keep the
+public `attribute(...)` path and documented compatibility window, but reduce
+explicit private aliases in reviewed batches. Do not replace them with dynamic
+`__getattr__` or wildcard compatibility shims that hide ownership.
 
 ### Final Phase F validation gate — complete stack
 

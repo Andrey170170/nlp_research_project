@@ -102,27 +102,44 @@ start Phase D until both results satisfy the gate.
 
 Non-blocking lifecycle debt retained after review: isolate row-store/context/
 sink cleanup failures so one cleanup cannot mask the primary exception, and
-move observer creation after pure preflight validation so invalid requests
-still receive deterministic terminal telemetry. These are reliability changes,
-not structural-parity acceptance criteria.
+move observer creation after pure preflight validation so rejected requests do
+not leave partially initialized telemetry resources. Once a lifecycle starts,
+emit terminal telemetry whenever the sink remains usable. These are reliability
+changes, not structural-parity acceptance criteria.
 
 ## Phase D - Explicit Controls and Mechanisms
 
 After C passes:
 
-1. split logical decoder reduction and frontier-refresh semantics from physical
+1. harden the lifecycle boundary before adding mechanisms: run row-store,
+   context, terminal-event, and sink cleanup independently; preserve the primary
+   tracing exception; report cleanup failures without masking it; raise an
+   `ExceptionGroup` only when cleanup is the sole failure; move pure request
+   validation before observer/sink creation;
+2. split logical decoder reduction and frontier-refresh semantics from physical
    fetch/cache and microbatch controls, with deterministic legacy translation;
-2. implement explicit Phase-1 trace-capacity peak-reduction mechanisms;
-3. implement full/tiled/recompute row-store paths and bounded Phase-3/4 dense
+3. as Phase-4 mechanisms are touched, organize the loop around cohesive
+   operations such as initialize frontier, plan refresh, plan batch, execute
+   batch, commit rows, update frontier, and finalize. Keep one explicit runtime
+   state object and avoid classes or wrappers that add ceremony without owning
+   an invariant;
+4. implement explicit Phase-1 trace-capacity peak-reduction mechanisms;
+5. implement full/tiled/recompute row-store paths and bounded Phase-3/4 dense
    operators so large active universes avoid mandatory full materialization;
-4. expose mechanisms directly through the sibling runtime API while the
+6. expose mechanisms directly through the sibling runtime API while the
    governor remains advisory.
+
+Typing is not a standalone deliverable. Strengthen protocols and concrete types
+only at boundaries already touched by mechanism or ownership work.
 
 **D gate:** immutable `361_base` 1B CLT/PLT runs must prove the default path
 still matches C; explicit selectors must force each implemented mechanism;
 Phase 1 must measurably lower peak allocated/reserved VRAM or survive a cap the
 reference cannot; at least one bounded Phase-3/4 path must avoid its full dense
 allocation while matching output; and only the execution fingerprint changes.
+Injected failures must prove all cleanup attempts occur, primary exception
+identity is preserved, cleanup-only failures are grouped, and terminal
+telemetry closes whenever possible.
 Before E, also validate `trace_one`, mixed-shape `trace_batch`, and
 `open_session` sequence/reuse/cleanup/cancellation/failure behavior.
 
@@ -150,6 +167,9 @@ After E passes, adapt the project once to the stable governed sibling API:
   sequence/window-reuse semantics;
 - configure project-owned artifact paths and consume streamed telemetry while
   the sibling sink remains the sole serializer/sequencer/flusher;
+- migrate project/tests from private `attribute_nnsight` helpers to stable
+  sibling modules, then reduce explicit compatibility re-exports without a
+  dynamic catch-all shim;
 - consolidate launches through the packaged CLI without weakening snapshots;
 - keep fixtures, campaigns, SLURM policy, artifacts, extraction, comparison,
   and scientific interpretation project-side.

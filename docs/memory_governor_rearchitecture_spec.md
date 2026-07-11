@@ -598,11 +598,23 @@ exceeded metric before classifying it as a regression.
 
 ### Step 6 / Phase D — Explicit controls and mechanisms
 
-Split legacy logical semantics from physical execution controls with a
+Begin with lifecycle failure integrity: independent cleanup attempts, primary
+exception preservation, cleanup-only `ExceptionGroup` reporting, preflight
+validation before sink creation, explicit API-level preflight rejection, and
+injected failure coverage. Then split legacy logical semantics from physical
+execution controls with a
 versioned compatibility translator. Implement explicit Phase-1 peak-reduction
 mechanisms and bounded Phase-3/4 row-store/dense-operator paths. Introduce the
 sibling runtime APIs over these explicit mechanisms while keeping the Phase B
 governor advisory.
+
+Refine Phase 4 only as these mechanisms touch it. Its orchestrator should call
+self-contained operations for initialization, refresh planning, batch planning,
+execution, row commit, frontier update, and finalization over one explicit
+runtime state. Extract boundaries that own invariants; do not optimize for line
+count or introduce boilerplate-only classes. Improve typing at touched
+boundaries where it clarifies ownership or mechanism contracts, but do not make
+broad annotation cleanup a phase gate.
 
 Gate D on immutable `361_base` 1B CLT/PLT comparisons. Force mechanisms through
 explicit selectors, not envelopes. Require default/reference parity; measurable
@@ -610,7 +622,9 @@ Phase-1 peak allocated/reserved VRAM reduction or survival under a cap the
 reference cannot meet; at least one bounded Phase-3/4 path that avoids the full
 dense allocation while matching output; and stable semantic fingerprints.
 Before E, validate `trace_one`, mixed-shape `trace_batch`, and `open_session`
-sequence/reuse/cleanup/cancellation/failure behavior.
+sequence/reuse/cleanup/cancellation/failure behavior. Failure injection must
+prove all cleanup is attempted, primary exceptions are not masked, and terminal
+telemetry closes whenever possible.
 
 ### Step 7 / Phase E — Staged governor integration
 
@@ -628,7 +642,10 @@ strict compact-output/semantic-fingerprint parity.
 Map scenarios and Granite allocations into the stable sibling API; configure
 project-owned artifact paths and consume sibling-owned streaming telemetry and
 fingerprints; consolidate project launches without moving experiment
-policy/interpretation into the sibling.
+policy/interpretation into the sibling. Once project and test imports use stable
+modules, reduce the explicit private-helper re-export surface of
+`attribute_nnsight.py` in reviewed batches; preserve the documented public
+facade and avoid dynamic catch-all compatibility shims.
 
 Gate F first with `361_base` for 1B CLT, 1B PLT, 4B PLT, and 12B PLT. Before
 promoting the integrated runtime, run the canonical
