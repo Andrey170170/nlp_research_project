@@ -2577,6 +2577,22 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
         "row_subchunk_size": run_config.get(
             "row_subchunk_size", scenario.get("row_subchunk_size")
         ),
+        **{
+            key: run_config.get(key, scenario.get(key))
+            for key in (
+                "nnsight_session_capacity",
+                "phase3_compute_microbatch_max_rows",
+                "phase4_compute_microbatch_max_rows",
+                "full_retention_backend",
+                "feature_row_column_tile_size",
+                "influence_row_tile_size",
+                "influence_column_tile_size",
+                "feature_row_retention",
+                "replay_tile_cache_bytes",
+                "validation_baseline_key",
+                "validation_mechanism",
+            )
+        },
         "plan_feature_batch_size": run_config.get(
             "plan_feature_batch_size", scenario.get("plan_feature_batch_size")
         ),

@@ -401,6 +401,19 @@ def build_command(
                 str(scenario["exact_trace_internal_dtype"]),
             ]
         )
+    for key, flag in (
+        ("nnsight_session_capacity", "--nnsight-session-capacity"),
+        ("phase3_compute_microbatch_max_rows", "--phase3-compute-microbatch-max-rows"),
+        ("phase4_compute_microbatch_max_rows", "--phase4-compute-microbatch-max-rows"),
+        ("full_retention_backend", "--full-retention-backend"),
+        ("feature_row_column_tile_size", "--feature-row-column-tile-size"),
+        ("influence_row_tile_size", "--influence-row-tile-size"),
+        ("influence_column_tile_size", "--influence-column-tile-size"),
+        ("feature_row_retention", "--feature-row-retention"),
+        ("replay_tile_cache_bytes", "--replay-tile-cache-bytes"),
+    ):
+        if method != "old_patch" and scenario.get(key) is not None:
+            cmd.extend([flag, str(scenario[key])])
     if (
         method != "old_patch"
         and scenario.get("phase0_activation_threshold_compare_mode") is not None

@@ -41,6 +41,8 @@ SCENARIO_IDENTITY_KEYS = (
     "prepared_prompt_file",
     "prepared_prompt_meta_file",
     "method",
+    "validation_baseline_key",
+    "validation_mechanism",
 )
 
 SCENARIO_KNOB_KEYS = (
@@ -57,6 +59,15 @@ SCENARIO_KNOB_KEYS = (
     "stage_encoder_vecs_on_cpu",
     "stage_error_vectors_on_cpu",
     "row_subchunk_size",
+    "nnsight_session_capacity",
+    "phase3_compute_microbatch_max_rows",
+    "phase4_compute_microbatch_max_rows",
+    "full_retention_backend",
+    "feature_row_column_tile_size",
+    "influence_row_tile_size",
+    "influence_column_tile_size",
+    "feature_row_retention",
+    "replay_tile_cache_bytes",
     "plan_feature_batch_size",
     "feature_batch_size_max",
     "feature_batch_target_reserved_fraction",
@@ -487,6 +498,8 @@ def _entry_from_scenario_root(scenario_root: Path) -> dict[str, Any]:
         "attribution_batch_size": scenario.get("attribution_batch_size"),
         "feature_batch_size": scenario.get("feature_batch_size"),
         "logit_batch_size": scenario.get("logit_batch_size"),
+        "validation_baseline_key": scenario.get("validation_baseline_key"),
+        "validation_mechanism": scenario.get("validation_mechanism"),
         "comparison_contract": _comparison_contract(scenario),
         "prompt_identity": {
             "prepared_prompt_file": str(prompt_file) if prompt_file else None,
