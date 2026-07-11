@@ -89,8 +89,9 @@ Clean/current toy parity follow-up (May 2026):
 
 Near-term implementation focus:
 
-1. record and assess the pending Phase C immutable Granite 1B CLT/PLT parity
-   gates (`1613072`/`1613073`),
+1. finish the corrected Phase C immutable Granite live-telemetry gates
+   (`1613108`/`1613109`); the initial `1613072`/`1613073` runs achieved exact
+   compact parity and improved walltime but omitted the incremental sink flag,
 2. implement Phase D logical/physical controls, Phase-1 peak reduction, and
    bounded Phase-3/4 mechanisms as explicit operator-selectable paths,
 3. connect the Phase B resolver only in Phase E after those mechanisms pass

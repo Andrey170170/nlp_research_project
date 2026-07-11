@@ -399,10 +399,13 @@ Phase C structural parity and Phase D mechanism parity.
 ## Phase C — Behavior-preserving sibling cleanup
 
 Structural implementation completed at sibling `phase-b-governor-contract@0d65fba`.
-The immutable Granite acceptance gate is in flight; jobs `1613072` (1B CLT)
-and `1613073` (1B PLT) share snapshot
-`workspace_20260710_215629_phase_c_gate_20260710_v2`. Do not begin Phase D
-until both jobs meet the gate below.
+Initial immutable Granite jobs `1613072` (1B CLT) and `1613073` (1B PLT)
+completed with exact compact parity, unchanged peak VRAM, and improved
+walltime, but their manual scenarios omitted the live incremental telemetry
+flag. Project commit `fed889d` corrects the scenarios; jobs `1613108` and
+`1613109` rerun them from immutable snapshot
+`workspace_20260710_232642_phase_c_gate_live_telemetry_rerun`. Do not begin
+Phase D until both corrected jobs meet the gate below.
 
 Goal: make the tracing runtime safe to change before changing how it executes.
 Phase C is structural only: no governor consumption, no new memory mechanism,

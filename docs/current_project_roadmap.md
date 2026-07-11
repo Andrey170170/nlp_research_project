@@ -96,9 +96,14 @@ parity, required telemetry lifecycle/schema coverage, terminal live JSONL, and
 no unexplained peak-VRAM or walltime regression over 10% versus the recorded
 baseline; rerun an exceeded metric before classifying it as a regression.
 
-Launch record: immutable jobs `1613072` (1B CLT) and `1613073` (1B PLT)
-share snapshot `workspace_20260710_215629_phase_c_gate_20260710_v2`. Do not
-start Phase D until both results satisfy the gate.
+Initial immutable jobs `1613072` (1B CLT) and `1613073` (1B PLT) completed with
+exact compact parity, unchanged peak VRAM, and 8.2%/8.6% lower trace walltime.
+Their manually created scenarios omitted `incremental_telemetry_jsonl`, so the
+complete terminal JSONL was written only after tracing and does not satisfy the
+live-stream portion of the gate. Corrected project commit `fed889d` is running
+from read-only snapshot `workspace_20260710_232642_phase_c_gate_live_telemetry_rerun`
+as jobs `1613108` (CLT) and `1613109` (PLT). Do not start Phase D until both
+corrected results satisfy the remaining telemetry and parity checks.
 
 Non-blocking lifecycle debt retained after review: isolate row-store/context/
 sink cleanup failures so one cleanup cannot mask the primary exception, and
