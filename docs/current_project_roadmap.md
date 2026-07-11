@@ -69,31 +69,42 @@ Completion record (2026-07-10):
 - 38 focused governor tests and 51 existing telemetry/provider regressions pass;
 - Ruff and uv-based Pyright pass.
 
-Resolver outputs remain advisory through Phase C cleanup and Phase D mechanism
+Resolver outputs remain advisory through Phase C validation and Phase D mechanism
 work. Phase E is the first phase allowed to consume plans at runtime. The
 trusted validation-evidence registry is intentionally empty until transferred
 A4 artifacts are reproduced and reviewed.
 
-## Phase C - Active: Behavior-Preserving Sibling Cleanup
+## Phase C - Structural Implementation Complete; Granite Gate Pending
 
-Make the runtime safe to edit before changing execution:
+Completed at sibling `phase-b-governor-contract@0d65fba`:
 
-1. mechanically split `attribute_nnsight.py` into cohesive phase, lifecycle,
-   row-store, replay/prefix, decoder/cache, provider-helper, and result modules;
-2. extract observability into deep modules that own typed event schemas,
-   sequencing/timestamps, spans, memory sampling, JSONL sinks/flushing,
-   bounded retention, and human logging adapters;
-3. leave algorithm code with only a small number of typed domain-level
-   observability calls instead of inline event dictionaries and log plumbing;
-4. preserve `attribute(...)`, defaults, algorithms, artifacts, and current
-   incremental telemetry behavior exactly enough for parity;
-5. defer new controls, mechanisms, runtime APIs, and governor consumption.
+1. `attribute_nnsight.py` is the public compatibility and lifecycle-orchestration
+   layer at roughly 2k lines; typed phase 0-5 execution lives under
+   `attribution/nnsight/phases/`;
+2. policies, replay, row-store, prefix, numerics, and phase support are deep
+   NNSight modules;
+3. observability owns lifecycle, recorder, resources, exception export, and
+   human-log rendering;
+4. transcoder loading, decoder cache, diagnostics, and fingerprints are
+   separate modules;
+5. public defaults and artifacts remain unchanged, and no governor plan is
+   consumed at runtime.
 
-**C gate:** after login-safe validation, run `361_base` for 1B CLT and 1B PLT
+**Pending C gate:** after login-safe validation, run `361_base` for 1B CLT and 1B PLT
 on Granite H200 from one immutable snapshot. Require exact compact graph/artifact
 parity, required telemetry lifecycle/schema coverage, terminal live JSONL, and
 no unexplained peak-VRAM or walltime regression over 10% versus the recorded
 baseline; rerun an exceeded metric before classifying it as a regression.
+
+Launch record: immutable jobs `1613072` (1B CLT) and `1613073` (1B PLT)
+share snapshot `workspace_20260710_215629_phase_c_gate_20260710_v2`. Do not
+start Phase D until both results satisfy the gate.
+
+Non-blocking lifecycle debt retained after review: isolate row-store/context/
+sink cleanup failures so one cleanup cannot mask the primary exception, and
+move observer creation after pure preflight validation so invalid requests
+still receive deterministic terminal telemetry. These are reliability changes,
+not structural-parity acceptance criteria.
 
 ## Phase D - Explicit Controls and Mechanisms
 

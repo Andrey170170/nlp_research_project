@@ -19,7 +19,7 @@ from whichever local branches happen to be checked out.
 | Editable dependency | `circuit-tracer = { path = "../circuit-tracer_chunked", editable = true }` |
 | Current calibration stack | Gemma 3 1B/4B/12B + GemmaScope-2 CLT/PLT providers |
 | Canonical exact-trace dtype | `exact_trace_internal_dtype=fp32` |
-| Governor status | Phase B advisory resolver complete in sibling `0ce3f96`; Phase C cleanup next, Phase E integration after gated mechanisms |
+| Governor status | Phase B advisory resolver complete at sibling `0ce3f96`; Phase C structural implementation complete at `0d65fba`, with Granite gates `1613072`/`1613073` pending; Phase E integration remains gated after Phase D |
 | Current benchmark harness | `src/nlp_research_project/exact_trace_bench/` |
 | Scratch root | `/scratch/general/vast/$USER/nlp_research_project/exact_trace_bench/` |
 

@@ -1,6 +1,6 @@
 # Memory Governor and Library Rearchitecture Spec
 
-Status: Phase B implemented; Phase C behavior-preserving cleanup next
+Status: Phase B implemented; Phase C structural implementation complete at sibling `0d65fba`; immutable Granite gate pending
 Last updated: 2026-07-10
 
 This is the "how it is supposed to be" document for the next major rework of
@@ -60,9 +60,10 @@ until repeated measurements explain the spread. This run calibrates resource
 and walltime profiles only; it does not broaden the Cardinal A4 semantic-caste
 scope.
 
-Separately, the whole library is being restructured anyway (see the scout
-reports: `attribute_nnsight.py` is a ~12.5k-line mega-module with low
-locality and a knob-bag interface). The governor is not an add-on to that
+Separately, the whole library is being restructured anyway. Phase C reduced
+`attribute_nnsight.py` to a roughly 2k-line public compatibility/orchestration
+layer; phase execution and supporting ownership now live in deep modules. The
+wide knob-bag interface remains a later compatibility/API concern. The governor is not an add-on to that
 restructure; it *is* the "exact-trace policy/config seam" the scout report
 recommends, given a concrete job description.
 
@@ -578,6 +579,9 @@ from authorizing `validated_relaxed` until the source artifacts are transferred,
 the report is regenerated, and a reviewed record is shipped.
 
 ### Step 5 / Phase C — Behavior-preserving sibling cleanup
+
+Implemented structurally at sibling `phase-b-governor-contract@0d65fba`.
+Only the immutable Granite gate below remains before Phase D.
 
 Mechanically decompose the attribution mega-module and supporting transcoder
 helpers. Extract observability as deep typed modules so tracing logic no longer

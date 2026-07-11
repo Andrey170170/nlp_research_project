@@ -1,7 +1,7 @@
 # Sibling `circuit_tracer` code map
 
 Status: Current-state map
-Last updated: 2026-07-01
+Last updated: 2026-07-10
 
 ## Package and CLI
 
@@ -17,9 +17,12 @@ Unless noted, paths and commands in this page are relative to the sibling repo
 
 | Area | Modules |
 |---|---|
-| Attribution | `attribution/{attribute.py,attribute_nnsight.py,attribute_transformerlens.py,context_nnsight.py,context_transformerlens.py,targets.py,sparsification.py}` |
+| Attribution entry points | `attribution/{attribute.py,attribute_nnsight.py,attribute_transformerlens.py,context_nnsight.py,context_transformerlens.py,targets.py,sparsification.py}` |
+| NNSight phase runtime | `attribution/nnsight/phases/phase{0,1,2,3,4,5}.py` |
+| NNSight support | `attribution/nnsight/{phase1_policy.py,phase4_policy.py,phase_support.py,replay.py,row_store.py,prefix_view.py,numerics.py,telemetry.py}` |
+| Observability | `observability/{lifecycle.py,recorder.py,resources.py,human_logs.py,exception_export.py}` |
 | Replacement models | `replacement_model/*` |
-| Transcoders | `transcoder/{single_layer_transcoder.py,cross_layer_transcoder.py}` |
+| Transcoders | `transcoder/{single_layer_transcoder.py,cross_layer_transcoder.py,loaders.py,decoder_cache.py,diagnostics.py,fingerprints.py}` |
 | Utilities | `utils/*` |
 | Graph | `graph.py` |
 | Frontend | `frontend/*` |
@@ -108,7 +111,9 @@ GPU regression scripts under `scripts/slurm/` are SLURM-only.
 
 ## Current-state caveats for later debt audit
 
-- `attribute_nnsight.py` is a large phase/scheduler/replay/telemetry monolith.
+- `attribute_nnsight.py` remains the public compatibility and
+  lifecycle-orchestration layer; phase algorithms and telemetry mechanics are
+  decomposed into deep modules.
 - `attribute()` exposes a wide knob surface, including NNSight-only and legacy
   compatibility settings.
 - `Graph.logit_tokens` and some `Graph.from_pt()` tensor formats remain as

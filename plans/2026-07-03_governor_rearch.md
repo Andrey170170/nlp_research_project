@@ -1,6 +1,6 @@
 # Memory governor + rearchitecture execution plan
 
-Status: active execution plan; Phase B complete, Phase C next
+Status: active execution plan; Phase B complete; Phase C structurally complete at sibling `0d65fba`, Granite gate pending
 Date: 2026-07-03; last updated 2026-07-10
 Scope: sibling library `../circuit-tracer_chunked` rewrite + project harness
 restructure + validation campaigns
@@ -20,9 +20,10 @@ Two intertwined problems, one plan:
    that cannot trade resources across the VRAM / host-RAM / file-backed tiers.
    The target design replaces it with a budget-driven memory governor
    (invariant, castes, plan epochs, degradation ladders — see the spec).
-2. The sibling library's core modules are shallow and entangled
-   (`attribute_nnsight.py` ~12.6k lines post-merge; knob-bag `attribute()`
-   interface), and the harness mirrors those internals. The scout reports
+2. The sibling library's former core monolith has been decomposed;
+   `attribute_nnsight.py` is now a roughly 2k-line public compatibility and
+   lifecycle-orchestration layer. The knob-bag `attribute()` interface remains,
+   and the harness still mirrors some internals. The scout reports
    identify the deepening candidates; the harness scout explicitly says the
    sibling library must be cleaned first.
 
@@ -396,6 +397,12 @@ consumes the plan yet; staged runtime integration remains a Phase E gate after
 Phase C structural parity and Phase D mechanism parity.
 
 ## Phase C — Behavior-preserving sibling cleanup
+
+Structural implementation completed at sibling `phase-b-governor-contract@0d65fba`.
+The immutable Granite acceptance gate is in flight; jobs `1613072` (1B CLT)
+and `1613073` (1B PLT) share snapshot
+`workspace_20260710_215629_phase_c_gate_20260710_v2`. Do not begin Phase D
+until both jobs meet the gate below.
 
 Goal: make the tracing runtime safe to change before changing how it executes.
 Phase C is structural only: no governor consumption, no new memory mechanism,

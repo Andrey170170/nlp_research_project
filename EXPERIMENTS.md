@@ -89,8 +89,8 @@ Clean/current toy parity follow-up (May 2026):
 
 Near-term implementation focus:
 
-1. complete Phase C as behavior-preserving sibling decomposition, including
-   deep observability modules, then pass immutable 1B CLT/PLT parity,
+1. record and assess the pending Phase C immutable Granite 1B CLT/PLT parity
+   gates (`1613072`/`1613073`),
 2. implement Phase D logical/physical controls, Phase-1 peak reduction, and
    bounded Phase-3/4 mechanisms as explicit operator-selectable paths,
 3. connect the Phase B resolver only in Phase E after those mechanisms pass

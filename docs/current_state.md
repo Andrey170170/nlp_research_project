@@ -73,9 +73,10 @@ The current exact-trace workflow depends on both checkouts being present.
   operational classes rather than those legacy scenario tiers.
 - Phase A is closed for implementation purposes. Phase B governor contracts and
   the pure resolver are complete at sibling `phase-b-governor-contract@0ce3f96`.
-  Phase C behavior-preserving runtime/observability cleanup is next, followed by
-  Phase D explicit mechanisms, Phase E staged governor integration, and Phase F
-  harness migration. Each phase is blocked on its immutable Granite gate.
+  Phase C structural runtime/observability cleanup is complete at sibling
+  `phase-b-governor-contract@0d65fba` and awaits its immutable Granite gate.
+  Phase D explicit mechanisms follow only after that gate; Phase E remains
+  staged governor integration, followed by Phase F harness migration.
 - Descriptive architecture details now live under `docs/architecture/`.
 - Current baseline decisions stay in `EXPERIMENTS.md`; active work stays in the owning spec.
 - Reports are not treated as source-of-truth unless a current doc explicitly cites them.
