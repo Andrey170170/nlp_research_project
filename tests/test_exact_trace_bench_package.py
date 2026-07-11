@@ -10,6 +10,9 @@ from nlp_research_project.exact_trace_bench.jobs import (
     SBATCH_FIXTURE_PREP_SCRIPTS,
     SBATCH_SCRIPTS,
 )
+from nlp_research_project.exact_trace_bench.scenarios import (
+    CHPC_BASELINE_RESOURCE_PROFILE,
+)
 from nlp_research_project.exact_trace_bench.workspace import (
     create_workspace_snapshot,
     load_snapshot_manifest,
@@ -27,6 +30,12 @@ def test_canonical_sbatch_templates_live_under_slurm() -> None:
     for path in paths:
         assert path.exists()
         assert path.relative_to(REPO_ROOT).parts[:2] == ("slurm", "exact_trace_bench")
+
+
+def test_granite_h200_baseline_profile_is_launchable() -> None:
+    script = SBATCH_SCRIPTS[("granite", CHPC_BASELINE_RESOURCE_PROFILE)]
+
+    assert script.name == "trace_baseline_h200.granite.sbatch"
 
 
 def test_canonical_sbatch_templates_use_snapshot_import_paths() -> None:

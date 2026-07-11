@@ -17,6 +17,7 @@ from .config import (
 from .full_answer.schemas import load_shards
 from .io_utils import read_json
 from .scenarios import (
+    CHPC_BASELINE_RESOURCE_PROFILE,
     RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM,
     RESOURCE_PROFILE_STANDARD,
 )
@@ -54,6 +55,10 @@ SBATCH_SCRIPTS: dict[tuple[str, str], Path] = {
     / "slurm"
     / "exact_trace_bench"
     / "trace_weekend_exact_chunked_long_eval.granite.sbatch",
+    ("granite", CHPC_BASELINE_RESOURCE_PROFILE): REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "trace_baseline_h200.granite.sbatch",
 }
 
 SBATCH_FIXTURE_PREP_SCRIPTS: dict[str, Path] = {
