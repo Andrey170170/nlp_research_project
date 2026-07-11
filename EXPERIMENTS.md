@@ -89,8 +89,10 @@ Clean/current toy parity follow-up (May 2026):
 
 Near-term implementation focus:
 
-1. implement Phase D logical/physical controls, Phase-1 peak reduction, and
-   bounded Phase-3/4 mechanisms as explicit operator-selectable paths,
+1. implement Phase D direct session/per-phase microbatch controls so Phase 1 no
+   longer fixes the later phases to its 80-90 GiB peak; add column-tiled dense
+   operators and no-retention replay so extreme paths create no `K x N` tensor
+   or file,
 2. connect the Phase B resolver only in Phase E after those mechanisms pass
    fixed-semantics parity, then validate governed-versus-explicit execution,
 3. migrate the project harness in Phase F and preserve the current baselines

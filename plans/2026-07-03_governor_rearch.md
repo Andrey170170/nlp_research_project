@@ -1,7 +1,7 @@
 # Memory governor + rearchitecture execution plan
 
-Status: active execution plan; Phase B complete; Phase C structurally complete at sibling `0d65fba`, Granite gate pending
-Date: 2026-07-03; last updated 2026-07-10
+Status: active execution plan; Phase B and C complete; Phase D active with D0 at sibling `20225ac`
+Date: 2026-07-03; last updated 2026-07-11
 Scope: sibling library `../circuit-tracer_chunked` rewrite + project harness
 restructure + validation campaigns
 
@@ -488,6 +488,19 @@ Goal: implement and validate mechanisms before any governor selects them.
 Every mechanism is directly selectable by tests/operators; the Phase B resolver
 remains advisory and is not applied automatically.
 
+Phase D is the final mechanism and knob-boundary pass before governor
+integration. It has two required end-to-end outcomes:
+
+1. eliminate the oversized Phase-1 NNSight capacity spike by allowing logical
+   Phase-3/4 work to execute through a smaller physical session and physical
+   microbatches; and
+2. remove mandatory retained `K x N` dense storage from the extreme-case path,
+   where `K` is selected rows and `N` is the active-feature universe.
+
+This does not make tracing independent of `N`: influence, visited, rank, and
+frontier vectors remain `O(N)`. The requirement is to bound dense working sets
+and retained row storage, not to hide that irreducible linear floor.
+
 ### D0. Lifecycle failure integrity
 
 Before adding mechanism branches, close the failure-path gaps exposed by the
@@ -517,13 +530,47 @@ to change tracing semantics.
   with a versioned deprecation event; reject old/new conflicts before load.
 - Preserve separate semantic and execution fingerprints.
 
+Freeze and test these boundaries before mechanism implementation:
+
+- logical decoder reduction tiles/order versus physical decoder fetch/cache
+  chunks and contraction row tiles;
+- logical Phase-4 reference frontier batches and refresh checkpoints versus
+  Phase-4 physical backward microbatches;
+- logical source/logit grouping versus Phase-3 physical backward microbatches;
+- per-phase and per-resource replay, prefetch, residency, and cache controls.
+
+Use direct runtime values rather than umbrella policy names:
+
+- `nnsight_session_capacity`;
+- `phase3_compute_microbatch_max_rows` and
+  `phase4_compute_microbatch_max_rows`;
+- `phase3_gradient_replay_window_layers` and
+  `phase4_gradient_replay_window_layers`;
+- `decoder_contraction_row_tile_size`;
+- `feature_row_column_tile_size`, `influence_row_tile_size`, and
+  `influence_column_tile_size`;
+- `feature_row_retention = full_file | none_recompute`;
+- independent feature-row cache bytes, after-write page dropping, after-read
+  page dropping, storage root, and preallocation controls.
+
+Legacy mixed knobs must have a documented deterministic mapping. An explicit
+new value that conflicts with its legacy source is a pure preflight error. A
+provider that cannot separate a requested logical and physical control reports
+that capability limitation; it must not silently reinterpret the control.
+
 ### D2. Phase-1 peak-VRAM mechanisms
 
-Add explicit ways to reduce the NNSight forward trace-capacity peak: split or
-rebuild trace sessions, narrower source/feature/logit trace families, and
-fallback plans that trade extra forward work for a lower peak. These are
-physical mechanisms, not permission to change logical batches or refresh
-semantics.
+Make NNSight session capacity explicit and independent of logical batch sizes.
+Every backward microbatch must be no larger than the session capacity. Phase 3
+partitions ordered logit work into physical microbatches. Phase 4 keeps the
+logical/reference frontier batch and refresh cadence, but may partition that
+batch into physical microbatches; it commits rows in canonical order and never
+refreshes between subdivisions of one reference batch.
+
+Refactor row computation so temporary buffers use active lanes rather than the
+cached session width. Prefer one reusable bounded session initially. Add
+separate per-phase rebuild controls only if that cannot satisfy both phases;
+any rebuild reports extra forwards, capacity, and observed forward peak.
 
 ### D3. Bounded Phase-3/4 mechanisms
 
@@ -537,10 +584,21 @@ semantics.
 - Keep scheduler, row executor, reduction, and storage variants behind the
   corresponding operation boundary rather than multiplying branches in the
   orchestrator.
-- Put row storage behind full file-backed, tiled/windowed, and
-  recompute-on-demand implementations as they become real and parity-proven.
-- Add streaming/tiled influence, refresh, frontier, and dense-operator paths so
-  large active-feature universes do not require full dense materialization.
+- Treat the existing file-backed `K x N` memmap as the full-retention reference.
+  Page-cache controls may bound RSS, but this backend does not satisfy the
+  no-full-retention gate because its logical/file shape remains `K x N`.
+- Add canonical column-tiled row production and a two-dimensional influence
+  solver with a `(row_start, row_end, column_start, column_end)` reader. Bound
+  dense workspace by configured row and column tiles while preserving canonical
+  row/column and accumulation order.
+- Add a `RowRecipeLedger` no-retention backend. It retains source recipes,
+  row-to-node order, denominator/fingerprint metadata, and bounded optional
+  cache state, but not full feature rows. Influence refreshes replay requested
+  row/column tiles; finalization replays selected rows and projects directly to
+  final selected feature and non-feature columns.
+- Reject bounded execution before load when a provider cannot produce ordered
+  exact row tiles or deterministic replay. Never silently fall back to a full
+  row allocation or full retained file.
 - Generalize transfer overlap into explicit per-phase prefetch controls.
 - Keep full materialization as the fast path for small fitting problems.
 - Report working-set sizes and actual VRAM/host/file/disk use for each path.
@@ -558,15 +616,33 @@ on internal annotation completeness.
 
 ### Phase D validation gate — mechanism parity
 
-From an immutable snapshot, validate 1B CLT and 1B PLT on Granite:
+From one immutable project+sibling snapshot, run `361_base` for both 1B CLT
+medium and 1B PLT small on Granite H200:
+
+| Case | Session and microbatches | Dense path | Required result |
+|---|---|---|---|
+| A | legacy-derived values | current full-file backend | reproduce the Phase C reference |
+| B | explicit values equal to legacy | full-file backend | reference parity and correct split fingerprints |
+| C | reduced session with split Phase 3/4 | full-file backend | unchanged logical checkpoints/output and lower Phase-1 peak |
+| D | same reduced session | 2D column-tiled full retention | no full-width transient and parity with C |
+| E | same reduced session | `none_recompute` replay | no `K x N` file/allocation and parity with C |
+
+Also require synthetic very-large-shape tests proving D/E never attempt a
+`K x N` tensor allocation and E never creates a `K x N` file, plus
+fault-injected tile/replay interruption tests. Record semantic/execution
+fingerprints, row/denominator/frontier hashes, compact artifact hash, per-phase
+CUDA peaks, MaxRSS, maximum tile dimensions, apparent and allocated file bytes,
+replay/forward/backward counts, and walltime.
 
 - reference/default explicit configuration still matches the Phase C baseline;
 - explicit selectors force each implemented mechanism instead of silently
   taking the fast path; envelope-driven selection remains disabled;
-- Phase-1 reduced-peak execution matches the reference and measurably lowers
-  peak allocated/reserved VRAM, or survives a cap the reference cannot meet;
-- at least one bounded Phase-3/4 path avoids its corresponding full dense
-  allocation while matching the full path;
+- Phase-1 reduced-capacity execution matches the reference and lowers both peak
+  allocated and reserved VRAM, or passes a predeclared cap at least 10% below a
+  repeated reference peak while the reference fails that cap;
+- column-tiled execution bounds every dense transient, and no-retention replay
+  avoids both full `K x N` allocation and file creation while matching the full
+  path;
 - semantic fingerprints remain fixed while execution fingerprints distinguish
   mechanisms;
 - injected cleanup failures preserve the primary exception, attempt every
@@ -575,8 +651,12 @@ From an immutable snapshot, validate 1B CLT and 1B PLT on Granite:
 - `trace_one`, mixed-shape `trace_batch`, and `open_session` pass sequence,
   explicit reuse, cleanup, cancellation, and failure-recovery tests.
 
-Phase E does not start until new mechanisms are stable, directly controllable,
-and parity-proven.
+Bitwise compact parity is the initial target. If deterministic replay or a
+canonical tiled reduction cannot be bitwise-identical, Phase D stops for an
+explicit scientific decision and records row/frontier/graph drift; it does not
+silently weaken the gate. Phase E does not start until both required mechanisms
+are stable, directly controllable, and parity-proven under the accepted
+criterion.
 
 ## Phase E — Staged governor integration
 

@@ -119,6 +119,12 @@ changes, not structural-parity acceptance criteria.
 
 After C passes:
 
+Phase D is the final mechanism/knob pass before the governor. It must solve two
+specific scaling failures: the Phase-1 NNSight session peak must be decoupled
+from logical later-phase throughput, and the extreme-case Phase-3/4 path must
+not retain or materialize a full `K x N` dense structure. `O(N)` influence,
+visited, and ranking vectors remain an explicit lower bound.
+
 1. harden the lifecycle boundary before adding mechanisms: run row-store,
    context, terminal-event, and sink cleanup independently; preserve the primary
    tracing exception; report cleanup failures without masking it; raise an
@@ -131,20 +137,28 @@ After C passes:
    batch, commit rows, update frontier, and finalize. Keep one explicit runtime
    state object and avoid classes or wrappers that add ceremony without owning
    an invariant;
-4. implement explicit Phase-1 trace-capacity peak-reduction mechanisms;
-5. implement full/tiled/recompute row-store paths and bounded Phase-3/4 dense
-   operators so large active universes avoid mandatory full materialization;
+4. introduce direct NNSight session-capacity, Phase-3 physical-microbatch, and
+   Phase-4 physical-microbatch controls. Subdivide logical work without changing
+   row order or refresh checkpoints, and size temporary buffers from active
+   lanes rather than cached session width;
+5. keep the current file-backed `K x N` store as the full-retention reference;
+   add canonical column-tiled row production, a two-dimensional influence
+   solver, and a `RowRecipeLedger` no-retention replay path that projects final
+   selected rows without creating a `K x N` tensor or file;
 6. expose mechanisms directly through the sibling runtime API while the
    governor remains advisory.
 
 Typing is not a standalone deliverable. Strengthen protocols and concrete types
 only at boundaries already touched by mechanism or ownership work.
 
-**D gate:** immutable `361_base` 1B CLT/PLT runs must prove the default path
-still matches C; explicit selectors must force each implemented mechanism;
-Phase 1 must measurably lower peak allocated/reserved VRAM or survive a cap the
-reference cannot; at least one bounded Phase-3/4 path must avoid its full dense
-allocation while matching output; and only the execution fingerprint changes.
+**D gate:** immutable `361_base` 1B CLT/PLT runs cover legacy reference,
+explicit-equal controls, reduced session plus split Phase 3/4, 2D tiled full
+retention, and no-retention replay. The reduced session must lower allocated and
+reserved Phase-1 peaks or survive a predeclared cap at least 10% below a
+repeated reference peak. Tiled execution must prove bounded transient shapes;
+replay must prove no `K x N` tensor or file. Both preserve logical checkpoints
+and compact output under the accepted parity criterion. Synthetic large-shape
+tests establish allocation scaling independently of the small 1B fixture.
 Injected failures must prove all cleanup attempts occur, primary exception
 identity is preserved, cleanup-only failures are grouped, and terminal
 telemetry closes whenever possible.

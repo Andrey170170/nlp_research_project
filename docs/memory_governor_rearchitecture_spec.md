@@ -1,7 +1,7 @@
 # Memory Governor and Library Rearchitecture Spec
 
-Status: Phase B implemented; Phase C structural implementation complete at sibling `0d65fba`; immutable Granite gate pending
-Last updated: 2026-07-10
+Status: Phase B implemented; Phase C Granite gate passed; Phase D active
+Last updated: 2026-07-11
 
 This is the "how it is supposed to be" document for the next major rework of
 the sibling library `../circuit-tracer_chunked` and its project-side harness
@@ -239,6 +239,14 @@ They are never a semantic gate: a large measured margin does not authorize a
 different reduction order or refresh checkpoint, and low free memory does not
 authorize a semantics change.
 
+Phase D freezes direct physical controls for NNSight session capacity, Phase-3
+and Phase-4 compute microbatches, per-phase replay windows, decoder contraction
+row tiles, row-production column tiles, influence row/column tiles, row
+retention, and each file-cache behavior. Logical Phase-4 reference batches and
+refresh checkpoints remain independent of physical backward-call boundaries.
+Combined legacy values translate into both sides deterministically; explicit
+old/new conflicts are rejected before a lifecycle or model load begins.
+
 ### 4.2 Fidelity modes
 
 - **`strict` (default):** only semantics-preserving physical plans and mechanism
@@ -360,6 +368,15 @@ storage for compute entirely. Tiling and recompute are output-invariant
 (performance caste). **Row truncation/compression at write time is not** —
 it changes what Phase 4 sees and is excluded from the governor's authority
 (scenario-level decision only).
+
+A tiled store that retains every tile still has worst-case `K x N` disk demand
+and is therefore only a bounded-RSS/full-retention rung. The extreme-case rung
+uses canonical column-tiled row production plus a recipe ledger and
+deterministic replay. It retains the unavoidable `O(N)` influence/ranking state
+and compact selected output, but never creates a full `K x N` tensor or file.
+Providers explicitly declare ordered tile-production and replay capabilities;
+unsupported bounded requests are rejected rather than falling back to full
+retention.
 
 Precedent that the slow rungs are workable: vLLM's swap-vs-recompute pair
 for KV blocks under preemption; MegaTrain (arXiv 2604.05091) runs
@@ -580,8 +597,9 @@ the report is regenerated, and a reviewed record is shipped.
 
 ### Step 5 / Phase C — Behavior-preserving sibling cleanup
 
-Implemented structurally at sibling `phase-b-governor-contract@0d65fba`.
-Only the immutable Granite gate below remains before Phase D.
+Implemented structurally at sibling `phase-b-governor-contract@0d65fba` and
+closed by the immutable Granite jobs `1613108`/`1613109`. Phase D0 lifecycle
+integrity subsequently landed at sibling `20225ac`.
 
 Mechanically decompose the attribution mega-module and supporting transcoder
 helpers. Extract observability as deep typed modules so tracing logic no longer
@@ -603,8 +621,10 @@ exception preservation, cleanup-only `ExceptionGroup` reporting, preflight
 validation before sink creation, explicit API-level preflight rejection, and
 injected failure coverage. Then split legacy logical semantics from physical
 execution controls with a
-versioned compatibility translator. Implement explicit Phase-1 peak-reduction
-mechanisms and bounded Phase-3/4 row-store/dense-operator paths. Introduce the
+versioned compatibility translator. Implement direct NNSight session-capacity
+and per-phase physical-microbatch controls, then canonical column-tiled row
+production, a two-dimensional influence solver, and no-retention exact replay.
+Introduce the
 sibling runtime APIs over these explicit mechanisms while keeping the Phase B
 governor advisory.
 
