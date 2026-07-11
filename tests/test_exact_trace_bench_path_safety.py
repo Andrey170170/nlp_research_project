@@ -190,6 +190,20 @@ def test_launch_plan_cli_defaults_immutable_and_supports_live_alias(tmp_path: Pa
         ]
     )
     assert immutable.immutable_workspace is True
+    assert immutable.mem is None
+
+    memory_override = parser.parse_args(
+        [
+            "launch-plan",
+            "--cluster",
+            "granite",
+            "--scenarios-file",
+            str(tmp_path / "scenarios.json"),
+            "--mem",
+            "600G",
+        ]
+    )
+    assert memory_override.mem == "600G"
 
     live = parser.parse_args(
         [

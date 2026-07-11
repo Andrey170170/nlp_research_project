@@ -518,6 +518,7 @@ def _cmd_launch_plan(args: argparse.Namespace) -> None:
         workspace_label=args.workspace_label,
         live_workspace_rationale=args.live_workspace_rationale,
         walltime=args.walltime,
+        mem=args.mem,
         baseline_registry=args.baseline_registry,
         fail_on_baseline_missing=args.fail_on_baseline_missing,
         fail_on_validation_fail=args.fail_on_validation_fail,
@@ -2565,6 +2566,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     launch_plan.add_argument("--workspace-label", default=None)
     launch_plan.add_argument("--walltime", default=None)
+    launch_plan.add_argument(
+        "--mem",
+        default=None,
+        help="Optional sbatch memory override, e.g. 600G",
+    )
     launch_plan.add_argument(
         "--baseline-registry",
         type=Path,

@@ -174,6 +174,34 @@ def test_launch_renderers_default_immutable_and_require_live_rationale(
         raise AssertionError("Expected live launch plan without rationale to fail")
 
 
+def test_launch_plan_supports_sbatch_memory_override(tmp_path: Path) -> None:
+    scenarios_file = tmp_path / "scenarios.json"
+    scenarios_file.write_text(
+        json.dumps(
+            {
+                "metadata": {"resource_profile": "standard"},
+                "scenarios": [{"name": "smoke"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    plan = render_launch_plan(
+        cluster="granite",
+        scenarios_file=scenarios_file,
+        output_root=tmp_path / "runs",
+        run_id="memory-override",
+        immutable_workspace=False,
+        live_workspace_rationale="test memory override rendering",
+        walltime="01:00:00",
+        mem="600G",
+    )
+
+    assert plan["mem"] == "600G"
+    assert "--time=01:00:00" in plan["sbatch_argv"]
+    assert "--mem=600G" in plan["sbatch_argv"]
+
+
 def test_build_baseline_registry_from_wave0_roots(tmp_path: Path) -> None:
     run_root = tmp_path / "ascend" / "fast" / "wave0"
     scenario_root = run_root / "ascend_fast_wave0_r1_828_base_b128_c2048_cache0g"

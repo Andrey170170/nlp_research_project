@@ -350,6 +350,7 @@ def render_launch_plan(
     live_workspace_rationale: str | None = None,
     _pending_snapshot_freeze: bool = False,
     walltime: str | None = None,
+    mem: str | None = None,
     baseline_registry: Path | None = None,
     fail_on_baseline_missing: bool = False,
     fail_on_validation_fail: bool = False,
@@ -502,6 +503,7 @@ def render_launch_plan(
     command_parts = [
         "sbatch",
         *([f"--time={walltime}"] if walltime else []),
+        *([f"--mem={mem}"] if mem else []),
         f"--array={array_range}",
         f"--export={export_blob}",
         str(launch_script_path),
@@ -520,6 +522,7 @@ def render_launch_plan(
         "run_name": resolved_run_name,
         "run_description": resolved_run_description,
         "run_goal": resolved_run_goal,
+        "mem": mem,
         "baseline_registry": None
         if baseline_registry is None
         else str(baseline_registry.resolve()),
