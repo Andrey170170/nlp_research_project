@@ -61,6 +61,7 @@
     "phase0_window_max_prefix_policy": "max_target_position",
     "phase0_window_reference_checks": "off",
     "cross_cluster_debug": false,
+    "incremental_telemetry_jsonl": true,
     "telemetry_max_events": null,
     "max_steps": 1,
     "method": "exact"
