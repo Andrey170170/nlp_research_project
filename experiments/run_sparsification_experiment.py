@@ -1135,6 +1135,12 @@ def main() -> None:
     ):
         write_csv(output_root / "summary.csv", scenario_metric_rows)
     print(f"\nSummary written to {summary_path}")
+    failed_results = [result for result in results if result["status"] != "success"]
+    if failed_results:
+        failed = ", ".join(
+            f"{result['name']} ({result['status']})" for result in failed_results
+        )
+        raise SystemExit(f"Selected scenario(s) did not succeed: {failed}")
 
 
 if __name__ == "__main__":

@@ -1576,6 +1576,15 @@ def trace_completion_compact_chunked(
     row_store_temp_root_policy: str = "default",
     row_store_temp_root: str | None = None,
     row_store_preallocate: bool = True,
+    nnsight_session_capacity: int | None = None,
+    phase3_compute_microbatch_max_rows: int | None = None,
+    phase4_compute_microbatch_max_rows: int | None = None,
+    full_retention_backend: str = "full_file",
+    feature_row_column_tile_size: int = 2048,
+    influence_row_tile_size: int = 4096,
+    influence_column_tile_size: int = 2048,
+    feature_row_retention: str = "full_file",
+    replay_tile_cache_bytes: int | None = None,
     prompt_token_count: int | None = None,
     prompt_source: str = "gsm8k",
     fixture_name: str | None = None,
@@ -1781,6 +1790,15 @@ def trace_completion_compact_chunked(
             row_store_temp_root_policy=row_store_temp_root_policy,
             row_store_temp_root=row_store_temp_root,
             row_store_preallocate=row_store_preallocate,
+            nnsight_session_capacity=nnsight_session_capacity,
+            phase3_compute_microbatch_max_rows=phase3_compute_microbatch_max_rows,
+            phase4_compute_microbatch_max_rows=phase4_compute_microbatch_max_rows,
+            full_retention_backend=full_retention_backend,
+            feature_row_column_tile_size=feature_row_column_tile_size,
+            influence_row_tile_size=influence_row_tile_size,
+            influence_column_tile_size=influence_column_tile_size,
+            feature_row_retention=feature_row_retention,
+            replay_tile_cache_bytes=replay_tile_cache_bytes,
         )
         attribution_seconds = time.perf_counter() - attribution_start
 
@@ -4056,6 +4074,21 @@ def build_sparsification_config(args: argparse.Namespace):
     )
 
 
+def phase_d_controls_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    """Return the explicit Phase-D controls passed through the trace wrapper."""
+    return {
+        "nnsight_session_capacity": args.nnsight_session_capacity,
+        "phase3_compute_microbatch_max_rows": args.phase3_compute_microbatch_max_rows,
+        "phase4_compute_microbatch_max_rows": args.phase4_compute_microbatch_max_rows,
+        "full_retention_backend": args.full_retention_backend,
+        "feature_row_column_tile_size": args.feature_row_column_tile_size,
+        "influence_row_tile_size": args.influence_row_tile_size,
+        "influence_column_tile_size": args.influence_column_tile_size,
+        "feature_row_retention": args.feature_row_retention,
+        "replay_tile_cache_bytes": args.replay_tile_cache_bytes,
+    }
+
+
 def run_pipeline(args: argparse.Namespace) -> None:
     base.validate_attribution_batch_sizes(
         args.attribution_batch_size,
@@ -4641,15 +4674,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
                         "row_store_temp_root_policy": args.row_store_temp_root_policy,
                         "row_store_temp_root": args.row_store_temp_root,
                         "row_store_preallocate": args.row_store_preallocate,
-                        "nnsight_session_capacity": args.nnsight_session_capacity,
-                        "phase3_compute_microbatch_max_rows": args.phase3_compute_microbatch_max_rows,
-                        "phase4_compute_microbatch_max_rows": args.phase4_compute_microbatch_max_rows,
-                        "full_retention_backend": args.full_retention_backend,
-                        "feature_row_column_tile_size": args.feature_row_column_tile_size,
-                        "influence_row_tile_size": args.influence_row_tile_size,
-                        "influence_column_tile_size": args.influence_column_tile_size,
-                        "feature_row_retention": args.feature_row_retention,
-                        "replay_tile_cache_bytes": args.replay_tile_cache_bytes,
+                        **phase_d_controls_from_args(args),
                     }
                     if not args.save_raw
                     else {}
