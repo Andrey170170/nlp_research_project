@@ -168,10 +168,17 @@ telemetry closes whenever possible.
 Before E, also validate `trace_one`, mixed-shape `trace_batch`, and
 `open_session` sequence/reuse/cleanup/cancellation/failure behavior.
 
-Current gate state: A--C completed for both 1B CLT and PLT. Replacement D/E
-jobs `1619423`, `1619424`, `1619425`, and `1619426` are the remaining
-adjudication set. C2 execution waits for their terminal summaries, artifacts,
-telemetry, and bounded-storage evidence, not merely Slurm state.
+Current gate state: A--C completed for both 1B CLT and PLT. CLT D completed
+with exact feature/edge support and weighted-edge Jaccard `0.9999999756` versus
+A. CLT E completed from sibling `37c2a0f` in 1,339 seconds with exact
+feature/edge support, weighted-edge Jaccard `0.9999999795`, matching 68,025-event
+live/final telemetry, terminal `attribute.done`, and no retained `K x N` store.
+The final PLT D/E gate is immutable array `1621465_3-4`, snapshot
+`workspace_20260712_175623_phase-d-plt-de-20260712-11`, project `7c14e9b`, and
+sibling `76954ce`. It uses 16,384-column bounded production tiles; E reuses
+current-microbatch denominator tiles and a 4 GiB overlap-aware bounded replay
+cache. C2 execution waits for both PLT summaries, artifacts, telemetry,
+bounded-storage evidence, and compact comparisons, not merely Slurm state.
 
 ## Phase C2 - Cleanup Strikes Again
 
