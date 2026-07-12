@@ -88,6 +88,12 @@ def test_phase_d_validation_configs_and_forwarding(config_path: Path) -> None:
     assert tiled["full_retention_backend"] == "column_tiled_v1"
     assert tiled["row_store_preallocate"] is False
     assert recompute["feature_row_retention"] == "none_recompute"
+    if "plt" in metadata["baseline_variant"]:
+        assert tiled["feature_row_column_tile_size"] == 16384
+        assert recompute["feature_row_column_tile_size"] == 16384
+        assert recompute["replay_tile_cache_bytes"] == 4 * 1024**3
+        assert tiled["timeout_minutes"] == 300
+        assert recompute["timeout_minutes"] == 300
     for scenario in (tiled, recompute):
         assert scenario["phase3_gradient_replay_mode"] == "disabled"
         assert scenario["phase3_row_replay_mode"] == "disabled"
