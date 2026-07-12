@@ -1,10 +1,12 @@
 # Architecture docs index
 
 Status: Current-state code maps
-Last updated: 2026-07-01
+Last updated: 2026-07-12
 
 These pages describe the current workspace and code layout. They are
 descriptive references, not target architecture rules or implementation plans.
+The normative target for the upcoming tracing rewrite is
+`../tracing_runtime_rewrite_spec.md`.
 
 ## Maps
 

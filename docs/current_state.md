@@ -1,7 +1,7 @@
 # Current state overview
 
 Status: Current-state inventory
-Last updated: 2026-07-10
+Last updated: 2026-07-12
 
 This document is a descriptive workspace map, not a target architecture, rule
 set, or debt plan.
@@ -35,7 +35,8 @@ The current exact-trace workflow depends on both checkouts being present.
 | `docs/README.md` | Documentation index |
 | `docs/harness.md` | Current exact-bench harness overview |
 | `docs/memory_governor_rearchitecture_spec.md` | Current sibling governor/runtime target contract |
-| `plans/2026-07-03_governor_rearch.md` | Active gated Phase B-F execution plan |
+| `docs/tracing_runtime_rewrite_spec.md` | Normative Phase C2 tracing-runtime target |
+| `plans/2026-07-03_governor_rearch.md` | Active gated Phase B-D, C2, E-F plan |
 | `docs/metric_calibration.md` | Metric calibration workflow |
 | `scripts/README.md` | Script entry-point notes |
 | `experiments/logs/README.md` | Structured experiment log guidance |
@@ -47,8 +48,9 @@ The current exact-trace workflow depends on both checkouts being present.
 |---|---|
 | `docs/current_project_roadmap.md` | Active scratch roadmap |
 | `docs/memory_governor_rearchitecture_spec.md` | Governor/runtime target contract |
+| `docs/tracing_runtime_rewrite_spec.md` | Phase C2 target architecture and work packages |
 | `docs/knob_api_taxonomy.md` | Knob/API taxonomy |
-| `plans/2026-07-03_governor_rearch.md` | Active gated Phase B-F execution plan |
+| `plans/2026-07-03_governor_rearch.md` | Active gated Phase B-D, C2, E-F execution plan |
 
 ## Reference and deferred designs
 
@@ -73,10 +75,11 @@ The current exact-trace workflow depends on both checkouts being present.
   operational classes rather than those legacy scenario tiers.
 - Phase A is closed for implementation purposes. Phase B governor contracts and
   the pure resolver are complete at sibling `phase-b-governor-contract@0ce3f96`.
-  Phase C structural runtime/observability cleanup is complete at sibling
-  `phase-b-governor-contract@0d65fba` and awaits its immutable Granite gate.
-  Phase D explicit mechanisms follow only after that gate; Phase E remains
-  staged governor integration, followed by Phase F harness migration.
+  Phase C1 structural runtime/observability extraction and its Granite gate are
+  complete. Phase D mechanism validation is in flight. Phase C2 then replaces
+  the complete tracing path atomically; execution waits for D/E artifact
+  adjudication. Phase E remains staged governor integration and requires both D
+  and C2 gates, followed by Phase F governed harness consolidation.
 - Descriptive architecture details now live under `docs/architecture/`.
 - Current baseline decisions stay in `EXPERIMENTS.md`; active work stays in the owning spec.
 - Reports are not treated as source-of-truth unless a current doc explicitly cites them.

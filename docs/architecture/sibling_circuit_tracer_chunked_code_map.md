@@ -1,7 +1,11 @@
 # Sibling `circuit_tracer` code map
 
 Status: Current-state map
-Last updated: 2026-07-10
+Last updated: 2026-07-12
+
+This is the pre-C2 implementation map. It is not target integration guidance.
+Phase C2 deletes the current `attribute_nnsight`/flat-argument path and replaces
+the complete trace flow according to `../tracing_runtime_rewrite_spec.md`.
 
 ## Package and CLI
 
@@ -111,9 +115,9 @@ GPU regression scripts under `scripts/slurm/` are SLURM-only.
 
 ## Current-state caveats for later debt audit
 
-- `attribute_nnsight.py` remains the public compatibility and
-  lifecycle-orchestration layer; phase algorithms and telemetry mechanics are
-  decomposed into deep modules.
+- `attribute_nnsight.py` remains a 2,254-line aggregation and compatibility
+  layer despite the first decomposition. Phase C2 treats this as unresolved
+  architecture debt, not a stable boundary.
 - `attribute()` exposes a wide knob surface, including NNSight-only and legacy
   compatibility settings.
 - `Graph.logit_tokens` and some `Graph.from_pt()` tensor formats remain as

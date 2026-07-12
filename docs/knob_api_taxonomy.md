@@ -1,7 +1,7 @@
 # Exact-trace knob/API taxonomy map
 
 Status: Phase B requirements contract complete; governor v0 implemented
-Last updated: 2026-07-10
+Last updated: 2026-07-12
 
 This document maps the exact-trace knobs that currently exist across the project
 repo and sibling `../circuit-tracer_chunked` library. It is intentionally detailed:
@@ -16,15 +16,15 @@ Scope of this pass:
 - debug/replay artifact surfaces that look like knobs but are actually schemas.
 
 The first sections are the binding Phase B requirements for governor v0. The
-later surface inventory remains the compatibility map for Phase D migration;
-its cleanup actions are follow-up work, not blockers for the pure resolver.
+later surface inventory is a pre-C2 evidence/deletion map, not a compatibility
+contract. Phase C2 replaces the old Python surfaces atomically.
 
 Implementation record: sibling `phase-b-governor-contract@0ce3f96`. The
 package-owned trusted validation-evidence registry is intentionally empty, so
 caller-created records cannot self-authorize `validated_relaxed`. Recorded
 Granite profiles are resource calibration only and resolver plans remain
-advisory through Phase C cleanup and Phase D mechanism validation. Phase E is
-the first runtime integration.
+advisory through Phase D mechanism validation and the Phase C2 runtime rewrite.
+Phase E is the first runtime integration.
 
 Governor rework note (2026-07-06): the Phase B extension must classify each knob
 by **tier**, **bytes-cost formula**, **caste**, **validated-under provenance**,
@@ -82,9 +82,9 @@ be split during the sibling-library restructure:
 | `decoder_chunk_size` | deterministic decoder reduction tile and accumulation order | decoder fetch/cache chunk and prefetch granularity |
 | `feature_batch_size` plus refresh interval | deterministic frontier refresh checkpoints expressed in logical work units | compute microbatch size used between checkpoints |
 
-Compatibility adapters may continue accepting the current names, but every
-resolved plan must report both logical and physical values plus separate
-`semantic_fingerprint` and `execution_fingerprint` values.
+Phase D may temporarily accept the current names to validate mechanisms. Phase
+C2 deletes them. The canonical request reports logical and physical values plus
+separate `semantic_fingerprint` and `execution_fingerprint` values.
 
 ## Phase B governor requirements
 
@@ -119,10 +119,10 @@ have no governor-owned byte formula: they are fingerprinted request constraints.
   semantic fingerprint. The resolver consumes it but never invents it.
 - `governor-derived physical`: may be selected from resource conditions only
   after the corresponding Phase D mechanism proves fixed-semantics parity.
-- `compatibility-mixed`: one legacy field currently controls both logical and
-  physical behavior. Phase B fingerprints the logical interpretation and may
-  only plan a separately named physical field. Phase D translates the legacy
-  field deterministically into both.
+- `compatibility-mixed`: historical inventory classification for a legacy field
+  that controls logical and physical behavior. Phase B fingerprints the logical
+  interpretation and may plan only a separately named physical field. Phase D
+  uses temporary mappings for validation; C2 removes the mixed field and map.
 - `telemetry/artifact/debug`: never a governor degradation lever. Its bounded
   overhead may be reported, but memory pressure cannot disable requested
   provenance or change a debug/replay operation.
@@ -184,8 +184,8 @@ have no governor-owned byte formula: they are fingerprinted request constraints.
 
 All donor capture/replay paths and modes, cross-cluster debug, semantic
 descriptor capture/shape, scheduler debug/detail, anomaly debug, telemetry caps,
-`compact_output`, and environment compatibility overrides remain in the legacy
-inventory below. They are scenario/operator-owned telemetry, artifact, replay,
+`compact_output`, and environment overrides remain in the pre-C2 inventory
+below. They are scenario/operator-owned telemetry, artifact, replay,
 or backend-routing fields. Governor v0 must not enable, disable, resize, or
 reinterpret them from resource pressure. Requested bounded telemetry overhead
 may appear as a host-rigid estimate once a calibrated event-size model exists.
@@ -591,10 +591,12 @@ Important behavior:
 - The wrapper does **not** expose Track-A replay/capture parameters. Those exist
   on the NNSight backend and project CLI, not on the general public wrapper.
 
-### `circuit_tracer/attribution/attribute_nnsight.py::attribute(...)`
+### Pre-C2 `circuit_tracer/attribution/attribute_nnsight.py::attribute(...)`
 
-This is the broadest library API and still contains both the old precision knob
-and the new canonical precision knob.
+This is historical inventory for deletion in C2, not a target API. It is the
+broadest current library surface and contains both old and canonical precision
+knobs. C2 moves the canonical precision contract into meaningful request/plan
+objects and deletes this function and its compatibility precision plumbing.
 
 Precision-related parameters:
 
@@ -919,26 +921,24 @@ Example categories:
 - `DEPRECATED_COMPAT_KEYS`,
 - `PRIVATE_INTERNAL_KEYS`.
 
-Do not remove the wide bridge in `run_sparsification_experiment.py`; that runner
-should remain capable of executing explicit advanced sweep/debug scenario files.
-The risk is accidental default drift or unlabeled historical configs, not the
-existence of advanced public knobs.
+Phase C2 removes the wide bridge in `run_sparsification_experiment.py`. Advanced
+sweep/debug scenarios remain expressible through typed semantics, execution,
+observability, and evidence objects; they do not justify preserving an untyped
+flat-kwargs path.
 
 ### P3.3 Deprecate direct `internal_precision`
 
-Sibling library cleanup should make `exact_trace_internal_dtype` the public
-precision contract and push `internal_precision` down to compatibility plumbing.
+The C2 sibling runtime makes exact-trace dtype part of `TraceSemantics` and
+deletes direct `internal_precision` compatibility plumbing.
 
 Implementation order:
 
-1. Update docstrings to say `internal_precision` is compatibility-only and, where
-   possible, derived from `exact_trace_internal_dtype` for normal callers.
-2. Add tests asserting public `attribute(...)` default is `fp32` and project
-   wrapper passes derived backend precision.
-3. Deprecate direct NNSight `internal_precision` immediately. Preferred behavior:
-   direct callers should use `exact_trace_internal_dtype`; `internal_precision`
-   should either be derived, warn on direct use, or become private compatibility
-   plumbing during the library cleanup.
+1. Map both old precision fields to the canonical semantic dtype during the
+   one-time caller migration.
+2. Test canonical `trace_one` requests for the validated `fp32` baseline and
+   reject conflicting precision declarations at request validation.
+3. Delete the direct NNSight precision parameter, forwarding tests, and old
+   wrapper once project and sibling callers use the canonical request.
 
 ### P3.4 Remove environment debug overrides and classify hidden constants
 

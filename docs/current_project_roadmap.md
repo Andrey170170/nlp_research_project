@@ -1,7 +1,7 @@
 # Current Project Roadmap
 
 Status: Current scratch roadmap
-Last updated: 2026-07-10
+Last updated: 2026-07-12
 
 ## Active Priority
 
@@ -69,17 +69,18 @@ Completion record (2026-07-10):
 - 38 focused governor tests and 51 existing telemetry/provider regressions pass;
 - Ruff and uv-based Pyright pass.
 
-Resolver outputs remain advisory through Phase C validation and Phase D mechanism
-work. Phase E is the first phase allowed to consume plans at runtime. The
+Resolver outputs remain advisory through Phase D mechanism validation and the
+Phase C2 runtime rewrite. Phase E is the first phase allowed to consume plans at
+runtime. The
 trusted validation-evidence registry is intentionally empty until transferred
 A4 artifacts are reproduced and reviewed.
 
-## Phase C - Structural Implementation Complete; Granite Gate Pending
+## Phase C1 - First Structural Pass Complete
 
 Completed at sibling `phase-b-governor-contract@0d65fba`:
 
-1. `attribute_nnsight.py` is the public compatibility and lifecycle-orchestration
-   layer at roughly 2k lines; typed phase 0-5 execution lives under
+1. `attribute_nnsight.py` remained a public compatibility and
+   lifecycle-orchestration layer at roughly 2k lines; typed phase 0-5 execution lives under
    `attribution/nnsight/phases/`;
 2. policies, replay, row-store, prefix, numerics, and phase support are deep
    NNSight modules;
@@ -106,7 +107,8 @@ both sinks closed with zero errors and ended at `attribute.done`. PLT remained
 within the timing gate. CLT reached essentially all of its `32G` request and
 slowed to 240.72s; this is recorded as a memory-headroom allocation outlier by
 explicit adjudication. Future 1B CLT validation jobs must request at least
-`64G`. Phase D may begin.
+`64G`. This gate proves the first extraction was behavior-preserving; it does
+not certify the resulting architecture as readable or complete.
 
 Non-blocking lifecycle debt retained after review: isolate row-store/context/
 sink cleanup failures so one cleanup cannot mask the primary exception, and
@@ -131,7 +133,8 @@ visited, and ranking vectors remain an explicit lower bound.
    `ExceptionGroup` only when cleanup is the sole failure; move pure request
    validation before observer/sink creation;
 2. split logical decoder reduction and frontier-refresh semantics from physical
-   fetch/cache and microbatch controls, with deterministic legacy translation;
+   fetch/cache and microbatch controls. Temporary legacy translation exists only
+   to validate Phase D and is deleted in C2;
 3. as Phase-4 mechanisms are touched, organize the loop around cohesive
    operations such as initialize frontier, plan refresh, plan batch, execute
    batch, commit rows, update frontier, and finalize. Keep one explicit runtime
@@ -165,9 +168,52 @@ telemetry closes whenever possible.
 Before E, also validate `trace_one`, mixed-shape `trace_batch`, and
 `open_session` sequence/reuse/cleanup/cancellation/failure behavior.
 
+Current gate state: A--C completed for both 1B CLT and PLT. Replacement D/E
+jobs `1619423`, `1619424`, `1619425`, and `1619426` are the remaining
+adjudication set. C2 execution waits for their terminal summaries, artifacts,
+telemetry, and bounded-storage evidence, not merely Slurm state.
+
+## Phase C2 - Cleanup Strikes Again
+
+Phase C2 is planned before Phase E. Its normative architecture and work
+packages live in `docs/tracing_runtime_rewrite_spec.md`.
+
+This is an atomic cross-repo tracing-path replacement:
+
+1. define coherent domain objects for attribution intent, semantics, resources,
+   resolved plans, active features, forward sessions, row storage, seed
+   attributions, frontier expansion, graph components, and results;
+2. build one canonical `trace_one` / `trace_batch` / `open_session` runtime for
+   all backends;
+3. separate planning/admission, execution, mechanisms, lifecycle,
+   observability, and project artifact ownership with enforceable dependency
+   direction;
+4. rewrite the top-level runner so its visible body is the tracing algorithm,
+   not hundreds of lines of resolution, validation, telemetry assembly, and
+   cleanup;
+5. audit the entire path, including `context_nnsight`, replacement-model setup,
+   transcoder attribution methods, project `trace_pipeline_chunked.py`, the
+   scenario command builder, and trace CLI registration. Moving code behind an
+   import is not sufficient;
+6. migrate sibling and project callers/tests atomically, then delete
+   `attribute_nnsight.py`, generic flat `attribute(...)` routing,
+   `_attribute_impl`, legacy translators/kwargs, private re-export namespaces,
+   and obsolete project tracing paths. No compatibility window is required.
+
+Meaningful objects must explain from their name why their fields travel
+together, enforce useful invariants, and be owned by a subsystem. A renamed bag
+of old arguments does not satisfy C2. Functions may take several direct
+arguments when those arguments are honest domain concepts or capabilities.
+
+**C2 gate:** login-safe sibling/project/architecture/failure tests pass; stale
+imports of removed paths are absent; the project invokes the canonical sibling
+API directly; immutable `361_base` 1B CLT/PLT canonical full-retention and
+bounded runs match pinned pre-C2 graph, fingerprint, lifecycle, and accepted
+resource criteria. Phase E does not begin until D and C2 both close.
+
 ## Phase E - Staged Governor Integration
 
-Only after D mechanisms pass parity:
+Only after D mechanisms and the C2 canonical runtime pass their gates:
 
 1. apply Phase B pre-load admission;
 2. measure permanent model VRAM and representative encoder/decoder costs after
@@ -177,21 +223,19 @@ Only after D mechanisms pass parity:
 5. compare predicted and actual resources and walltime for recalibration.
 
 **E gate:** `361_base` 1B CLT/PLT automatic plans must match equivalent explicit
-D runs, constrained envelopes must select expected rungs, all planning epochs
-must be recorded, and strict compact outputs/semantic fingerprints must match C.
+D runs through the C2 runtime, constrained envelopes must select expected rungs,
+all planning epochs must be recorded, and strict compact outputs/semantic
+fingerprints must match the pinned reference.
 
-## Phase F - Project Harness Migration
+## Phase F - Governed Harness Consolidation
 
-After E passes, adapt the project once to the stable governed sibling API:
+Phase C2 already migrates project trace execution to the canonical sibling API.
+After E passes, add governed envelopes and consolidate the remaining harness:
 
 - map scenarios and CHPC allocations into sibling requests/envelopes;
-- use `trace_one`, `trace_batch`, and `open_session` while preserving explicit
-  sequence/window-reuse semantics;
+- preserve explicit sequence/window-reuse semantics through the canonical APIs;
 - configure project-owned artifact paths and consume streamed telemetry while
   the sibling sink remains the sole serializer/sequencer/flusher;
-- migrate project/tests from private `attribute_nnsight` helpers to stable
-  sibling modules, then reduce explicit compatibility re-exports without a
-  dynamic catch-all shim;
 - consolidate launches through the packaged CLI without weakening snapshots;
 - keep fixtures, campaigns, SLURM policy, artifacts, extraction, comparison,
   and scientific interpretation project-side.

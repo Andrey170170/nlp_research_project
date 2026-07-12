@@ -47,9 +47,12 @@ APIs in `../circuit-tracer_chunked`:
 
 The sibling target also owns typed request/semantics/resource/plan/result
 contracts, model/transcoder provider loading, the memory governor, execution
-mechanisms, and streaming telemetry sinks. Existing `attribute(...)` remains a
-compatibility facade during migration. Experiment-specific token selection,
-sharding, SLURM submission, artifact layout, and analysis stay here.
+mechanisms, and streaming telemetry sinks. Phase C2 atomically migrates this
+harness to the canonical sibling runtime and deletes `attribute_nnsight`, flat
+`attribute(...)`, and legacy translators; compatibility wrappers are not a
+requirement. Experiment-specific token selection, sharding, SLURM submission,
+artifact layout, and analysis stay here. See
+`docs/tracing_runtime_rewrite_spec.md`.
 
 This boundary is a Python package API, not a Git submodule boundary. Continue to
 use the editable sibling dependency during development. Every SLURM launch that

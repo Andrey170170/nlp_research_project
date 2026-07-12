@@ -1,7 +1,7 @@
 # Memory Governor and Library Rearchitecture Spec
 
-Status: Phase B implemented; Phase C Granite gate passed; Phase D active
-Last updated: 2026-07-11
+Status: Phase B complete; Phase C1 gate passed; Phase D validation in flight; Phase C2 planned before E
+Last updated: 2026-07-12
 
 This is the "how it is supposed to be" document for the next major rework of
 the sibling library `../circuit-tracer_chunked` and its project-side harness
@@ -60,12 +60,13 @@ until repeated measurements explain the spread. This run calibrates resource
 and walltime profiles only; it does not broaden the Cardinal A4 semantic-caste
 scope.
 
-Separately, the whole library is being restructured anyway. Phase C reduced
-`attribute_nnsight.py` to a roughly 2k-line public compatibility/orchestration
-layer; phase execution and supporting ownership now live in deep modules. The
-wide knob-bag interface remains a later compatibility/API concern. The governor is not an add-on to that
-restructure; it *is* the "exact-trace policy/config seam" the scout report
-recommends, given a concrete job description.
+Separately, the whole tracing path is being rewritten. Phase C1 extracted phase
+execution and observability mechanics, but left `attribute_nnsight.py` as a
+2,254-line aggregation layer with a 90-field interface and left the project
+mirroring that surface. Phase C2 replaces this path with coherent domain
+objects and one canonical runtime before governor integration. Old Python API
+compatibility is not a target. The governor is not an add-on to that rewrite;
+it is the exact-trace planning boundary consumed by the canonical runtime.
 
 ## 2. Philosophy
 
@@ -114,7 +115,8 @@ The target boundary is **provider-semantics preserving**:
   the governor planner unless it introduces a genuinely new mechanism/ladder.
 - Missing capabilities degrade cleanly. A provider that cannot support a fast
   rung (for example, no lazy encoder rows or no decoder cache) still gets a
-  valid plan using the supported rungs or a clearly reported compatibility mode;
+  valid plan using the supported rungs or a clearly reported capability-limited
+  mode;
   unsupported capabilities are telemetry/admission facts, not hidden fallbacks.
 - Cost formulas are parameterized by provider metadata and measurements. The
   Gemma/GemmaScope2 1B/4B/12B data calibrate constants and validate the first
@@ -231,8 +233,9 @@ The current API conflates these concepts; the new types must separate them:
 
 The planner may change the right column under the selected fidelity contract.
 It must not infer a right-column value by reinterpreting a legacy knob that also
-changes the left column. Legacy arguments are translated deterministically into
-both columns by the versioned compatibility layer (section 9.2).
+changes the left column. Phase C2 migrates each old argument to one canonical
+semantic or execution field and deletes the mixed argument rather than carrying
+translation into the runtime (section 9.2).
 
 Selection/frontier margins are validation diagnostics and runtime warnings.
 They are never a semantic gate: a large measured margin does not authorize a
@@ -339,7 +342,7 @@ Each large structure exposes ordered modes; **all rungs must produce
 bitwise-identical outputs for the fixed provider semantics**. Rung selection is
 policy (governor); rung implementation is mechanism (subsystem). Rung catalogs
 are capability-filtered: if a provider lacks a fast mechanism, the governor
-selects a supported slower rung or reports compatibility mode rather than
+selects a supported slower rung or reports a capability-limited plan rather than
 special-casing the provider name.
 
 | Structure | Rungs (fast → survivable) |
@@ -409,8 +412,9 @@ TraceSession.trace_window(..., reuse=explicit)
 
 `trace_batch` plans shared loading/cache use without forcing requests to share
 logical semantics. `open_session` makes lifecycle, sequence state, and window
-reuse explicit; reuse is never inferred from available memory. `attribute(...)`
-remains a compatibility facade over these APIs during migration.
+reuse explicit; reuse is never inferred from available memory. Phase C2 makes
+these the only runtime entry points and deletes the former `attribute(...)`
+facade and argument-translation path in the same migration.
 
 The ordinary resource surface collapses to a handful of targets:
 
@@ -427,10 +431,11 @@ fidelity:           strict        # strict | validated_relaxed | research
   allowance: **warm** (small problem: let page cache grow, no advisories),
   **streaming** (big problem: aggressive DONTNEED after append/read, sized
   read caches as the only deliberate retention), **bounded** in between.
-- All existing per-mechanism knobs survive as explicit *overrides* of the
-  governor's derived values during the compatibility window. Logical overrides
-  require `research` or a named `validated_relaxed` allowlist entry; physical
-  overrides remain plan inputs.
+- Canonical physical constraints and semantic choices are represented directly
+  by `ExecutionConstraints` and `TraceSemantics`; the runtime does not preserve
+  old flat knob names as a second control surface. Logical overrides require
+  `research` or a named `validated_relaxed` allowlist entry, while physical
+  constraints remain plan inputs.
 - Existing explicit model/transcoder/provider selection remains outside the
   budget surface. The governor receives the resolved provider profile and plans
   from capabilities; it does not infer policy from repo names or model family
@@ -482,7 +487,7 @@ Every run reports, per phase and per tier:
    error that let the wrong-hook contamination shape conclusions for weeks.
 7. provider identity and capabilities: architecture/topology, hook map,
    checkpoint/provider fingerprint, declared/measured dimensions and bytes,
-   selected compatibility fallbacks, and any missing capability that forced a
+   selected capability fallbacks, and any missing capability that forced a
    slower rung.
 8. admission and lifecycle events: discovered `ResourceEnvelope`, predicted
    plan, binding constraints/actionable refusal, session open/reuse/reset/close,
@@ -502,8 +507,7 @@ The sibling `../circuit-tracer_chunked` owns the complete tracing runtime:
 - the pure resolver, governor/ledger/epochs, degradation mechanisms, row store,
   replay, caches, and streaming telemetry;
 - first-class `trace_one`, `trace_batch`, and `open_session`, including sequence
-  tracing and explicit window reuse;
-- `attribute(...)` as a compatibility facade over the same runtime.
+  tracing and explicit window reuse.
 
 The project owns the experiment harness:
 
@@ -516,11 +520,11 @@ The project owns the experiment harness:
 - generation of calibration observations. The sibling consumes only promoted,
   versioned provider profiles, never project-internal campaign objects.
 
-This follows the scout split, but in dependency order: Phase C extracts deep
-runtime and observability modules without changing behavior; Phase D implements
-explicit mechanisms beside the phases that use them; only Phase E makes phases
-governor consumers. The governor consumes capabilities and profiles, not
-model/provider name special cases.
+This follows the scout split in dependency order: Phase C1 extracted deep
+modules without changing behavior; Phase D implements explicit mechanisms;
+Phase C2 replaces the complete sibling/project trace path with one readable
+runtime; only Phase E makes that runtime consume governor plans. The governor
+consumes capabilities and profiles, not model/provider name special cases.
 
 Repository integration is an editable package during development and immutable
 project+sibling snapshots for runs. A git submodule is explicitly rejected: it
@@ -528,23 +532,23 @@ does not create the API boundary and makes CHPC snapshot/provenance workflows
 more brittle. A third package or plugin abstraction is deferred until the new
 boundary reveals proven shared code.
 
-### 9.2 Compatibility migration
+### 9.2 Atomic runtime replacement
 
-1. Inventory each legacy argument and classify each effect as logical semantics,
-   physical execution, provider selection, or harness policy.
-2. Split conflated controls. At minimum, separate logical decoder reduction
-   tile/order from physical decoder fetch/cache chunk, and logical frontier
-   refresh stride/checkpoints from physical microbatch.
-3. Add a versioned translator from legacy `attribute(...)` arguments into
-   `TraceRequest` + `ResourceEnvelope`. Emit a structured deprecation event with
-   the exact translation. Reject conflicting legacy and new fields before load.
-4. Compute and persist semantic and execution fingerprints independently.
-   Semantic fingerprints include logical fields, provider/checkpoint/hooks,
-   dtype, fidelity mode, and evidence version. Execution fingerprints include
-   physical plan, profile/planner version, environment, chunks, caches,
-   microbatches, and ladder rungs.
-5. Keep one documented compatibility window. New APIs and the facade must call
-   the same resolver and mechanisms; no dual runtime implementation is allowed.
+Phase C2 follows `docs/tracing_runtime_rewrite_spec.md`:
+
+1. inventory old arguments and effects only to preserve semantics and artifact
+   interpretation, not to preserve their API;
+2. define canonical attribution, semantics, envelope, execution-constraint,
+   resolved-plan, phase-result, storage, session, and result objects with
+   subsystem-owned invariants;
+3. migrate sibling and project callers/tests to one runtime atomically;
+4. delete `attribute_nnsight.py`, flat `attribute(...)` routing, legacy kwargs,
+   signature reflection/translators, private re-export namespaces, and obsolete
+   project trace pipelines;
+5. preserve separate semantic and execution fingerprints plus explicitly
+   versioned retained artifact readers where required.
+
+There is no compatibility window and no dual runtime.
 
 The governor package is unit-testable with synthetic cross-layer, same-layer,
 and top-k/approximate providers. New provider eligibility comes from metadata or
@@ -578,7 +582,7 @@ formula, caste, validated-under provenance, and whether it is provider-declared,
 scenario-declared, or governor-derived. This is the requirements doc for the
 governor. Define `TraceSemantics`, semantic/execution fingerprint schemas,
 fidelity allowlist evidence schema, provider calibration profile schema, and the
-legacy translation table before mechanisms move.
+canonical domain-field ownership map before mechanisms move.
 
 ### Step 4 — Governor v0 as a pure resolver in the sibling (DONE 2026-07-10)
 
@@ -589,13 +593,13 @@ versioned profiles are sibling inputs. Recorded presets and synthetic providers
 are arithmetic fixtures, not semantic-equivalence evidence.
 
 Implemented at sibling `phase-b-governor-contract@0ce3f96`. Resolver outputs are
-explicitly advisory through Phase C cleanup and Phase D mechanism validation;
-Phase E is the first runtime consumer. The package-owned
+explicitly advisory through Phase D mechanism validation and the Phase C2
+runtime rewrite; Phase E is the first runtime consumer. The package-owned
 trusted validation-evidence registry is empty; this intentionally prevents A4
 from authorizing `validated_relaxed` until the source artifacts are transferred,
 the report is regenerated, and a reviewed record is shipped.
 
-### Step 5 / Phase C — Behavior-preserving sibling cleanup
+### Step 5 / Phase C1 — Behavior-preserving sibling cleanup
 
 Implemented structurally at sibling `phase-b-governor-contract@0d65fba` and
 closed by the immutable Granite jobs `1613108`/`1613109`. Phase D0 lifecycle
@@ -608,7 +612,7 @@ duplicate log formatting. Preserve existing algorithms, defaults, artifacts,
 entry points, and telemetry semantics. Do not apply governor plans or introduce
 new mechanisms in this phase.
 
-Gate C with immutable Granite H200 strict runs on `361_base` for 1B CLT and 1B
+Gate C1 with immutable Granite H200 strict runs on `361_base` for 1B CLT and 1B
 PLT. Require exact compact graph/artifact parity, required telemetry
 lifecycle/schema coverage, terminal incremental JSONL, and no unexplained peak
 VRAM or walltime regression over 10% versus the recorded baseline; rerun an
@@ -620,8 +624,8 @@ Begin with lifecycle failure integrity: independent cleanup attempts, primary
 exception preservation, cleanup-only `ExceptionGroup` reporting, preflight
 validation before sink creation, explicit API-level preflight rejection, and
 injected failure coverage. Then split legacy logical semantics from physical
-execution controls with a
-versioned compatibility translator. Implement direct NNSight session-capacity
+execution controls with a temporary validation translator that Phase C2 must
+delete. Implement direct NNSight session-capacity
 and per-phase physical-microbatch controls, then canonical column-tiled row
 production, a two-dimensional influence solver, and no-retention exact replay.
 Introduce the
@@ -646,7 +650,17 @@ sequence/reuse/cleanup/cancellation/failure behavior. Failure injection must
 prove all cleanup is attempted, primary exceptions are not masked, and terminal
 telemetry closes whenever possible.
 
-### Step 7 / Phase E — Staged governor integration
+### Step 7 / Phase C2 — Atomic tracing-runtime rewrite
+
+After Phase D D/E jobs and artifacts are fully adjudicated, replace the complete
+project-to-sibling trace path according to
+`docs/tracing_runtime_rewrite_spec.md`. Meaningful domain objects, not argument
+bags, define the boundaries. Migrate callers atomically and delete the old
+runtime/API paths. Gate with login-safe architecture/failure tests and immutable
+`361_base` 1B CLT/PLT parity. Planning may proceed while D jobs run, but code
+execution waits for the recorded D behavior references.
+
+### Step 8 / Phase E — Staged governor integration
 
 Connect pre-load admission, post-model-load measurement/re-planning,
 post-Phase-0 active-universe re-planning, and phase-level grants/releases. The
@@ -657,15 +671,12 @@ Gate E on `361_base` 1B CLT/PLT governed-versus-explicit equivalence, expected
 rung selection under constrained envelopes, complete epoch telemetry, and
 strict compact-output/semantic-fingerprint parity.
 
-### Step 8 / Phase F — Project harness migration and final validation
+### Step 9 / Phase F — Governed harness consolidation and final validation
 
-Map scenarios and Granite allocations into the stable sibling API; configure
-project-owned artifact paths and consume sibling-owned streaming telemetry and
-fingerprints; consolidate project launches without moving experiment
-policy/interpretation into the sibling. Once project and test imports use stable
-modules, reduce the explicit private-helper re-export surface of
-`attribute_nnsight.py` in reviewed batches; preserve the documented public
-facade and avoid dynamic catch-all compatibility shims.
+Phase C2 already maps trace execution into the stable sibling API. Add governed
+envelopes, consume sibling-owned streaming telemetry and fingerprints, and
+consolidate project launches without moving experiment policy or interpretation
+into the sibling.
 
 Gate F first with `361_base` for 1B CLT, 1B PLT, 4B PLT, and 12B PLT. Before
 promoting the integrated runtime, run the canonical
@@ -689,9 +700,9 @@ provenance.
    versioned, scope-matched allowlist record. `research` overrides are explicit
    in request, result, and provenance. Drift evidence is never represented as a
    guarantee.
-4. The compatibility facade deterministically translates legacy knobs, warns
-   with a schema version, rejects old/new conflicts, and matches new-API outputs
-   and fingerprints during the compatibility window.
+4. The canonical runtime has no legacy kwargs, reflected legacy signature,
+   translator, compatibility facade, or stale project/sibling imports of the
+   removed tracing paths.
 5. Streaming telemetry covers planning, success, failure, refusal, cancellation,
    session lifecycle, and cleanup; reports predicted/actual rigid and elastic
    demand, ladder decisions, margins as warnings, Phase-0 sanity, sequence gaps,
@@ -713,14 +724,16 @@ provenance.
 10. Any supported provider obtains a plan from capabilities/profile metadata;
     missing capabilities are explicit. No git submodule, third package, plugin
     system, or model-family governor branch is introduced in this phase.
-11. Phase C is demonstrably behavior-preserving: the 1B CLT/PLT immutable gate
+11. Phase C1 is demonstrably behavior-preserving: the 1B CLT/PLT immutable gate
     passes before any explicit mechanism or governor integration lands.
 12. Phase D mechanisms are directly selectable and parity-proven before the
     governor may select them, including Phase-1 peak reduction and bounded
     Phase-3/4 execution.
-13. Phase E records and validates all four planning epochs: pre-load,
+13. Phase C2 replaces the entire project-to-sibling trace path with meaningful
+    domain contracts and passes its canonical runtime parity gate before E.
+14. Phase E records and validates all four planning epochs: pre-load,
     post-model-load, post-Phase-0, and phase-transition grants/releases.
-14. Phase F passes the `361_base` 1B CLT, 1B PLT, 4B PLT, and 12B PLT smoke and
+15. Phase F passes the `361_base` 1B CLT, 1B PLT, 4B PLT, and 12B PLT smoke and
     then the canonical `828_base`/`361_base`/`94_base` matrix before launch
     defaults or the project harness migration are declared done.
 

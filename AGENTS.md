@@ -36,16 +36,29 @@ orchestration may move into `../circuit-tracer_chunked` so the library can run
 more independently. Until that is an explicit task, keep this repo as the
 orchestration/provenance layer and avoid opportunistic cross-repo merges.
 
-The Phase B pure governor resolver remains advisory through Phase C structural
-cleanup and Phase D explicit-mechanism work. Phase E is the first phase allowed
-to consume plans at runtime, after the Phase C and D immutable Granite gates
-pass. Do not treat a resolved plan as an executed configuration or promote its
-outputs to launch defaults before then.
+The Phase B pure governor resolver remains advisory through Phase D
+explicit-mechanism work and Phase C2 ("cleanup strikes again"). Phase E is the
+first phase allowed to consume plans at runtime, after both the Phase D and C2
+immutable Granite gates pass. Do not treat a resolved plan as an executed
+configuration or promote its outputs to launch defaults before then.
 
-Phase C must extract logging and telemetry mechanics into deep sibling modules.
-Tracing algorithms should emit typed domain events or lifecycle spans; schema
-construction, sequencing, resource sampling, incremental sinks/flushing, and
-human log rendering belong to the observability subsystem.
+Tracing cleanup phases must extract logging and telemetry mechanics into deep
+sibling modules. Tracing algorithms should emit typed domain events or
+lifecycle spans; schema construction, sequencing, resource sampling,
+incremental sinks/flushing, and human log rendering belong to the observability
+subsystem.
+
+Phase C2 replaces the complete project-to-sibling tracing path before Phase E.
+Legacy Python API compatibility is not a requirement. Build one canonical
+typed runtime around meaningful domain objects with subsystem-owned invariants;
+do not replace flat argument lists with generic context/config/input bags.
+Migrate sibling and project callers atomically, then delete
+`attribute_nnsight.py`, flat `attribute(...)` routing, legacy translators and
+kwargs, private compatibility re-exports, and obsolete project trace pipelines.
+There must be no dual runtime. Moving large methods behind imports is not a
+cleanup result unless the new modules have coherent ownership and the top-level
+trace flow is readable. The normative design is
+`docs/tracing_runtime_rewrite_spec.md`.
 
 ## CHPC / login-node safety
 
