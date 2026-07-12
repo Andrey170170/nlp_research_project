@@ -584,8 +584,12 @@ def build_command(
             )
         if scenario.get("row_store_temp_root") is not None:
             cmd.extend(["--row-store-temp-root", str(scenario["row_store_temp_root"])])
-        if scenario.get("row_store_preallocate", False):
-            cmd.append("--row-store-preallocate")
+        if scenario.get("row_store_preallocate") is not None:
+            cmd.append(
+                "--row-store-preallocate"
+                if scenario["row_store_preallocate"]
+                else "--no-row-store-preallocate"
+            )
         if scenario.get("exact_encoder_residency") is not None:
             cmd.extend(
                 [

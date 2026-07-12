@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import runpy
 import sys
 from argparse import Namespace
 from pathlib import Path
@@ -97,6 +98,37 @@ def test_phase_d_validation_configs_and_forwarding(config_path: Path) -> None:
     for key in PHASE_D_KEYS:
         if recompute[key] is not None:
             assert _flag(key) in command
+
+
+@pytest.mark.parametrize("config_path", CONFIGS)
+def test_phase_d_column_tiled_command_parses_row_store_preallocate_false(
+    monkeypatch: pytest.MonkeyPatch, config_path: Path
+) -> None:
+    scenarios, _metadata = load_scenarios(config_path)
+    tiled = scenarios[3]
+    command = build_command(Path("/tmp/phase-d-validation"), tiled)
+    assert "--no-row-store-preallocate" in command
+
+    parsed: dict[str, object] = {}
+    original_parse_args = pipeline.argparse.ArgumentParser.parse_args
+
+    class ParserReached(RuntimeError):
+        pass
+
+    def capture_parse_args(
+        parser: object, *args: object, **kwargs: object
+    ) -> object:
+        parsed["args"] = original_parse_args(parser, *args, **kwargs)
+        raise ParserReached
+
+    monkeypatch.setattr(
+        pipeline.argparse.ArgumentParser, "parse_args", capture_parse_args
+    )
+    monkeypatch.setattr(sys, "argv", command[1:])
+    with pytest.raises(ParserReached):
+        runpy.run_path(REPO_ROOT / "trace_pipeline_chunked.py", run_name="__main__")
+
+    assert getattr(parsed["args"], "row_store_preallocate") is False
 
 
 def test_phase_d_fields_are_extracted_for_comparison(tmp_path: Path) -> None:
