@@ -74,7 +74,8 @@ consumed without reconstructing or resequencing its event schema.
 
 Login-safe checks cover request construction, artifacts, full-answer sessions,
 stale-path architecture rules, launch/snapshot behavior, and failure
-propagation. GPU/model loading and the immutable 1B CLT/PLT C2 gate remain
+propagation. Project Ruff and all 181 login-safe tests pass against sibling
+commit `88f03b5`. GPU/model loading and the immutable 1B CLT/PLT C2 gate remain
 SLURM-only.
 
 Useful commands:

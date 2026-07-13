@@ -1,6 +1,6 @@
 # Memory governor + rearchitecture execution plan
 
-Status: active; Phase D closed; Phase C2 implementation landing with immutable validation pending before Phase E
+Status: active; Phase D closed; Phase C2 implementation complete with project and immutable validation pending before Phase E
 Date: 2026-07-03; last updated 2026-07-13
 Scope: sibling library `../circuit-tracer_chunked` rewrite + project harness
 restructure + validation campaigns
@@ -664,9 +664,10 @@ criterion.
 ## Phase C2 — Cleanup Strikes Again: Atomic Tracing-Pipeline Rewrite
 
 Phase D is closed and its accepted D/E artifacts are the frozen C2 oracle.
-Canonical API, caller migration, ownership decomposition, and stale-path
-deletion are landing now. Phase C2 remains open until login-safe validation and
-immutable Granite comparison are both adjudicated; Slurm state alone cannot
+Canonical API, caller migration, ownership decomposition, observability
+ownership, and stale-path deletion are complete. Sibling CPU-safe validation,
+project Ruff, and all 181 project login-safe tests pass. Phase C2 remains open
+until the immutable Granite comparison is adjudicated. Slurm state alone cannot
 close it.
 
 Goal: make the complete trace path understandable from project scenario to

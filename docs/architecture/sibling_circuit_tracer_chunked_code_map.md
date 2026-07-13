@@ -12,7 +12,8 @@ Paths are relative to the sibling checkout `../circuit-tracer_chunked/`.
 | `trace_one`, `trace_batch`, `open_session` | `circuit_tracer/tracing/api.py` |
 | `TraceRequest` and execution/semantic composition | `circuit_tracer/tracing/request.py` |
 | Attribution problem | `circuit_tracer/tracing/problem.py` |
-| Resolved plan and fingerprints | `circuit_tracer/tracing/{plan,planning}.py` |
+| Requested plan and semantic/requested fingerprints | `circuit_tracer/tracing/{plan,planning}.py` |
+| Effective execution identity after preparation | `circuit_tracer/execution_identity.py` |
 | Trace/session results | `circuit_tracer/tracing/{result,session}.py` |
 | Backend-neutral runner | `circuit_tracer/tracing/runner.py` |
 
@@ -29,7 +30,8 @@ signature reflection, and flat attribution entry points are absent.
 | Readable Phase 0-5 orchestration | `attribution/nnsight/execution.py` |
 | Validation and mechanism preparation | `attribution/nnsight/preparation.py` |
 | Cleanup ownership | `attribution/nnsight/run_scope.py` |
-| Domain phase operations | `attribution/nnsight/phases/phase{0,1,2,3,4,5}.py` |
+| Thin Phase 0-5 coordinators | `attribution/nnsight/phases/phase{0,1,2,3,4,5}.py` |
+| Phase-owned operations | `attribution/nnsight/phases/phase{0,2,3,4,5}_*.py` |
 | Context invariants and batch execution | `attribution/nnsight/context_state.py`, `batch_execution.py`, `attribution/context_nnsight.py` |
 | Forward-session capability | `attribution/nnsight/forward_session.py` |
 | Storage/replay mechanisms | `attribution/nnsight/{row_store,row_replay,tiled_rows,replay}.py` |
@@ -72,8 +74,9 @@ There is one public runtime for single, batch, and session tracing.
 
 ## Validation
 
-Architecture tests bound coordinator size/complexity, dependency direction,
+Architecture tests bound coordinator and operation size/complexity, dependency direction,
 meaningful context/result objects, stale imports, observability ownership,
-provider dispatch, and terminal lifecycle behavior. The broad login-safe suite
-must pass before snapshotting. Immutable `361_base` Gemma 3 1B CLT/PLT
-full-retention and bounded runs remain the closure gate.
+provider dispatch, and terminal lifecycle behavior. The CPU-safe sibling suite
+passes with `543 passed` and `6 skipped`; three cache tests are excluded because
+they require Hugging Face network access. Immutable `361_base` Gemma 3 1B
+CLT/PLT full-retention and bounded runs remain the closure gate.

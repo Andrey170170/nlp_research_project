@@ -198,10 +198,11 @@ import `circuit_utils` from an editable console-script invocation.
 
 ## Phase C2 - Cleanup Strikes Again
 
-Phase C2 implementation is in progress before Phase E. The canonical sibling
-API and project request/artifact runtime have landed; the remaining work is the
-final stale-surface deletion audit, broad login-safe validation, immutable
-Granite execution, and comparison against the frozen pre-C2 contract. Its
+Phase C2 implementation is complete before Phase E. The canonical sibling API,
+project request/artifact runtime, phase-operation decomposition, observability
+ownership, and stale-surface deletion have landed. The remaining closure work
+is broad project validation, immutable Granite execution, and comparison
+against the frozen pre-C2 contract. Its
 normative architecture and acceptance criteria live in
 `docs/tracing_runtime_rewrite_spec.md`.
 
@@ -232,12 +233,16 @@ together, enforce useful invariants, and be owned by a subsystem. A renamed bag
 of old arguments does not satisfy C2. Functions may take several direct
 arguments when those arguments are honest domain concepts or capabilities.
 
-**Current C2 gate state:** implementation is not closure. Login-safe
-sibling/project/architecture/failure tests must pass; stale
-imports of removed paths are absent; the project invokes the canonical sibling
-API directly; immutable `361_base` 1B CLT/PLT canonical full-retention and
-bounded runs match pinned pre-C2 graph, fingerprint, lifecycle, and accepted
-resource criteria. Phase E does not begin until D and C2 both close.
+**Current C2 gate state:** implementation is not closure. Sibling lint,
+architecture, failure, runtime, and CPU-safe tests pass (`543 passed`, `6
+skipped`; three additional cache tests require Hugging Face network access).
+Project Ruff and all `181` login-safe tests also pass. Stale imports of removed
+paths are absent and the project invokes the canonical sibling API directly.
+Immutable `361_base` 1B CLT/PLT canonical full-retention and bounded runs must
+still match the pinned pre-C2 graph, requested/effective fingerprints,
+lifecycle, and accepted resource criteria. Phase E does not begin until D and
+C2 both close. Repository-wide `ty` remains advisory and currently reports 85
+pre-existing/dynamic-boundary diagnostics; typing is not a C2 closure gate.
 
 ## Phase E - Staged Governor Integration
 

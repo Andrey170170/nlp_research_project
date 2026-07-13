@@ -1,6 +1,6 @@
 # Tracing Runtime Rewrite Spec
 
-Status: Phase C2 implementation in progress; closure pending login-safe and immutable Granite gates
+Status: Phase C2 implementation complete; closure pending project and immutable Granite gates
 Last updated: 2026-07-13
 Scope: sibling tracing runtime plus the project execution path that invokes it
 
@@ -339,7 +339,7 @@ samplers, or exception-export helpers.
   runner and phases.
 - Preserve incremental failure evidence and terminal-event guarantees.
 
-### C2.5 - Atomic caller migration (implemented; final stale-surface audit pending)
+### C2.5 - Atomic caller migration (complete)
 
 - Migrate `trace_one`, `trace_batch`, `open_session`, TransformerLens routing,
   sibling tests, project scenario execution, full-answer sequencing, and compact
@@ -347,7 +347,7 @@ samplers, or exception-export helpers.
 - Replace project subprocess argument assembly with typed request construction.
 - Split trace command registration from the project CLI mega-parser.
 
-### C2.6 - Delete old paths (in progress)
+### C2.6 - Delete old paths (complete)
 
 - Delete `attribute_nnsight.py`, `_attribute_impl`, legacy kwargs translation,
   generic flat attribution routing, private helper re-exports, obsolete project
@@ -355,7 +355,7 @@ samplers, or exception-export helpers.
 - Fail repository checks on stale imports or references.
 - Update descriptive architecture maps only after deletion lands.
 
-### C2.7 - Validation and closure (pending)
+### C2.7 - Validation and closure (in progress)
 
 - Run focused subsystem, failure-injection, type, lint, and architecture tests.
 - Run the broad login-safe sibling and project suites, with documented external
@@ -363,6 +363,13 @@ samplers, or exception-export helpers.
 - Create immutable project+sibling snapshots and run `361_base` 1B CLT/PLT
   through canonical full-retention and bounded mechanisms.
 - Compare against the pinned pre-C2 references before Phase E starts.
+
+Sibling lint and CPU-safe validation pass at commit `88f03b5` (`543 passed`,
+`6 skipped`). Three additional cache tests require Hugging Face network access
+and fail only on sandbox DNS. Project Ruff and all `181` login-safe tests pass.
+The immutable Granite comparisons remain open. Repository-wide `ty` is advisory
+for this phase and currently reports 85 diagnostics across older analysis code,
+dynamic test doubles, and typed enum boundaries.
 
 ## 10. Acceptance Criteria
 
