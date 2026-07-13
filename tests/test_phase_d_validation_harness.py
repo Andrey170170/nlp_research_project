@@ -75,7 +75,7 @@ def test_phase_d_validation_configs_and_forwarding(config_path: Path) -> None:
     assert metadata["immutable_validation_config"] is True
     assert metadata["slurm"]["gres"] == "gpu:h200:1"
     assert metadata["slurm"]["mem"] == "100G"
-    expected_time = "05:00:00" if "plt" in metadata["baseline_variant"] else "02:00:00"
+    expected_time = "07:00:00" if "plt" in metadata["baseline_variant"] else "02:00:00"
     assert metadata["slurm"]["time"] == expected_time
     assert len(scenarios) == 5
     assert len({scenario["name"] for scenario in scenarios}) == 5
@@ -94,7 +94,7 @@ def test_phase_d_validation_configs_and_forwarding(config_path: Path) -> None:
         assert recompute["feature_row_column_tile_size"] == 16384
         assert recompute["replay_tile_cache_bytes"] == 4 * 1024**3
         assert tiled["timeout_minutes"] == 300
-        assert recompute["timeout_minutes"] == 300
+        assert recompute["timeout_minutes"] == 420
     for scenario in (tiled, recompute):
         assert scenario["phase3_gradient_replay_mode"] == "disabled"
         assert scenario["phase3_row_replay_mode"] == "disabled"
