@@ -14,7 +14,7 @@ from nlp_research_project.exact_trace_bench.full_answer.aggregate import (
 )
 from nlp_research_project.exact_trace_bench import cli as full_answer_cli
 from nlp_research_project.exact_trace_bench.full_answer.runner import (
-    _attribute_performance_kwargs,
+    _trace_request,
     dry_run_shard,
     forced_target_payload,
     list_shard_specs,
@@ -146,9 +146,15 @@ def test_list_mode_returns_specs_without_writing_token_dirs(tmp_path: Path) -> N
     assert not (tmp_path / "shards").exists()
 
 
-def test_attribute_performance_kwargs_forward_safe_knobs() -> None:
-    kwargs = _attribute_performance_kwargs(
+def test_trace_request_builds_canonical_domain_policies() -> None:
+    from circuit_tracer import TraceRequest
+
+    spec = cast(
+        Any,
         {
+            "target_token_id": 7,
+            "target_position": 3,
+            "graph_knobs": {
             "row_subchunk_size": 128,
             "plan_feature_batch_size": True,
             "feature_batch_size_max": 512,
@@ -180,37 +186,38 @@ def test_attribute_performance_kwargs_forward_safe_knobs() -> None:
             "stage_encoder_vecs_on_cpu": False,
             "stage_error_vectors_on_cpu": False,
             "exact_encoder_residency": "active_pinned_cpu",
-        }
+            "phase1_trace_batch_policy": "cap_effective_batches",
+            "phase1_trace_batch_size_max": 16,
+            "feature_row_retention": "none_recompute",
+            "full_retention_backend": "column_tiled_v1",
+            "nnsight_session_capacity": 64,
+            "telemetry_max_events": 500,
+            },
+        },
     )
-    assert kwargs == {
-        "row_subchunk_size": 128,
-        "plan_feature_batch_size": True,
-        "feature_batch_size_max": 512,
-        "phase4_scheduler_mode": "planner_v1",
-        "phase4_scheduler_telemetry_detail": "debug",
-        "phase4_refresh_optimization": "v1",
-        "phase4_refresh_prepared_chunk_cache_bytes": 0,
-        "phase4_refresh_active_row_accumulation": "direct_v1",
-        "phase4_row_executor": "streaming_v1",
-        "phase4_row_reduction": "gpu_v1",
-        "phase3_frontier_buffer_relative_epsilon": 0.01,
-        "phase3_frontier_buffer_max_extra": 256,
-        "phase4_frontier_buffer_relative_epsilon": 0.02,
-        "phase4_frontier_buffer_max_extra_per_refresh": 16,
-        "phase4_frontier_buffer_max_extra_total": 128,
-        "row_store_cache_control": "fadvise_dontneed_after_append_v1",
-        "row_store_preallocate": True,
-        "chunked_feature_replay_window": 16,
-        "error_vector_prefetch_lookahead": 8,
-        "stage_encoder_vecs_on_cpu": False,
-        "stage_error_vectors_on_cpu": False,
-        "exact_encoder_residency": "active_pinned_cpu",
-        "cross_cluster_debug": True,
-        "capture_phase0_donor_bundle": True,
-        "capture_phase3_seed_bundle": True,
-        "capture_feature_semantic_descriptors": True,
-        "semantic_descriptor_top_k": 1024,
-        "semantic_descriptor_dim": 32,
+    model = types.SimpleNamespace(backend="nnsight")
+    request = _trace_request(
+        model=model,
+        prompt_token_ids=[101, 102, 201],
+        spec=spec,
+        prefix_metadata={"mode": "independent_prefix"},
+        full_sequence_mode=False,
+    )
+
+    assert isinstance(request, TraceRequest)
+    assert request.problem.model is model
+    assert request.problem.prompt.tolist() == [101, 102, 201]
+    assert request.problem.targets.tolist() == [7]
+    assert request.semantics.source_batch_size == 256
+    assert request.execution.session.capacity == 64
+    assert request.execution.session.phase1_trace_batch_size_max == 16
+    assert request.execution.storage.retention == "none_recompute"
+    assert request.execution.storage.full_retention_backend == "column_tiled_v1"
+    assert request.execution.replay.decoder_contraction_tile == 128
+    assert request.execution.frontier.scheduler == "planner_v1"
+    assert request.execution.observability.telemetry_max_events == 500
+    assert request.evidence.metadata["prefix_view_metadata"] == {
+        "mode": "independent_prefix"
     }
 
 
@@ -321,9 +328,9 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
     )
     captured: dict[str, object] = {}
 
-    def fake_attribute(**kwargs):
-        captured.update(kwargs)
-        return {
+    def fake_trace_one(request):
+        captured["request"] = request
+        output = {
             "telemetry_events": [
                 {
                     "event_type": "ranker_frontier",
@@ -347,6 +354,7 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
                 "candidate_features": [[0, 0, 1]],
             },
         }
+        return types.SimpleNamespace(output=output, telemetry_summary={})
 
     def fake_save_compact(step, graph_path):
         Path(graph_path).parent.mkdir(parents=True, exist_ok=True)
@@ -387,11 +395,9 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
             resolve_internal_precision=lambda _dtype: "float32",
         ),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "circuit_tracer.attribution.attribute_nnsight",
-        types.SimpleNamespace(attribute=fake_attribute),
-    )
+    import circuit_tracer
+
+    monkeypatch.setattr(circuit_tracer, "trace_one", fake_trace_one)
 
     result = run_real_shard(
         trajectory_path=trajectory_path,
@@ -402,9 +408,10 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
     )
 
     assert result["status"] == "complete"
-    metadata = cast(dict[str, Any], captured["prefix_view_metadata"])
-    assert captured["phase1_trace_batch_policy"] == "cap_effective_batches"
-    assert captured["phase1_trace_batch_size_max"] == 16
+    request = captured["request"]
+    metadata = cast(dict[str, Any], request.evidence.metadata["prefix_view_metadata"])
+    assert request.execution.session.phase1_trace_batch_policy == "cap_effective_batches"
+    assert request.execution.session.phase1_trace_batch_size_max == 16
     assert metadata["trace_id"] == "traj_runner_tok000001"
     assert metadata["target_position"] == 3
     assert metadata["prefix_token_count"] == 3
@@ -460,7 +467,7 @@ def test_real_shard_persists_exception_attached_telemetry(
 ) -> None:
     trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
 
-    def fake_attribute(**_kwargs):
+    def fake_trace_one(_request):
         exc = RuntimeError("synthetic attribution failure")
         setattr(
             exc,
@@ -511,11 +518,9 @@ def test_real_shard_persists_exception_attached_telemetry(
             resolve_internal_precision=lambda _dtype: "float32",
         ),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "circuit_tracer.attribution.attribute_nnsight",
-        types.SimpleNamespace(attribute=fake_attribute),
-    )
+    import circuit_tracer
+
+    monkeypatch.setattr(circuit_tracer, "trace_one", fake_trace_one)
 
     result = run_real_shard(
         trajectory_path=trajectory_path,
@@ -552,9 +557,9 @@ def test_real_shard_forwards_full_sequence_prompt_and_output_position(
     specs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
     captured: dict[str, object] = {}
 
-    def fake_attribute(**kwargs):
-        captured.update(kwargs)
-        return {}
+    def fake_trace_one(request):
+        captured["request"] = request
+        return types.SimpleNamespace(output={}, telemetry_summary={})
 
     def fake_save_compact(step, graph_path):
         Path(graph_path).parent.mkdir(parents=True, exist_ok=True)
@@ -595,11 +600,9 @@ def test_real_shard_forwards_full_sequence_prompt_and_output_position(
             resolve_internal_precision=lambda _dtype: "float32",
         ),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "circuit_tracer.attribution.attribute_nnsight",
-        types.SimpleNamespace(attribute=fake_attribute),
-    )
+    import circuit_tracer
+
+    monkeypatch.setattr(circuit_tracer, "trace_one", fake_trace_one)
 
     run_real_shard(
         trajectory_path=trajectory_path,
@@ -609,13 +612,14 @@ def test_real_shard_forwards_full_sequence_prompt_and_output_position(
         output_root=tmp_path / "run",
     )
 
-    assert captured["prompt"] == [101, 102, 201, 202]
-    assert captured["output_position"] == 2
-    metadata = cast(dict[str, Any], captured["prefix_view_metadata"])
+    request = captured["request"]
+    assert request.problem.prompt == [101, 102, 201, 202]
+    assert request.problem.output_position == 2
+    metadata = cast(dict[str, Any], request.evidence.metadata["prefix_view_metadata"])
     assert metadata["mode"] == "full_sequence_target_position"
 
 
-def test_real_shard_experimental_reuse_passes_shared_decoder_cache(
+def test_real_shard_experimental_reuse_falls_back_to_canonical_per_token_trace(
     tmp_path: Path, monkeypatch
 ) -> None:
     trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
@@ -646,9 +650,9 @@ def test_real_shard_experimental_reuse_passes_shared_decoder_cache(
     transcoders = Transcoders()
     model = types.SimpleNamespace(transcoders=transcoders, device="cpu")
 
-    def fake_attribute(**kwargs):
-        captured.update(kwargs)
-        return {}
+    def fake_trace_one(request):
+        captured["request"] = request
+        return types.SimpleNamespace(output={}, telemetry_summary={})
 
     monkeypatch.setenv("SLURM_JOB_ID", "test-job")
     monkeypatch.setitem(
@@ -686,11 +690,9 @@ def test_real_shard_experimental_reuse_passes_shared_decoder_cache(
             resolve_internal_precision=lambda _dtype: "float32",
         ),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "circuit_tracer.attribution.attribute_nnsight",
-        types.SimpleNamespace(attribute=fake_attribute),
-    )
+    import circuit_tracer
+
+    monkeypatch.setattr(circuit_tracer, "trace_one", fake_trace_one)
 
     run_real_shard(
         trajectory_path=trajectory_path,
@@ -700,20 +702,21 @@ def test_real_shard_experimental_reuse_passes_shared_decoder_cache(
         output_root=tmp_path / "run",
     )
 
-    assert captured["decoder_chunk_cache"] is transcoders.cache
-    assert captured["decoder_cache_fingerprint"] == transcoders.cache.fingerprint
-    assert transcoders.created == 1
-    assert transcoders.cleared == 1
+    request = captured["request"]
+    assert request.problem.prompt == [101, 102, 201, 202]
+    assert transcoders.created == 0
+    assert transcoders.cleared == 0
     trace = json.loads(
         (
             tmp_path / "run" / "shards" / "shard_000" / "token_000001" / "trace.json"
         ).read_text(encoding="utf-8")
     )
-    assert trace["trajectory_session"]["session_reuse_effective"] is True
-    assert trace["trajectory_session"]["decoder_cache_reuse_effective"] is True
+    assert trace["trajectory_session"]["session_reuse_effective"] is False
+    assert trace["trajectory_session"]["session_reuse_fallback"] == "per_token_path"
+    assert trace["trajectory_session"]["decoder_cache_reuse_effective"] is False
 
 
-def test_real_shard_decoder_cache_reuse_is_per_spec_opt_in(
+def test_real_shard_canonical_per_token_requests_preserve_each_spec(
     tmp_path: Path, monkeypatch
 ) -> None:
     trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
@@ -727,7 +730,7 @@ def test_real_shard_decoder_cache_reuse_is_per_spec_opt_in(
         {"shard_id": 0, "estimated_cost_sum": 5, "spec_indices": [0, 1]}
     ]
     shards_path.write_text(json.dumps(shards), encoding="utf-8")
-    calls: list[dict[str, object]] = []
+    calls: list[Any] = []
 
     class Cache:
         fingerprint: object | None = None
@@ -746,9 +749,9 @@ def test_real_shard_decoder_cache_reuse_is_per_spec_opt_in(
     transcoders = Transcoders()
     model = types.SimpleNamespace(transcoders=transcoders, device="cpu")
 
-    def fake_attribute(**kwargs):
-        calls.append(dict(kwargs))
-        return {}
+    def fake_trace_one(request):
+        calls.append(request)
+        return types.SimpleNamespace(output={}, telemetry_summary={})
 
     monkeypatch.setenv("SLURM_JOB_ID", "test-job")
     monkeypatch.setitem(
@@ -782,11 +785,9 @@ def test_real_shard_decoder_cache_reuse_is_per_spec_opt_in(
             resolve_internal_precision=lambda _dtype: "float32",
         ),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "circuit_tracer.attribution.attribute_nnsight",
-        types.SimpleNamespace(attribute=fake_attribute),
-    )
+    import circuit_tracer
+
+    monkeypatch.setattr(circuit_tracer, "trace_one", fake_trace_one)
 
     run_real_shard(
         trajectory_path=trajectory_path,
@@ -797,8 +798,10 @@ def test_real_shard_decoder_cache_reuse_is_per_spec_opt_in(
     )
 
     assert len(calls) == 2
-    assert calls[0]["decoder_chunk_cache"] is None
-    assert calls[1]["decoder_chunk_cache"] is transcoders.cache
+    assert calls[0].problem.targets == [201]
+    assert calls[1].problem.targets == [202]
+    assert calls[0].problem.output_position == 1
+    assert calls[1].problem.output_position == 2
 
 
 def test_real_shard_window_reuse_uses_window_session(
@@ -850,18 +853,22 @@ def test_real_shard_window_reuse_uses_window_session(
     session_inits: list[dict[str, object]] = []
 
     class FakeSession:
-        def __init__(self, **kwargs) -> None:
-            session_inits.append(dict(kwargs))
-
-        def attribute_target_position(self, target_position, **kwargs):
+        def trace_window(self, target_position, *, reuse, request):
             calls.append(int(target_position))
-            return {
+            assert reuse is True
+            assert request.problem.output_position == int(target_position) - 1
+            output = {
                 "phase0_window_state_reuse_effective": True,
                 "target_logit_source": "full_sequence_window_logits",
             }
+            return types.SimpleNamespace(output=output, telemetry_summary={})
 
-        def cleanup(self) -> None:
+        def close(self) -> None:
             calls.append(-1)
+
+    def fake_open_session(request, *, window):
+        session_inits.append({"request": request, "window": window})
+        return FakeSession()
 
     class Transcoders:
         def create_decoder_block_cache(self, *, fingerprint=None):
@@ -909,14 +916,9 @@ def test_real_shard_window_reuse_uses_window_session(
             resolve_internal_precision=lambda _dtype: "float32",
         ),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "circuit_tracer.attribution.attribute_nnsight",
-        types.SimpleNamespace(
-            attribute=lambda **_kwargs: {},
-            FullSequenceWindowAttributionSession=FakeSession,
-        ),
-    )
+    import circuit_tracer
+
+    monkeypatch.setattr(circuit_tracer, "open_session", fake_open_session)
 
     result = run_real_shard(
         trajectory_path=trajectory_path,
@@ -928,9 +930,8 @@ def test_real_shard_window_reuse_uses_window_session(
 
     assert result["status"] == "complete"
     assert calls == [2, 3, -1]
-    assert session_inits[0]["window_max_prefix_len"] == 3
-    assert session_inits[0]["reuse_phase0_window_state"] is True
-    assert session_inits[0]["reuse_target_logits"] is True
+    assert session_inits[0]["window"].max_prefix_len == 3
+    assert session_inits[0]["request"].problem.prompt == [101, 102, 201, 202]
     trace = json.loads(
         (
             tmp_path / "run" / "shards" / "shard_000" / "token_000001" / "trace.json"
