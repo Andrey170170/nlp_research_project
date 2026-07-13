@@ -26,10 +26,12 @@ if str(EXPERIMENTS_DIR) not in sys.path:
 
 def run_checks() -> None:
     from trace_pipeline import extract_graph, trace_completion
-    from trace_pipeline_chunked import (
+    from nlp_research_project.exact_trace_bench.trace_runtime import (
         build_cross_cluster_debug_records,
-        extract_compact_chunked_attribution,
         normalize_cross_cluster_debug_records,
+    )
+    from trace_pipeline_chunked import (
+        extract_compact_chunked_attribution,
         parse_phase4_refresh_optimization,
         parse_phase4_row_executor,
         parse_phase4_scheduler_mode,
@@ -624,7 +626,9 @@ def run_launcher_and_extractor_roundtrip_checks() -> None:
 def run_feature_semantic_descriptor_save_checks() -> None:
     import torch
 
-    from trace_pipeline_chunked import save_feature_semantic_descriptors
+    from nlp_research_project.exact_trace_bench.trace_runtime import (
+        save_feature_semantic_descriptors,
+    )
 
     payload = {
         "status": "captured",
@@ -674,7 +678,9 @@ def run_feature_semantic_descriptor_save_checks() -> None:
 def run_phase3_seed_bundle_save_checks() -> None:
     import torch
 
-    from trace_pipeline_chunked import save_phase3_seed_bundle
+    from nlp_research_project.exact_trace_bench.trace_runtime import (
+        save_phase3_seed_bundle,
+    )
 
     payload = {
         "status": "captured",
@@ -709,7 +715,7 @@ def run_phase3_seed_bundle_save_checks() -> None:
 def run_phase3_gradient_and_row_bundle_save_checks() -> None:
     import torch
 
-    from trace_pipeline_chunked import (
+    from nlp_research_project.exact_trace_bench.trace_runtime import (
         save_phase3_gradient_bundle,
         save_phase3_row_bundle,
     )
@@ -777,7 +783,9 @@ def run_phase3_gradient_and_row_bundle_save_checks() -> None:
 def run_phase0_donor_bundle_save_checks() -> None:
     import torch
 
-    from trace_pipeline_chunked import save_phase0_donor_bundle
+    from nlp_research_project.exact_trace_bench.trace_runtime import (
+        save_phase0_donor_bundle,
+    )
 
     activation_values = torch.tensor([0.25, -1.5], dtype=torch.bfloat16)
     payload = {
