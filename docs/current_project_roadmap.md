@@ -177,13 +177,24 @@ PLT D completed as `1621467_3` in 5,380 seconds with matching 30,698-event
 live/final telemetry and terminal `attribute.done`. The paired five-hour E
 attempt was healthy but projected just beyond its immutable application and
 Slurm limits, so it was cancelled at 3:58:39 after CHPC rejected an in-place
-extension. Final PLT E replacement `1621649_4` uses read-only snapshot
+extension. Final PLT E replacement `1621649_4` completed successfully in
+19,820 seconds (`05:30:36` Slurm elapsed) from read-only snapshot
 `workspace_20260712_215821_phase-d-plt-e-overnight-20260712`, project
 `976c51a`, sibling `76954ce`, one H200, 100G host RAM, and matching seven-hour
-application/Slurm limits. It retains the same 16,384-column production tiles,
+application/Slurm limits. It used the same 16,384-column production tiles,
 current-microbatch denominator tiles, and 4 GiB overlap-aware replay cache.
-C2 execution waits for the PLT E summary, artifacts, terminal telemetry,
-bounded-storage evidence, and compact comparisons, not merely Slurm state.
+The run produced one compact graph with 8,192 features and 20,000 edges,
+terminal `attribute.done`, a closed zero-error 198,106-event incremental sink,
+`no_retained_full_feature_matrix=true`, `no_kxn_file=true`, enforced 4,096-row
+by 2,048-column request bounds, and a 17,985,024-byte observed feature transient
+peak. Versus PLT A, feature and edge Jaccard are exactly `1.0`, weighted-edge
+Jaccard is `0.9999999791`, and top-k overlap through 1,024 is exactly `1.0`.
+
+The Phase D mechanism gate is closed and C2 may begin. Carry two non-blocking
+observability/tooling fixes into C2 ownership work: the in-memory telemetry copy
+caps at 120,000 events while the incremental sink remains complete, and
+`compare-compact` currently needs the project root added to `PYTHONPATH` to
+import `circuit_utils` from an editable console-script invocation.
 
 ## Phase C2 - Cleanup Strikes Again
 
