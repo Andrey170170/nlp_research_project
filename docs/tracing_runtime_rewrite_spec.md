@@ -364,12 +364,14 @@ samplers, or exception-export helpers.
   through canonical full-retention and bounded mechanisms.
 - Compare against the pinned pre-C2 references before Phase E starts.
 
-Sibling lint and CPU-safe validation pass at commit `88f03b5` (`543 passed`,
-`6 skipped`). Three additional cache tests require Hugging Face network access
-and fail only on sandbox DNS. Project Ruff and all `181` login-safe tests pass.
-The immutable Granite comparisons remain open. Repository-wide `ty` is advisory
-for this phase and currently reports 85 diagnostics across older analysis code,
-dynamic test doubles, and typed enum boundaries.
+Sibling lint and CPU-safe validation pass through commit `2fb54bc` (`543 passed`,
+`6 skipped`, plus `21` focused architecture tests after the final deletion
+guard). Three additional cache tests require Hugging Face network access and
+fail only on sandbox DNS. Project Ruff and all `181` login-safe tests pass. The
+immutable Granite CLT A/D/E gate is closed with exact feature and edge support;
+the PLT A/D/E jobs remain in progress. Repository-wide `ty` is advisory for this
+phase and currently reports 85 diagnostics across older analysis code, dynamic
+test doubles, and typed enum boundaries.
 
 ## 10. Acceptance Criteria
 

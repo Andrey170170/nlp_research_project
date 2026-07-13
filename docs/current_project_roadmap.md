@@ -200,9 +200,10 @@ import `circuit_utils` from an editable console-script invocation.
 
 Phase C2 implementation is complete before Phase E. The canonical sibling API,
 project request/artifact runtime, phase-operation decomposition, observability
-ownership, and stale-surface deletion have landed. The remaining closure work
-is broad project validation, immutable Granite execution, and comparison
-against the frozen pre-C2 contract. Its
+ownership, and stale-surface deletion have landed. Broad login-safe validation
+and the immutable Granite CLT A/D/E gate are closed. The remaining closure work
+is completion and comparison of the in-flight PLT A/D/E gate against the frozen
+pre-C2 contract. Its
 normative architecture and acceptance criteria live in
 `docs/tracing_runtime_rewrite_spec.md`.
 
@@ -238,11 +239,12 @@ architecture, failure, runtime, and CPU-safe tests pass (`543 passed`, `6
 skipped`; three additional cache tests require Hugging Face network access).
 Project Ruff and all `181` login-safe tests also pass. Stale imports of removed
 paths are absent and the project invokes the canonical sibling API directly.
-Immutable `361_base` 1B CLT/PLT canonical full-retention and bounded runs must
-still match the pinned pre-C2 graph, requested/effective fingerprints,
-lifecycle, and accepted resource criteria. Phase E does not begin until D and
-C2 both close. Repository-wide `ty` remains advisory and currently reports 85
-pre-existing/dynamic-boundary diagnostics; typing is not a C2 closure gate.
+The immutable `361_base` 1B CLT A/D/E runs pass scheduler, harness, telemetry,
+fingerprint, bounded-storage, and compact-parity checks. PLT A/D/E jobs
+`1623224_0`, `1623226_3`, and `1623229_4` remain in progress and must pass the
+same criteria. Phase E does not begin until D and C2 both close. Repository-wide
+`ty` remains advisory and currently reports 85 pre-existing/dynamic-boundary
+diagnostics; typing is not a C2 closure gate.
 
 ## Phase E - Staged Governor Integration
 
