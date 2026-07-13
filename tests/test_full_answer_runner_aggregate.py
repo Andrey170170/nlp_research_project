@@ -227,6 +227,8 @@ def test_trace_request_builds_canonical_domain_policies() -> None:
     assert request.problem.model is model
     assert request.problem.prompt.tolist() == [101, 102, 201]
     assert request.problem.targets.tolist() == [7]
+    assert request.problem.prefix_view.mode == "independent_prefix"
+    assert request.problem.prefix_view.target_position == 3
     assert request.semantics.source_batch_size == 256
     assert request.execution.session.capacity == 64
     assert request.execution.session.phase1_trace_batch_size_max == 16
@@ -237,9 +239,7 @@ def test_trace_request_builds_canonical_domain_policies() -> None:
     assert request.execution.session.decoder_cache.enabled is True
     assert request.execution.session.decoder_cache.max_bytes == 8589934592
     assert request.execution.observability.telemetry_max_events == 500
-    assert request.evidence.metadata["prefix_view_metadata"] == {
-        "mode": "independent_prefix"
-    }
+    assert request.evidence.metadata["prefix_view_metadata"] == {}
 
 
 def test_prefix_view_metadata_matches_reconstructed_prefix(tmp_path: Path) -> None:
@@ -403,19 +403,25 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
 
     assert result["status"] == "complete"
     request = captured["request"]
-    metadata = cast(dict[str, Any], request.evidence.metadata["prefix_view_metadata"])
+    evidence = cast(dict[str, Any], request.evidence.metadata["prefix_view_metadata"])
     assert request.execution.session.phase1_trace_batch_policy == "cap_effective_batches"
     assert request.execution.session.phase1_trace_batch_size_max == 16
-    assert metadata["trace_id"] == "traj_runner_tok000001"
-    assert metadata["target_position"] == 3
-    assert metadata["prefix_token_count"] == 3
-    assert metadata["target_token_ids"] == [202]
+    assert evidence["trace_id"] == "traj_runner_tok000001"
+    assert "target_position" not in evidence
+    assert evidence["prefix_token_count"] == 3
+    assert evidence["target_token_ids"] == [202]
     trace = json.loads(
         (
             tmp_path / "run" / "shards" / "shard_000" / "token_000001" / "trace.json"
         ).read_text(encoding="utf-8")
     )
-    assert trace["prefix_view_metadata"] == metadata
+    assert trace["prefix_view_metadata"]["mode"] == "independent_prefix"
+    assert trace["prefix_view_metadata"]["target_position"] == 3
+    assert {
+        key: value
+        for key, value in trace["prefix_view_metadata"].items()
+        if key not in {"mode", "target_position"}
+    } == evidence
     assert trace["phase3_frontier_buffer_metadata"] == {
         "status": "expanded",
         "extra_feature_count": 2,
@@ -564,8 +570,11 @@ def test_real_shard_forwards_full_sequence_prompt_and_output_position(
     request = captured["request"]
     assert request.problem.prompt == [101, 102, 201, 202]
     assert request.problem.output_position == 2
-    metadata = cast(dict[str, Any], request.evidence.metadata["prefix_view_metadata"])
-    assert metadata["mode"] == "full_sequence_target_position"
+    assert request.problem.prefix_view.mode == "full_sequence_target_position"
+    assert request.problem.prefix_view.target_position == 3
+    evidence = cast(dict[str, Any], request.evidence.metadata["prefix_view_metadata"])
+    assert "mode" not in evidence
+    assert "target_position" not in evidence
 
 
 def test_real_shard_experimental_reuse_falls_back_to_canonical_per_token_trace(

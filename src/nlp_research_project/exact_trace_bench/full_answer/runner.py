@@ -531,6 +531,7 @@ def _trace_request(
         FrontierExpansionPlan,
         FrontierSemantics,
         ObservabilityPolicy,
+        PrefixViewTarget,
         ReplayPlan,
         RowStoragePlan,
         SessionPlan,
@@ -700,6 +701,11 @@ def _trace_request(
         offload="cpu",
         compact_output=not bool(knobs.get("save_raw_graph", False)),
     )
+    prefix_evidence = {
+        key: value
+        for key, value in prefix_metadata.items()
+        if key not in {"mode", "target_position"}
+    }
     return TraceRequest(
         problem=AttributionProblem(
             model=model,
@@ -710,13 +716,21 @@ def _trace_request(
             output_position=spec["target_position"] - 1
             if full_sequence_mode
             else None,
+            prefix_view=PrefixViewTarget(
+                mode=(
+                    "full_sequence_target_position"
+                    if full_sequence_mode
+                    else "independent_prefix"
+                ),
+                target_position=int(spec["target_position"]),
+            ),
         ),
         semantics=semantics,
         execution=execution,
         evidence=TraceEvidence(
             name="full_answer_runner",
             version="1",
-            metadata={"prefix_view_metadata": dict(prefix_metadata)},
+            metadata={"prefix_view_metadata": prefix_evidence},
         ),
     )
 
