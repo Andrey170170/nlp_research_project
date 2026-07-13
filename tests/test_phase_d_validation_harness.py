@@ -75,7 +75,8 @@ def test_phase_d_validation_configs_and_forwarding(config_path: Path) -> None:
     assert metadata["immutable_validation_config"] is True
     assert metadata["slurm"]["gres"] == "gpu:h200:1"
     assert metadata["slurm"]["mem"] == "100G"
-    assert metadata["slurm"]["time"] == "02:00:00"
+    expected_time = "05:00:00" if "plt" in metadata["baseline_variant"] else "02:00:00"
+    assert metadata["slurm"]["time"] == expected_time
     assert len(scenarios) == 5
     assert len({scenario["name"] for scenario in scenarios}) == 5
     assert len({scenario["recommended_output_root"] for scenario in scenarios}) == 5
