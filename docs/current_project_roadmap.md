@@ -173,8 +173,8 @@ with exact feature/edge support and weighted-edge Jaccard `0.9999999756` versus
 A. CLT E completed from sibling `37c2a0f` in 1,339 seconds with exact
 feature/edge support, weighted-edge Jaccard `0.9999999795`, matching 68,025-event
 live/final telemetry, terminal `attribute.done`, and no retained `K x N` store.
-The final PLT D/E gate is immutable array `1621465_3-4`, snapshot
-`workspace_20260712_175623_phase-d-plt-de-20260712-11`, project `7c14e9b`, and
+The final PLT D/E gate is immutable array `1621467_3-4`, snapshot
+`workspace_20260712_180046_phase-d-plt-de-20260712-12`, project `392eaa1`, and
 sibling `76954ce`. It uses 16,384-column bounded production tiles; E reuses
 current-microbatch denominator tiles and a 4 GiB overlap-aware bounded replay
 cache. C2 execution waits for both PLT summaries, artifacts, telemetry,
