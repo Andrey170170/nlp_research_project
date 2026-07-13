@@ -506,6 +506,15 @@ def _model_load_knobs(specs: list[TraceSpec]) -> dict[str, Any]:
     return resolved or transcoder_config_to_json(resolve_transcoder_load_config())
 
 
+def _compact_result_to_bucketed_compact(*args: Any, **kwargs: Any) -> Any:
+    """Load the canonical compact packager only on the SLURM execution path."""
+    from nlp_research_project.exact_trace_bench.trace_runtime.compact_graph import (
+        compact_result_to_bucketed_compact,
+    )
+
+    return compact_result_to_bucketed_compact(*args, **kwargs)
+
+
 def _trace_request(
     *,
     model: Any,
@@ -517,8 +526,10 @@ def _trace_request(
     """Translate one harness spec into canonical, subsystem-owned policies."""
     from circuit_tracer import (
         AttributionProblem,
+        DecoderCachePolicy,
         ExecutionConstraints,
         FrontierExpansionPlan,
+        FrontierSemantics,
         ObservabilityPolicy,
         ReplayPlan,
         RowStoragePlan,
@@ -544,7 +555,31 @@ def _trace_request(
         phase0_activation_threshold_compare_mode=str(
             knobs.get("phase0_activation_threshold_compare_mode", "baseline")
         ),
+        frontier=FrontierSemantics(
+            scheduler=str(knobs.get("phase4_scheduler_mode", "locality")),
+            refresh_policy=str(knobs.get("phase4_refresh_policy", "standard")),
+            refresh_interval_multiplier=int(
+                knobs.get("phase4_refresh_interval_multiplier", 1)
+            ),
+            ranker=str(knobs.get("phase4_ranker", "argsort")),
+            phase3_buffer_relative_epsilon=knobs.get(
+                "phase3_frontier_buffer_relative_epsilon"
+            ),
+            phase3_buffer_max_extra=int(
+                knobs.get("phase3_frontier_buffer_max_extra", 0)
+            ),
+            phase4_buffer_relative_epsilon=knobs.get(
+                "phase4_frontier_buffer_relative_epsilon"
+            ),
+            phase4_buffer_max_extra_per_refresh=int(
+                knobs.get("phase4_frontier_buffer_max_extra_per_refresh", 0)
+            ),
+            phase4_buffer_max_extra_total=int(
+                knobs.get("phase4_frontier_buffer_max_extra_total", 0)
+            ),
+        ),
     )
+    decoder_cache_bytes = int(knobs.get("cross_batch_decoder_cache_bytes", 0))
     execution = ExecutionConstraints(
         session=SessionPlan(
             capacity=knobs.get("nnsight_session_capacity"),
@@ -558,6 +593,10 @@ def _trace_request(
                 knobs.get("phase1_trace_batch_policy", "legacy")
             ),
             phase1_trace_batch_size_max=knobs.get("phase1_trace_batch_size_max"),
+            decoder_cache=DecoderCachePolicy(
+                enabled=decoder_cache_bytes > 0,
+                max_bytes=decoder_cache_bytes or None,
+            ),
         ),
         storage=RowStoragePlan(
             retention=str(knobs.get("feature_row_retention", "full_file")),
@@ -604,7 +643,6 @@ def _trace_request(
             ),
         ),
         frontier=FrontierExpansionPlan(
-            scheduler=str(knobs.get("phase4_scheduler_mode", "locality")),
             scheduler_debug=bool(knobs.get("phase4_scheduler_debug", False)),
             scheduler_telemetry_detail=str(
                 knobs.get("phase4_scheduler_telemetry_detail", "normal")
@@ -620,11 +658,6 @@ def _trace_request(
             ),
             row_executor=str(knobs.get("phase4_row_executor", "batched")),
             row_reduction=str(knobs.get("phase4_row_reduction", "gpu_v1")),
-            refresh_policy=str(knobs.get("phase4_refresh_policy", "standard")),
-            refresh_interval_multiplier=int(
-                knobs.get("phase4_refresh_interval_multiplier", 1)
-            ),
-            ranker=str(knobs.get("phase4_ranker", "argsort")),
             feature_batch_planning=bool(knobs.get("plan_feature_batch_size", False)),
             feature_batch_size_max=knobs.get("feature_batch_size_max"),
             feature_batch_target_reserved_fraction=float(
@@ -635,21 +668,6 @@ def _trace_request(
             ),
             feature_batch_probe_batches=int(
                 knobs.get("feature_batch_probe_batches", 1)
-            ),
-            phase3_frontier_buffer_relative_epsilon=knobs.get(
-                "phase3_frontier_buffer_relative_epsilon"
-            ),
-            phase3_frontier_buffer_max_extra=int(
-                knobs.get("phase3_frontier_buffer_max_extra", 0)
-            ),
-            phase4_frontier_buffer_relative_epsilon=knobs.get(
-                "phase4_frontier_buffer_relative_epsilon"
-            ),
-            phase4_frontier_buffer_max_extra_per_refresh=int(
-                knobs.get("phase4_frontier_buffer_max_extra_per_refresh", 0)
-            ),
-            phase4_frontier_buffer_max_extra_total=int(
-                knobs.get("phase4_frontier_buffer_max_extra_total", 0)
             ),
         ),
         observability=ObservabilityPolicy(
@@ -907,10 +925,9 @@ def run_real_shard(
         ),
     )
 
-    import circuit_utils
+    from nlp_research_project.exact_trace_bench import compact_io as circuit_utils
     import trace_pipeline as base
     from circuit_tracer import SessionWindow, open_session, trace_one
-    from trace_pipeline_chunked import compact_result_to_bucketed_compact
     model_load_knobs = _model_load_knobs(specs)
     model = base.load_model(
         exact_chunked_decoder=True,
@@ -1030,8 +1047,18 @@ def run_real_shard(
                             ),
                             request=request,
                         )
+                    elif request.execution.session.decoder_cache.enabled:
+                        if window_session is None:
+                            window_session = open_session(request)
+                        trace_result = window_session.trace(request)
                     else:
                         trace_result = trace_one(request)
+                    trace["trajectory_session"][
+                        "decoder_cache_reuse_effective"
+                    ] = bool(
+                        request.execution.session.decoder_cache.enabled
+                        and window_session is not None
+                    )
                     graph_result = trace_result.output
                     if trace_result.telemetry_summary:
                         trace["telemetry_summary"] = _json_ready(
@@ -1067,7 +1094,7 @@ def run_real_shard(
                         debug_sidecars = _save_compact_debug_sidecars(
                             token_dir, compact_result
                         )
-                        bucketed = compact_result_to_bucketed_compact(
+                        bucketed = _compact_result_to_bucketed_compact(
                             compact_result,
                             spec["generated_index"],
                             token_text=spec["target_token_text"],

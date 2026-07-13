@@ -28,7 +28,7 @@ from typing import Any
 import torch
 
 import trace_pipeline as base
-from circuit_utils import save_compact
+from nlp_research_project.exact_trace_bench.compact_io import save_compact
 from prefix_caching.cache import PrefixCache
 from trace_pipeline_chunked import (
     build_sparsification_config,

@@ -13,6 +13,8 @@ from nlp_research_project.exact_trace_bench.full_answer.aggregate import (
     aggregate_shards,
 )
 from nlp_research_project.exact_trace_bench import cli as full_answer_cli
+from nlp_research_project.exact_trace_bench import compact_io
+from nlp_research_project.exact_trace_bench.full_answer import runner as runner_module
 from nlp_research_project.exact_trace_bench.full_answer.runner import (
     _trace_request,
     dry_run_shard,
@@ -29,6 +31,22 @@ from nlp_research_project.exact_trace_bench.full_answer.runner import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PROJECT_ROOT / "src"
+
+
+def _stub_compact_packager(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runner_module,
+        "_compact_result_to_bucketed_compact",
+        lambda *_args, **_kwargs: types.SimpleNamespace(step={}),
+    )
+    monkeypatch.setattr(
+        compact_io,
+        "save_bucketed_compact",
+        lambda _bundle, path: (
+            Path(path).parent.mkdir(parents=True, exist_ok=True),
+            Path(path).write_text("graph"),
+        ),
+    )
 
 
 def _write_tiny_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -214,7 +232,9 @@ def test_trace_request_builds_canonical_domain_policies() -> None:
     assert request.execution.storage.retention == "none_recompute"
     assert request.execution.storage.full_retention_backend == "column_tiled_v1"
     assert request.execution.replay.decoder_contraction_tile == 128
-    assert request.execution.frontier.scheduler == "planner_v1"
+    assert request.semantics.frontier.scheduler == "planner_v1"
+    assert request.execution.session.decoder_cache.enabled is True
+    assert request.execution.session.decoder_cache.max_bytes == 8589934592
     assert request.execution.observability.telemetry_max_events == 500
     assert request.evidence.metadata["prefix_view_metadata"] == {
         "mode": "independent_prefix"
@@ -356,10 +376,6 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
         }
         return types.SimpleNamespace(output=output, telemetry_summary={})
 
-    def fake_save_compact(step, graph_path):
-        Path(graph_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(graph_path).write_text("graph")
-
     monkeypatch.setenv("SLURM_JOB_ID", "test-job")
     monkeypatch.setitem(
         sys.modules,
@@ -372,29 +388,10 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
     )
     monkeypatch.setitem(
         sys.modules,
-        "circuit_utils",
-        types.SimpleNamespace(
-            save_bucketed_compact=lambda _bundle, graph_path: fake_save_compact(
-                {}, graph_path
-            ),
-            save_compact=fake_save_compact,
-        ),
-    )
-    monkeypatch.setitem(
-        sys.modules,
         "trace_pipeline",
         types.SimpleNamespace(load_model=lambda **_kwargs: object()),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline_chunked",
-        types.SimpleNamespace(
-            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: (
-                types.SimpleNamespace(step={})
-            ),
-            resolve_internal_precision=lambda _dtype: "float32",
-        ),
-    )
+    _stub_compact_packager(monkeypatch)
     import circuit_tracer
 
     monkeypatch.setattr(circuit_tracer, "trace_one", fake_trace_one)
@@ -500,24 +497,10 @@ def test_real_shard_persists_exception_attached_telemetry(
     )
     monkeypatch.setitem(
         sys.modules,
-        "circuit_utils",
-        types.SimpleNamespace(save_compact=lambda *_args, **_kwargs: None),
-    )
-    monkeypatch.setitem(
-        sys.modules,
         "trace_pipeline",
         types.SimpleNamespace(load_model=lambda **_kwargs: object()),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline_chunked",
-        types.SimpleNamespace(
-            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: (
-                types.SimpleNamespace(step={})
-            ),
-            resolve_internal_precision=lambda _dtype: "float32",
-        ),
-    )
+    _stub_compact_packager(monkeypatch)
     import circuit_tracer
 
     monkeypatch.setattr(circuit_tracer, "trace_one", fake_trace_one)
@@ -561,10 +544,6 @@ def test_real_shard_forwards_full_sequence_prompt_and_output_position(
         captured["request"] = request
         return types.SimpleNamespace(output={}, telemetry_summary={})
 
-    def fake_save_compact(step, graph_path):
-        Path(graph_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(graph_path).write_text("graph")
-
     monkeypatch.setenv("SLURM_JOB_ID", "test-job")
     monkeypatch.setitem(
         sys.modules,
@@ -577,29 +556,10 @@ def test_real_shard_forwards_full_sequence_prompt_and_output_position(
     )
     monkeypatch.setitem(
         sys.modules,
-        "circuit_utils",
-        types.SimpleNamespace(
-            save_bucketed_compact=lambda _bundle, graph_path: fake_save_compact(
-                {}, graph_path
-            ),
-            save_compact=fake_save_compact,
-        ),
-    )
-    monkeypatch.setitem(
-        sys.modules,
         "trace_pipeline",
         types.SimpleNamespace(load_model=lambda **_kwargs: object()),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline_chunked",
-        types.SimpleNamespace(
-            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: (
-                types.SimpleNamespace(step={})
-            ),
-            resolve_internal_precision=lambda _dtype: "float32",
-        ),
-    )
+    _stub_compact_packager(monkeypatch)
     import circuit_tracer
 
     monkeypatch.setattr(circuit_tracer, "trace_one", fake_trace_one)
@@ -666,30 +626,10 @@ def test_real_shard_experimental_reuse_falls_back_to_canonical_per_token_trace(
     )
     monkeypatch.setitem(
         sys.modules,
-        "circuit_utils",
-        types.SimpleNamespace(
-            save_bucketed_compact=lambda _bundle, graph_path: (
-                Path(graph_path).parent.mkdir(parents=True, exist_ok=True),
-                Path(graph_path).write_text("graph"),
-            ),
-            save_compact=lambda _step, graph_path: Path(graph_path).write_text("graph"),
-        ),
-    )
-    monkeypatch.setitem(
-        sys.modules,
         "trace_pipeline",
         types.SimpleNamespace(load_model=lambda **_kwargs: model),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline_chunked",
-        types.SimpleNamespace(
-            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: (
-                types.SimpleNamespace(step={})
-            ),
-            resolve_internal_precision=lambda _dtype: "float32",
-        ),
-    )
+    _stub_compact_packager(monkeypatch)
     import circuit_tracer
 
     monkeypatch.setattr(circuit_tracer, "trace_one", fake_trace_one)
@@ -761,30 +701,10 @@ def test_real_shard_canonical_per_token_requests_preserve_each_spec(
     )
     monkeypatch.setitem(
         sys.modules,
-        "circuit_utils",
-        types.SimpleNamespace(
-            save_bucketed_compact=lambda _bundle, graph_path: (
-                Path(graph_path).parent.mkdir(parents=True, exist_ok=True),
-                Path(graph_path).write_text("graph"),
-            ),
-            save_compact=lambda _step, graph_path: Path(graph_path).write_text("graph"),
-        ),
-    )
-    monkeypatch.setitem(
-        sys.modules,
         "trace_pipeline",
         types.SimpleNamespace(load_model=lambda **_kwargs: model),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline_chunked",
-        types.SimpleNamespace(
-            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: (
-                types.SimpleNamespace(step={})
-            ),
-            resolve_internal_precision=lambda _dtype: "float32",
-        ),
-    )
+    _stub_compact_packager(monkeypatch)
     import circuit_tracer
 
     monkeypatch.setattr(circuit_tracer, "trace_one", fake_trace_one)
@@ -885,18 +805,6 @@ def test_real_shard_window_reuse_uses_window_session(
     )
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
 
-    def fake_save_bucketed(_bundle, graph_path) -> None:
-        Path(graph_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(graph_path).write_text("graph")
-
-    monkeypatch.setitem(
-        sys.modules,
-        "circuit_utils",
-        types.SimpleNamespace(
-            save_bucketed_compact=fake_save_bucketed,
-            save_compact=lambda _step, graph_path: Path(graph_path).write_text("graph"),
-        ),
-    )
     monkeypatch.setitem(
         sys.modules,
         "trace_pipeline",
@@ -906,16 +814,7 @@ def test_real_shard_window_reuse_uses_window_session(
             )
         ),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline_chunked",
-        types.SimpleNamespace(
-            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: (
-                types.SimpleNamespace(step={})
-            ),
-            resolve_internal_precision=lambda _dtype: "float32",
-        ),
-    )
+    _stub_compact_packager(monkeypatch)
     import circuit_tracer
 
     monkeypatch.setattr(circuit_tracer, "open_session", fake_open_session)
@@ -1128,8 +1027,7 @@ def test_real_shard_requires_slurm_before_heavy_imports(
         if name in {
             "torch",
             "trace_pipeline",
-            "circuit_utils",
-            "trace_pipeline_chunked",
+            "nlp_research_project.exact_trace_bench.compact_io",
             "circuit_tracer",
         }:
             raise AssertionError(f"heavy import attempted: {name}")

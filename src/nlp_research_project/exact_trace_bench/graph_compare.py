@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 if TYPE_CHECKING:
-    from circuit_utils import StepData
+    from nlp_research_project.exact_trace_bench.compact_io import StepData
 
 DEFAULT_EDGE_TOP_KS = (64, 128, 256, 512, 1024)
 DEFAULT_QUANTILES = (0.0, 0.25, 0.5, 0.75, 0.9, 0.99, 1.0)
@@ -302,7 +302,7 @@ def compare_step_pair(step_a: "StepData", step_b: "StepData") -> dict[str, Any]:
 
 
 def _load_completion_steps(completion_dir: Path) -> list["StepData"]:
-    from circuit_utils import load_compact
+    from nlp_research_project.exact_trace_bench.compact_io import load_compact
 
     return [
         load_compact(path)

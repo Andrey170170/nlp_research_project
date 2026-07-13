@@ -44,7 +44,7 @@ try:
 except ImportError:  # pragma: no cover - non-Unix fallback
     resource = None  # type: ignore[assignment]
 
-from circuit_utils import (
+from nlp_research_project.exact_trace_bench.compact_io import (
     StepData,
     save_compact,
     sparsify_edges,

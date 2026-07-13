@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 import torch
-from circuit_utils import save_compact
+from nlp_research_project.exact_trace_bench.compact_io import save_compact
 
 from .artifacts import (
     save_feature_semantic_descriptors,

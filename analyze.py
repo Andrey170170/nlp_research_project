@@ -24,7 +24,7 @@ import numpy as np
 from scipy import stats
 from tqdm import tqdm
 
-from circuit_utils import (
+from nlp_research_project.exact_trace_bench.compact_io import (
     STABLE_CORE_PERSISTENCE,
     STABLE_CORE_WINDOW,
     StepData,

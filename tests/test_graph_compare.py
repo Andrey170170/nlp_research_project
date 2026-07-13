@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import types
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -112,11 +111,9 @@ def test_compare_artifact_dirs_ignores_auxiliary_step_npz(
             weights=[1.0],
         )
 
-    monkeypatch.setitem(
-        sys.modules,
-        "circuit_utils",
-        types.SimpleNamespace(load_compact=load_compact),
-    )
+    from nlp_research_project.exact_trace_bench import compact_io
+
+    monkeypatch.setattr(compact_io, "load_compact", load_compact)
 
     result = compare_artifact_dirs(tmp_path / "left", tmp_path / "right")
 

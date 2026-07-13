@@ -8,8 +8,8 @@ from typing import Any
 import numpy as np
 import torch
 
-import circuit_utils
-from circuit_utils import StepData
+from nlp_research_project.exact_trace_bench import compact_io as circuit_utils
+from nlp_research_project.exact_trace_bench.compact_io import StepData
 
 
 DEFAULT_TYPED_BUCKET_POLICIES = {

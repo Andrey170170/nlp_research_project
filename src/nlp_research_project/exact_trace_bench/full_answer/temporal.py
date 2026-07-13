@@ -19,7 +19,7 @@ from ..graph_compare import (
 from ..io_utils import ensure_dir, write_json, write_jsonl
 
 if TYPE_CHECKING:
-    from circuit_utils import StepData
+    from nlp_research_project.exact_trace_bench.compact_io import StepData
 
 DEFAULT_WINDOWS = (5, 10, 25)
 DEFAULT_LAGS = (1, 2, 4, 8, 16, 32)

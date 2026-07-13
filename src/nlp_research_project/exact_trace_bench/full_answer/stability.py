@@ -10,7 +10,7 @@ from ..graph_compare import compare_step_pair
 from ..io_utils import ensure_dir, write_json
 
 if TYPE_CHECKING:
-    from circuit_utils import StepData
+    from nlp_research_project.exact_trace_bench.compact_io import StepData
 
 DEFAULT_TOP_KS = (128, 512, 1024, 4096, 8192, 16384)
 DEFAULT_NEAR_CUTOFF_FRACTIONS = (0.001, 0.01, 0.05)
