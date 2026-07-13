@@ -19,7 +19,7 @@ from whichever local branches happen to be checked out.
 | Editable dependency | `circuit-tracer = { path = "../circuit-tracer_chunked", editable = true }` |
 | Current calibration stack | Gemma 3 1B/4B/12B + GemmaScope-2 CLT/PLT providers |
 | Canonical exact-trace dtype | `exact_trace_internal_dtype=fp32` |
-| Governor status | Phase B advisory resolver complete; Phase C1 extraction gate passed; Phase D D/E validation jobs are in flight; Phase C2 atomic tracing-runtime rewrite is planned next and blocked on D/E artifact adjudication; Phase E is gated on D and C2 |
+| Governor status | Phase B advisory resolver complete; Phase C1 and Phase D gates passed; Phase C2 canonical-runtime implementation is landing and its immutable 1B CLT/PLT gate remains pending; Phase E is gated on C2 closure |
 | Current benchmark harness | `src/nlp_research_project/exact_trace_bench/` |
 | Scratch root | `/scratch/general/vast/$USER/nlp_research_project/exact_trace_bench/` |
 
@@ -127,10 +127,12 @@ distinguish campaigns. Do not introduce new ordinary scratch buckets like
 
 Important entry points:
 
-- `trace_pipeline_chunked.py` — fork-native exact/chunked tracing entrypoint.
-- `trace_pipeline.py` — older multi-prompt tracing pipeline.
+- `src/nlp_research_project/exact_trace_bench/trace_runtime/` — canonical
+  project-to-sibling tracing requests, scenario execution, and project-owned
+  artifacts.
+- `src/nlp_research_project/exact_trace_bench/compact_io.py` — compact graph
+  metrics and `.npz` helpers.
 - `evaluate.py` / `analyze.py` — earlier correctness evaluation and analysis.
-- `circuit_utils.py` — compact graph metrics and `.npz` utilities.
 - `src/nlp_research_project/exact_trace_bench/` — current benchmark setup/extraction/compare
   harness.
 - `slurm/exact_trace_bench/` — canonical exact-bench SLURM templates used by

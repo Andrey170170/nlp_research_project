@@ -15,7 +15,16 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import trace_pipeline as base  # noqa: E402
+from nlp_research_project.exact_trace_bench.trace_runtime.prompts import (  # noqa: E402
+    format_prompt,
+    load_gsm8k_examples,
+)
+from nlp_research_project.exact_trace_bench.trace_runtime.provider import (  # noqa: E402
+    load_model,
+)
+from nlp_research_project.exact_trace_bench.trace_runtime.support import (  # noqa: E402
+    capture_resource_snapshot,
+)
 
 
 DEFAULT_BATCHES_FILE = (
@@ -156,12 +165,12 @@ def main() -> None:
     print(f"Prompt count: {len(gsm8k_indices)}")
     print(f"Output dir: {output_dir}")
 
-    model = base.load_model(
+    model = load_model(
         lazy_encoder=not args.no_lazy_encoder,
         lazy_decoder=not args.no_lazy_decoder,
         decoder_chunk_size=args.decoder_chunk_size,
     )
-    examples = base.load_gsm8k_examples(len(gsm8k_indices), indices=gsm8k_indices)
+    examples = load_gsm8k_examples(len(gsm8k_indices), indices=gsm8k_indices)
 
     prompt_results: list[dict[str, Any]] = []
     results_jsonl = output_dir / "results.jsonl"
@@ -170,7 +179,7 @@ def main() -> None:
 
     for prompt_idx, example in enumerate(examples):
         prompt_start = time.time()
-        prompt_text = base.format_prompt(model.tokenizer, example["question"])  # type: ignore[unresolved-attribute]
+        prompt_text = format_prompt(model.tokenizer, example["question"])  # type: ignore[unresolved-attribute]
         prompt_result: dict[str, Any] = {
             "analysis_name": batches_payload.get(
                 "analysis_name", "feature_distribution_analysis"
@@ -182,7 +191,7 @@ def main() -> None:
             "question": example["question"],
             "ground_truth_answer": example["answer"],
             "status": "success",
-            "resource_snapshot_before": base.capture_resource_snapshot(),
+            "resource_snapshot_before": capture_resource_snapshot(),
         }
 
         try:
@@ -209,7 +218,7 @@ def main() -> None:
             prompt_result.update(stats)
 
         prompt_result["duration_seconds"] = round(time.time() - prompt_start, 2)
-        prompt_result["resource_snapshot_after"] = base.capture_resource_snapshot()
+        prompt_result["resource_snapshot_after"] = capture_resource_snapshot()
         prompt_results.append(prompt_result)
 
         with results_jsonl.open("a", encoding="utf-8") as handle:

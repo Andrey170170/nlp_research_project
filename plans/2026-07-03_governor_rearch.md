@@ -1,7 +1,7 @@
 # Memory governor + rearchitecture execution plan
 
-Status: active; Phase D validation in flight; Phase C2 planned before Phase E and blocked on D/E adjudication
-Date: 2026-07-03; last updated 2026-07-12
+Status: active; Phase D closed; Phase C2 implementation landing with immutable validation pending before Phase E
+Date: 2026-07-03; last updated 2026-07-13
 Scope: sibling library `../circuit-tracer_chunked` rewrite + project harness
 restructure + validation campaigns
 
@@ -20,7 +20,7 @@ Two intertwined problems, one plan:
    that cannot trade resources across the VRAM / host-RAM / file-backed tiers.
    The target design replaces it with a budget-driven memory governor
    (invariant, castes, plan epochs, degradation ladders — see the spec).
-2. The first sibling decomposition moved phase algorithms and observability
+2. At the start of C2, the first sibling decomposition had moved phase algorithms and observability
    mechanics, but left an accidental aggregation point: `attribute_nnsight.py`
    is still 2,254 lines, imports about 240 bindings, and relays a 90-field
    surface into a 1,360-line runner. The project still mirrors that surface
@@ -663,9 +663,11 @@ criterion.
 
 ## Phase C2 — Cleanup Strikes Again: Atomic Tracing-Pipeline Rewrite
 
-Execution is blocked until Granite D/E jobs `1619423`, `1619424`, `1619425`,
-and `1619426` are terminal and their artifacts are adjudicated. Planning and
-documentation may proceed while they run. Slurm state alone does not unlock C2.
+Phase D is closed and its accepted D/E artifacts are the frozen C2 oracle.
+Canonical API, caller migration, ownership decomposition, and stale-path
+deletion are landing now. Phase C2 remains open until login-safe validation and
+immutable Granite comparison are both adjudicated; Slurm state alone cannot
+close it.
 
 Goal: make the complete trace path understandable from project scenario to
 sibling result before the governor is connected. This is a replacement, not

@@ -24,8 +24,6 @@ def run_scenario_file(scenario_file: Path, output_dir: Path) -> None:
 def run_campaign(scenario: Mapping[str, Any], *, output_dir: Path) -> None:
     """Load once, then execute the prompt/completion campaign."""
 
-    if scenario.get("method", "exact") == "old_patch":
-        raise ValueError("old_patch scenarios use the historical project launcher")
     if scenario.get("save_raw", False):
         raise ValueError("C2 canonical campaign supports compact trace results only")
 

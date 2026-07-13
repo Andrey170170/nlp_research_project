@@ -1,8 +1,7 @@
 """Offline correctness check for prefix cache validation results.
 
-Reads ``cache_validation.json`` produced by
-``prefix_caching.trace_pipeline_cached`` and asserts that prefix features
-matched at every step.  Runs on a login node — no GPU required.
+Reads a retained ``cache_validation.json`` artifact and asserts that prefix
+features matched at every step. Runs on a login node — no GPU required.
 
 Usage::
 

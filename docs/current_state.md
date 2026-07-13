@@ -76,9 +76,9 @@ The current exact-trace workflow depends on both checkouts being present.
 - Phase A is closed for implementation purposes. Phase B governor contracts and
   the pure resolver are complete at sibling `phase-b-governor-contract@0ce3f96`.
   Phase C1 structural runtime/observability extraction and its Granite gate are
-  complete. Phase D mechanism validation is in flight. Phase C2 then replaces
-  the complete tracing path atomically; execution waits for D/E artifact
-  adjudication. Phase E remains staged governor integration and requires both D
+  complete. Phase D mechanism validation is complete. Phase C2 is replacing
+  the complete tracing path atomically; closure waits for login-safe and
+  immutable Granite adjudication. Phase E remains staged governor integration and requires both D
   and C2 gates, followed by Phase F governed harness consolidation.
 - Descriptive architecture details now live under `docs/architecture/`.
 - Current baseline decisions stay in `EXPERIMENTS.md`; active work stays in the owning spec.

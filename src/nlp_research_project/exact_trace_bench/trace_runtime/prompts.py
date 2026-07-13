@@ -19,17 +19,15 @@ def load_prompts(model: Any, scenario: Mapping[str, Any]) -> list[PreparedPrompt
     if prepared_file is not None:
         examples = [_load_prepared_example(prepared_file, scenario.get("prepared_prompt_meta_file"))]
     else:
-        from datasets import load_dataset
-
-        dataset = load_dataset("openai/gsm8k", "main", split="test")
         indices = scenario.get("gsm8k_indices")
-        if not indices:
-            indices = range(min(int(scenario.get("prompts", 1)), len(dataset)))
-        examples = [{**dataset[int(index)], "gsm8k_index": int(index)} for index in indices]
+        examples = load_gsm8k_examples(
+            int(scenario.get("prompts", 1)),
+            indices=None if not indices else [int(index) for index in indices],
+        )
 
     prompts = []
     for example in examples:
-        text = example.get("prompt_text") or _format_prompt(
+        text = example.get("prompt_text") or format_prompt(
             model.tokenizer, example["question"]
         )
         token_count = int(model.ensure_tokenized(text).shape[0])
@@ -65,7 +63,21 @@ def _load_prepared_example(prompt_file: Any, metadata_file: Any) -> dict[str, An
     }
 
 
-def _format_prompt(tokenizer: Any, question: str) -> str:
+def load_gsm8k_examples(
+    count: int = 10, *, indices: list[int] | None = None
+) -> list[dict[str, Any]]:
+    """Load selected GSM8K prompts while preserving their dataset indices."""
+    from datasets import load_dataset
+
+    dataset = load_dataset("openai/gsm8k", "main", split="test")
+    selected = indices if indices is not None else list(range(min(count, len(dataset))))
+    examples = [{**dataset[index], "gsm8k_index": index} for index in selected]
+    print(f"Loaded {len(examples)} GSM8K examples")
+    return examples
+
+
+def format_prompt(tokenizer: Any, question: str) -> str:
+    """Render the canonical GSM8K chat prompt for the loaded model."""
     return tokenizer.apply_chat_template(
         [
             {

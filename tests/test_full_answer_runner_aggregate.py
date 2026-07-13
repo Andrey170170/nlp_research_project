@@ -28,6 +28,7 @@ from nlp_research_project.exact_trace_bench.full_answer.runner import (
     run_real_shard,
     session_reuse_metadata,
 )
+from nlp_research_project.exact_trace_bench.trace_runtime import provider
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -386,11 +387,7 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
             Tensor=type("FakeTensor", (), {}),
         ),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline",
-        types.SimpleNamespace(load_model=lambda **_kwargs: object()),
-    )
+    monkeypatch.setattr(provider, "load_model", lambda **_kwargs: object())
     _stub_compact_packager(monkeypatch)
     import circuit_tracer
 
@@ -495,11 +492,7 @@ def test_real_shard_persists_exception_attached_telemetry(
             Tensor=type("FakeTensor", (), {}),
         ),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline",
-        types.SimpleNamespace(load_model=lambda **_kwargs: object()),
-    )
+    monkeypatch.setattr(provider, "load_model", lambda **_kwargs: object())
     _stub_compact_packager(monkeypatch)
     import circuit_tracer
 
@@ -554,11 +547,7 @@ def test_real_shard_forwards_full_sequence_prompt_and_output_position(
             Tensor=type("FakeTensor", (), {}),
         ),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline",
-        types.SimpleNamespace(load_model=lambda **_kwargs: object()),
-    )
+    monkeypatch.setattr(provider, "load_model", lambda **_kwargs: object())
     _stub_compact_packager(monkeypatch)
     import circuit_tracer
 
@@ -624,11 +613,7 @@ def test_real_shard_experimental_reuse_falls_back_to_canonical_per_token_trace(
             Tensor=type("FakeTensor", (), {}),
         ),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline",
-        types.SimpleNamespace(load_model=lambda **_kwargs: model),
-    )
+    monkeypatch.setattr(provider, "load_model", lambda **_kwargs: model)
     _stub_compact_packager(monkeypatch)
     import circuit_tracer
 
@@ -699,11 +684,7 @@ def test_real_shard_canonical_per_token_requests_preserve_each_spec(
         "torch",
         types.SimpleNamespace(tensor=lambda data, dtype=None: data, long=object()),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline",
-        types.SimpleNamespace(load_model=lambda **_kwargs: model),
-    )
+    monkeypatch.setattr(provider, "load_model", lambda **_kwargs: model)
     _stub_compact_packager(monkeypatch)
     import circuit_tracer
 
@@ -805,13 +786,11 @@ def test_real_shard_window_reuse_uses_window_session(
     )
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
 
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline",
-        types.SimpleNamespace(
-            load_model=lambda **_kwargs: types.SimpleNamespace(
-                transcoders=Transcoders(), device="cpu"
-            )
+    monkeypatch.setattr(
+        provider,
+        "load_model",
+        lambda **_kwargs: types.SimpleNamespace(
+            transcoders=Transcoders(), device="cpu"
         ),
     )
     _stub_compact_packager(monkeypatch)
@@ -911,7 +890,10 @@ def test_shard_inputs_normalize_old_specs_without_target_position(
 
 
 def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
-    env = {"PYTHONPATH": str(SRC_ROOT)}
+    env = {
+        "MPLCONFIGDIR": "/tmp/nlp-research-project-matplotlib",
+        "PYTHONPATH": str(SRC_ROOT),
+    }
     return subprocess.run(
         [sys.executable, "-m", "nlp_research_project.exact_trace_bench", *args],
         check=False,
@@ -1026,7 +1008,7 @@ def test_real_shard_requires_slurm_before_heavy_imports(
     def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
         if name in {
             "torch",
-            "trace_pipeline",
+            "nlp_research_project.exact_trace_bench.trace_runtime.provider",
             "nlp_research_project.exact_trace_bench.compact_io",
             "circuit_tracer",
         }:

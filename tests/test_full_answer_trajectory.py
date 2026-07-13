@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,6 +14,7 @@ from nlp_research_project.exact_trace_bench.full_answer.trajectory import (
     sample_trajectories_until_success,
     trajectory_matches_expected_answer,
 )
+from nlp_research_project.exact_trace_bench.trace_runtime import provider, support
 
 
 def test_build_trajectory_schema_from_token_ids() -> None:
@@ -112,18 +112,8 @@ def test_sampling_loop_saves_every_attempt_and_manifest(
             "next_input_ids": input_ids,
         }
 
-    fake_trace_pipeline = SimpleNamespace(
-        load_model=lambda exact_chunked_decoder: _FakeModel(),
-        generate_next_token=generate_next_token,
-    )
-    fake_torch = SimpleNamespace(
-        manual_seed=lambda seed: None,
-        cuda=SimpleNamespace(
-            is_available=lambda: False, manual_seed_all=lambda seed: None
-        ),
-    )
-    monkeypatch.setitem(sys.modules, "trace_pipeline", fake_trace_pipeline)
-    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setattr(provider, "load_model", lambda exact_chunked_decoder: _FakeModel())
+    monkeypatch.setattr(support, "generate_next_token", generate_next_token)
 
     manifest = sample_trajectories_until_success(
         prompt_path=prompt_path,
@@ -161,18 +151,8 @@ def test_sampling_collect_all_continues_after_success(
             "next_input_ids": input_ids,
         }
 
-    fake_trace_pipeline = SimpleNamespace(
-        load_model=lambda exact_chunked_decoder: _FakeModel(),
-        generate_next_token=generate_next_token,
-    )
-    fake_torch = SimpleNamespace(
-        manual_seed=lambda seed: None,
-        cuda=SimpleNamespace(
-            is_available=lambda: False, manual_seed_all=lambda seed: None
-        ),
-    )
-    monkeypatch.setitem(sys.modules, "trace_pipeline", fake_trace_pipeline)
-    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setattr(provider, "load_model", lambda exact_chunked_decoder: _FakeModel())
+    monkeypatch.setattr(support, "generate_next_token", generate_next_token)
 
     manifest = sample_trajectories_until_success(
         prompt_path=prompt_path,

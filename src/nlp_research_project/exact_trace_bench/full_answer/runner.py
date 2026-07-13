@@ -926,15 +926,17 @@ def run_real_shard(
     )
 
     from nlp_research_project.exact_trace_bench import compact_io as circuit_utils
-    import trace_pipeline as base
+    from nlp_research_project.exact_trace_bench.trace_runtime.provider import (
+        get_model_transcoder_metadata,
+        load_model,
+    )
     from circuit_tracer import SessionWindow, open_session, trace_one
     model_load_knobs = _model_load_knobs(specs)
-    model = base.load_model(
+    model = load_model(
         exact_chunked_decoder=True,
         **model_load_knobs,
     )
-    get_metadata = getattr(base, "get_model_transcoder_metadata", None)
-    transcoder_metadata = (get_metadata(model) if callable(get_metadata) else None) or {
+    transcoder_metadata = get_model_transcoder_metadata(model) or {
         "requested": model_load_knobs
     }
     metadata = {**metadata, "transcoder": transcoder_metadata}

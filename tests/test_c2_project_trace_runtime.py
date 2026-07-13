@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import inspect
 import json
 import sys
@@ -101,15 +102,55 @@ def test_completion_orchestrator_remains_readable() -> None:
 
 def test_no_stale_project_runtime_references() -> None:
     assert not (ROOT / "trace_pipeline_chunked.py").exists()
+    assert not (ROOT / "trace_pipeline.py").exists()
+    assert not (ROOT / "explore_pipeline.py").exists()
+    assert not (ROOT / "prefix_caching" / "trace_pipeline_cached.py").exists()
     production_roots = [ROOT / "src", ROOT / "experiments", ROOT / "slurm"]
-    stale = []
+    stale_text = []
+    stale_imports = []
     for root in production_roots:
         for path in root.rglob("*.py"):
-            if "full_answer" in path.parts:
-                continue
             text = path.read_text()
             if "attribute_nnsight" in text or "trace_pipeline_chunked" in text:
-                stale.append(path.relative_to(ROOT))
+                stale_text.append(path.relative_to(ROOT))
+            for node in ast.walk(ast.parse(text, filename=str(path))):
+                if isinstance(node, ast.Import):
+                    names = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    names = [node.module or ""]
+                    if node.module == "circuit_tracer" and any(
+                        alias.name == "attribute" for alias in node.names
+                    ):
+                        stale_imports.append((path.relative_to(ROOT), node.lineno))
+                else:
+                    continue
+                if any(
+                    name == "trace_pipeline"
+                    or name.startswith("trace_pipeline.")
+                    or name == "circuit_tracer.attribute"
+                    or name.startswith("circuit_tracer.attribute.")
+                    for name in names
+                ):
+                    stale_imports.append((path.relative_to(ROOT), node.lineno))
+    assert stale_text == []
+    assert stale_imports == []
+
+
+def test_active_sparsification_runtime_has_no_old_patch_mode() -> None:
+    production = [
+        ROOT / "experiments" / "run_sparsification_experiment.py",
+        ROOT / "experiments" / "build_sparsification_experiment_configs.py",
+        ROOT / "experiments" / "generated" / "sparsification_calibration_scenarios.json",
+        ROOT / "src" / "nlp_research_project" / "exact_trace_bench" / "trace_runtime",
+    ]
+    stale = []
+    for path in production:
+        files = path.rglob("*.py") if path.is_dir() else [path]
+        stale.extend(
+            file.relative_to(ROOT)
+            for file in files
+            if "old_patch" in file.read_text()
+        )
     assert stale == []
 
 

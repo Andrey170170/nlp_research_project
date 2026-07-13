@@ -27,13 +27,16 @@ from nlp_research_project.exact_trace_bench.baselines import (  # noqa: E402
     validate_baseline_entry,
     write_scenario_metrics,
 )
+from nlp_research_project.exact_trace_bench.config import (  # noqa: E402
+    DEFAULT_SCRATCH_ROOT,
+)
 from nlp_research_project.exact_trace_bench.io_utils import write_csv  # noqa: E402
 
 
 DEFAULT_SCENARIOS = (
     Path(__file__).with_name("generated") / "sparsification_calibration_scenarios.json"
 )
-DEFAULT_OUTPUT_ROOT = Path("/fs/scratch/PAS2836/kopanev.1/sparsification_experiment")
+DEFAULT_OUTPUT_ROOT = DEFAULT_SCRATCH_ROOT / "baseline" / "sparsification_experiment"
 _EXPLICIT_SCENARIO_KEYS = "_explicit_scenario_keys"
 
 PHASE_DURATION_RE = re.compile(r"completed in (?P<seconds>\d+(?:\.\d+)?)s")
@@ -56,10 +59,7 @@ def apply_runtime_overrides(
     cross_batch_decoder_cache_bytes_override: int | None = None,
 ) -> dict[str, Any]:
     effective_scenario = dict(scenario)
-    if (
-        effective_scenario["method"] != "old_patch"
-        and cross_batch_decoder_cache_bytes_override is not None
-    ):
+    if cross_batch_decoder_cache_bytes_override is not None:
         effective_scenario["cross_batch_decoder_cache_bytes"] = (
             cross_batch_decoder_cache_bytes_override
         )
@@ -91,29 +91,6 @@ def _assert_fresh_scenario_root(scenario_root: Path) -> None:
             "Scenario output directory already contains artifacts; refusing to reuse it: "
             f"{scenario_root} ({joined})"
         )
-
-
-def _build_prompt_source_args(scenario: dict[str, Any]) -> list[str]:
-    prepared_prompt_file = scenario.get("prepared_prompt_file")
-    if prepared_prompt_file is not None:
-        args = ["--prepared-prompt-file", str(prepared_prompt_file)]
-        prepared_prompt_meta_file = scenario.get("prepared_prompt_meta_file")
-        if prepared_prompt_meta_file is not None:
-            args.extend(["--prepared-prompt-meta-file", str(prepared_prompt_meta_file)])
-        return args
-
-    gsm8k_indices = scenario.get("gsm8k_indices")
-    if not gsm8k_indices:
-        raise ValueError(
-            "Scenario must define either gsm8k_indices or prepared_prompt_file"
-        )
-
-    return [
-        "--prompts",
-        str(len(gsm8k_indices)),
-        "--gsm8k-indices",
-        ",".join(str(i) for i in gsm8k_indices),
-    ]
 
 
 def _parse_optional_gib(value: str) -> float | None:
@@ -333,7 +310,6 @@ def build_command(
     output_dir: Path,
     scenario: dict[str, Any],
     *,
-    cross_batch_decoder_cache_bytes_override: int | None = None,
     scenario_file: Path | None = None,
 ) -> list[str]:
     """Build the isolated child command for one persisted scenario.
@@ -342,53 +318,16 @@ def build_command(
     itself. The child resolves typed policies and canonical trace requests.
     """
 
-    effective = apply_runtime_overrides(
-        scenario,
-        cross_batch_decoder_cache_bytes_override=cross_batch_decoder_cache_bytes_override,
-    )
     scenario_path = scenario_file or output_dir.parent / "scenario.json"
-    if effective["method"] != "old_patch":
-        return [
-            sys.executable,
-            "-m",
-            "nlp_research_project.exact_trace_bench.trace_runtime",
-            "--scenario-file",
-            str(scenario_path),
-            "--output-dir",
-            str(output_dir),
-        ]
-    return _build_old_patch_command(output_dir, effective)
-
-
-def _build_old_patch_command(output_dir: Path, scenario: dict[str, Any]) -> list[str]:
-    """Retained historical baseline launcher; exact C2 knobs are intentionally absent."""
-
-    command = [
+    return [
         sys.executable,
-        str(REPO_ROOT / "trace_pipeline.py"),
-        *_build_prompt_source_args(scenario),
-        "--completions", str(scenario["completions"]),
-        "--temperature", str(scenario["temperature"]),
-        "--output-dir", str(output_dir),
-        "--max-feature-nodes", str(scenario["max_feature_nodes"]),
-        "--max-edges", str(scenario["max_edges"]),
-        "--max-steps", str(scenario["max_steps"]),
-        "--attribution-batch-size", str(scenario["attribution_batch_size"]),
-        "--max-n-logits", str(scenario["max_n_logits"]),
-        "--desired-logit-prob", str(scenario["desired_logit_prob"]),
-        "--attribution-update-interval", str(scenario["attribution_update_interval"]),
+        "-m",
+        "nlp_research_project.exact_trace_bench.trace_runtime",
+        "--scenario-file",
+        str(scenario_path),
+        "--output-dir",
+        str(output_dir),
     ]
-    if scenario.get("verbose_attribution", False):
-        command.append("--verbose-attribution")
-    if scenario.get("profile_attribution", False):
-        command.append("--profile-attribution")
-    if scenario.get("diagnostic_feature_cap") is not None:
-        command.extend(["--diagnostic-feature-cap", str(scenario["diagnostic_feature_cap"])])
-    if scenario.get("save_raw", False):
-        command.append("--save-raw")
-    if scenario.get("no_offload", False):
-        command.append("--no-offload")
-    return command
 
 
 def run_scenario(
@@ -424,11 +363,7 @@ def run_scenario(
     (scenario_root / "scenario.json").write_text(json.dumps(scenario_payload, indent=2))
 
     log_path = scenario_root / "run.log"
-    cmd = build_command(
-        run_output_dir,
-        scenario,
-        cross_batch_decoder_cache_bytes_override=cross_batch_decoder_cache_bytes_override,
-    )
+    cmd = build_command(run_output_dir, scenario)
     timeout_minutes = scenario.get("timeout_minutes")
     timeout_seconds = None if timeout_minutes is None else int(timeout_minutes * 60)
 
@@ -745,11 +680,7 @@ def main() -> None:
         name = scenario["name"]
         scenario_root = output_root if len(scenarios) == 1 else output_root / name
         if args.dry_run:
-            cmd = build_command(
-                scenario_root / "artifacts",
-                scenario,
-                cross_batch_decoder_cache_bytes_override=args.cross_batch_decoder_cache_bytes,
-            )
+            cmd = build_command(scenario_root / "artifacts", scenario)
             print(f"DRY RUN {name}: {shlex.join(cmd)}")
             continue
         print(f"\n{'=' * 80}\nRunning scenario: {name}\n{'=' * 80}")

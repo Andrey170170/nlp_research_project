@@ -50,14 +50,6 @@ def build_calibration_config(
                 "gsm8k_indices": [prompt_idx],
             }
         )
-        scenarios.append(
-            {
-                "name": f"cal_old_cap_p{prompt_idx:04d}",
-                "stage": "calibration",
-                "method": "old_patch",
-                "gsm8k_indices": [prompt_idx],
-            }
-        )
         for budget in CALIBRATION_BUDGETS:
             scenarios.append(
                 {
@@ -101,14 +93,6 @@ def build_main_config(
     for prompt_idx in prompt_sets["main"]:
         scenarios.append(
             {
-                "name": f"main_old_cap_p{prompt_idx:04d}",
-                "stage": "main",
-                "method": "old_patch",
-                "gsm8k_indices": [prompt_idx],
-            }
-        )
-        scenarios.append(
-            {
                 "name": f"main_sparse_{global_cap // 1000:03d}k_p{prompt_idx:04d}",
                 "stage": "main",
                 "method": "sparse",
@@ -132,22 +116,19 @@ def build_main_config(
 
     if include_robustness:
         for prompt_idx in prompt_sets["robustness"]:
-            for method in ["old_patch", "sparse"]:
-                scenario = {
-                    "name": f"robust_{method}_p{prompt_idx:04d}",
+            scenarios.append(
+                {
+                    "name": f"robust_sparse_p{prompt_idx:04d}",
                     "stage": "robustness",
-                    "method": method,
+                    "method": "sparse",
                     "gsm8k_indices": [prompt_idx],
                     "temperature": 0.7,
                     "completions": 2,
                     "max_steps": 3,
+                    "sparsify_per_layer_position_topk": per_layer_position_topk,
+                    "sparsify_global_cap": global_cap,
                 }
-                if method == "sparse":
-                    scenario["sparsify_per_layer_position_topk"] = (
-                        per_layer_position_topk
-                    )
-                    scenario["sparsify_global_cap"] = global_cap
-                scenarios.append(scenario)
+            )
 
     return {
         "defaults": defaults,

@@ -198,8 +198,12 @@ import `circuit_utils` from an editable console-script invocation.
 
 ## Phase C2 - Cleanup Strikes Again
 
-Phase C2 is planned before Phase E. Its normative architecture and work
-packages live in `docs/tracing_runtime_rewrite_spec.md`.
+Phase C2 implementation is in progress before Phase E. The canonical sibling
+API and project request/artifact runtime have landed; the remaining work is the
+final stale-surface deletion audit, broad login-safe validation, immutable
+Granite execution, and comparison against the frozen pre-C2 contract. Its
+normative architecture and acceptance criteria live in
+`docs/tracing_runtime_rewrite_spec.md`.
 
 This is an atomic cross-repo tracing-path replacement:
 
@@ -228,7 +232,8 @@ together, enforce useful invariants, and be owned by a subsystem. A renamed bag
 of old arguments does not satisfy C2. Functions may take several direct
 arguments when those arguments are honest domain concepts or capabilities.
 
-**C2 gate:** login-safe sibling/project/architecture/failure tests pass; stale
+**Current C2 gate state:** implementation is not closure. Login-safe
+sibling/project/architecture/failure tests must pass; stale
 imports of removed paths are absent; the project invokes the canonical sibling
 API directly; immutable `361_base` 1B CLT/PLT canonical full-retention and
 bounded runs match pinned pre-C2 graph, fingerprint, lifecycle, and accepted

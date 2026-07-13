@@ -1,129 +1,79 @@
 # Sibling `circuit_tracer` code map
 
-Status: Current-state map
-Last updated: 2026-07-12
+Status: Current Phase C2 implementation map; immutable Granite validation pending
+Last updated: 2026-07-13
 
-This is the pre-C2 implementation map. It is not target integration guidance.
-Phase C2 deletes the current `attribute_nnsight`/flat-argument path and replaces
-the complete trace flow according to `../tracing_runtime_rewrite_spec.md`.
+Paths are relative to the sibling checkout `../circuit-tracer_chunked/`.
 
-## Package and CLI
+## Public tracing boundary
 
-Unless noted, paths and commands in this page are relative to the sibling repo
-`../circuit-tracer_chunked/`; run the listed commands from that checkout.
-
-| Surface | Location |
+| Concept | Module |
 |---|---|
-| Package root | `circuit_tracer/` |
-| Console script `circuit-tracer` | `circuit_tracer/__main__.py` |
+| `trace_one`, `trace_batch`, `open_session` | `circuit_tracer/tracing/api.py` |
+| `TraceRequest` and execution/semantic composition | `circuit_tracer/tracing/request.py` |
+| Attribution problem | `circuit_tracer/tracing/problem.py` |
+| Resolved plan and fingerprints | `circuit_tracer/tracing/{plan,planning}.py` |
+| Trace/session results | `circuit_tracer/tracing/{result,session}.py` |
+| Backend-neutral runner | `circuit_tracer/tracing/runner.py` |
 
-## Main modules
+The canonical request composes meaningful domain policies such as session,
+decoder-cache, row-storage, replay, frontier-expansion, and observability
+policies. Semantic and execution fingerprints are independent. Legacy kwargs,
+signature reflection, and flat attribution entry points are absent.
+
+## NNSight execution
+
+| Owner | Modules |
+|---|---|
+| Thin backend coordinator | `attribution/nnsight/backend.py` |
+| Readable Phase 0-5 orchestration | `attribution/nnsight/execution.py` |
+| Validation and mechanism preparation | `attribution/nnsight/preparation.py` |
+| Cleanup ownership | `attribution/nnsight/run_scope.py` |
+| Domain phase operations | `attribution/nnsight/phases/phase{0,1,2,3,4,5}.py` |
+| Context invariants and batch execution | `attribution/nnsight/context_state.py`, `batch_execution.py`, `attribution/context_nnsight.py` |
+| Forward-session capability | `attribution/nnsight/forward_session.py` |
+| Storage/replay mechanisms | `attribution/nnsight/{row_store,row_replay,tiled_rows,replay}.py` |
+| Explicit policy resolvers | `phase1_policy.py`, `phase4_policy.py`, `session_controls.py`, `numerics.py` |
+
+`AttributionExecution.run()` exposes the scientific order: Phase 0
+preparation, forward tracing, active-feature/storage setup, seed attribution,
+frontier expansion, and graph assembly. Policy resolution and terminal
+lifecycle are outside that method.
+
+## Supporting domains
 
 | Area | Modules |
 |---|---|
-| Attribution entry points | `attribution/{attribute.py,attribute_nnsight.py,attribute_transformerlens.py,context_nnsight.py,context_transformerlens.py,targets.py,sparsification.py}` |
-| NNSight phase runtime | `attribution/nnsight/phases/phase{0,1,2,3,4,5}.py` |
-| NNSight support | `attribution/nnsight/{phase1_policy.py,phase4_policy.py,phase_support.py,replay.py,row_store.py,prefix_view.py,numerics.py,telemetry.py}` |
-| Observability | `observability/{lifecycle.py,recorder.py,resources.py,human_logs.py,exception_export.py}` |
-| Replacement models | `replacement_model/*` |
-| Transcoders | `transcoder/{single_layer_transcoder.py,cross_layer_transcoder.py,loaders.py,decoder_cache.py,diagnostics.py,fingerprints.py}` |
-| Utilities | `utils/*` |
-| Graph | `graph.py` |
-| Frontend | `frontend/*` |
+| Typed observations and run lifecycle | `observability/{events,lifecycle,run_scope}.py` |
+| Incremental recording and resources | `observability/{recorder,resources}.py` |
+| Human rendering and exception evidence | `observability/{human_logs,exception_export}.py` |
+| Replacement-model setup | `replacement_model/{attribution_setup,model_adapter,nnsight_configuration,replacement_model_nnsight}.py` |
+| Typed transcoder results/provider capabilities | `transcoder/{attribution_result,provider,diagnostics}.py` |
+| PLT/CLT implementations | `transcoder/{single_layer_transcoder,cross_layer_transcoder}.py` |
+| Graph algorithms and packaging | `graph.py` |
 
-## Public surface used by the project
+Tracing and storage code emit typed observations. Resource sampling, sink
+schema/sequencing/flushing, terminal attachments, and human rendering belong to
+`observability/`.
 
-| Export/API | Notes |
-|---|---|
-| `ReplacementModel` | Main integration entry point |
-| `Graph` | Graph serialization and conversion |
-| `attribute` / `attribute_phase0_stats` | Attribution entry points |
-| `SparsificationConfig` | Sparsification configuration |
-| `ReplacementModel.from_pretrained` | Main loader |
-| `ReplacementModel.from_pretrained_and_transcoders` | Loader with transcoder inputs |
-| Backend selection | `transformerlens` or `nnsight` |
-| Loader helpers | `load_transcoder_from_hub`, `resolve_transcoder_paths`, `load_transcoder_set`, `load_clt`, `load_gemma_scope_2_clt` |
-| Graph I/O | `Graph.to_pt`, `Graph.from_pt`, `create_graph_files` |
-| Frontend | Graph frontend server |
+## Provider boundary
 
-## Phase map
+PLT and CLT variation enters through provider capabilities and typed
+`AttributionComponents`, not model-family string branches or mapping-shaped
+result shims. Model-specific tensor conventions are selected by replacement
+model adapter capabilities.
 
-| Phase | Current focus |
-|---|---|
-| Phase 0 | Setup, sparse activation discovery, sparsification, exact decoder setup, telemetry |
-| Phase 1 | Forward and residual capture |
-| Phase 2 | Inputs, target/logit objects |
-| Phase 3 | Logit attribution, seed ranking, replay validation, donor/row/frontier prep |
-| Phase 4 | Feature attribution, frontier, scheduler, reduction, refresh |
-| Phase 5 | Packaging and graph finalization |
+## Removed surfaces
 
-## Optimization/current capability map
+Phase C2 removes `attribution/attribute.py`,
+`attribution/attribute_nnsight.py`, legacy request translators, reflected
+signatures, private compatibility re-exports, and generic flat root routing.
+There is one public runtime for single, batch, and session tracing.
 
-| Area | Current items |
-|---|---|
-| Decoder caching | `DecoderChunkCache` |
-| Attribution staging | `AttributionContext`, chunk spans, replay, cache fingerprints |
-| Phase-4 knobs | `phase4_scheduler_mode`, `phase4_refresh_optimization`, `phase4_row_executor`, `phase4_row_reduction` |
-| Phase-1 knobs | `phase1_trace_batch_policy`, `row_store_cache_control`, `exact_encoder_residency`, `exact_trace_internal_dtype` |
-| Streaming influences | `graph.compute_partial_feature_influences_streaming` with stable row-L1 denominators |
+## Validation
 
-## PLT / CLT boundary
-
-| Transcoder family | Current implementation |
-|---|---|
-| PLT | `SingleLayerTranscoder` and `TranscoderSet` |
-| CLT | `CrossLayerTranscoder` with shared-layer feature layout |
-| Loader decision | `load_transcoder_from_hub()` reads `config.yaml` and returns the appropriate transcoder family |
-| GemmaScope-2 CLT path | Uses the exact chunked decoder path automatically |
-| CLT optimization knobs | `exact_chunked_decoder`, `decoder_chunk_size`, `cross_batch_decoder_cache_bytes` |
-
-PLT optimization parity is active/future work. This map describes the current
-boundary; it does not assert that every CLT optimization already applies to PLT.
-
-## Tests commonly used for this area
-
-- `tests/test_partial_influences.py`
-- `tests/test_gemmascope2_chunked.py`
-- `tests/test_phase0_stats.py`
-- `tests/test_graph.py`
-- `tests/test_cross_layer_transcoder.py`
-- `tests/test_chunked_decoder_optimizations.py`
-- `tests/test_double_pass_sparsification.py`
-
-Common lightweight commands:
-
-- `uv run ruff check circuit_tracer tests`
-- `uv run pyright`
-- `uv run circuit-tracer --help`
-- `uv run pytest -q tests/test_partial_influences.py tests/test_gemmascope2_chunked.py`
-- `uv run pytest -q tests/test_phase0_stats.py tests/test_graph.py tests/test_cross_layer_transcoder.py`
-- `uv run pytest -q tests/test_chunked_decoder_optimizations.py tests/test_double_pass_sparsification.py`
-
-GPU regression scripts under `scripts/slurm/` are SLURM-only.
-
-## Current integration boundary notes
-
-- The project imports sibling runtime pieces through `circuit_tracer` and direct
-  imports such as `circuit_tracer.attribution.attribute_nnsight`.
-- Project-local modules such as `trace_pipeline.py`, `trace_pipeline_chunked.py`,
-  and `circuit_utils.py` are mapped in `project_code_map.md`, not this sibling
-  map.
-- `ReplacementModel` and transcoder loaders are the main stable integration points.
-- PLT/CLT boundary: `SingleLayerTranscoder`/`TranscoderSet` cover PLT; `CrossLayerTranscoder` covers CLT.
-- `load_transcoder_from_hub` reads `config.yaml` to choose transcoder kind.
-- GemmaScope-2 CLTs use the exact chunked decoder path automatically.
-
-## Current-state caveats for later debt audit
-
-- `attribute_nnsight.py` remains a 2,254-line aggregation and compatibility
-  layer despite the first decomposition. Phase C2 treats this as unresolved
-  architecture debt, not a stable boundary.
-- `attribute()` exposes a wide knob surface, including NNSight-only and legacy
-  compatibility settings.
-- `Graph.logit_tokens` and some `Graph.from_pt()` tensor formats remain as
-  compatibility surfaces.
-- `phase4_refresh_prepared_chunk_cache_bytes` is experimental/retired.
-- NNSight backend notes still describe it as more fragile and memory-sensitive
-  than the TransformerLens path.
-- `load_gemma_scope_2_transcoder()` does not currently support lazy loading;
-  caching is the intended workaround.
+Architecture tests bound coordinator size/complexity, dependency direction,
+meaningful context/result objects, stale imports, observability ownership,
+provider dispatch, and terminal lifecycle behavior. The broad login-safe suite
+must pass before snapshotting. Immutable `361_base` Gemma 3 1B CLT/PLT
+full-retention and bounded runs remain the closure gate.

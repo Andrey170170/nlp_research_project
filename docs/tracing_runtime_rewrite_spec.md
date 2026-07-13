@@ -1,18 +1,18 @@
 # Tracing Runtime Rewrite Spec
 
-Status: Planned Phase C2; execution blocked on Phase D D/E adjudication
-Last updated: 2026-07-12
+Status: Phase C2 implementation in progress; closure pending login-safe and immutable Granite gates
+Last updated: 2026-07-13
 Scope: sibling tracing runtime plus the project execution path that invokes it
 
 This document defines the target architecture for Phase C2, informally
 "cleanup strikes again." It is normative. The descriptive maps under
-`docs/architecture/` continue to describe the current pre-C2 code until the
-rewrite lands.
+`docs/architecture/` describe the currently landed implementation. They must
+not describe the C2 Granite gate as closed until the immutable comparisons are
+adjudicated.
 
-Phase C2 starts only after Granite jobs `1619423`, `1619424`, `1619425`, and
-`1619426` are terminal and their D/E artifacts have been adjudicated. A Slurm
-terminal state alone is not sufficient. The harness summaries, compact outputs,
-incremental telemetry, bounded-storage evidence, and failure logs must be read.
+Phase D is closed. Its accepted compact artifacts, incremental telemetry,
+bounded-storage evidence, and failure behavior are frozen in
+`docs/architecture/pre_c2_trace_contract.md` as the C2 comparison oracle.
 
 ## 1. Decision
 
@@ -299,23 +299,23 @@ samplers, or exception-export helpers.
 
 ## 9. Migration Work Packages
 
-### C2.0 - Freeze and characterize
+### C2.0 - Freeze and characterize (complete)
 
-- Wait for jobs `1619423`--`1619426` and adjudicate D/E outputs.
+- Adjudicate the final D/E outputs.
 - Pin successful A--E compact artifacts, fingerprints, telemetry, failure
   behavior, and resource measurements as pre-rewrite references.
 - Inventory every project and sibling caller of `attribute`,
   `attribute_nnsight`, `runtime._translate`, and private re-exports.
 - Record current module/function dependency and ownership maps.
 
-### C2.1 - Canonical domain API
+### C2.1 - Canonical domain API (implemented; gate pending)
 
 - Define the domain objects in section 4 with construction-time validation.
 - Remove `legacy_kwargs` and signature reflection from `TraceRequest`.
 - Define backend, storage, observer, and provider capability protocols.
 - Add architecture tests for dependency direction and canonical API ownership.
 
-### C2.2 - Planning and admission boundary
+### C2.2 - Planning and admission boundary (implemented; gate pending)
 
 - Move semantic validation, capability discovery, physical resolution, and
   admission into planning modules.
@@ -323,7 +323,7 @@ samplers, or exception-export helpers.
   resolved plan without enabling automatic governor decisions yet.
 - Ensure phases cannot consume raw requests or silently resolve fallback modes.
 
-### C2.3 - NNSight runner rewrite
+### C2.3 - NNSight runner rewrite (implemented; gate pending)
 
 - Build the readable runner and migrate preparation, active-feature discovery,
   forward-session ownership, seed attribution, frontier expansion, and graph
@@ -332,14 +332,14 @@ samplers, or exception-export helpers.
   where their responsibilities prevent those contracts from being honest.
 - Keep algorithms and canonical ordering fixed while changing ownership.
 
-### C2.4 - Lifecycle and observability rewrite
+### C2.4 - Lifecycle and observability rewrite (implemented; gate pending)
 
 - Introduce the run scope and typed domain events.
 - Remove telemetry schema construction and cleanup/result mutation from the
   runner and phases.
 - Preserve incremental failure evidence and terminal-event guarantees.
 
-### C2.5 - Atomic caller migration
+### C2.5 - Atomic caller migration (implemented; final stale-surface audit pending)
 
 - Migrate `trace_one`, `trace_batch`, `open_session`, TransformerLens routing,
   sibling tests, project scenario execution, full-answer sequencing, and compact
@@ -347,7 +347,7 @@ samplers, or exception-export helpers.
 - Replace project subprocess argument assembly with typed request construction.
 - Split trace command registration from the project CLI mega-parser.
 
-### C2.6 - Delete old paths
+### C2.6 - Delete old paths (in progress)
 
 - Delete `attribute_nnsight.py`, `_attribute_impl`, legacy kwargs translation,
   generic flat attribution routing, private helper re-exports, obsolete project
@@ -355,7 +355,7 @@ samplers, or exception-export helpers.
 - Fail repository checks on stale imports or references.
 - Update descriptive architecture maps only after deletion lands.
 
-### C2.7 - Validation and closure
+### C2.7 - Validation and closure (pending)
 
 - Run focused subsystem, failure-injection, type, lint, and architecture tests.
 - Run the broad login-safe sibling and project suites, with documented external

@@ -1,7 +1,7 @@
 # Documentation index
 
 Status: Current docs map
-Last updated: 2026-07-12
+Last updated: 2026-07-13
 
 This directory mixes current-state references, active specs, and historical
 material. Use the sections below to separate descriptive maps from working
@@ -12,7 +12,7 @@ plans.
 | File | Role |
 |---|---|
 | `current_state.md` | Workspace-level current-state overview |
-| `architecture/README.md` | Descriptive code/workspace map index |
+| `architecture/README.md` | Descriptive code/workspace map index; C2 implementation state with validation status called out explicitly |
 
 ## Current authoritative docs
 
