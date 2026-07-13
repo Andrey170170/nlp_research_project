@@ -40,8 +40,14 @@ def test_verify_import_paths_prefers_workspace_src_and_reports_files(
             )
         if name == "circuit_tracer":
             return _fake_module(library_root / "circuit_tracer" / "__init__.py")
-        if name == "trace_pipeline_chunked":
-            return _fake_module(library_root / "trace_pipeline_chunked" / "__init__.py")
+        if name == "nlp_research_project.exact_trace_bench.trace_runtime":
+            return _fake_module(
+                workspace_src
+                / "nlp_research_project"
+                / "exact_trace_bench"
+                / "trace_runtime"
+                / "__init__.py"
+            )
         raise AssertionError(f"Unexpected import: {name}")
 
     monkeypatch.setattr(importlib, "import_module", fake_import_module)
@@ -55,7 +61,7 @@ def test_verify_import_paths_prefers_workspace_src_and_reports_files(
     assert calls == [
         "nlp_research_project.exact_trace_bench",
         "circuit_tracer",
-        "trace_pipeline_chunked",
+        "nlp_research_project.exact_trace_bench.trace_runtime",
     ]
     assert sys.path[:3] == [
         str(workspace_src),
@@ -71,8 +77,14 @@ def test_verify_import_paths_prefers_workspace_src_and_reports_files(
     assert result["circuit_tracer_file"] == str(
         (library_root / "circuit_tracer" / "__init__.py").resolve()
     )
-    assert result["trace_pipeline_chunked_file"] == str(
-        (library_root / "trace_pipeline_chunked" / "__init__.py").resolve()
+    assert result["trace_runtime_file"] == str(
+        (
+            workspace_src
+            / "nlp_research_project"
+            / "exact_trace_bench"
+            / "trace_runtime"
+            / "__init__.py"
+        ).resolve()
     )
 
 

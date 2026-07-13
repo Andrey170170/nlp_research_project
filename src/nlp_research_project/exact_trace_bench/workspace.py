@@ -353,7 +353,6 @@ def verify_import_paths(
     module_prefixes = (
         "nlp_research_project",
         "circuit_tracer",
-        "trace_pipeline_chunked",
     )
     saved_modules = {
         name: module
@@ -380,12 +379,12 @@ def verify_import_paths(
             ) from exc
 
         circuit_tracer = importlib.import_module("circuit_tracer")
-        trace_pipeline_chunked = importlib.import_module("trace_pipeline_chunked")
+        trace_runtime = importlib.import_module(
+            "nlp_research_project.exact_trace_bench.trace_runtime"
+        )
 
         circuit_tracer_file = str(Path(circuit_tracer.__file__).resolve())
-        trace_pipeline_chunked_file = str(
-            Path(trace_pipeline_chunked.__file__).resolve()
-        )
+        trace_runtime_file = str(Path(trace_runtime.__file__).resolve())
     finally:
         for name in list(sys.modules):
             if any(
@@ -402,7 +401,7 @@ def verify_import_paths(
         "inserted_paths": inserted_paths,
         "exact_trace_bench_file": str(exact_trace_bench_file),
         "circuit_tracer_file": circuit_tracer_file,
-        "trace_pipeline_chunked_file": trace_pipeline_chunked_file,
+        "trace_runtime_file": trace_runtime_file,
     }
 
 

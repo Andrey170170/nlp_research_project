@@ -19,10 +19,12 @@ from .telemetry import (
     normalize_cross_cluster_debug_records,
     normalize_telemetry_events,
 )
+from .request import TracePolicy, trace_policy_from_scenario
 
 __all__ = [
     "Phase4TelemetryContext",
     "TraceStepContext",
+    "TracePolicy",
     "build_cross_cluster_debug_records",
     "build_step_telemetry_records",
     "compact_result_to_bucketed_compact",
@@ -34,4 +36,5 @@ __all__ = [
     "save_phase3_gradient_bundle",
     "save_phase3_row_bundle",
     "save_phase3_seed_bundle",
+    "trace_policy_from_scenario",
 ]

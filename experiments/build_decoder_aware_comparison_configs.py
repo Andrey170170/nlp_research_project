@@ -59,7 +59,7 @@ def build_configs(prompt_index: int) -> dict[str, Any]:
 
     scenarios: list[dict[str, Any]] = [
         {
-            # Compact path: attribute_nnsight(compact_output=True) → compact_result_to_step_data()
+            # Compact path: trace_one(TraceRequest(...)) → compact_result_to_step_data()
             # Edge selection: global top-K by absolute weight.
             "name": f"exact_compact_{p}",
             "stage": "decoder_aware_comparison",

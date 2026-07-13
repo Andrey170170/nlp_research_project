@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import json
-import runpy
 import sys
-from argparse import Namespace
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -29,7 +26,9 @@ from nlp_research_project.exact_trace_bench.extract import (  # noqa: E402
 from nlp_research_project.exact_trace_bench.scenarios import (  # noqa: E402
     ADVANCED_PUBLIC_TUNING_KEYS,
 )
-import trace_pipeline_chunked as pipeline  # noqa: E402
+from nlp_research_project.exact_trace_bench.trace_runtime.request import (  # noqa: E402
+    trace_policy_from_scenario,
+)
 
 
 PHASE_D_KEYS = (
@@ -50,10 +49,6 @@ CONFIGS = tuple(
         "exact_trace_phase_d_validation_gemma3_1b_plt_granite_scenarios.json",
     )
 )
-
-
-def _flag(key: str) -> str:
-    return "--" + key.replace("_", "-")
 
 
 def test_phase_d_knobs_have_stable_defaults_and_schema_classification() -> None:
@@ -102,40 +97,28 @@ def test_phase_d_validation_configs_and_forwarding(config_path: Path) -> None:
         assert scenario["capture_phase3_row_bundle"] is False
 
     command = build_command(Path("/tmp/phase-d-validation"), recompute)
-    for key in PHASE_D_KEYS:
-        if recompute[key] is not None:
-            assert _flag(key) in command
+    assert command[1:3] == ["-m", "nlp_research_project.exact_trace_bench.trace_runtime"]
+    assert command[-4:] == [
+        "--scenario-file",
+        "/tmp/scenario.json",
+        "--output-dir",
+        "/tmp/phase-d-validation",
+    ]
+    policy = trace_policy_from_scenario(recompute)
+    assert policy.execution.session.capacity == recompute["nnsight_session_capacity"]
+    assert policy.execution.storage.retention == recompute["feature_row_retention"]
+    assert policy.execution.storage.replay_tile_cache_bytes == recompute["replay_tile_cache_bytes"]
 
 
 @pytest.mark.parametrize("config_path", CONFIGS)
-def test_phase_d_column_tiled_command_parses_row_store_preallocate_false(
-    monkeypatch: pytest.MonkeyPatch, config_path: Path
+def test_phase_d_column_tiled_scenario_builds_typed_storage_policy(
+    config_path: Path,
 ) -> None:
     scenarios, _metadata = load_scenarios(config_path)
     tiled = scenarios[3]
-    command = build_command(Path("/tmp/phase-d-validation"), tiled)
-    assert "--no-row-store-preallocate" in command
-
-    parsed: dict[str, object] = {}
-    original_parse_args = pipeline.argparse.ArgumentParser.parse_args
-
-    class ParserReached(RuntimeError):
-        pass
-
-    def capture_parse_args(
-        parser: object, *args: object, **kwargs: object
-    ) -> object:
-        parsed["args"] = original_parse_args(parser, *args, **kwargs)
-        raise ParserReached
-
-    monkeypatch.setattr(
-        pipeline.argparse.ArgumentParser, "parse_args", capture_parse_args
-    )
-    monkeypatch.setattr(sys, "argv", command[1:])
-    with pytest.raises(ParserReached):
-        runpy.run_path(REPO_ROOT / "trace_pipeline_chunked.py", run_name="__main__")
-
-    assert getattr(parsed["args"], "row_store_preallocate") is False
+    policy = trace_policy_from_scenario(tiled)
+    assert policy.execution.storage.preallocate is False
+    assert policy.execution.storage.full_retention_backend == "column_tiled_v1"
 
 
 def test_phase_d_fields_are_extracted_for_comparison(tmp_path: Path) -> None:
@@ -164,11 +147,9 @@ def test_phase_d_fields_are_extracted_for_comparison(tmp_path: Path) -> None:
     assert row["validation_mechanism"] == "D_reduced_session_column_tiled_v1"
 
 
-def test_phase_d_controls_flow_from_pipeline_args_through_wrapper_to_adapter(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_phase_d_controls_flow_into_owned_canonical_policies() -> None:
     controls = {
-        "nnsight_session_capacity": 11,
+        "nnsight_session_capacity": 13,
         "phase3_compute_microbatch_max_rows": 12,
         "phase4_compute_microbatch_max_rows": 13,
         "full_retention_backend": "column_tiled_v1",
@@ -178,39 +159,16 @@ def test_phase_d_controls_flow_from_pipeline_args_through_wrapper_to_adapter(
         "feature_row_retention": "none_recompute",
         "replay_tile_cache_bytes": 17,
     }
-    pipeline_kwargs = pipeline.phase_d_controls_from_args(Namespace(**controls))
-    assert pipeline_kwargs == controls
-
-    captured: dict[str, object] = {}
-
-    class AdapterReached(RuntimeError):
-        pass
-
-    def fake_extract(*args: object, **kwargs: object) -> dict[str, object]:
-        captured.update(kwargs)
-        raise AdapterReached
-
-    monkeypatch.setattr(pipeline, "extract_compact_chunked_attribution", fake_extract)
-    model = SimpleNamespace(
-        tokenizer=SimpleNamespace(
-            eos_token_id=1,
-            pad_token_id=0,
-            unk_token_id=-1,
-            convert_tokens_to_ids=lambda _token: -1,
-        ),
-        ensure_tokenized=lambda _prompt: pipeline.torch.tensor([1, 2]),
-    )
-    with pytest.raises(AdapterReached):
-        pipeline.trace_completion_compact_chunked(
-            model,
-            "prompt",
-            output_dir=tmp_path,
-            prompt_idx=0,
-            completion_idx=0,
-            max_steps=1,
-            **pipeline_kwargs,
-        )
-    assert {key: captured[key] for key in PHASE_D_KEYS} == controls
+    policy = trace_policy_from_scenario({"method": "exact", **controls})
+    assert policy.execution.session.capacity == 13
+    assert policy.execution.session.phase3_microbatch_max_rows == 12
+    assert policy.execution.session.phase4_microbatch_max_rows == 13
+    assert policy.execution.storage.full_retention_backend == "column_tiled_v1"
+    assert policy.execution.storage.feature_column_tile_size == 14
+    assert policy.execution.storage.influence_row_tile_size == 15
+    assert policy.execution.storage.influence_column_tile_size == 16
+    assert policy.execution.storage.retention == "none_recompute"
+    assert policy.execution.storage.replay_tile_cache_bytes == 17
 
 
 @pytest.mark.parametrize("status", ["failed", "timeout", "baseline_invalid"])

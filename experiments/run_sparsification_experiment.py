@@ -28,12 +28,6 @@ from nlp_research_project.exact_trace_bench.baselines import (  # noqa: E402
     write_scenario_metrics,
 )
 from nlp_research_project.exact_trace_bench.io_utils import write_csv  # noqa: E402
-from nlp_research_project.exact_trace_bench.transcoder_config import (  # noqa: E402
-    PUBLIC_TRANSCODER_KNOB_KEYS,
-    TranscoderLoadConfig,
-    resolve_transcoder_load_config,
-    transcoder_config_to_json,
-)
 
 
 DEFAULT_SCENARIOS = (
@@ -340,393 +334,61 @@ def build_command(
     scenario: dict[str, Any],
     *,
     cross_batch_decoder_cache_bytes_override: int | None = None,
+    scenario_file: Path | None = None,
 ) -> list[str]:
-    scenario = apply_runtime_overrides(
+    """Build the isolated child command for one persisted scenario.
+
+    Exact/chunked campaigns cross the subprocess boundary with the scenario file
+    itself. The child resolves typed policies and canonical trace requests.
+    """
+
+    effective = apply_runtime_overrides(
         scenario,
         cross_batch_decoder_cache_bytes_override=cross_batch_decoder_cache_bytes_override,
     )
-    transcoder_defaults = TranscoderLoadConfig()
-    explicit_scenario_keys = set(scenario.get(_EXPLICIT_SCENARIO_KEYS, ()))
-    provider_mapping = {}
-    for key in PUBLIC_TRANSCODER_KNOB_KEYS:
-        if key not in scenario:
-            continue
-        value = scenario[key]
-        if key in explicit_scenario_keys or value != getattr(transcoder_defaults, key):
-            provider_mapping[key] = value
-    provider_config = transcoder_config_to_json(
-        resolve_transcoder_load_config(provider_mapping, preserve_default_values=True)
-    )
-    if cross_batch_decoder_cache_bytes_override is not None:
-        provider_config["cross_batch_decoder_cache_bytes"] = (
-            cross_batch_decoder_cache_bytes_override
-        )
-    method = scenario["method"]
-    script_name = (
-        "trace_pipeline.py" if method == "old_patch" else "trace_pipeline_chunked.py"
-    )
-    cmd = [
+    scenario_path = scenario_file or output_dir.parent / "scenario.json"
+    if effective["method"] != "old_patch":
+        return [
+            sys.executable,
+            "-m",
+            "nlp_research_project.exact_trace_bench.trace_runtime",
+            "--scenario-file",
+            str(scenario_path),
+            "--output-dir",
+            str(output_dir),
+        ]
+    return _build_old_patch_command(output_dir, effective)
+
+
+def _build_old_patch_command(output_dir: Path, scenario: dict[str, Any]) -> list[str]:
+    """Retained historical baseline launcher; exact C2 knobs are intentionally absent."""
+
+    command = [
         sys.executable,
-        str(REPO_ROOT / script_name),
-        "--completions",
-        str(scenario["completions"]),
-        "--temperature",
-        str(scenario["temperature"]),
-        "--output-dir",
-        str(output_dir),
-        "--max-feature-nodes",
-        str(scenario["max_feature_nodes"]),
-        "--max-edges",
-        str(scenario["max_edges"]),
-        "--max-steps",
-        str(scenario["max_steps"]),
-        "--attribution-batch-size",
-        str(scenario["attribution_batch_size"]),
-        "--max-n-logits",
-        str(scenario["max_n_logits"]),
-        "--desired-logit-prob",
-        str(scenario["desired_logit_prob"]),
-        "--attribution-update-interval",
-        str(scenario["attribution_update_interval"]),
+        str(REPO_ROOT / "trace_pipeline.py"),
+        *_build_prompt_source_args(scenario),
+        "--completions", str(scenario["completions"]),
+        "--temperature", str(scenario["temperature"]),
+        "--output-dir", str(output_dir),
+        "--max-feature-nodes", str(scenario["max_feature_nodes"]),
+        "--max-edges", str(scenario["max_edges"]),
+        "--max-steps", str(scenario["max_steps"]),
+        "--attribution-batch-size", str(scenario["attribution_batch_size"]),
+        "--max-n-logits", str(scenario["max_n_logits"]),
+        "--desired-logit-prob", str(scenario["desired_logit_prob"]),
+        "--attribution-update-interval", str(scenario["attribution_update_interval"]),
     ]
-    cmd[2:2] = _build_prompt_source_args(scenario)
-    if scenario.get("feature_batch_size") is not None:
-        cmd.extend(["--feature-batch-size", str(scenario["feature_batch_size"])])
-    if scenario.get("logit_batch_size") is not None:
-        cmd.extend(["--logit-batch-size", str(scenario["logit_batch_size"])])
-    if scenario.get("exact_trace_internal_dtype") is not None:
-        cmd.extend(
-            [
-                "--exact-trace-internal-dtype",
-                str(scenario["exact_trace_internal_dtype"]),
-            ]
-        )
-    for key, flag in (
-        ("nnsight_session_capacity", "--nnsight-session-capacity"),
-        ("phase3_compute_microbatch_max_rows", "--phase3-compute-microbatch-max-rows"),
-        ("phase4_compute_microbatch_max_rows", "--phase4-compute-microbatch-max-rows"),
-        ("full_retention_backend", "--full-retention-backend"),
-        ("feature_row_column_tile_size", "--feature-row-column-tile-size"),
-        ("influence_row_tile_size", "--influence-row-tile-size"),
-        ("influence_column_tile_size", "--influence-column-tile-size"),
-        ("feature_row_retention", "--feature-row-retention"),
-        ("replay_tile_cache_bytes", "--replay-tile-cache-bytes"),
-    ):
-        if method != "old_patch" and scenario.get(key) is not None:
-            cmd.extend([flag, str(scenario[key])])
-    if (
-        method != "old_patch"
-        and scenario.get("phase0_activation_threshold_compare_mode") is not None
-    ):
-        cmd.extend(
-            [
-                "--phase0-activation-threshold-compare-mode",
-                str(scenario["phase0_activation_threshold_compare_mode"]),
-            ]
-        )
-
-    if method != "old_patch":
-        if scenario.get("phase1_trace_batch_policy") is not None:
-            cmd.extend(
-                [
-                    "--phase1-trace-batch-policy",
-                    str(scenario["phase1_trace_batch_policy"]),
-                ]
-            )
-        if scenario.get("phase1_trace_batch_size_max") is not None:
-            cmd.extend(
-                [
-                    "--phase1-trace-batch-size-max",
-                    str(scenario["phase1_trace_batch_size_max"]),
-                ]
-            )
-        cmd.extend(["--decoder-chunk-size", str(provider_config["decoder_chunk_size"])])
-        cross_batch_decoder_cache_bytes = (
-            cross_batch_decoder_cache_bytes_override
-            if cross_batch_decoder_cache_bytes_override is not None
-            else provider_config.get("cross_batch_decoder_cache_bytes")
-        )
-        if cross_batch_decoder_cache_bytes is not None:
-            cmd.extend(
-                [
-                    "--cross-batch-decoder-cache-bytes",
-                    str(cross_batch_decoder_cache_bytes),
-                ]
-            )
-        for key, flag in (
-            ("transcoder_architecture", "--transcoder-architecture"),
-            ("transcoder_provider_family", "--transcoder-provider-family"),
-            ("model_name", "--model-name"),
-            ("repo_id", "--transcoder-repo-id"),
-            ("revision", "--transcoder-revision"),
-            ("clt_subfolder", "--clt-subfolder"),
-            ("plt_subfolder_template", "--plt-subfolder-template"),
-            ("layer_count", "--transcoder-layer-count"),
-            ("feature_input_hook", "--feature-input-hook"),
-            ("feature_output_hook", "--feature-output-hook"),
-            ("transcoder_cache_dir", "--transcoder-cache-dir"),
-        ):
-            if provider_config.get(key) is not None:
-                cmd.extend([flag, str(provider_config[key])])
-        if scenario.get("sparsify_per_layer_position_topk") is not None:
-            cmd.extend(
-                [
-                    "--sparsify-per-layer-position-topk",
-                    str(scenario["sparsify_per_layer_position_topk"]),
-                ]
-            )
-        if scenario.get("sparsify_global_cap") is not None:
-            cmd.extend(["--sparsify-global-cap", str(scenario["sparsify_global_cap"])])
-        if scenario.get("chunked_feature_replay_window") is not None:
-            cmd.extend(
-                [
-                    "--chunked-feature-replay-window",
-                    str(scenario["chunked_feature_replay_window"]),
-                ]
-            )
-        if scenario.get("error_vector_prefetch_lookahead") is not None:
-            cmd.extend(
-                [
-                    "--error-vector-prefetch-lookahead",
-                    str(scenario["error_vector_prefetch_lookahead"]),
-                ]
-            )
-        if scenario.get("stage_encoder_vecs_on_cpu") is not None:
-            cmd.extend(
-                [
-                    "--stage-encoder-vecs-on-cpu",
-                    _format_optional_bool_arg(scenario["stage_encoder_vecs_on_cpu"]),
-                ]
-            )
-        if scenario.get("stage_error_vectors_on_cpu") is not None:
-            cmd.extend(
-                [
-                    "--stage-error-vectors-on-cpu",
-                    _format_optional_bool_arg(scenario["stage_error_vectors_on_cpu"]),
-                ]
-            )
-        if scenario.get("row_subchunk_size") is not None:
-            cmd.extend(["--row-subchunk-size", str(scenario["row_subchunk_size"])])
-        if scenario.get("plan_feature_batch_size", False):
-            cmd.append("--plan-feature-batch-size")
-        if scenario.get("auto_scale_feature_batch_size", False):
-            cmd.append("--auto-scale-feature-batch-size")
-        if scenario.get("feature_batch_size_max") is not None:
-            cmd.extend(
-                ["--feature-batch-size-max", str(scenario["feature_batch_size_max"])]
-            )
-        if scenario.get("feature_batch_target_reserved_fraction") is not None:
-            cmd.extend(
-                [
-                    "--feature-batch-target-reserved-fraction",
-                    str(scenario["feature_batch_target_reserved_fraction"]),
-                ]
-            )
-        if scenario.get("feature_batch_min_free_fraction") is not None:
-            cmd.extend(
-                [
-                    "--feature-batch-min-free-fraction",
-                    str(scenario["feature_batch_min_free_fraction"]),
-                ]
-            )
-        if scenario.get("feature_batch_probe_batches") is not None:
-            cmd.extend(
-                [
-                    "--feature-batch-probe-batches",
-                    str(scenario["feature_batch_probe_batches"]),
-                ]
-            )
-        if scenario.get("phase4_anomaly_debug", False):
-            cmd.append("--phase4-anomaly-debug")
-        if scenario.get("phase4_refresh_policy") is not None:
-            cmd.extend(
-                [
-                    "--phase4-refresh-policy",
-                    str(scenario["phase4_refresh_policy"]),
-                ]
-            )
-        if scenario.get("phase4_refresh_interval_multiplier") is not None:
-            cmd.extend(
-                [
-                    "--phase4-refresh-interval-multiplier",
-                    str(scenario["phase4_refresh_interval_multiplier"]),
-                ]
-            )
-        if scenario.get("phase4_refresh_prepared_chunk_cache_bytes") is not None:
-            cmd.extend(
-                [
-                    "--phase4-refresh-prepared-chunk-cache-bytes",
-                    str(scenario["phase4_refresh_prepared_chunk_cache_bytes"]),
-                ]
-            )
-        if scenario.get("phase4_refresh_active_row_accumulation") is not None:
-            cmd.extend(
-                [
-                    "--phase4-refresh-active-row-accumulation",
-                    str(scenario["phase4_refresh_active_row_accumulation"]),
-                ]
-            )
-        if scenario.get("phase4_ranker") is not None:
-            cmd.extend(["--phase4-ranker", str(scenario["phase4_ranker"])])
-        if scenario.get("row_store_cache_control") is not None:
-            cmd.extend(
-                [
-                    "--row-store-cache-control",
-                    str(scenario["row_store_cache_control"]),
-                ]
-            )
-        if scenario.get("row_store_temp_root_policy") is not None:
-            cmd.extend(
-                [
-                    "--row-store-temp-root-policy",
-                    str(scenario["row_store_temp_root_policy"]),
-                ]
-            )
-        if scenario.get("row_store_temp_root") is not None:
-            cmd.extend(["--row-store-temp-root", str(scenario["row_store_temp_root"])])
-        if scenario.get("row_store_preallocate") is not None:
-            cmd.append(
-                "--row-store-preallocate"
-                if scenario["row_store_preallocate"]
-                else "--no-row-store-preallocate"
-            )
-        if scenario.get("exact_encoder_residency") is not None:
-            cmd.extend(
-                [
-                    "--exact-encoder-residency",
-                    str(scenario["exact_encoder_residency"]),
-                ]
-            )
-        if scenario.get("phase4_scheduler_mode") is not None:
-            cmd.extend(
-                [
-                    "--phase4-scheduler-mode",
-                    str(scenario["phase4_scheduler_mode"]),
-                ]
-            )
-        if scenario.get("phase4_scheduler_debug", False):
-            cmd.append("--phase4-scheduler-debug")
-        if scenario.get("phase4_scheduler_telemetry_detail") is not None:
-            cmd.extend(
-                [
-                    "--phase4-scheduler-telemetry-detail",
-                    str(scenario["phase4_scheduler_telemetry_detail"]),
-                ]
-            )
-        if scenario.get("phase4_refresh_optimization") is not None:
-            cmd.extend(
-                [
-                    "--phase4-refresh-optimization",
-                    str(scenario["phase4_refresh_optimization"]),
-                ]
-            )
-        if scenario.get("phase4_row_executor") is not None:
-            cmd.extend(
-                [
-                    "--phase4-row-executor",
-                    str(scenario["phase4_row_executor"]),
-                ]
-            )
-        if scenario.get("phase4_row_reduction") is not None:
-            cmd.extend(
-                [
-                    "--phase4-row-reduction",
-                    str(scenario["phase4_row_reduction"]),
-                ]
-            )
-        if scenario.get("cross_cluster_debug", False):
-            cmd.append("--cross-cluster-debug")
-        if scenario.get("capture_phase0_donor_bundle", False):
-            cmd.append("--capture-phase0-donor-bundle")
-        if scenario.get("phase0_donor_bundle") is not None:
-            cmd.extend(["--phase0-donor-bundle", str(scenario["phase0_donor_bundle"])])
-        if scenario.get("phase0_replay_mode") is not None:
-            cmd.extend(["--phase0-replay-mode", str(scenario["phase0_replay_mode"])])
-        if scenario.get("phase0_donor_context_policy") is not None:
-            cmd.extend(
-                [
-                    "--phase0-donor-context-policy",
-                    str(scenario["phase0_donor_context_policy"]),
-                ]
-            )
-        if scenario.get("phase3_gradient_donor_bundle") is not None:
-            cmd.extend(
-                [
-                    "--phase3-gradient-donor-bundle",
-                    str(scenario["phase3_gradient_donor_bundle"]),
-                ]
-            )
-        if scenario.get("phase3_gradient_replay_mode") is not None:
-            cmd.extend(
-                [
-                    "--phase3-gradient-replay-mode",
-                    str(scenario["phase3_gradient_replay_mode"]),
-                ]
-            )
-        if scenario.get("phase3_row_donor_bundle") is not None:
-            cmd.extend(
-                ["--phase3-row-donor-bundle", str(scenario["phase3_row_donor_bundle"])]
-            )
-        if scenario.get("phase3_row_replay_mode") is not None:
-            cmd.extend(
-                ["--phase3-row-replay-mode", str(scenario["phase3_row_replay_mode"])]
-            )
-        if scenario.get("phase3_replay_validation_policy") is not None:
-            cmd.extend(
-                [
-                    "--phase3-replay-validation-policy",
-                    str(scenario["phase3_replay_validation_policy"]),
-                ]
-            )
-        if scenario.get("capture_phase3_seed_bundle", False):
-            cmd.append("--capture-phase3-seed-bundle")
-        if scenario.get("capture_phase3_gradient_bundle", False):
-            cmd.append("--capture-phase3-gradient-bundle")
-        if scenario.get("capture_phase3_row_bundle", False):
-            cmd.append("--capture-phase3-row-bundle")
-        if scenario.get("capture_feature_semantic_descriptors", False):
-            cmd.append("--capture-feature-semantic-descriptors")
-        if scenario.get("semantic_descriptor_top_k") is not None:
-            cmd.extend(
-                [
-                    "--semantic-descriptor-top-k",
-                    str(scenario["semantic_descriptor_top_k"]),
-                ]
-            )
-        if scenario.get("semantic_descriptor_dim") is not None:
-            cmd.extend(
-                [
-                    "--semantic-descriptor-dim",
-                    str(scenario["semantic_descriptor_dim"]),
-                ]
-            )
-        if scenario.get("telemetry_max_events") is not None:
-            cmd.extend(
-                ["--telemetry-max-events", str(scenario["telemetry_max_events"])]
-            )
-        if scenario.get("incremental_telemetry_jsonl", False):
-            cmd.append("--incremental-telemetry-jsonl")
-
     if scenario.get("verbose_attribution", False):
-        cmd.append("--verbose-attribution")
+        command.append("--verbose-attribution")
     if scenario.get("profile_attribution", False):
-        cmd.append("--profile-attribution")
-    if "profile_log_interval" in scenario:
-        cmd.extend(["--profile-log-interval", str(scenario["profile_log_interval"])])
+        command.append("--profile-attribution")
     if scenario.get("diagnostic_feature_cap") is not None:
-        cmd.extend(
-            ["--diagnostic-feature-cap", str(scenario["diagnostic_feature_cap"])]
-        )
+        command.extend(["--diagnostic-feature-cap", str(scenario["diagnostic_feature_cap"])])
     if scenario.get("save_raw", False):
-        cmd.append("--save-raw")
+        command.append("--save-raw")
     if scenario.get("no_offload", False):
-        cmd.append("--no-offload")
-    if scenario.get("no_lazy_encoder", False) and method != "old_patch":
-        cmd.append("--no-lazy-encoder")
-    if scenario.get("no_lazy_decoder", False) and method != "old_patch":
-        cmd.append("--no-lazy-decoder")
-
-    return cmd
+        command.append("--no-offload")
+    return command
 
 
 def run_scenario(

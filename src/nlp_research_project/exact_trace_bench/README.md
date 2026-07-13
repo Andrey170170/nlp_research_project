@@ -274,7 +274,7 @@ uv run exact-trace-bench verify-imports \
 
 This prints the resolved import paths for:
 
-- `trace_pipeline_chunked`
+- `nlp_research_project.exact_trace_bench.trace_runtime`
 - `circuit_tracer`
 
 and is useful for checking that immutable runs will import the snapped library
