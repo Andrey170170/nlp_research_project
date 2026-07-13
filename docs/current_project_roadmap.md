@@ -173,11 +173,16 @@ with exact feature/edge support and weighted-edge Jaccard `0.9999999756` versus
 A. CLT E completed from sibling `37c2a0f` in 1,339 seconds with exact
 feature/edge support, weighted-edge Jaccard `0.9999999795`, matching 68,025-event
 live/final telemetry, terminal `attribute.done`, and no retained `K x N` store.
-The final PLT D/E gate is immutable array `1621467_3-4`, snapshot
-`workspace_20260712_180046_phase-d-plt-de-20260712-12`, project `392eaa1`, and
-sibling `76954ce`. It uses 16,384-column bounded production tiles; E reuses
-current-microbatch denominator tiles and a 4 GiB overlap-aware bounded replay
-cache. C2 execution waits for both PLT summaries, artifacts, telemetry,
+PLT D completed as `1621467_3` in 5,380 seconds with matching 30,698-event
+live/final telemetry and terminal `attribute.done`. The paired five-hour E
+attempt was healthy but projected just beyond its immutable application and
+Slurm limits, so it was cancelled at 3:58:39 after CHPC rejected an in-place
+extension. Final PLT E replacement `1621649_4` uses read-only snapshot
+`workspace_20260712_215821_phase-d-plt-e-overnight-20260712`, project
+`976c51a`, sibling `76954ce`, one H200, 100G host RAM, and matching seven-hour
+application/Slurm limits. It retains the same 16,384-column production tiles,
+current-microbatch denominator tiles, and 4 GiB overlap-aware replay cache.
+C2 execution waits for the PLT E summary, artifacts, terminal telemetry,
 bounded-storage evidence, and compact comparisons, not merely Slurm state.
 
 ## Phase C2 - Cleanup Strikes Again
