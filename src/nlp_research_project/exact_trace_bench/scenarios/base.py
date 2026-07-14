@@ -203,7 +203,11 @@ WAVE4_GENERALIZATION_VARIANTS: tuple[dict[str, Any], ...] = (
 RESOURCE_PROFILE_STANDARD = "standard"
 RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM = "long_eval_high_mem"
 
-STABLE_PUBLIC_SCENARIO_KEYS = ("exact_trace_internal_dtype",)
+STABLE_PUBLIC_SCENARIO_KEYS = (
+    "exact_trace_internal_dtype",
+    "governor_profile_name",
+    "governor_resource_envelope",
+)
 
 ADVANCED_PUBLIC_TUNING_KEYS = (
     "chunked_feature_replay_window",

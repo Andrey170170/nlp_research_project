@@ -11,6 +11,7 @@ from circuit_tracer import trace_one
 
 from .request import TracePolicy
 
+
 def extract_compact_chunked_attribution(
     model: Any,
     prompt: str | torch.Tensor | list[int],
@@ -30,7 +31,9 @@ def extract_compact_chunked_attribution(
             prompt=prompt,
             telemetry_jsonl_path=telemetry_jsonl_path,
             telemetry_context=telemetry_context,
-        )
+        ),
+        resources=policy.resources,
+        provider_profile=policy.provider_profile,
     )
     if not isinstance(result.output, dict):
         raise TypeError(
