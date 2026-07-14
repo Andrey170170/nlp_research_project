@@ -1,14 +1,13 @@
 # Tracing Runtime Rewrite Spec
 
-Status: Phase C2 implementation complete; closure pending project and immutable Granite gates
+Status: Phase C2 complete and immutable Granite gate closed
 Last updated: 2026-07-13
 Scope: sibling tracing runtime plus the project execution path that invokes it
 
 This document defines the target architecture for Phase C2, informally
 "cleanup strikes again." It is normative. The descriptive maps under
 `docs/architecture/` describe the currently landed implementation. They must
-not describe the C2 Granite gate as closed until the immutable comparisons are
-adjudicated.
+remain consistent with the closed immutable Granite comparisons recorded here.
 
 Phase D is closed. Its accepted compact artifacts, incremental telemetry,
 bounded-storage evidence, and failure behavior are frozen in
@@ -355,7 +354,7 @@ samplers, or exception-export helpers.
 - Fail repository checks on stale imports or references.
 - Update descriptive architecture maps only after deletion lands.
 
-### C2.7 - Validation and closure (in progress)
+### C2.7 - Validation and closure (complete)
 
 - Run focused subsystem, failure-injection, type, lint, and architecture tests.
 - Run the broad login-safe sibling and project suites, with documented external
@@ -368,10 +367,12 @@ Sibling lint and CPU-safe validation pass through commit `2fb54bc` (`543 passed`
 `6 skipped`, plus `21` focused architecture tests after the final deletion
 guard). Three additional cache tests require Hugging Face network access and
 fail only on sandbox DNS. Project Ruff and all `181` login-safe tests pass. The
-immutable Granite CLT A/D/E gate is closed with exact feature and edge support;
-the PLT A/D/E jobs remain in progress. Repository-wide `ty` is advisory for this
-phase and currently reports 85 diagnostics across older analysis code, dynamic
-test doubles, and typed enum boundaries.
+immutable Granite CLT and PLT A/D/E gates are closed with exact feature and edge
+support, terminal lifecycle evidence, complete incremental telemetry, bounded
+storage evidence, and accepted weighted-edge parity against the pre-C2 A/D/E
+oracles. Repository-wide `ty` is advisory for this phase and currently reports
+85 diagnostics across older analysis code, dynamic test doubles, and typed enum
+boundaries.
 
 ## 10. Acceptance Criteria
 

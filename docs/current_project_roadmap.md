@@ -198,11 +198,10 @@ import `circuit_utils` from an editable console-script invocation.
 
 ## Phase C2 - Cleanup Strikes Again
 
-Phase C2 implementation is complete before Phase E. The canonical sibling API,
+Phase C2 is complete before Phase E. The canonical sibling API,
 project request/artifact runtime, phase-operation decomposition, observability
 ownership, and stale-surface deletion have landed. Broad login-safe validation
-and the immutable Granite CLT A/D/E gate are closed. The remaining closure work
-is completion and comparison of the in-flight PLT A/D/E gate against the frozen
+and the immutable Granite CLT/PLT A/D/E gates are closed against the frozen
 pre-C2 contract. Its
 normative architecture and acceptance criteria live in
 `docs/tracing_runtime_rewrite_spec.md`.
@@ -234,17 +233,17 @@ together, enforce useful invariants, and be owned by a subsystem. A renamed bag
 of old arguments does not satisfy C2. Functions may take several direct
 arguments when those arguments are honest domain concepts or capabilities.
 
-**Current C2 gate state:** implementation is not closure. Sibling lint,
+**Current C2 gate state:** closed. Sibling lint,
 architecture, failure, runtime, and CPU-safe tests pass (`543 passed`, `6
 skipped`; three additional cache tests require Hugging Face network access).
 Project Ruff and all `181` login-safe tests also pass. Stale imports of removed
 paths are absent and the project invokes the canonical sibling API directly.
 The immutable `361_base` 1B CLT A/D/E runs pass scheduler, harness, telemetry,
 fingerprint, bounded-storage, and compact-parity checks. PLT A/D/E jobs
-`1623224_0`, `1623226_3`, and `1623229_4` remain in progress and must pass the
-same criteria. Phase E does not begin until D and C2 both close. Repository-wide
-`ty` remains advisory and currently reports 85 pre-existing/dynamic-boundary
-diagnostics; typing is not a C2 closure gate.
+`1623224_0`, `1623226_3`, and `1623229_4` pass the same criteria. Phase D and C2
+are both closed, so Phase E may begin. Repository-wide `ty` remains advisory and
+currently reports 85 pre-existing/dynamic-boundary diagnostics; typing is not a
+C2 closure gate.
 
 ## Phase E - Staged Governor Integration
 
