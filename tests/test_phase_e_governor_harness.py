@@ -78,9 +78,12 @@ def test_trace_adapter_forwards_governor_inputs(
         )
         return SimpleNamespace(
             output={},
+            status=SimpleNamespace(value="succeeded"),
             semantic_fingerprint="semantic",
             execution_fingerprint="execution",
             telemetry_summary={},
+            telemetry_events=(),
+            admission_report=None,
         )
 
     monkeypatch.setattr(tracing, "trace_one", fake_trace_one)
@@ -95,11 +98,52 @@ def test_trace_adapter_forwards_governor_inputs(
     assert result["semantic_fingerprint"] == "semantic"
 
 
+def test_trace_adapter_surfaces_governor_refusal_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy = trace_policy_from_scenario(_governed_scenario())
+
+    def fake_trace_one(request, *, resources, provider_profile):
+        del request, resources, provider_profile
+        return SimpleNamespace(
+            output=None,
+            status=SimpleNamespace(value="refused"),
+            admission_report=SimpleNamespace(refusals=("host budget exceeded",)),
+        )
+
+    monkeypatch.setattr(tracing, "trace_one", fake_trace_one)
+
+    with pytest.raises(RuntimeError, match="host budget exceeded"):
+        tracing.extract_compact_chunked_attribution(
+            SimpleNamespace(),
+            [1, 2],
+            policy=policy,
+        )
+
+
 def test_explicit_policy_keeps_governor_disabled() -> None:
     policy = trace_policy_from_scenario({"name": "explicit", "method": "exact"})
 
     assert policy.resources is None
     assert policy.provider_profile is None
+    assert policy.physical_requirements is None
+
+
+def test_governed_policy_preserves_explicit_zero_and_full_requirements() -> None:
+    scenario = _governed_scenario()
+    scenario.update(
+        decoder_chunk_size=4096,
+        cross_batch_decoder_cache_bytes=0,
+        feature_row_retention="full_file",
+        full_retention_backend="full_file",
+    )
+
+    policy = trace_policy_from_scenario(scenario)
+
+    assert policy.physical_requirements is not None
+    assert policy.physical_requirements.decoder_fetch_chunk_size == 4096
+    assert policy.physical_requirements.decoder_cache_bytes == 0
+    assert policy.physical_requirements.row_store_policy.value == "file_backed_full"
 
 
 @pytest.mark.parametrize("architecture", ["clt", "plt"])

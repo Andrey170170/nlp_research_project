@@ -307,7 +307,7 @@ provider regime. Historical wrong-hook results remain provenance only.
 The governor is not a continuous memory manager. It acts at a small number
 of discrete decision points, each with strictly more information:
 
-1. **Admission (before load).** Inputs: model config, transcoder provider
+1. **Pre-execution admission.** Inputs: model config, transcoder provider
    profile/capabilities (or a preset resolving to them), prompt/prefix length,
    hardware (VRAM queried; host budget auto-discovered from the SLURM/cgroup
    limit — not typed by the user). Only closed-form estimates are available.
@@ -316,8 +316,10 @@ of discrete decision points, each with strictly more information:
    Output: a plan statement — predicted per-tier rigid/elastic demand,
    selected ladder rungs, estimated phase times vs walltime — or an early,
    explicit "will not finish / must shrink X" instead of a death 90 minutes
-   into Phase 3.
-2. **Post-load calibration.** The model is resident: measure it — that is
+   into Phase 3. The current canonical API receives an already-constructed
+   model, so this epoch is not a true pre-load gate. A future typed loader
+   specification may move the same decision ahead of model construction.
+2. **Loaded-state calibration.** The model is resident: measure it — that is
    the permanent VRAM line item. Load one decoder chunk and one encoder-row
    read: unit costs are now measured, not estimated. Everything remaining
    under `vram_fraction x total` after permanent + worst-case phase working
@@ -325,7 +327,9 @@ of discrete decision points, each with strictly more information:
 3. **Post-Phase-0 re-plan.** Phase 0 measures the only real unknown: `nnz`.
    Row-store bytes, encoder residency, replay working sets all become
    arithmetic. Spend the headroom pool here: bigger decoder cache, wider
-   replay window, deeper prefetch — performance-caste levers only.
+   storage, encoder residency, and Phase-3/4 microbatches here. Decoder
+   cache/fetch, source batching, replay window, and prefetch are frozen because
+   Phase-0 state may already depend on them.
 4. **Phase transitions.** Each phase declares its working-set shape,
    receives a grant from the ledger, and returns it on exit. Ledger entries
    carry (tier, demand class, lifetime: permanent / phase / transient).
@@ -662,7 +666,7 @@ execution waits for the recorded D behavior references.
 
 ### Step 8 / Phase E — Staged governor integration
 
-Connect pre-load admission, post-model-load measurement/re-planning,
+Connect pre-execution admission, loaded-state measurement/re-planning,
 post-Phase-0 active-universe re-planning, and phase-level grants/releases. The
 governor may select only Phase D mechanisms that passed parity; strict mode
 refuses when no such rung fits.
@@ -696,7 +700,8 @@ provenance.
    the execution fingerprint; logical reduction or refresh changes the semantic
    fingerprint.
 3. `strict` uses only semantics-preserving rungs and demonstrates actionable
-   pre-load refusal when none fits. `validated_relaxed` requires a named,
+   actionable refusal when none fits. True pre-load refusal requires the future
+   loader boundary described above. `validated_relaxed` requires a named,
    versioned, scope-matched allowlist record. `research` overrides are explicit
    in request, result, and provenance. Drift evidence is never represented as a
    guarantee.
@@ -731,8 +736,9 @@ provenance.
     Phase-3/4 execution.
 13. Phase C2 replaces the entire project-to-sibling trace path with meaningful
     domain contracts and passes its canonical runtime parity gate before E.
-14. Phase E records and validates all four planning epochs: pre-load,
-    post-model-load, post-Phase-0, and phase-transition grants/releases.
+14. Phase E records and validates three ordered planning decisions:
+    pre-execution, loaded-state, and post-Phase-0, plus phase-transition
+    grants/releases and measured resource samples.
 15. Phase F passes the `361_base` 1B CLT, 1B PLT, 4B PLT, and 12B PLT smoke and
     then the canonical `828_base`/`361_base`/`94_base` matrix before launch
     defaults or the project harness migration are declared done.

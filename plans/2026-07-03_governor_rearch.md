@@ -1,6 +1,6 @@
 # Memory governor + rearchitecture execution plan
 
-Status: active; Phase D and Phase C2 closed; Phase E ready for implementation
+Status: active; Phase E implemented; immutable governed parity gate pending
 Date: 2026-07-03; last updated 2026-07-13
 Scope: sibling library `../circuit-tracer_chunked` rewrite + project harness
 restructure + validation campaigns
@@ -715,13 +715,17 @@ Goal: make the governor coordinate validated Phase D mechanisms through the
 Phase C2 canonical runtime, not define their behavior. Both D and C2 gates must
 pass before implementation begins.
 
-1. **Pre-load:** consume the Phase B admission plan and refuse actionably when
-   no supported semantics-preserving plan can fit.
-2. **Post-model-load:** measure permanent model VRAM plus representative
+1. **Pre-execution admission:** consume the Phase B plan and refuse actionably
+   when no supported semantics-preserving plan can fit. In the current API the
+   model/provider is already constructed, so this is not a true pre-load gate.
+   True pre-load refusal requires a future typed load specification at the
+   model-loader boundary; the runtime must not claim that capability meanwhile.
+2. **Loaded-state calibration:** measure permanent model VRAM plus representative
    encoder/decoder allocation and throughput; profile then claim headroom.
 3. **Post-Phase-0:** use actual active-feature counts/distribution to compute
-   row-store and dense working sets and re-plan caches, microbatches, replay,
-   prefetch, residency, and bounded rungs.
+   row-store and dense working sets and re-plan storage, encoder residency, and
+   Phase-3/4 microbatches. Decoder cache/fetch, source batching, replay, and
+   prefetch are frozen before Phase 0 because their state may already exist.
 4. **Phase transitions:** phases declare working sets, receive grants, and
    release phase/transient reservations on exit.
 5. Compare predicted versus actual demand and walltime for profile refinement.
@@ -733,6 +737,15 @@ Phase E adds the sibling-owned `ResourceEnvelope` runtime contract and makes
 `trace_one`, `trace_batch`, and `open_session` consume governed plans. Phase F
 owns project scenario/CLI adoption of that contract; it does not defer the
 runtime envelope or governor execution itself.
+
+Implementation state (2026-07-13): sibling commits `7cde998` and `5e6ec0d`
+execute the three ordered decision epochs, phase grants/releases, measured
+resource samples, explicit refusal lifecycle, load-time decoder validation,
+one-shot/session decoder-cache ownership, and effective storage/decoder
+fingerprints. Project commit preparation carries named profiles/envelopes and
+explicit physical requirements into that runtime. Checkpoint page-cache policy
+is admission evidence only in the current already-loaded API; it is not labeled
+as an effective live mechanism. Immutable CLT/PLT gate adjudication remains.
 
 ### Phase E validation gate — governed parity
 

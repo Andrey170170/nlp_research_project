@@ -97,8 +97,9 @@ Near-term implementation focus:
    execute Phase C2: replace the whole project-to-sibling tracing path with one
    comprehensible domain runtime, atomically migrate callers, and delete the old
    argument-bag/compatibility paths,
-3. connect the Phase B resolver only in Phase E after both D and C2 pass, then
-   validate governed-versus-explicit execution,
+3. adjudicate the immutable Phase E 1B CLT/PLT governed-versus-explicit gate;
+   the sibling runtime now consumes plans through three decision epochs and
+   phase-level resource grants,
 4. consolidate governed harness workflows in Phase F and preserve the current
    baselines through the gated Granite matrix.
 

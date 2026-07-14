@@ -35,6 +35,11 @@ def extract_compact_chunked_attribution(
         resources=policy.resources,
         provider_profile=policy.provider_profile,
     )
+    if getattr(result.status, "value", result.status) == "refused":
+        report = result.admission_report
+        reasons = () if report is None else report.refusals
+        detail = "; ".join(reasons) if reasons else "no refusal reason was recorded"
+        raise RuntimeError(f"trace refused by memory governor: {detail}")
     if not isinstance(result.output, dict):
         raise TypeError(
             "compact exact tracing must return a dictionary payload; "
@@ -44,4 +49,9 @@ def extract_compact_chunked_attribution(
     output.setdefault("semantic_fingerprint", result.semantic_fingerprint)
     output.setdefault("execution_fingerprint", result.execution_fingerprint)
     output.setdefault("telemetry_summary", dict(result.telemetry_summary))
+    output.setdefault("telemetry_events", list(result.telemetry_events))
+    if result.admission_report is not None:
+        from dataclasses import asdict
+
+        output.setdefault("admission_report", asdict(result.admission_report))
     return output

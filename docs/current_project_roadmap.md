@@ -241,15 +241,16 @@ paths are absent and the project invokes the canonical sibling API directly.
 The immutable `361_base` 1B CLT A/D/E runs pass scheduler, harness, telemetry,
 fingerprint, bounded-storage, and compact-parity checks. PLT A/D/E jobs
 `1623224_0`, `1623226_3`, and `1623229_4` pass the same criteria. Phase D and C2
-are both closed, so Phase E may begin. Repository-wide `ty` remains advisory and
+are both closed, so Phase E implementation proceeded. Repository-wide `ty` remains advisory and
 currently reports 85 pre-existing/dynamic-boundary diagnostics; typing is not a
 C2 closure gate.
 
 ## Phase E - Staged Governor Integration
 
-Only after D mechanisms and the C2 canonical runtime pass their gates:
+Implementation is complete; the immutable governed parity gate is pending:
 
-1. apply Phase B pre-load admission;
+1. apply Phase B pre-execution admission (the current API has already loaded the
+   model; true pre-load admission needs a future typed loader boundary);
 2. measure permanent model VRAM and representative encoder/decoder costs after
    load, then re-plan headroom;
 3. re-plan after Phase 0 using actual active-feature counts and distributions;
@@ -260,6 +261,13 @@ Only after D mechanisms and the C2 canonical runtime pass their gates:
 D runs through the C2 runtime, constrained envelopes must select expected rungs,
 all planning epochs must be recorded, and strict compact outputs/semantic
 fingerprints must match the pinned reference.
+
+The runtime uses three ordered planning decisions (pre-execution, loaded-state,
+post-Phase-0) plus measured phase-transition grants/releases. Mechanisms that
+can already have runtime state after Phase 0 are frozen; the late epoch may
+change storage, encoder residency, and Phase-3/4 microbatches only. Checkpoint
+page-cache policy remains an admission input until planning moves ahead of model
+loading.
 
 ## Phase F - Governed Harness Consolidation
 

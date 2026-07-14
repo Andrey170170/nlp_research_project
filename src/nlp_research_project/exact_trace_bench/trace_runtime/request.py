@@ -23,8 +23,11 @@ from circuit_tracer import (
 from circuit_tracer.governor import (
     RECORDED_PROVIDER_PROFILES,
     CachePolicy,
+    EncoderResidency,
+    PhysicalExecutionRequirements,
     ProviderProfile,
     ResourceEnvelope,
+    RowStorePolicy,
 )
 
 
@@ -43,6 +46,7 @@ class TracePolicy:
     evidence: TraceEvidence
     resources: ResourceEnvelope | None = None
     provider_profile: ProviderProfile | None = None
+    physical_requirements: PhysicalExecutionRequirements | None = None
 
     def request(
         self,
@@ -72,6 +76,7 @@ class TracePolicy:
             semantics=self.semantics,
             execution=execution,
             evidence=self.evidence,
+            physical_requirements=self.physical_requirements,
         )
 
 
@@ -83,6 +88,11 @@ def trace_policy_from_scenario(
     """Resolve one scenario into the canonical sibling-owned policy types."""
 
     resources, provider_profile = _governor_policy_from_scenario(scenario)
+    physical_requirements = (
+        _physical_requirements_from_scenario(scenario)
+        if provider_profile is not None
+        else None
+    )
 
     phase4_planning = bool(
         scenario.get("plan_feature_batch_size", False)
@@ -267,6 +277,7 @@ def trace_policy_from_scenario(
         ),
         resources=resources,
         provider_profile=provider_profile,
+        physical_requirements=physical_requirements,
     )
 
 
@@ -303,6 +314,60 @@ def _governor_policy_from_scenario(
     except TypeError as error:
         raise ValueError(f"invalid governor_resource_envelope: {error}") from error
     return resources, provider_profile
+
+
+def _physical_requirements_from_scenario(
+    scenario: Mapping[str, Any],
+) -> PhysicalExecutionRequirements:
+    row_store_policy = None
+    if "feature_row_retention" in scenario or "full_retention_backend" in scenario:
+        if scenario.get("feature_row_retention", "full_file") == "none_recompute":
+            row_store_policy = RowStorePolicy.RECOMPUTE
+        elif scenario.get("full_retention_backend", "full_file") == "column_tiled_v1":
+            row_store_policy = RowStorePolicy.TILED
+        else:
+            row_store_policy = RowStorePolicy.FULL
+    encoder_residency = None
+    if "exact_encoder_residency" in scenario:
+        encoder_residency = (
+            EncoderResidency.LAZY_PER_REQUEST
+            if scenario["exact_encoder_residency"] == "lazy"
+            else EncoderResidency.EAGER
+        )
+    return PhysicalExecutionRequirements(
+        decoder_fetch_chunk_size=(
+            int(scenario["decoder_chunk_size"])
+            if "decoder_chunk_size" in scenario
+            else None
+        ),
+        decoder_cache_bytes=(
+            int(scenario["cross_batch_decoder_cache_bytes"])
+            if "cross_batch_decoder_cache_bytes" in scenario
+            else None
+        ),
+        feature_microbatch_size=(
+            int(scenario["phase4_compute_microbatch_max_rows"])
+            if "phase4_compute_microbatch_max_rows" in scenario
+            else None
+        ),
+        logit_microbatch_size=(
+            int(scenario["phase3_compute_microbatch_max_rows"])
+            if "phase3_compute_microbatch_max_rows" in scenario
+            else None
+        ),
+        replay_window=(
+            int(scenario["chunked_feature_replay_window"])
+            if "chunked_feature_replay_window" in scenario
+            else None
+        ),
+        prefetch_depth=(
+            int(scenario["error_vector_prefetch_lookahead"])
+            if "error_vector_prefetch_lookahead" in scenario
+            else None
+        ),
+        encoder_residency=encoder_residency,
+        row_store_policy=row_store_policy,
+    )
 
 
 def _optional_int(value: Any) -> int | None:
