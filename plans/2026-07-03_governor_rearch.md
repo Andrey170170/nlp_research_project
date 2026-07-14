@@ -1,6 +1,6 @@
 # Memory governor + rearchitecture execution plan
 
-Status: active; Phase D closed; Phase C2 implementation complete with project and immutable validation pending before Phase E
+Status: active; Phase D and Phase C2 closed; Phase E ready for implementation
 Date: 2026-07-03; last updated 2026-07-13
 Scope: sibling library `../circuit-tracer_chunked` rewrite + project harness
 restructure + validation campaigns
@@ -729,6 +729,11 @@ pass before implementation begins.
 Logical semantics remain fixed. The governor may choose only mechanisms that
 passed the Phase D gate; otherwise strict admission refuses.
 
+Phase E adds the sibling-owned `ResourceEnvelope` runtime contract and makes
+`trace_one`, `trace_batch`, and `open_session` consume governed plans. Phase F
+owns project scenario/CLI adoption of that contract; it does not defer the
+runtime envelope or governor execution itself.
+
 ### Phase E validation gate — governed parity
 
 For 1B CLT and 1B PLT on Granite, require:
@@ -738,6 +743,11 @@ For 1B CLT and 1B PLT on Granite, require:
 - planned and actual allocations plus every re-plan epoch are recorded;
 - strict semantic fingerprints and compact outputs match the Phase C1 baseline;
 - failures/refusals preserve incremental telemetry and actionable reports.
+
+The checked-in campaign contract is
+`experiments/exact_trace_bench/phase_e_governor_gate.json`. It pins the roomy,
+tiled, and recompute envelopes, the expected selected mechanisms, and the
+immutable C2 A/D/E artifact roots used as explicit references.
 
 ## Phase F — Governed Harness Consolidation and Final Validation
 
@@ -749,9 +759,10 @@ the remaining harness workflow after Phase E.
 
 ### F1. Governed scenario adapter
 
-Add `ResourceEnvelope` and governed-plan selection to the typed scenario adapter
-created in C2. Consume streamed events/fingerprints without duplicating
-sibling-owned sequencing, serialization, and terminal flushing.
+Map project scenarios and CHPC allocation facts into the sibling-owned
+`ResourceEnvelope` and governed runtime added in Phase E. Consume streamed
+events/fingerprints without duplicating sibling-owned sequencing,
+serialization, and terminal flushing.
 
 ### F2. CLI and launch consolidation
 
