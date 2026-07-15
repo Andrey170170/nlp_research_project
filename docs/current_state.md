@@ -1,7 +1,7 @@
 # Current state overview
 
 Status: Current-state inventory
-Last updated: 2026-07-12
+Last updated: 2026-07-15
 
 This document is a descriptive workspace map, not a target architecture, rule
 set, or debt plan.
@@ -77,9 +77,12 @@ The current exact-trace workflow depends on both checkouts being present.
   the pure resolver are complete at sibling `phase-b-governor-contract@0ce3f96`.
   Phase C1 structural runtime/observability extraction and its Granite gate are
   complete. Phase D mechanism validation and the Phase C2 canonical runtime
-  rewrite are complete. Phase E staged constrained-governor correction is
-  implemented and awaiting its immutable Granite gate, followed by Phase F
-  governed harness consolidation.
+  rewrite are complete. Phase E governor v0.3 implementation and CPU gates are
+  complete: safety/support contracts, bounded independent search, staged phase
+  cost models, measured-unit refinement, and replay-cache ownership are wired.
+  The implementation is sibling `phase-b-governor-contract@07bfefb`. Its
+  two-run immutable Granite gate precedes the multi-model calibration sweep and
+  Phase F governed harness consolidation.
 - Descriptive architecture details now live under `docs/architecture/`.
 - Current baseline decisions stay in `EXPERIMENTS.md`; active work stays in the owning spec.
 - Reports are not treated as source-of-truth unless a current doc explicitly cites them.

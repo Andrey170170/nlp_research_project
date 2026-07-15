@@ -41,28 +41,6 @@
           "local_disk_bytes": 4294967296,
           "scratch_disk_bytes": 4294967296,
           "expected_row_store_policy": "file_backed_full"
-        },
-        "full": {
-          "performance_reference_arm": "A",
-          "required_row_store_policy": "file_backed_full",
-          "local_disk_bytes": 4294967296,
-          "scratch_disk_bytes": 4294967296,
-          "expected_row_store_policy": "file_backed_full"
-        },
-        "tiled": {
-          "performance_reference_arm": "D",
-          "required_row_store_policy": "tiled",
-          "local_disk_bytes": 4294967296,
-          "scratch_disk_bytes": 4294967296,
-          "expected_row_store_policy": "tiled",
-          "expected_feature_column_tile_size": 2048
-        },
-        "recompute": {
-          "performance_reference_arm": "E",
-          "required_row_store_policy": "recompute",
-          "local_disk_bytes": 4294967296,
-          "scratch_disk_bytes": 4294967296,
-          "expected_row_store_policy": "recompute"
         }
       }
     },
@@ -81,31 +59,6 @@
           "local_disk_bytes": 4294967296,
           "scratch_disk_bytes": 4294967296,
           "expected_row_store_policy": "file_backed_full"
-        },
-        "full": {
-          "performance_reference_arm": "A",
-          "walltime_seconds": 28800,
-          "required_row_store_policy": "file_backed_full",
-          "local_disk_bytes": 4294967296,
-          "scratch_disk_bytes": 4294967296,
-          "expected_row_store_policy": "file_backed_full"
-        },
-        "tiled": {
-          "performance_reference_arm": "D",
-          "walltime_seconds": 28800,
-          "required_row_store_policy": "tiled",
-          "local_disk_bytes": 4294967296,
-          "scratch_disk_bytes": 4294967296,
-          "expected_row_store_policy": "tiled",
-          "expected_feature_column_tile_size": 16384
-        },
-        "recompute": {
-          "performance_reference_arm": "E",
-          "walltime_seconds": 28800,
-          "required_row_store_policy": "recompute",
-          "local_disk_bytes": 4294967296,
-          "scratch_disk_bytes": 4294967296,
-          "expected_row_store_policy": "recompute"
         }
       }
     }

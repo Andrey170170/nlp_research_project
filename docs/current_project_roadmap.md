@@ -1,7 +1,7 @@
 # Current Project Roadmap
 
 Status: Current scratch roadmap
-Last updated: 2026-07-14
+Last updated: 2026-07-15
 
 ## Active Priority
 
@@ -248,26 +248,25 @@ C2 closure gate.
 ## Phase E - Staged Constrained Governor Integration
 
 The initial runtime integration is complete, but the 2026-07-14 immutable gate
-reopened Phase E: full/tiled CLT and PLT passed parity, while both forced
-recompute runs timed out. The resolver must be upgraded from single-candidate
-admission to staged constrained optimization before rerunning the gate.
+reopened Phase E. Full/tiled CLT and PLT passed parity; forced recompute exposed
+incorrect configuration selection and cost accounting. Governor v0.3 is the
+bounded correction pass before rerunning the gate.
 
-Correction implementation state (2026-07-14): the sibling now searches all
-distinct physical step-count breakpoints, applies hard constraints per variable,
-uses concurrent phase peaks for admission, models row-policy walltime from C2
-measurements, and runs five ordered epochs: pre-execution, loaded-state,
-post-Phase-0, Phase-3 entry, and Phase-4 entry. Entry observations tighten the
-next phase solve when measured live VRAM exceeds predicted persistent demand.
-Inherited values are reported separately as frozen decisions, and effective
-execution identity retains every allowed revision. The project gate now has a
-roomy auto arm plus explicit full/tiled/recompute arms; all use the original
-corrected-hook run as artifact oracle and C2 only for runtime comparison.
+The v0.3 contract separates loose implementation safety limits from calibration
+support. A fitting value outside observed support is legal but explicitly
+extrapolated; a value beyond the safety limit is invalid. Session capacity,
+Phase-1 scheduling, Phase-3/4 microbatches, decoder cache, replay-tile cache,
+row policy, residency, and placement are independent constrained variables.
+Source microbatch remains explicit/derived only because no sequenced source
+executor consumes it.
 
-The current source-microbatch field is not an optimizer variable because no
-sequenced source executor consumes it. Decoder fetch/cache are load-time hard
-inputs in the current already-constructed-model API. Replay/prefetch and encoder
-residency remain profile/fit decisions until calibrated causal time models exist;
-the governor does not invent throughput benefits for unmeasured choices.
+Memory admission uses per-phase concurrent peaks. Walltime is an additive phase
+projection: observed completed time plus predicted remaining work. Storage and
+cache costs apply only to the phases they affect; no row-policy multiplier may
+scale the whole trace. Loaded and phase-boundary observations replace matching
+estimates and never refit the active run. The v0.3 implementation and CPU gates
+completed on 2026-07-15; the immutable CLT/PLT gate is the remaining Phase E
+validation.
 
 1. enumerate provisional candidates and enforce hard user requirements during
    pre-execution admission (true pre-load admission still needs a typed loader
@@ -279,13 +278,16 @@ the governor does not invent throughput benefits for unmeasured choices.
 5. grant/release resources and record candidates, constraints, objective scores,
    predictions, actuals, and prediction error at every epoch.
 
-**E gate:** `361_base` 1B CLT/PLT strict artifacts must match the original
-corrected-hook Granite baselines. C2 A/D/E runs are the runtime comparison, not
-the scientific artifact oracle. A roomy unconstrained run must select the
-fastest fitting plan; forced full/tiled/recompute constraints must be honored
-while all other knobs remain optimized. Inspect the selected configuration and
-telemetry for actual H200/host/disk utilization, prediction quality, every
-planning epoch, semantic fingerprints, and compact parity.
+**E v0.3 gate:** run one roomy unconstrained `361_base` trace for 1B CLT and one
+for 1B PLT. Strict artifacts must match the original corrected-hook Granite
+baselines; C2 is runtime context only. Inspect the selected configuration,
+support classification, phase predictions/actuals, H200/host/disk utilization,
+all planning epochs, semantic fingerprints, phase-local peaks, terminal
+incremental telemetry, and compact parity.
+
+After this gate, run the 38-row causal and model-scaling campaign defined in
+`docs/governor_calibration_matrix.md`. Do not promote coefficients from the two
+gate traces alone.
 
 Hard requirements constrain variables rather than replacing optimization. The
 runtime re-solves at pre-execution, loaded-state, post-Phase-0, and safe phase

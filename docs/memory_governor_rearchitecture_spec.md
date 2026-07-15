@@ -1,7 +1,7 @@
 # Memory Governor and Library Rearchitecture Spec
 
-Status: Phase D and C2 complete; Phase E staged optimizer correction active
-Last updated: 2026-07-14
+Status: Phase D and C2 complete; Phase E governor v0.3 awaiting Granite gate
+Last updated: 2026-07-15
 
 This is the "how it is supposed to be" document for the next major rework of
 the sibling library `../circuit-tracer_chunked` and its project-side harness
@@ -319,11 +319,18 @@ No candidate that violates a hard requirement is admissible. When the hard
 constraint set is infeasible, the result reports conflicts and nearest rejected
 candidates rather than silently relaxing a requirement.
 
+Provider profiles declare two distinct physical domains. `ProviderSafetyLimits`
+contains loose implementation ceilings. `CalibrationSupport` contains observed
+ranges, supported policies, and evidence IDs. Safety limits gate validity;
+calibration support determines confidence. A safe extrapolation may run, but it
+must not silently outrank a fitting supported candidate under the ordinary
+objective.
+
 The default objective is deterministic and lexicographic: strict semantics and
-hard constraints; resource/walltime fit with safety margins; minimum predicted
-completion time; then lower peak pressure, I/O amplification, and stable
-fingerprint order. Minimum memory is not the objective when additional safe
-resource use improves throughput.
+hard constraints; resource/walltime fit with safety margins; supported before
+extrapolated predictions; minimum predicted remaining time; then lower peak
+pressure, I/O amplification, and stable fingerprint order. Minimum memory is
+not the objective when additional safe resource use improves throughput.
 
 The epochs are:
 
@@ -359,16 +366,21 @@ The epochs are:
 
 Each epoch records the candidate domain, hard constraints, frozen/free variable
 sets, selected candidate, rejected candidates and reasons, binding resources,
-predicted time/demand, observed time/demand, and prediction error. Row-store
-policy must participate in both runtime and I/O amplification models;
-recompute-on-demand cannot share a full-retention walltime estimate.
+support/extrapolation classification, predicted time/demand, observed
+time/demand, and prediction error. Memory is predicted as independent
+concurrent phase peaks. Walltime is additive: observed elapsed work plus
+predicted not-yet-started phase components. Row policy, decoder cache, and
+replay-tile cache affect only their owning phase components; no whole-run
+policy multiplier is admissible.
 
 Controls freeze at their last safe epoch: load placement before model load;
 decoder fetch/cache ownership, source scheduling, replay, and prefetch before
 Phase 0; row-store and encoder residency before row production; Phase-3 and
 Phase-4 microbatches/tiles at their respective phase entries. Session capacity,
-Phase-1 source scheduling, Phase-3 microbatch, and Phase-4 microbatch remain
-separate variables and profile bounds.
+Phase-1 source scheduling, Phase-3 microbatch, Phase-4 microbatch, decoder
+cache, and replay-tile cache remain separate variables. Replay-tile cache is
+zero outside recompute storage. Source microbatch is not a free optimizer
+dimension until a sequenced source executor consumes it.
 
 The hand-tuned size-aware presets for the 1B/4B/12B stress campaign (batch
 1024/512/256, chunk 8192/4096/2048, cache 32/16/8 GiB) are a lookup-table
@@ -710,6 +722,11 @@ that passed parity; strict mode refuses when no such rung fits.
 Gate E on `361_base` 1B CLT/PLT governed-versus-explicit equivalence, expected
 rung selection under constrained envelopes, complete epoch telemetry, and
 strict compact-output/semantic-fingerprint parity.
+
+The governor-v0.3 correction gate uses one unconstrained CLT and one
+unconstrained PLT trace. The subsequent 38-run causal/model-scaling campaign is
+defined in `docs/governor_calibration_matrix.md`; only that campaign may promote
+new calibration coefficients.
 
 ### Step 9 / Phase F — Governed harness consolidation and final validation
 

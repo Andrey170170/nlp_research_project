@@ -28,6 +28,7 @@ from circuit_tracer.governor import (
     ProviderProfile,
     ResourceEnvelope,
     RowStorePolicy,
+    StorageTier,
 )
 
 
@@ -329,6 +330,9 @@ def _physical_requirements_from_scenario(
             if scenario["governor_required_encoder_residency"] == "lazy"
             else EncoderResidency.EAGER
         )
+    spill_target = None
+    if scenario.get("governor_required_spill_target") is not None:
+        spill_target = StorageTier(str(scenario["governor_required_spill_target"]))
     return PhysicalExecutionRequirements(
         decoder_fetch_chunk_size=_optional_int(scenario.get("decoder_chunk_size")),
         decoder_cache_bytes=_optional_int(scenario.get("cross_batch_decoder_cache_bytes")),
@@ -346,8 +350,12 @@ def _physical_requirements_from_scenario(
         ),
         replay_window=_optional_int(scenario.get("chunked_feature_replay_window")),
         prefetch_depth=_optional_int(scenario.get("error_vector_prefetch_lookahead")),
+        replay_tile_cache_bytes=_optional_int(
+            scenario.get("governor_required_replay_tile_cache_bytes")
+        ),
         encoder_residency=encoder_residency,
         row_store_policy=row_store_policy,
+        spill_target=spill_target,
     )
 
 

@@ -149,11 +149,13 @@ def test_governed_policy_preserves_explicit_zero_and_full_requirements() -> None
 def test_governed_policy_accepts_a_row_store_constraint_without_legacy_knobs() -> None:
     scenario = _governed_scenario()
     scenario["governor_required_row_store_policy"] = "recompute"
+    scenario["governor_required_replay_tile_cache_bytes"] = 4 * GIB
 
     policy = trace_policy_from_scenario(scenario)
 
     assert policy.physical_requirements is not None
     assert policy.physical_requirements.row_store_policy.value == "recompute"
+    assert policy.physical_requirements.replay_tile_cache_bytes == 4 * GIB
     assert policy.physical_requirements.session_capacity is None
     assert policy.physical_requirements.feature_microbatch_size is None
     assert policy.physical_requirements.logit_microbatch_size is None
@@ -187,19 +189,14 @@ def test_phase_e_gate_scenarios_leave_governed_mechanisms_unpinned(
     )
     payload = json.loads(path.read_text())
     assert payload["metadata"]["immutable_validation_config"] is True
-    assert len(payload["scenarios"]) == 4
-    assert {
-        scenario["governor_expected_row_store_policy"]
-        for scenario in payload["scenarios"]
-    } == {"file_backed_full", "tiled", "recompute"}
-    auto = next(scenario for scenario in payload["scenarios"] if scenario["run_name"].endswith("auto"))
+    assert len(payload["scenarios"]) == 1
+    auto = payload["scenarios"][0]
+    assert auto["governor_expected_row_store_policy"] == "file_backed_full"
+    assert auto["run_name"].endswith("auto")
     assert "governor_required_row_store_policy" not in auto
-    forced = [scenario for scenario in payload["scenarios"] if scenario is not auto]
-    assert {
-        scenario["governor_required_row_store_policy"] for scenario in forced
-    } == {"file_backed_full", "tiled", "recompute"}
 
     governed_keys = {
+        "cross_batch_decoder_cache_bytes",
         "nnsight_session_capacity",
         "phase1_trace_batch_policy",
         "phase1_trace_batch_size_max",

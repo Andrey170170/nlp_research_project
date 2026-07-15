@@ -59,6 +59,15 @@ from .chpc_baseline import (
     write_chpc_baseline_config as write_chpc_baseline_config,
 )
 
+from .governor_calibration import (
+    GOVERNOR_CALIBRATION_FIXTURE as GOVERNOR_CALIBRATION_FIXTURE,
+    GOVERNOR_CALIBRATION_PROVIDERS as GOVERNOR_CALIBRATION_PROVIDERS,
+    build_governor_calibration_config as build_governor_calibration_config,
+    governor_calibration_scenario_file_name as governor_calibration_scenario_file_name,
+    write_all_governor_calibration_configs as write_all_governor_calibration_configs,
+    write_governor_calibration_config as write_governor_calibration_config,
+)
+
 from .wave0 import (
     build_wave0_baseline_config as build_wave0_baseline_config,
     wave0_scenario_file_name as wave0_scenario_file_name,
@@ -92,6 +101,8 @@ __all__ = [
     "DEBUG_REPLAY_PUBLIC_KEYS",
     "DEPRECATED_COMPAT_KEYS",
     "EXACT_MODE_KNOB_KEYS",
+    "GOVERNOR_CALIBRATION_FIXTURE",
+    "GOVERNOR_CALIBRATION_PROVIDERS",
     "PRIVATE_INTERNAL_KEYS",
     "RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM",
     "RESOURCE_PROFILE_STANDARD",
@@ -123,6 +134,7 @@ __all__ = [
     "build_anomaly_tier",
     "build_chpc_baseline_config",
     "build_fast_tier",
+    "build_governor_calibration_config",
     "build_long_eval_tier",
     "build_tier_config",
     "build_wave0_baseline_config",
@@ -133,6 +145,7 @@ __all__ = [
     "build_wave4_generalization_config",
     "scenario_file_name",
     "chpc_baseline_scenario_file_name",
+    "governor_calibration_scenario_file_name",
     "wave0_scenario_file_name",
     "wave2a_phase1_scenario_file_name",
     "wave2b_phase4_scenario_file_name",
@@ -141,6 +154,8 @@ __all__ = [
     "wave4_generalization_scenario_file_name",
     "write_all_tiers",
     "write_chpc_baseline_config",
+    "write_all_governor_calibration_configs",
+    "write_governor_calibration_config",
     "write_tier_config",
     "write_wave0_baseline_config",
     "write_wave2a_phase1_config",

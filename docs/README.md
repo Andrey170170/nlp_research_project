@@ -1,7 +1,7 @@
 # Documentation index
 
 Status: Current docs map
-Last updated: 2026-07-13
+Last updated: 2026-07-15
 
 This directory mixes current-state references, active specs, and historical
 material. Use the sections below to separate descriptive maps from working
@@ -36,6 +36,7 @@ plans.
 |---|---|
 | `current_project_roadmap.md` | Current gated Phase B-D, C2, E-F roadmap |
 | `memory_governor_rearchitecture_spec.md` | Implementation-ready target design for the budget-driven governor and sibling runtime |
+| `governor_calibration_matrix.md` | Executable 1B/4B/12B causal calibration and promotion contract for governor v0.3 |
 | `tracing_runtime_rewrite_spec.md` | Normative Phase C2 end-to-end tracing architecture and atomic migration plan |
 | `knob_api_taxonomy.md` | Phase B requirements document for knob ownership, caste, validation, and cost formulas |
 

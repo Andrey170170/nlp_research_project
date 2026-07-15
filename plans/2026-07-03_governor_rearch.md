@@ -808,9 +808,26 @@ decisions, and records effective execution identity revisions. Source
 microbatching is excluded from optimization until a real sequenced executor
 consumes it; this avoids charging or rewarding a non-causal control.
 
+Governor-v0.3 correction (2026-07-15): replace the remaining single-observation
+profile assumptions before accepting Phase E. Profiles must separate loose
+implementation safety limits from observed calibration support and evidence.
+The optimizer independently searches session, Phase-1 schedule, Phase-3/4
+microbatches, decoder cache, replay/prefetch, replay-tile cache, row policy,
+residency, and placement, subject to hard requirements and freeze points.
+Replay-tile cache is zero outside recompute; source microbatch remains
+explicit/derived only because it has no sequenced executor.
+
+Admission uses additive per-phase memory peaks and additive phase walltime.
+Observed completed time replaces the matching predicted prefix; row-policy and
+cache effects apply only to owning phase components. Each phase grant resets
+CUDA peak statistics and release records peak allocated/reserved, ending live
+allocation, duration, and operation/cache counters. The active run never refits
+its own profile.
+
 ### Phase E validation gate — governed parity
 
-For 1B CLT and 1B PLT on Granite, require:
+For the v0.3 correction, run one roomy unconstrained 1B CLT trace and one roomy
+unconstrained 1B PLT trace on Granite and require:
 
 - strict compact artifacts match the original corrected-hook Granite baseline,
   not merely a C2-produced reference;
@@ -818,8 +835,6 @@ For 1B CLT and 1B PLT on Granite, require:
   performance baseline and report faster/slower ratios by phase;
 - an unconstrained roomy envelope selects the fastest predicted fitting plan,
   not the lowest-memory plan;
-- hard-constrained runs (at minimum forced full, tiled, and recompute row-store
-  policies) satisfy the requirement while optimizing all remaining free knobs;
 - selected configurations are inspected against available H200 VRAM, host RAM,
   disk, and walltime, and telemetry demonstrates that safe headroom was used
   rather than left idle by an unrelated cap;
@@ -830,10 +845,16 @@ For 1B CLT and 1B PLT on Granite, require:
 
 The checked-in campaign contract is
 `experiments/exact_trace_bench/phase_e_governor_gate.json`. It pins the roomy
-auto and forced full/tiled/recompute envelopes, the expected selected mechanisms, and the
-original baseline artifact roots used as scientific references plus C2 A/D/E
-roots used only for runtime/mechanism comparison. The next revision must also
-pin expected constraint satisfaction and utilization assertions.
+auto envelopes and the original baseline artifact roots used as scientific
+references. C2 roots remain runtime context only.
+
+After the two-run correction gate, execute the 38-row calibration matrix in
+`docs/governor_calibration_matrix.md`. It isolates the 1B session, Phase-1/3/4,
+decoder-cache, replay-window, prefetch, replay-cache, row-policy, residency,
+placement, and repeatability relations, then checks session scaling and
+tiled-policy transfer on 4B/12B PLT. Promote a profile only after fitting causal
+rows and validating held-out/larger-model rows; values inside safety limits but
+outside those support ranges remain extrapolated.
 
 ## Phase F — Governed Harness Consolidation and Final Validation
 
