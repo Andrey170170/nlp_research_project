@@ -782,7 +782,7 @@ owns project scenario/CLI adoption of that contract; it does not defer the
 runtime envelope or governor execution itself.
 
 Initial implementation state (2026-07-13): sibling commits `7cde998` and `5e6ec0d`
-execute the three ordered decision epochs, phase grants/releases, measured
+execute the first three ordered decision epochs, phase grants/releases, measured
 resource samples, explicit refusal lifecycle, load-time decoder validation,
 one-shot/session decoder-cache ownership, and effective storage/decoder
 fingerprints. Project commit preparation carries named profiles/envelopes and
@@ -798,6 +798,15 @@ unconditionally couples source capping to Phase-1 execution, and its profile
 uses one physical-batch cap across independent phases. Phase E is reopened;
 extending walltime without correcting selection/costing is not an acceptance
 path.
+
+Correction implementation state (2026-07-14): candidate search now covers all
+distinct logical-step breakpoints down to one row, admits against concurrent
+rather than summed phase-local peaks, and uses measured C2 row-policy runtime
+ratios. The runtime adds Phase-3 and Phase-4 entry replans, feeds excess observed
+live VRAM back as reduced phase headroom, separates user constraints from frozen
+decisions, and records effective execution identity revisions. Source
+microbatching is excluded from optimization until a real sequenced executor
+consumes it; this avoids charging or rewarding a non-causal control.
 
 ### Phase E validation gate — governed parity
 
@@ -820,8 +829,8 @@ For 1B CLT and 1B PLT on Granite, require:
 - failures/refusals preserve incremental telemetry and actionable reports.
 
 The checked-in campaign contract is
-`experiments/exact_trace_bench/phase_e_governor_gate.json`. It pins the roomy,
-tiled, and recompute envelopes, the expected selected mechanisms, and the
+`experiments/exact_trace_bench/phase_e_governor_gate.json`. It pins the roomy
+auto and forced full/tiled/recompute envelopes, the expected selected mechanisms, and the
 original baseline artifact roots used as scientific references plus C2 A/D/E
 roots used only for runtime/mechanism comparison. The next revision must also
 pin expected constraint satisfaction and utilization assertions.

@@ -252,6 +252,23 @@ reopened Phase E: full/tiled CLT and PLT passed parity, while both forced
 recompute runs timed out. The resolver must be upgraded from single-candidate
 admission to staged constrained optimization before rerunning the gate.
 
+Correction implementation state (2026-07-14): the sibling now searches all
+distinct physical step-count breakpoints, applies hard constraints per variable,
+uses concurrent phase peaks for admission, models row-policy walltime from C2
+measurements, and runs five ordered epochs: pre-execution, loaded-state,
+post-Phase-0, Phase-3 entry, and Phase-4 entry. Entry observations tighten the
+next phase solve when measured live VRAM exceeds predicted persistent demand.
+Inherited values are reported separately as frozen decisions, and effective
+execution identity retains every allowed revision. The project gate now has a
+roomy auto arm plus explicit full/tiled/recompute arms; all use the original
+corrected-hook run as artifact oracle and C2 only for runtime comparison.
+
+The current source-microbatch field is not an optimizer variable because no
+sequenced source executor consumes it. Decoder fetch/cache are load-time hard
+inputs in the current already-constructed-model API. Replay/prefetch and encoder
+residency remain profile/fit decisions until calibrated causal time models exist;
+the governor does not invent throughput benefits for unmeasured choices.
+
 1. enumerate provisional candidates and enforce hard user requirements during
    pre-execution admission (true pre-load admission still needs a typed loader
    boundary);

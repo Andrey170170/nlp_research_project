@@ -320,51 +320,32 @@ def _physical_requirements_from_scenario(
     scenario: Mapping[str, Any],
 ) -> PhysicalExecutionRequirements:
     row_store_policy = None
-    if "feature_row_retention" in scenario or "full_retention_backend" in scenario:
-        if scenario.get("feature_row_retention", "full_file") == "none_recompute":
-            row_store_policy = RowStorePolicy.RECOMPUTE
-        elif scenario.get("full_retention_backend", "full_file") == "column_tiled_v1":
-            row_store_policy = RowStorePolicy.TILED
-        else:
-            row_store_policy = RowStorePolicy.FULL
+    if scenario.get("governor_required_row_store_policy") is not None:
+        row_store_policy = RowStorePolicy(str(scenario["governor_required_row_store_policy"]))
     encoder_residency = None
-    if "exact_encoder_residency" in scenario:
+    if scenario.get("governor_required_encoder_residency") is not None:
         encoder_residency = (
             EncoderResidency.LAZY_PER_REQUEST
-            if scenario["exact_encoder_residency"] == "lazy"
+            if scenario["governor_required_encoder_residency"] == "lazy"
             else EncoderResidency.EAGER
         )
     return PhysicalExecutionRequirements(
-        decoder_fetch_chunk_size=(
-            int(scenario["decoder_chunk_size"])
-            if "decoder_chunk_size" in scenario
+        decoder_fetch_chunk_size=_optional_int(scenario.get("decoder_chunk_size")),
+        decoder_cache_bytes=_optional_int(scenario.get("cross_batch_decoder_cache_bytes")),
+        session_capacity=_optional_int(scenario.get("nnsight_session_capacity")),
+        phase1_source_batch_size=(
+            _optional_int(scenario.get("phase1_trace_batch_size_max"))
+            if scenario.get("phase1_trace_batch_policy") == "cap_effective_batches"
             else None
         ),
-        decoder_cache_bytes=(
-            int(scenario["cross_batch_decoder_cache_bytes"])
-            if "cross_batch_decoder_cache_bytes" in scenario
-            else None
+        feature_microbatch_size=_optional_int(
+            scenario.get("phase4_compute_microbatch_max_rows")
         ),
-        feature_microbatch_size=(
-            int(scenario["phase4_compute_microbatch_max_rows"])
-            if "phase4_compute_microbatch_max_rows" in scenario
-            else None
+        logit_microbatch_size=_optional_int(
+            scenario.get("phase3_compute_microbatch_max_rows")
         ),
-        logit_microbatch_size=(
-            int(scenario["phase3_compute_microbatch_max_rows"])
-            if "phase3_compute_microbatch_max_rows" in scenario
-            else None
-        ),
-        replay_window=(
-            int(scenario["chunked_feature_replay_window"])
-            if "chunked_feature_replay_window" in scenario
-            else None
-        ),
-        prefetch_depth=(
-            int(scenario["error_vector_prefetch_lookahead"])
-            if "error_vector_prefetch_lookahead" in scenario
-            else None
-        ),
+        replay_window=_optional_int(scenario.get("chunked_feature_replay_window")),
+        prefetch_depth=_optional_int(scenario.get("error_vector_prefetch_lookahead")),
         encoder_residency=encoder_residency,
         row_store_policy=row_store_policy,
     )

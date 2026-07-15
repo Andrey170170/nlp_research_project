@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from nlp_research_project.exact_trace_bench.config import base_trace_defaults
 from nlp_research_project.exact_trace_bench.trace_runtime import tracing
 from nlp_research_project.exact_trace_bench.trace_runtime.request import (
     trace_policy_from_scenario,
@@ -134,8 +135,7 @@ def test_governed_policy_preserves_explicit_zero_and_full_requirements() -> None
     scenario.update(
         decoder_chunk_size=4096,
         cross_batch_decoder_cache_bytes=0,
-        feature_row_retention="full_file",
-        full_retention_backend="full_file",
+        governor_required_row_store_policy="file_backed_full",
     )
 
     policy = trace_policy_from_scenario(scenario)
@@ -144,6 +144,34 @@ def test_governed_policy_preserves_explicit_zero_and_full_requirements() -> None
     assert policy.physical_requirements.decoder_fetch_chunk_size == 4096
     assert policy.physical_requirements.decoder_cache_bytes == 0
     assert policy.physical_requirements.row_store_policy.value == "file_backed_full"
+
+
+def test_governed_policy_accepts_a_row_store_constraint_without_legacy_knobs() -> None:
+    scenario = _governed_scenario()
+    scenario["governor_required_row_store_policy"] = "recompute"
+
+    policy = trace_policy_from_scenario(scenario)
+
+    assert policy.physical_requirements is not None
+    assert policy.physical_requirements.row_store_policy.value == "recompute"
+    assert policy.physical_requirements.session_capacity is None
+    assert policy.physical_requirements.feature_microbatch_size is None
+    assert policy.physical_requirements.logit_microbatch_size is None
+
+
+def test_governed_policy_ignores_inherited_optional_and_storage_defaults() -> None:
+    scenario = {**base_trace_defaults(), **_governed_scenario()}
+
+    policy = trace_policy_from_scenario(scenario)
+
+    assert policy.physical_requirements is not None
+    assert policy.physical_requirements.session_capacity is None
+    assert policy.physical_requirements.feature_microbatch_size is None
+    assert policy.physical_requirements.logit_microbatch_size is None
+    assert policy.physical_requirements.replay_window is None
+    assert policy.physical_requirements.prefetch_depth is None
+    assert policy.physical_requirements.row_store_policy is None
+    assert policy.physical_requirements.encoder_residency is None
 
 
 @pytest.mark.parametrize("architecture", ["clt", "plt"])
@@ -159,10 +187,16 @@ def test_phase_e_gate_scenarios_leave_governed_mechanisms_unpinned(
     )
     payload = json.loads(path.read_text())
     assert payload["metadata"]["immutable_validation_config"] is True
-    assert len(payload["scenarios"]) == 3
+    assert len(payload["scenarios"]) == 4
     assert {
         scenario["governor_expected_row_store_policy"]
         for scenario in payload["scenarios"]
+    } == {"file_backed_full", "tiled", "recompute"}
+    auto = next(scenario for scenario in payload["scenarios"] if scenario["run_name"].endswith("auto"))
+    assert "governor_required_row_store_policy" not in auto
+    forced = [scenario for scenario in payload["scenarios"] if scenario is not auto]
+    assert {
+        scenario["governor_required_row_store_policy"] for scenario in forced
     } == {"file_backed_full", "tiled", "recompute"}
 
     governed_keys = {

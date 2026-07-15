@@ -703,9 +703,9 @@ execution waits for the recorded D behavior references.
 ### Step 8 / Phase E — Staged governor integration
 
 Connect pre-execution admission, loaded-state measurement/re-planning,
-post-Phase-0 active-universe re-planning, and phase-level grants/releases. The
-governor may select only Phase D mechanisms that passed parity; strict mode
-refuses when no such rung fits.
+post-Phase-0 active-universe re-planning, Phase-3/4 entry re-planning, and
+phase-level grants/releases. The governor may select only Phase D mechanisms
+that passed parity; strict mode refuses when no such rung fits.
 
 Gate E on `361_base` 1B CLT/PLT governed-versus-explicit equivalence, expected
 rung selection under constrained envelopes, complete epoch telemetry, and
@@ -772,9 +772,9 @@ provenance.
     Phase-3/4 execution.
 13. Phase C2 replaces the entire project-to-sibling trace path with meaningful
     domain contracts and passes its canonical runtime parity gate before E.
-14. Phase E records and validates three ordered planning decisions:
-    pre-execution, loaded-state, and post-Phase-0, plus phase-transition
-    grants/releases and measured resource samples.
+14. Phase E records and validates five ordered planning decisions:
+    pre-execution, loaded-state, post-Phase-0, Phase-3 entry, and Phase-4 entry,
+    plus phase-transition grants/releases and measured resource samples.
 15. Phase F passes the `361_base` 1B CLT, 1B PLT, 4B PLT, and 12B PLT smoke and
     then the canonical `828_base`/`361_base`/`94_base` matrix before launch
     defaults or the project harness migration are declared done.

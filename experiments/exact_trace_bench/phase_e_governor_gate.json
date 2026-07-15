@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "phase": "E",
   "cluster": "granite",
   "prompt_fixture": "361_base",
@@ -18,59 +18,93 @@
     "weighted_edge_jaccard_min": 0.9999999,
     "require_semantic_fingerprint_match": true,
     "require_all_planning_epochs": true,
+    "required_planning_epochs": [
+      "pre_execution_admission",
+      "loaded_state_calibration",
+      "active_universe_replan",
+      "phase3_entry_replan",
+      "phase4_entry_replan"
+    ],
+    "require_candidate_and_constraint_telemetry": true,
+    "require_selected_config_inspection": true,
+    "require_prediction_error_readout": true,
     "require_terminal_incremental_telemetry": true
   },
   "providers": {
     "gemma3_1b_clt": {
       "profile": "granite_h200_1b_clt_b1000_c4096_cache8",
-      "reference_root": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/phase_c2/gemma3_1b_clt/phase-c2-clt-20260713-03",
+      "artifact_reference_root": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03/gemma3_1b_clt/granite_baseline_gemma3_1b_clt_361_base_b1000_c4096_cache8g",
+      "performance_reference_root": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/phase_c2/gemma3_1b_clt/phase-c2-clt-20260713-03",
       "arms": {
+        "auto": {
+          "performance_reference_arm": "A",
+          "local_disk_bytes": 4294967296,
+          "scratch_disk_bytes": 4294967296,
+          "expected_row_store_policy": "file_backed_full"
+        },
         "full": {
-          "reference_arm": "A",
+          "performance_reference_arm": "A",
+          "required_row_store_policy": "file_backed_full",
           "local_disk_bytes": 4294967296,
           "scratch_disk_bytes": 4294967296,
           "expected_row_store_policy": "file_backed_full"
         },
         "tiled": {
-          "reference_arm": "D",
-          "local_disk_bytes": 134217728,
-          "scratch_disk_bytes": 134217728,
+          "performance_reference_arm": "D",
+          "required_row_store_policy": "tiled",
+          "local_disk_bytes": 4294967296,
+          "scratch_disk_bytes": 4294967296,
           "expected_row_store_policy": "tiled",
           "expected_feature_column_tile_size": 2048
         },
         "recompute": {
-          "reference_arm": "E",
-          "local_disk_bytes": 1,
-          "scratch_disk_bytes": 1,
+          "performance_reference_arm": "E",
+          "required_row_store_policy": "recompute",
+          "local_disk_bytes": 4294967296,
+          "scratch_disk_bytes": 4294967296,
           "expected_row_store_policy": "recompute"
         }
       }
     },
     "gemma3_1b_plt": {
       "profile": "granite_h200_1b_plt_b128_c4096_cache0",
-      "reference_roots": {
+      "artifact_reference_root": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03/gemma3_1b_plt/granite_baseline_gemma3_1b_plt_361_base_b128_c4096_cache0g",
+      "performance_reference_roots": {
         "A": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/phase_c2/gemma3_1b_plt/phase-c2-plt-a-20260713-03",
         "D": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/phase_c2/gemma3_1b_plt/phase-c2-plt-d-20260713-03",
         "E": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/phase_c2/gemma3_1b_plt/phase-c2-plt-e-20260713-03"
       },
       "arms": {
+        "auto": {
+          "performance_reference_arm": "A",
+          "walltime_seconds": 28800,
+          "local_disk_bytes": 4294967296,
+          "scratch_disk_bytes": 4294967296,
+          "expected_row_store_policy": "file_backed_full"
+        },
         "full": {
-          "reference_arm": "A",
+          "performance_reference_arm": "A",
+          "walltime_seconds": 28800,
+          "required_row_store_policy": "file_backed_full",
           "local_disk_bytes": 4294967296,
           "scratch_disk_bytes": 4294967296,
           "expected_row_store_policy": "file_backed_full"
         },
         "tiled": {
-          "reference_arm": "D",
-          "local_disk_bytes": 1073741824,
-          "scratch_disk_bytes": 1073741824,
+          "performance_reference_arm": "D",
+          "walltime_seconds": 28800,
+          "required_row_store_policy": "tiled",
+          "local_disk_bytes": 4294967296,
+          "scratch_disk_bytes": 4294967296,
           "expected_row_store_policy": "tiled",
           "expected_feature_column_tile_size": 16384
         },
         "recompute": {
-          "reference_arm": "E",
-          "local_disk_bytes": 1,
-          "scratch_disk_bytes": 1,
+          "performance_reference_arm": "E",
+          "walltime_seconds": 28800,
+          "required_row_store_policy": "recompute",
+          "local_disk_bytes": 4294967296,
+          "scratch_disk_bytes": 4294967296,
           "expected_row_store_policy": "recompute"
         }
       }

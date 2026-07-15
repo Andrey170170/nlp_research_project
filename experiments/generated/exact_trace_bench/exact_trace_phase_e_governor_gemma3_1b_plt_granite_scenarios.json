@@ -51,22 +51,23 @@
     "immutable_validation_config": true,
     "recommended_output_root": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/phase_e/gemma3_1b_plt",
     "run_name": "Phase E governed validation gemma3 1B PLT 361_base",
-    "run_goal": "Validate active governor planning epochs and full, tiled, and recompute mechanisms against immutable C2 references.",
+    "run_goal": "Validate staged constrained optimization against the original corrected-hook artifact baseline and C2 performance references.",
     "slurm": {
       "account": "rai",
       "partition": "rai-gpu-grn",
       "qos": "rai-gpu-grn",
       "gres": "gpu:h200:1",
       "mem": "200G",
-      "time": "07:00:00"
+      "time": "08:00:00"
     }
   },
   "scenarios": [
     {
-      "name": "granite_phase_e_plt_361_base_full",
-      "run_name": "phase-e-plt-full",
-      "validation_mechanism": "governed_file_backed_full",
-      "validation_baseline_key": "phase_c2/gemma3_1b_plt/361_base/A",
+      "name": "granite_phase_e_plt_361_base_auto",
+      "run_name": "phase-e-plt-auto",
+      "validation_mechanism": "governed_auto",
+      "validation_baseline_key": "original_corrected_hook/gemma3_1b_plt/361_base",
+      "performance_baseline_key": "phase_c2/gemma3_1b_plt/361_base/A",
       "fixture_name": "361_base",
       "fixture_kind": "base",
       "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/361_base/prompt.txt",
@@ -80,7 +81,31 @@
         "file_cache_allowance_bytes": 68719476736,
         "local_disk_bytes": 4294967296,
         "scratch_disk_bytes": 4294967296,
-        "walltime_seconds": 25200
+        "walltime_seconds": 28800
+      },
+      "timeout_minutes": 120
+    },
+    {
+      "name": "granite_phase_e_plt_361_base_full",
+      "run_name": "phase-e-plt-full",
+      "validation_mechanism": "governed_file_backed_full",
+      "validation_baseline_key": "original_corrected_hook/gemma3_1b_plt/361_base",
+      "performance_baseline_key": "phase_c2/gemma3_1b_plt/361_base/A",
+      "fixture_name": "361_base",
+      "fixture_kind": "base",
+      "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/361_base/prompt.txt",
+      "prepared_prompt_meta_file": "experiments/generated/weekend_exact_chunked_fixtures/361_base/fixture_meta.json",
+      "gsm8k_indices": [361],
+      "governor_required_row_store_policy": "file_backed_full",
+      "governor_expected_row_store_policy": "file_backed_full",
+      "governor_resource_envelope": {
+        "total_vram_bytes": 151397597184,
+        "vram_fraction": 0.9,
+        "host_budget_bytes": 214748364800,
+        "file_cache_allowance_bytes": 68719476736,
+        "local_disk_bytes": 4294967296,
+        "scratch_disk_bytes": 4294967296,
+        "walltime_seconds": 28800
       },
       "timeout_minutes": 120
     },
@@ -88,12 +113,14 @@
       "name": "granite_phase_e_plt_361_base_tiled",
       "run_name": "phase-e-plt-tiled",
       "validation_mechanism": "governed_tiled",
-      "validation_baseline_key": "phase_c2/gemma3_1b_plt/361_base/D",
+      "validation_baseline_key": "original_corrected_hook/gemma3_1b_plt/361_base",
+      "performance_baseline_key": "phase_c2/gemma3_1b_plt/361_base/D",
       "fixture_name": "361_base",
       "fixture_kind": "base",
       "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/361_base/prompt.txt",
       "prepared_prompt_meta_file": "experiments/generated/weekend_exact_chunked_fixtures/361_base/fixture_meta.json",
       "gsm8k_indices": [361],
+      "governor_required_row_store_policy": "tiled",
       "governor_expected_row_store_policy": "tiled",
       "governor_expected_feature_column_tile_size": 16384,
       "governor_resource_envelope": {
@@ -101,9 +128,9 @@
         "vram_fraction": 0.9,
         "host_budget_bytes": 214748364800,
         "file_cache_allowance_bytes": 68719476736,
-        "local_disk_bytes": 1073741824,
-        "scratch_disk_bytes": 1073741824,
-        "walltime_seconds": 25200
+        "local_disk_bytes": 4294967296,
+        "scratch_disk_bytes": 4294967296,
+        "walltime_seconds": 28800
       },
       "timeout_minutes": 300
     },
@@ -111,23 +138,25 @@
       "name": "granite_phase_e_plt_361_base_recompute",
       "run_name": "phase-e-plt-recompute",
       "validation_mechanism": "governed_recompute",
-      "validation_baseline_key": "phase_c2/gemma3_1b_plt/361_base/E",
+      "validation_baseline_key": "original_corrected_hook/gemma3_1b_plt/361_base",
+      "performance_baseline_key": "phase_c2/gemma3_1b_plt/361_base/E",
       "fixture_name": "361_base",
       "fixture_kind": "base",
       "prepared_prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/361_base/prompt.txt",
       "prepared_prompt_meta_file": "experiments/generated/weekend_exact_chunked_fixtures/361_base/fixture_meta.json",
       "gsm8k_indices": [361],
+      "governor_required_row_store_policy": "recompute",
       "governor_expected_row_store_policy": "recompute",
       "governor_resource_envelope": {
         "total_vram_bytes": 151397597184,
         "vram_fraction": 0.9,
         "host_budget_bytes": 214748364800,
         "file_cache_allowance_bytes": 68719476736,
-        "local_disk_bytes": 1,
-        "scratch_disk_bytes": 1,
-        "walltime_seconds": 25200
+        "local_disk_bytes": 4294967296,
+        "scratch_disk_bytes": 4294967296,
+        "walltime_seconds": 28800
       },
-      "timeout_minutes": 420
+      "timeout_minutes": 480
     }
   ]
 }
