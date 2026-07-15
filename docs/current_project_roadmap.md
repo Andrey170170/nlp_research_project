@@ -1,7 +1,7 @@
 # Current Project Roadmap
 
 Status: Current scratch roadmap
-Last updated: 2026-07-12
+Last updated: 2026-07-14
 
 ## Active Priority
 
@@ -245,29 +245,37 @@ are both closed, so Phase E implementation proceeded. Repository-wide `ty` remai
 currently reports 85 pre-existing/dynamic-boundary diagnostics; typing is not a
 C2 closure gate.
 
-## Phase E - Staged Governor Integration
+## Phase E - Staged Constrained Governor Integration
 
-Implementation is complete; the immutable governed parity gate is pending:
+The initial runtime integration is complete, but the 2026-07-14 immutable gate
+reopened Phase E: full/tiled CLT and PLT passed parity, while both forced
+recompute runs timed out. The resolver must be upgraded from single-candidate
+admission to staged constrained optimization before rerunning the gate.
 
-1. apply Phase B pre-execution admission (the current API has already loaded the
-   model; true pre-load admission needs a future typed loader boundary);
-2. measure permanent model VRAM and representative encoder/decoder costs after
-   load, then re-plan headroom;
-3. re-plan after Phase 0 using actual active-feature counts and distributions;
-4. grant and release phase/transient working sets at phase boundaries;
-5. compare predicted and actual resources and walltime for recalibration.
+1. enumerate provisional candidates and enforce hard user requirements during
+   pre-execution admission (true pre-load admission still needs a typed loader
+   boundary);
+2. measure model/provider costs after load and re-optimize controls not yet
+   frozen by Phase 0 state;
+3. re-optimize after Phase 0 using the actual feature universe;
+4. refine still-free phase-local controls at Phase-3/4 entry using prior actuals;
+5. grant/release resources and record candidates, constraints, objective scores,
+   predictions, actuals, and prediction error at every epoch.
 
-**E gate:** `361_base` 1B CLT/PLT automatic plans must match equivalent explicit
-D runs through the C2 runtime, constrained envelopes must select expected rungs,
-all planning epochs must be recorded, and strict compact outputs/semantic
-fingerprints must match the pinned reference.
+**E gate:** `361_base` 1B CLT/PLT strict artifacts must match the original
+corrected-hook Granite baselines. C2 A/D/E runs are the runtime comparison, not
+the scientific artifact oracle. A roomy unconstrained run must select the
+fastest fitting plan; forced full/tiled/recompute constraints must be honored
+while all other knobs remain optimized. Inspect the selected configuration and
+telemetry for actual H200/host/disk utilization, prediction quality, every
+planning epoch, semantic fingerprints, and compact parity.
 
-The runtime uses three ordered planning decisions (pre-execution, loaded-state,
-post-Phase-0) plus measured phase-transition grants/releases. Mechanisms that
-can already have runtime state after Phase 0 are frozen; the late epoch may
-change storage, encoder residency, and Phase-3/4 microbatches only. Checkpoint
-page-cache policy remains an admission input until planning moves ahead of model
-loading.
+Hard requirements constrain variables rather than replacing optimization. The
+runtime re-solves at pre-execution, loaded-state, post-Phase-0, and safe phase
+entries, inheriting frozen decisions and replacing estimates with observations.
+Session capacity, source/Phase-1 scheduling, Phase-3 microbatch, and Phase-4
+microbatch require independent bounds and formulas. Checkpoint page-cache policy
+remains an admission input until planning moves ahead of model loading.
 
 ## Phase F - Governed Harness Consolidation
 

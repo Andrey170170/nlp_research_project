@@ -1,7 +1,7 @@
 # Memory Governor and Library Rearchitecture Spec
 
-Status: Phase B complete; Phase C1 gate passed; Phase D validation in flight; Phase C2 planned before E
-Last updated: 2026-07-12
+Status: Phase D and C2 complete; Phase E staged optimizer correction active
+Last updated: 2026-07-14
 
 This is the "how it is supposed to be" document for the next major rework of
 the sibling library `../circuit-tracer_chunked` and its project-side harness
@@ -302,10 +302,30 @@ non-blocking), and **session regression** (the 298--300 comparisons). This
 evidence does not clear 4B, 12B, CLT, another dtype, another cluster, or another
 provider regime. Historical wrong-hook results remain provenance only.
 
-## 5. Plan epochs
+## 5. Staged constrained optimization
 
-The governor is not a continuous memory manager. It acts at a small number
-of discrete decision points, each with strictly more information:
+The governor is not a continuous memory manager, but neither is it a one-shot
+resolver. It runs the same constrained optimization contract at a small number
+of discrete decision points, each with strictly more information. Every run
+carries forward hard user requirements and decisions frozen by already-created
+state; each epoch replaces estimates with observations and re-optimizes every
+remaining free physical variable.
+
+`PhysicalExecutionRequirements` expresses hard equality/bound constraints.
+For example, forcing `row_store_policy=recompute` fixes that variable while the
+optimizer remains responsible for selecting the best fitting source schedule,
+session capacity, Phase-3/4 microbatches, tiles, cache, residency, and placement.
+No candidate that violates a hard requirement is admissible. When the hard
+constraint set is infeasible, the result reports conflicts and nearest rejected
+candidates rather than silently relaxing a requirement.
+
+The default objective is deterministic and lexicographic: strict semantics and
+hard constraints; resource/walltime fit with safety margins; minimum predicted
+completion time; then lower peak pressure, I/O amplification, and stable
+fingerprint order. Minimum memory is not the objective when additional safe
+resource use improves throughput.
+
+The epochs are:
 
 1. **Pre-execution admission.** Inputs: model config, transcoder provider
    profile/capabilities (or a preset resolving to them), prompt/prefix length,
@@ -319,20 +339,36 @@ of discrete decision points, each with strictly more information:
    into Phase 3. The current canonical API receives an already-constructed
    model, so this epoch is not a true pre-load gate. A future typed loader
    specification may move the same decision ahead of model construction.
-2. **Loaded-state calibration.** The model is resident: measure it — that is
+2. **Loaded-state optimization.** The model is resident: measure it — that is
    the permanent VRAM line item. Load one decoder chunk and one encoder-row
    read: unit costs are now measured, not estimated. Everything remaining
    under `vram_fraction x total` after permanent + worst-case phase working
-   set becomes the **headroom pool** (vLLM's profile-then-claim move).
-3. **Post-Phase-0 re-plan.** Phase 0 measures the only real unknown: `nnz`.
+   set becomes the **headroom pool**. Re-run candidate search with those
+   measurements before freezing controls whose state Phase 0 creates.
+3. **Post-Phase-0 optimization.** Phase 0 measures the only real unknown: `nnz`.
    Row-store bytes, encoder residency, replay working sets all become
    arithmetic. Spend the headroom pool here: bigger decoder cache, wider
    storage, encoder residency, and Phase-3/4 microbatches here. Decoder
    cache/fetch, source batching, replay window, and prefetch are frozen because
    Phase-0 state may already depend on them.
-4. **Phase transitions.** Each phase declares its working-set shape,
-   receives a grant from the ledger, and returns it on exit. Ledger entries
-   carry (tier, demand class, lifetime: permanent / phase / transient).
+4. **Phase-entry optimization and transitions.** Each phase declares its
+   working-set shape, receives a grant from the ledger, and returns it on exit.
+   Measurements from the previous phase refine still-free phase-local controls
+   before the next grant. Ledger entries carry (tier, demand class, lifetime:
+   permanent / phase / transient).
+
+Each epoch records the candidate domain, hard constraints, frozen/free variable
+sets, selected candidate, rejected candidates and reasons, binding resources,
+predicted time/demand, observed time/demand, and prediction error. Row-store
+policy must participate in both runtime and I/O amplification models;
+recompute-on-demand cannot share a full-retention walltime estimate.
+
+Controls freeze at their last safe epoch: load placement before model load;
+decoder fetch/cache ownership, source scheduling, replay, and prefetch before
+Phase 0; row-store and encoder residency before row production; Phase-3 and
+Phase-4 microbatches/tiles at their respective phase entries. Session capacity,
+Phase-1 source scheduling, Phase-3 microbatch, and Phase-4 microbatch remain
+separate variables and profile bounds.
 
 The hand-tuned size-aware presets for the 1B/4B/12B stress campaign (batch
 1024/512/256, chunk 8192/4096/2048, cache 32/16/8 GiB) are a lookup-table

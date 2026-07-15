@@ -1,7 +1,7 @@
 # Memory governor + rearchitecture execution plan
 
-Status: active; Phase E implemented; immutable governed parity gate pending
-Date: 2026-07-03; last updated 2026-07-13
+Status: active; Phase E reopened for staged constrained optimizer correction
+Date: 2026-07-03; last updated 2026-07-14
 Scope: sibling library `../circuit-tracer_chunked` rewrite + project harness
 restructure + validation campaigns
 
@@ -709,26 +709,69 @@ The normative design and work packages are in
   graph, lifecycle, and accepted resource criteria;
 - Phase E has exactly one stable plan/runner boundary to consume.
 
-## Phase E — Staged governor integration
+## Phase E — Staged constrained governor integration
 
 Goal: make the governor coordinate validated Phase D mechanisms through the
 Phase C2 canonical runtime, not define their behavior. Both D and C2 gates must
 pass before implementation begins.
 
-1. **Pre-execution admission:** consume the Phase B plan and refuse actionably
-   when no supported semantics-preserving plan can fit. In the current API the
+The governor is a staged constrained optimizer. It does not select one final
+configuration before execution and then merely verify it. Every epoch inherits:
+
+- logical semantics, which are never optimizer variables in strict mode;
+- hard user requirements such as a forced row-store policy, cache size, batch
+  bound, placement, or residency mode;
+- decisions frozen by work that has already executed; and
+- the latest measured resource and throughput evidence.
+
+It re-optimizes every still-free physical mechanism. A hard requirement removes
+that variable from the search domain; it does not disable optimization of the
+remaining variables. If no candidate satisfies all hard constraints, refuse
+with the conflicting constraints and nearest rejected candidates.
+
+Use a deterministic lexicographic objective: (1) preserve strict semantics and
+satisfy every hard constraint, (2) fit all resource and walltime budgets with
+explicit safety margins, (3) minimize predicted completion time, and (4) break
+ties by lower peak pressure, lower I/O amplification, and stable fingerprint
+order. Do not optimize for minimum memory once a faster candidate safely fits.
+
+1. **Pre-execution admission:** enumerate provisional mechanism families from
+   closed-form estimates and hard constraints. Refuse actionably when no
+   supported semantics-preserving family can fit. In the current API the
    model/provider is already constructed, so this is not a true pre-load gate.
    True pre-load refusal requires a future typed load specification at the
    model-loader boundary; the runtime must not claim that capability meanwhile.
-2. **Loaded-state calibration:** measure permanent model VRAM plus representative
-   encoder/decoder allocation and throughput; profile then claim headroom.
-3. **Post-Phase-0:** use actual active-feature counts/distribution to compute
-   row-store and dense working sets and re-plan storage, encoder residency, and
-   Phase-3/4 microbatches. Decoder cache/fetch, source batching, replay, and
-   prefetch are frozen before Phase 0 because their state may already exist.
-4. **Phase transitions:** phases declare working sets, receive grants, and
-   release phase/transient reservations on exit.
-5. Compare predicted versus actual demand and walltime for profile refinement.
+2. **Loaded-state optimization:** measure permanent model VRAM plus
+   representative encoder/decoder allocation and throughput, replace the
+   corresponding estimates, then re-run the constrained search. Freeze only
+   controls whose runtime state is created before or during Phase 0.
+3. **Post-Phase-0 optimization:** replace estimated feature-universe size and
+   distribution with the observed values. Recompute row-store, replay, and
+   dense working-set costs, then re-optimize storage, encoder residency, and
+   independent Phase-3/4 physical microbatches inside the remaining headroom.
+4. **Phase-entry optimization:** after each preceding phase releases its grant,
+   consume measured peak/throughput evidence and re-optimize still-free
+   phase-local controls. Never alter a control that would invalidate existing
+   state, logical frontier checkpoints, reduction order, or semantic identity.
+5. **Phase transitions:** phases declare working sets, receive grants, and
+   release phase/transient reservations on exit. Record selected and rejected
+   candidates, binding constraints, objective score, predicted demand/time,
+   actual demand/time, and prediction error for model refinement.
+
+Freeze matrix:
+
+| Control family | Last optimization epoch |
+|---|---|
+| provider/checkpoint/load placement | pre-load boundary when available |
+| decoder fetch/cache ownership, source/Phase-1 scheduling, replay window, prefetch | loaded-state, before Phase 0 |
+| row-store policy/placement, encoder residency | post-Phase-0, before row production |
+| Phase-3 microbatch and phase-local buffers | Phase-3 entry |
+| Phase-4 microbatch, row/influence tiles, phase-local buffers | Phase-4 entry |
+
+Session capacity, Phase-1 source scheduling, Phase-3 physical microbatch, and
+Phase-4 physical microbatch are independent variables with independent profile
+bounds and demand formulas. No umbrella physical-batch cap may silently drive
+all four.
 
 Logical semantics remain fixed. The governor may choose only mechanisms that
 passed the Phase D gate; otherwise strict admission refuses.
@@ -738,29 +781,50 @@ Phase E adds the sibling-owned `ResourceEnvelope` runtime contract and makes
 owns project scenario/CLI adoption of that contract; it does not defer the
 runtime envelope or governor execution itself.
 
-Implementation state (2026-07-13): sibling commits `7cde998` and `5e6ec0d`
+Initial implementation state (2026-07-13): sibling commits `7cde998` and `5e6ec0d`
 execute the three ordered decision epochs, phase grants/releases, measured
 resource samples, explicit refusal lifecycle, load-time decoder validation,
 one-shot/session decoder-cache ownership, and effective storage/decoder
 fingerprints. Project commit preparation carries named profiles/envelopes and
 explicit physical requirements into that runtime. Checkpoint page-cache policy
 is admission evidence only in the current already-loaded API; it is not labeled
-as an effective live mechanism. Immutable CLT/PLT gate adjudication remains.
+as an effective live mechanism.
+
+Gate readout (2026-07-14): full and tiled CLT/PLT arms passed graph parity, but
+both forced-recompute arms timed out while still computing. The readout exposed
+that the resolver is a single-candidate admission calculator rather than the
+optimizer specified above, its walltime model is row-store agnostic, its bridge
+unconditionally couples source capping to Phase-1 execution, and its profile
+uses one physical-batch cap across independent phases. Phase E is reopened;
+extending walltime without correcting selection/costing is not an acceptance
+path.
 
 ### Phase E validation gate — governed parity
 
 For 1B CLT and 1B PLT on Granite, require:
 
-- automatically selected plans match equivalent explicit Phase D executions;
-- constrained envelopes select the expected mechanism rungs;
+- strict compact artifacts match the original corrected-hook Granite baseline,
+  not merely a C2-produced reference;
+- runtime comparisons use the closed C2 A/D/E executions as the immediate
+  performance baseline and report faster/slower ratios by phase;
+- an unconstrained roomy envelope selects the fastest predicted fitting plan,
+  not the lowest-memory plan;
+- hard-constrained runs (at minimum forced full, tiled, and recompute row-store
+  policies) satisfy the requirement while optimizing all remaining free knobs;
+- selected configurations are inspected against available H200 VRAM, host RAM,
+  disk, and walltime, and telemetry demonstrates that safe headroom was used
+  rather than left idle by an unrelated cap;
 - planned and actual allocations plus every re-plan epoch are recorded;
-- strict semantic fingerprints and compact outputs match the Phase C1 baseline;
+- candidate sets, rejected reasons, binding constraints, objective scores,
+  frozen/free variables, and prediction error are recorded at every epoch;
 - failures/refusals preserve incremental telemetry and actionable reports.
 
 The checked-in campaign contract is
 `experiments/exact_trace_bench/phase_e_governor_gate.json`. It pins the roomy,
 tiled, and recompute envelopes, the expected selected mechanisms, and the
-immutable C2 A/D/E artifact roots used as explicit references.
+original baseline artifact roots used as scientific references plus C2 A/D/E
+roots used only for runtime/mechanism comparison. The next revision must also
+pin expected constraint satisfaction and utilization assertions.
 
 ## Phase F — Governed Harness Consolidation and Final Validation
 
