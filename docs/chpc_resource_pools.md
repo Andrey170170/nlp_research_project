@@ -1,11 +1,12 @@
 # CHPC Resource Pools
 
 Status: Current submit-target notes
-Last updated: 2026-07-11
+Last updated: 2026-07-16
 
 This page records practical GPU pools for the large-scale circuit-tracing
-harness. Values come from Slurm `sinfo`, `scontrol`, and account associations on
-2026-07-09. Re-check before long campaigns.
+harness. The initial inventory came from Slurm `sinfo`, `scontrol`, and account
+associations on 2026-07-09; targeted GPU and policy checks were refreshed on
+2026-07-16. Re-check before long campaigns.
 
 ## Operational Job Classes
 
@@ -46,6 +47,19 @@ job benefits from about 1T or more host RAM.
 The lab A100 partition is real and directly associated with this user. Slurm
 showed both nodes as `MIXED` on 2026-07-09, each partly allocated.
 
+## RTX PRO 6000 Blackwell Pool
+
+| Cluster | Account | Partition / QOS | Nodes | Hardware | Node RAM | Walltime | Use |
+|---|---|---|---|---|---:|---:|---|
+| `granite` | `marasovic` | `soc-gpu-class-grn` / `soc-gpu-students-grn` | `grn073`-`grn075` | `8x rtxpr6000bl`, 96GB each | ~1.532T | 14d QOS maximum | Owner-priority 1B functional testing when class policy permits |
+| `granite` | `marasovic` | `granite-gpu-guest` | `grn072`-`grn075`, `grn077` | `rtxpr6000bl`, 96GB each | ~764G-1.532T | 3d | Preemptable fallback only |
+
+The project environment currently uses PyTorch 2.10 with CUDA 12.8 and includes
+`sm_120` support. On 2026-07-16, a one-hour owner-route dry-run was immediately
+eligible while the guest route was projected about two days out. Re-check live
+policy and availability before use. Blackwell results remain hardware-scoped and
+must not replace the H200 baseline without an explicit bridge comparison.
+
 ## Other Useful Pools
 
 | Cluster | Account | Partition / QOS | Hardware | Node RAM | Walltime | Use |
@@ -67,6 +81,12 @@ For H200 `361_base` validation with 16 CPUs:
 
 These are validation floors, not governor estimates. Preserve additional
 headroom for profiling, larger fixtures, or concurrent artifact capture.
+
+Observed GPU working sets are also materially different by provider. A 1B CLT
+`b1000` H100NVL bridge reached about 83.3GiB CUDA allocated and 89.3GiB reserved,
+which excludes A100-80GB and smaller GPUs for the canonical shape. Prior 1B PLT
+full-retention traces were around 12-14GiB CUDA, so PLT smokes fit on much
+smaller devices when host-RAM requirements are also satisfied.
 
 ## Submit Examples
 

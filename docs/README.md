@@ -20,6 +20,7 @@ plans.
 |---|---|
 | `../README.md` | Contributor orientation and safe CHPC workflow |
 | `../AGENTS.md` | Durable repo policy and operating conventions |
+| `../CHPC.md` | Practical CHPC GPU routing, request sizing, walltime, and launch checklist |
 | `../CLAUDE.md` | Pointer back to `AGENTS.md` |
 | `../EXPERIMENTS.md` | Compact experiment baseline/index and current interpretation |
 | `harness.md` | Current exact-bench harness overview |

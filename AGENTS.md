@@ -96,6 +96,7 @@ When in doubt, do not run it locally; prepare or inspect the SLURM command.
 
 - `README.md` — contributor orientation and safe workflow summary.
 - `AGENTS.md` — durable operating policy for agents.
+- `CHPC.md` — practical CHPC GPU/RAM/walltime routing and launch checklist.
 - `CLAUDE.md` — pointer to `AGENTS.md`; do not duplicate policy there.
 - `docs/README.md` — documentation index.
 - `docs/harness.md` — current exact-bench harness overview.
@@ -148,11 +149,12 @@ Use `run_id`, `run_name`, `run_description`, `run_goal`, and scenario names to
 distinguish campaigns. Do not introduce ordinary scratch buckets like
 `matched_debug`; those are historical provenance only.
 
-Preferred CHPC GPU pools for large traces are documented in
-`docs/chpc_resource_pools.md`. In short: use Granite `rai-gpu-grn` H200 nodes for
-large high-memory traces when possible, Granite `granite-gpu-guest` for flexible
-H200/H200NVL guest capacity, and Notchpeak `marasovic-gpu-np` A100 nodes for lab
-smokes/baselines that do not need 1T+ host RAM.
+Practical GPU/RAM/walltime routing is documented in `CHPC.md`; detailed pool
+inventory is in `docs/chpc_resource_pools.md`. In short: use Granite
+`rai-gpu-grn` H200 nodes for scientific baselines and large traces, the
+SOC-associated RTX PRO 6000 Blackwell route when its class policy permits 1B
+functional testing, and Notchpeak `marasovic-gpu-np` A100 nodes for routine lab
+smokes that do not need 1T+ host RAM. Treat guest GPUs as preemptable.
 
 Workspace immutability is the default for every SLURM launch that executes
 project code, including smoke, baseline, sweep, long-trace, full-answer, and

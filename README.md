@@ -6,9 +6,10 @@ reasoning. The current codebase is also the project harness for exact/chunked
 attribution tracing, cross-cluster parity diagnostics, and optimization work.
 
 The repo is experimental. Use this README for orientation, `AGENTS.md` for
-durable operating rules, and `EXPERIMENTS.md` for the exact project and sibling
-commits that define the current baseline. Do not infer experiment provenance
-from whichever local branches happen to be checked out.
+durable operating rules, `CHPC.md` for practical GPU/RAM/walltime routing, and
+`EXPERIMENTS.md` for the exact project and sibling commits that define the
+current baseline. Do not infer experiment provenance from whichever local
+branches happen to be checked out.
 
 ## Current baseline
 
@@ -115,6 +116,7 @@ distinguish campaigns. Do not introduce new ordinary scratch buckets like
 ## Documentation map
 
 - `AGENTS.md` — durable repo policy and workflow conventions.
+- `CHPC.md` — practical Utah CHPC GPU, memory, walltime, and launch guidance.
 - `EXPERIMENTS.md` — compact current baseline, run-family meanings, and current
   interpretation.
 - `experiments/logs/` — append-only structured experiment records.
