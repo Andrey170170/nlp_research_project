@@ -79,6 +79,7 @@ def base_trace_defaults() -> dict[str, Any]:
         "replay_tile_cache_bytes": None,
         "exact_encoder_residency": "lazy",
         "exact_trace_internal_dtype": "fp32",
+        "governor_admission_mode": "enforce",
         "phase0_activation_threshold_compare_mode": "baseline",
         "plan_feature_batch_size": False,
         "auto_scale_feature_batch_size": False,

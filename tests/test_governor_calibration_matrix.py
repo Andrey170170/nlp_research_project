@@ -10,6 +10,7 @@ from nlp_research_project.exact_trace_bench.trace_runtime.request import (
     _physical_requirements_from_scenario,
     trace_policy_from_scenario,
 )
+from circuit_tracer import AdmissionMode
 
 
 def test_governor_calibration_wave_a_is_upward_and_complete() -> None:
@@ -34,6 +35,16 @@ def test_governor_calibration_wave_a_is_upward_and_complete() -> None:
         assert metadata["slurm"]["qos"] == "rai-gpu-grn-short"
         assert metadata["slurm"]["cpus_per_task"] == 12
         assert payload["defaults"]["governor_profile_name"] == provider.governor_profile
+        assert payload["defaults"]["governor_admission_mode"] == "advisory"
+        assert metadata["governor_admission_policy"] == {
+            "mode": "advisory",
+            "scope": "wave_a_calibration_only",
+            "reason": (
+                "Deliberate force override so refused configurations still execute "
+                "and produce calibration evidence; ordinary launches remain enforce."
+            ),
+        }
+        assert "governor_admission_refusal" not in metadata["stop_rules"]["hard"]
 
         cases = {row["calibration_case"]: row for row in payload["scenarios"]}
         assert len(cases) == len(payload["scenarios"])
@@ -55,6 +66,7 @@ def test_governor_calibration_wave_a_is_upward_and_complete() -> None:
 
         for row in cases.values():
             policy = trace_policy_from_scenario({**payload["defaults"], **row})
+            assert policy.governor_admission_mode is AdmissionMode.ADVISORY
             assert policy.governor_fidelity.mode.value == row["governor_fidelity_mode"]
             if row["governor_fidelity_mode"] == "strict":
                 assert "governor_fidelity_override_fields" not in row

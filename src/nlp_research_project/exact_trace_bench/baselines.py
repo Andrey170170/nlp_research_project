@@ -47,6 +47,7 @@ SCENARIO_IDENTITY_KEYS = (
 
 SCENARIO_KNOB_KEYS = (
     "exact_trace_internal_dtype",
+    "governor_admission_mode",
     "governor_profile_name",
     "governor_resource_envelope",
     "attribution_batch_size",

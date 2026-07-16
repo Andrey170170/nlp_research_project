@@ -26,6 +26,16 @@ Granite profiles are resource calibration only and resolver plans remain
 advisory through Phase D mechanism validation and the Phase C2 runtime rewrite.
 Phase E is the first runtime integration.
 
+Admission enforcement is a separate operational policy, not a trace semantic
+or physical mechanism. `governor_admission_mode=enforce` is the default and
+terminates on a refused admission report or governor budget overage.
+`advisory` retains every admission computation and report but permits the run
+to continue while emitting machine-readable bypass events. The mode is explicit
+runtime provenance and must not enter semantic or execution fingerprints, so
+otherwise identical enforce/advisory requests remain parity-comparable. It does
+not bypass provider/structural validation, frozen-mechanism invariants, CUDA
+OOMs, OS/cgroup kills, or unrelated exceptions.
+
 Governor rework note (2026-07-06): the Phase B extension must classify each knob
 by **tier**, **bytes-cost formula**, **caste**, **validated-under provenance**,
 and **ownership** (`provider-declared`, `scenario-declared`, or

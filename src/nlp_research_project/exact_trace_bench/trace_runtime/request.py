@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from circuit_tracer import (
+    AdmissionMode,
     AttributionProblem,
     DecoderCachePolicy,
     ExecutionConstraints,
@@ -55,6 +56,7 @@ class TracePolicy:
     governor_fidelity: GovernorFidelityPolicy = field(
         default_factory=GovernorFidelityPolicy
     )
+    governor_admission_mode: AdmissionMode = AdmissionMode.ENFORCE
 
     def request(
         self,
@@ -86,6 +88,7 @@ class TracePolicy:
             evidence=self.evidence,
             physical_requirements=self.physical_requirements,
             governor_fidelity=self.governor_fidelity,
+            governor_admission_mode=self.governor_admission_mode,
         )
 
 
@@ -98,6 +101,9 @@ def trace_policy_from_scenario(
 
     resources, provider_profile = _governor_policy_from_scenario(scenario)
     governor_fidelity = _governor_fidelity_from_scenario(scenario)
+    governor_admission_mode = AdmissionMode(
+        str(scenario.get("governor_admission_mode", "enforce"))
+    )
     physical_requirements = (
         _physical_requirements_from_scenario(scenario)
         if provider_profile is not None
@@ -283,12 +289,14 @@ def trace_policy_from_scenario(
                 "governor_profile_name": (
                     None if provider_profile is None else provider_profile.profile_name
                 ),
+                "governor_admission_mode": governor_admission_mode.value,
             },
         ),
         resources=resources,
         provider_profile=provider_profile,
         physical_requirements=physical_requirements,
         governor_fidelity=governor_fidelity,
+        governor_admission_mode=governor_admission_mode,
     )
 
 

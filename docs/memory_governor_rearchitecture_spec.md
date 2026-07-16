@@ -94,7 +94,23 @@ Three principles:
    capabilities/cost metadata; it must not require a governor-code special case
    for each model family or transcoder architecture.
 
-### 2.1 Supported-provider coverage contract
+### 2.1 Admission enforcement policy
+
+The canonical admission result and the decision to enforce it are distinct.
+Every run computes and records pre-execution, loaded-state, active-universe,
+Phase-3-entry, and Phase-4-entry admission reports. The default `enforce` mode
+keeps the fail-closed behavior. The calibration-only `advisory` mode may continue
+after a refused report and after predicted-ledger or observed-governor budget
+checks, with explicit `planning.admission_bypassed` or
+`planning.resource_limit_bypassed` events and preserved refusal reasons.
+
+Admission mode is operational provenance: it is recorded in runtime-plan,
+planning, and lifecycle telemetry but excluded from semantic and execution
+fingerprints. Advisory never converts provider or structural validation,
+frozen-mechanism invariants, actual CUDA OOM, OS/cgroup termination, or arbitrary
+exceptions into warnings.
+
+### 2.2 Supported-provider coverage contract
 
 The target boundary is **provider-semantics preserving**:
 

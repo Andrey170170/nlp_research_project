@@ -205,6 +205,7 @@ RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM = "long_eval_high_mem"
 
 STABLE_PUBLIC_SCENARIO_KEYS = (
     "exact_trace_internal_dtype",
+    "governor_admission_mode",
     "governor_profile_name",
     "governor_resource_envelope",
 )

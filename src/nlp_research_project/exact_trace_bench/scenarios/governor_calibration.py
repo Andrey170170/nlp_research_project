@@ -318,6 +318,7 @@ def build_governor_calibration_config(
         "tier": "sweep",
         "resource_profile": GOVERNOR_CALIBRATION_RESOURCE_PROFILE,
         "governor_profile_name": provider.governor_profile,
+        "governor_admission_mode": "advisory",
         "attribution_batch_size": provider.reference_logical_batch,
         "feature_batch_size": provider.reference_logical_batch,
         "logit_batch_size": provider.reference_logical_batch,
@@ -366,6 +367,14 @@ def build_governor_calibration_config(
             "stage": stage,
             "operational_class": "sweep",
             "calibration_wave": "A",
+            "governor_admission_policy": {
+                "mode": "advisory",
+                "scope": "wave_a_calibration_only",
+                "reason": (
+                    "Deliberate force override so refused configurations still execute "
+                    "and produce calibration evidence; ordinary launches remain enforce."
+                ),
+            },
             "resource_profile": GOVERNOR_CALIBRATION_RESOURCE_PROFILE,
             "array_concurrency": 1,
             "immutable_validation_config": True,
@@ -381,7 +390,6 @@ def build_governor_calibration_config(
             },
             "stop_rules": {
                 "hard": [
-                    "governor_admission_refusal",
                     "cuda_oom",
                     "peak_vram_fraction_at_least_0.90",
                 ],

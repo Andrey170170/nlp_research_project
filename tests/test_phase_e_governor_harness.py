@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from circuit_tracer import FidelityMode
+from circuit_tracer import AdmissionMode, FidelityMode
 
 from nlp_research_project.exact_trace_bench.config import base_trace_defaults
 from nlp_research_project.exact_trace_bench.trace_runtime import tracing
@@ -48,6 +48,7 @@ def test_governed_policy_resolves_named_profile_and_envelope() -> None:
     assert policy.resources.host_budget_bytes == 200 * GIB
     assert policy.evidence.metadata["governor_profile_name"] == PROFILE
     assert policy.governor_fidelity.mode is FidelityMode.STRICT
+    assert policy.governor_admission_mode is AdmissionMode.ENFORCE
 
 
 def test_governor_walltime_is_capped_to_live_slurm_remainder() -> None:
@@ -86,6 +87,25 @@ def test_governed_policy_forwards_explicit_research_authorization() -> None:
         "source_batch_size",
     )
     assert request.governor_fidelity is policy.governor_fidelity
+
+
+def test_governed_policy_parses_and_forwards_advisory_admission() -> None:
+    scenario = _governed_scenario()
+    scenario["governor_admission_mode"] = "advisory"
+
+    policy = trace_policy_from_scenario(scenario)
+    request = policy.request(model=SimpleNamespace(), prompt=[1, 2])
+
+    assert policy.governor_admission_mode is AdmissionMode.ADVISORY
+    assert request.governor_admission_mode is AdmissionMode.ADVISORY
+    assert policy.evidence.metadata["governor_admission_mode"] == "advisory"
+
+
+def test_governed_policy_rejects_invalid_admission_mode() -> None:
+    with pytest.raises(ValueError, match="not a valid AdmissionMode"):
+        trace_policy_from_scenario(
+            {**_governed_scenario(), "governor_admission_mode": "force"}
+        )
 
 
 @pytest.mark.parametrize(
@@ -190,6 +210,7 @@ def test_explicit_policy_keeps_governor_disabled() -> None:
     assert policy.resources is None
     assert policy.provider_profile is None
     assert policy.physical_requirements is None
+    assert policy.governor_admission_mode is AdmissionMode.ENFORCE
 
 
 def test_governed_policy_preserves_explicit_zero_and_full_requirements() -> None:

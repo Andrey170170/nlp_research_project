@@ -25,6 +25,13 @@ Generate Wave A with:
 UV_CACHE_DIR=.uv-cache uv run python experiments/build_governor_calibration_configs.py
 ```
 
+Wave A deliberately sets `governor_admission_mode=advisory`. This is a
+calibration-only force override: every admission checkpoint and resource-budget
+violation is still computed and recorded, but a governor refusal does not stop
+the trace. Ordinary launch policy remains `enforce`; CUDA OOMs, OS/cgroup kills,
+provider or structural validation failures, and arbitrary runtime errors remain
+terminal in both modes.
+
 ## Wave A - 1B Upward Search
 
 Wave A contains 36 runs: 17 CLT and 19 PLT. Historical references are controls,
@@ -74,7 +81,9 @@ Treat these as soft knees and inspect before continuing:
 - GPU utilization plateaus while memory/cache traffic grows;
 - host RSS, local spill, or decoder-cache pressure becomes the active bound.
 
-Admission refusal is a valid calibration observation. It identifies a safety
+Admission refusal is a valid calibration observation. In Wave A it is recorded
+without terminating the trace so the deliberately forced configuration can
+produce measured evidence. It identifies a safety
 boundary; it must remain distinguishable from infrastructure failure in the
 run records.
 
