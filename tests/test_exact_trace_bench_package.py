@@ -125,6 +125,35 @@ def test_workspace_snapshot_manifest_records_repo_state(tmp_path: Path) -> None:
     assert (snapshot / "module.py").exists()
 
 
+def test_workspace_snapshot_normalizes_relative_source_root(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source_root = tmp_path / "project"
+    sibling = tmp_path / "circuit-tracer_chunked"
+    source_root.mkdir()
+    sibling.mkdir()
+    (source_root / "pyproject.toml").write_text(
+        "[tool.uv.sources]\n"
+        'circuit-tracer = { path = "../circuit-tracer_chunked", editable = true }\n',
+        encoding="utf-8",
+    )
+    (sibling / "lib.py").write_text("VALUE = 2\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    snapshot = create_workspace_snapshot(
+        snapshot_root=Path("snapshots"),
+        source_root=Path("project"),
+        read_only=False,
+    )
+    manifest = load_snapshot_manifest(snapshot)
+
+    assert snapshot == (tmp_path / "snapshots" / snapshot.parent.name / "project")
+    assert manifest["source_root"] == str(source_root)
+    assert Path(manifest["uv_source_snapshots"][0]["snapshot_path"]) == (
+        snapshot.parent / "circuit-tracer_chunked"
+    )
+
+
 def test_workspace_snapshot_excludes_nested_uv_cache(tmp_path: Path) -> None:
     source_root = tmp_path / "project"
     uv_cache = source_root / "nested" / ".uv-cache"

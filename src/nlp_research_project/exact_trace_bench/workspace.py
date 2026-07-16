@@ -412,6 +412,8 @@ def create_workspace_snapshot(
     label: str | None = None,
     read_only: bool = True,
 ) -> Path:
+    snapshot_root = snapshot_root.resolve()
+    source_root = source_root.resolve()
     ensure_dir(snapshot_root)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     suffix = "" if not label else f"_{label}"
