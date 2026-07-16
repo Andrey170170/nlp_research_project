@@ -1,92 +1,141 @@
-# Governor Calibration Matrix
+# Governor Calibration Run Plan
 
-Status: Executable campaign contract
+Status: Wave A executable; Waves B/C gated on Wave A analysis
 Last updated: 2026-07-15
 
-This campaign calibrates physical cost models for the staged tracing governor.
-It does not broaden semantic-relaxation evidence. Every row uses strict fp32
-tracing, one Granite H200, `361_base`, one completion/trace, incremental
-telemetry, and immutable project+sibling snapshots.
+This campaign finds the fastest fitting governor configuration instead of only
+measuring settings below the historical reference. It deliberately separates:
+
+- strict physical controls, which must preserve the canonical trace;
+- opt-in research semantics, which may improve throughput with measured graph
+  drift;
+- later mechanism fitting, which begins only after the upward resource knee is
+  known.
+
+All runs use one Granite H200, fp32 exact tracing, `361_base`, one trace,
+incremental telemetry, verbose profiling, compact graph comparison, and one
+immutable project+sibling snapshot per shared code state. Array concurrency is
+one so cache order and resource use remain inspectable.
 
 The executable source is
 `src/nlp_research_project/exact_trace_bench/scenarios/governor_calibration.py`.
-Generate the four resource-homogeneous scenario files with:
+Generate Wave A with:
 
 ```bash
 UV_CACHE_DIR=.uv-cache uv run python experiments/build_governor_calibration_configs.py
 ```
 
-## Matrix
+## Wave A - 1B Upward Search
 
-The generator creates 38 runs across the providers whose weights are available
-on CHPC:
+Wave A contains 36 runs: 17 CLT and 19 PLT. Historical references are controls,
+not ceilings.
 
-| Provider | Cases | Purpose |
-|---|---:|---|
-| Gemma 3 1B CLT | 15 | reference/repeat plus isolated scheduling, cache, storage, residency, and placement effects |
-| Gemma 3 1B PLT | 15 | same causal contrasts for same-layer topology |
-| Gemma 3 4B PLT | 4 | reference, matched session pair, tiled-policy transfer check |
-| Gemma 3 12B PLT | 4 | reference, matched session pair, tiled-policy transfer check |
+### 1B CLT, 17 rows
 
-The 1B rows change one causal factor relative to their provider reference:
+1. Coupled logical batches: `1000`, `1500`, `2000`, `3000`, `4096`.
+2. Strict decoder-fetch chunks: `8192`, `10080` against reference `4096`.
+3. Strict decoder caches: `0`, `16`, `32 GiB` against reference `8 GiB`.
+4. Coupled corners: `(b2000,c8192,cache16)`,
+   `(b3000,c8192,cache32)`, `(b4096,c10080,cache32)`.
+5. At batch `1500`, isolated source, feature, and logit semantic rows.
+6. One exact reference repeat.
 
-1. reference physical configuration;
-2. high-session member of the session pair with Phase-1/3/4 physical batches
-   fixed below both session capacities;
-3. lower-session member with those same Phase-1/3/4 widths;
-4. lower Phase-1 source batch only;
-5. lower Phase-3 microbatch only;
-6. lower Phase-4 microbatch only;
-7. decoder-cache contrast (CLT: 8 GiB to zero; PLT: zero to 4 GiB);
-8. replay-window contrast (four layers to two);
-9. prefetch-depth contrast (two to zero);
-10. recompute with zero replay-tile cache;
-11. recompute with the reference replay cache (CLT 1 GiB, PLT 4 GiB);
-12. tiled row storage against full file-backed storage;
-13. eager against lazy encoder residency;
-14. scratch against node-local spill placement;
-15. exact reference repeat for run-noise estimation.
+### 1B PLT, 19 rows
 
-The 4B/12B lower-session rows estimate how session residency scales with model
-dimensions. Their tiled rows test whether the 1B PLT policy-relative model
-transfers; until those rows pass, non-full policy predictions for those profiles
-remain extrapolated.
+1. Coupled logical batches: `128`, `256`, `512`, `768`, `1024`, `1536`.
+2. Strict decoder-fetch chunks: `8192`, `16384`, `32768` against reference
+   `4096`.
+3. Strict decoder-cache proof: `4 GiB` against reference zero.
+4. Coupled corners: `(b512,c8192)`, `(b1024,c16384)`,
+   `(b1536,c32768)`.
+5. At batch `256`, isolated source, feature, and logit semantic rows.
+6. Research refresh cadences `2` and `8` against reference `4`.
+7. One exact reference repeat.
+
+Logical-batch, isolated-axis, and refresh rows declare
+`governor_fidelity_mode=research` plus the exact `PlanningWorkload` fields they
+override. Fetch chunk and decoder cache rows remain strict. A physical-only row
+that drifts beyond numerical tolerance is a runtime regression, not relaxed
+evidence.
+
+### Stop Rules
+
+Stop increasing a dimension after any hard condition:
+
+- governor admission refusal or CUDA OOM;
+- peak allocated/reserved VRAM reaches 90% of the usable envelope;
+- the research graph falls below `0.97` feature, edge, weighted-edge, or Top-256
+  Jaccard against the corrected-hook Granite reference.
+
+Treat these as soft knees and inspect before continuing:
+
+- peak VRAM reaches 85%;
+- two consecutive increases each improve trace runtime by less than 3%;
+- GPU utilization plateaus while memory/cache traffic grows;
+- host RSS, local spill, or decoder-cache pressure becomes the active bound.
+
+Admission refusal is a valid calibration observation. It identifies a safety
+boundary; it must remain distinguishable from infrastructure failure in the
+run records.
+
+## Wave B - Larger-Model Transfer
+
+Wave B starts only after choosing the top two useful 1B PLT fetch chunks and a
+bounded batch range from Wave A.
+
+| Provider | Logical batch candidates | Fetch chunks | Host RAM | Walltime |
+|---|---|---|---:|---:|
+| Gemma 3 4B PLT | `128, 256, 512, 768` | top two from Wave A | 300-400 GiB | up to 2h |
+| Gemma 3 12B PLT | `64, 128, 256, 384` | top two from Wave A | 400-600 GiB | 4-5h |
+
+Each model gets an exact reference, upward batch rows, the selected strict
+fetch-chunk rows, one useful coupled corner, and only the semantic research rows
+needed to test whether the 1B relation transfers. Do not blindly run the full
+1B Cartesian space.
+
+## Wave C - Local Mechanism Fit
+
+Wave C fits the remaining physical cost terms around the Wave A/B knee:
+
+- session, Phase-1, Phase-3, and Phase-4 widths at lower/selected/higher rungs;
+- cache neighbors around the selected size;
+- replay windows `2/4/8` and prefetch depths `0/2/4`;
+- full-file, tiled, and recompute row policies;
+- lazy/eager encoder residency and local/scratch spill where admissible;
+- reference repeats for run-noise estimation.
+
+These are local causal contrasts, not another broad grid. Hold all unrelated
+controls at the selected configuration and reserve held-out rows for checking
+the fitted model.
 
 ## Required Measurements
 
-Each scenario must preserve the canonical incremental event stream and expose:
+Every row must record:
 
+- all planning epochs, candidate scores, hard constraints, selected values,
+  support classification, and refusal reasons;
 - phase elapsed time and operation/batch counts;
-- phase-local CUDA peak allocated and reserved bytes plus end allocation;
-- host RSS and available/cgroup budget observations;
-- decoder-cache hits and misses;
-- replay-tile cache hits, misses, and evictions;
-- row-store bytes read and written;
-- every selected configuration, calibration-support classification, phase
-  prediction, observation, and prediction error;
-- compact graph parity against the original corrected-hook artifact baseline.
+- phase-local CUDA peak allocated/reserved bytes and end allocation;
+- GPU utilization and memory telemetry over time;
+- host RSS plus detected cgroup/allocation budget;
+- decoder/replay-cache hits, misses, evictions, and bytes;
+- row-store bytes read/written and spill placement;
+- semantic and execution fingerprints;
+- compact graph parity against the original corrected-hook Granite artifacts.
 
-Allocated and reserved CUDA measurements are parallel observations, not terms
-to add. Cache-state order is recorded because later array tasks may inherit a
-warm file cache even though each process-local decoder/replay cache starts
-empty.
+The resource envelope walltime must be capped to the live Slurm allocation's
+remaining time. Scenario walltime and `timeout_minutes` must match the submitted
+allocation before launch; neither may promise time the job does not own.
 
 ## Promotion
 
-Promote a profile revision only after fitting on causal rows and checking it on
-held-out rows. At minimum:
+Wave A discovers the feasible upward range and semantic tradeoff. It does not
+by itself promote coefficients. Fit only after Waves B/C provide transfer and
+local-mechanism evidence. Keep explicit support ranges and evidence IDs;
+extrapolated values remain legal only inside implementation safety limits and
+must be labeled as extrapolation.
 
-- use the two 1B reference repeats to report run noise;
-- fit session, Phase-1, Phase-3, Phase-4, decoder-cache, replay-window,
-  prefetch, replay-cache, storage-policy, residency, and placement terms from
-  their isolated pairs;
-- verify the fitted model ranks each held-out reference and larger-model row
-  correctly before it becomes an ordinary execution profile;
-- retain explicit support ranges and evidence IDs; values inside safety limits
-  but outside observed support remain legal extrapolations with lower
-  confidence;
-- never fit a running trace and then use that fit to govern the same trace.
-
-The immediate governor-v0.3 gate is intentionally smaller: one unconstrained
-1B CLT run and one unconstrained 1B PLT run. Those validate execution and parity;
-they are not enough to promote the calibration model.
+Research rows remain opt-in. A range may move to `validated_relaxed` only with a
+named, versioned evidence package that records provider/model scope, parity
+metrics, runtime benefit, and the accepted drift threshold. Strict mode never
+consumes that evidence implicitly.

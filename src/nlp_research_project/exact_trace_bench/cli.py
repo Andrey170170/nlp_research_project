@@ -513,6 +513,7 @@ def _cmd_launch_plan(args: argparse.Namespace) -> None:
         run_description=args.run_description,
         run_goal=args.run_goal,
         immutable_workspace=args.immutable_workspace,
+        existing_workspace=args.existing_workspace,
         snapshot_root=args.snapshot_root,
         source_root=args.source_root,
         workspace_label=args.workspace_label,
@@ -2557,6 +2558,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=DEFAULT_SNAPSHOT_ROOT,
         help="Where immutable workspace snapshots are created",
+    )
+    launch_plan.add_argument(
+        "--existing-workspace",
+        type=Path,
+        default=None,
+        help="Reuse an existing verified read-only project+sibling snapshot",
     )
     launch_plan.add_argument(
         "--source-root",

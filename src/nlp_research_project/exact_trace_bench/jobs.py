@@ -59,6 +59,10 @@ SBATCH_SCRIPTS: dict[tuple[str, str], Path] = {
     / "slurm"
     / "exact_trace_bench"
     / "trace_baseline_h200.granite.sbatch",
+    ("granite", "governor_calibration_h200"): REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "trace_baseline_h200.granite.sbatch",
 }
 
 SBATCH_FIXTURE_PREP_SCRIPTS: dict[str, Path] = {
@@ -349,6 +353,7 @@ def render_launch_plan(
     run_description: str | None = None,
     run_goal: str | None = None,
     immutable_workspace: bool = True,
+    existing_workspace: Path | None = None,
     snapshot_root: Path = DEFAULT_SNAPSHOT_ROOT,
     source_root: Path = REPO_ROOT,
     workspace_label: str | None = None,
@@ -361,6 +366,8 @@ def render_launch_plan(
     fail_on_validation_fail: bool = False,
 ) -> dict[str, Any]:
     normalized_live_rationale = _normalize_free_text(live_workspace_rationale)
+    if existing_workspace is not None and not immutable_workspace:
+        raise ValueError("existing_workspace requires immutable_workspace")
     if not immutable_workspace and not _pending_snapshot_freeze:
         if normalized_live_rationale is None:
             raise ValueError(
@@ -376,6 +383,9 @@ def render_launch_plan(
 
     scenarios_payload = read_json(scenarios_file)
     scenarios_metadata = scenarios_payload.get("metadata") or {}
+    slurm_metadata = scenarios_metadata.get("slurm") or {}
+    if not isinstance(slurm_metadata, dict):
+        raise ValueError("metadata.slurm must be an object")
 
     base_output_root = (
         output_root
@@ -411,12 +421,16 @@ def render_launch_plan(
             "Use a different --run-id or base output root to avoid mixing artifacts."
         )
 
-    workspace = resolve_launch_workspace(
-        immutable=immutable_workspace,
-        snapshot_root=snapshot_root,
-        source_root=source_root,
-        label=workspace_label,
-    ).resolve()
+    workspace = (
+        existing_workspace.resolve()
+        if existing_workspace is not None
+        else resolve_launch_workspace(
+            immutable=immutable_workspace,
+            snapshot_root=snapshot_root,
+            source_root=source_root,
+            label=workspace_label,
+        ).resolve()
+    )
     library_workspace = sibling_library_root(workspace)
     if library_workspace is None:
         raise ValueError(f"Sibling library workspace does not exist for {workspace}")
@@ -469,6 +483,11 @@ def render_launch_plan(
 
     scenario_count = _scenario_count(launch_scenarios_file)
     array_range = f"0-{scenario_count - 1}"
+    array_concurrency = scenarios_metadata.get("array_concurrency")
+    if array_concurrency is not None:
+        if not isinstance(array_concurrency, int) or array_concurrency <= 0:
+            raise ValueError("metadata.array_concurrency must be a positive integer")
+        array_range = f"{array_range}%{array_concurrency}"
     export_parts = [
         "ALL",
         f"SCENARIOS_FILE={launch_scenarios_file}",
@@ -505,10 +524,40 @@ def render_launch_plan(
     if resolved_run_goal is not None:
         script_args.extend(["--run-goal", resolved_run_goal])
 
+    resolved_walltime = walltime or slurm_metadata.get("time")
+    resolved_mem = mem or slurm_metadata.get("mem")
+    scheduler_args = [
+        *(
+            [f"--account={slurm_metadata['account']}"]
+            if slurm_metadata.get("account")
+            else []
+        ),
+        *(
+            [f"--partition={slurm_metadata['partition']}"]
+            if slurm_metadata.get("partition")
+            else []
+        ),
+        *(
+            [f"--qos={slurm_metadata['qos']}"]
+            if slurm_metadata.get("qos")
+            else []
+        ),
+        *(
+            [f"--gres={slurm_metadata['gres']}"]
+            if slurm_metadata.get("gres")
+            else []
+        ),
+        *(
+            [f"--cpus-per-task={slurm_metadata['cpus_per_task']}"]
+            if slurm_metadata.get("cpus_per_task")
+            else []
+        ),
+    ]
     command_parts = [
         "sbatch",
-        *([f"--time={walltime}"] if walltime else []),
-        *([f"--mem={mem}"] if mem else []),
+        *scheduler_args,
+        *([f"--time={resolved_walltime}"] if resolved_walltime else []),
+        *([f"--mem={resolved_mem}"] if resolved_mem else []),
         f"--array={array_range}",
         f"--export={export_blob}",
         str(launch_script_path),
@@ -522,12 +571,14 @@ def render_launch_plan(
         "output_root": str(resolved_output_root),
         "resource_profile": resource_profile,
         "scenario_count": scenario_count,
+        "array_range": array_range,
         "run_id": resolved_run_id,
         "launch_id": resolved_run_id,
         "run_name": resolved_run_name,
         "run_description": resolved_run_description,
         "run_goal": resolved_run_goal,
-        "mem": mem,
+        "mem": resolved_mem,
+        "walltime": resolved_walltime,
         "baseline_registry": None
         if baseline_registry is None
         else str(baseline_registry.resolve()),
@@ -849,6 +900,19 @@ def render_full_answer_shard_plan(
         if array_range is not None
         else f"0-{shard_count - 1}"
     )
+    resolved_run_name = _normalize_free_text(run_name) or f"full answer trace {cluster}"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    resolved_run_id = (
+        _normalize_run_id(run_id)
+        if run_id
+        else f"{timestamp}_{_slugify_run_name(resolved_run_name)}"
+    )
+    resolved_output_root = (output_root.resolve() / resolved_run_id).resolve()
+    if resolved_output_root.exists():
+        raise ValueError(
+            f"Launch output root already exists: {resolved_output_root}. "
+            "Resume mode is not implemented."
+        )
 
     workspace = resolve_launch_workspace(
         immutable=immutable_workspace,
@@ -878,19 +942,6 @@ def render_full_answer_shard_plan(
         shards_path, workspace=workspace, source_root=source_root
     )
 
-    resolved_run_name = _normalize_free_text(run_name) or f"full answer trace {cluster}"
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    resolved_run_id = (
-        _normalize_run_id(run_id)
-        if run_id
-        else f"{timestamp}_{_slugify_run_name(resolved_run_name)}"
-    )
-    resolved_output_root = (output_root.resolve() / resolved_run_id).resolve()
-    if resolved_output_root.exists():
-        raise ValueError(
-            f"Launch output root already exists: {resolved_output_root}. "
-            "Resume mode is not implemented."
-        )
     export_parts = [
         "ALL",
         f"TRAJECTORY_PATH={launch_trajectory}",

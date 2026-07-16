@@ -173,6 +173,19 @@ def test_launch_renderers_default_immutable_and_require_live_rationale(
     else:
         raise AssertionError("Expected live launch plan without rationale to fail")
 
+    try:
+        render_launch_plan(
+            cluster="granite",
+            scenarios_file=tmp_path / "missing.json",
+            immutable_workspace=False,
+            existing_workspace=tmp_path / "snapshot",
+            live_workspace_rationale="invalid mixed mode",
+        )
+    except ValueError as exc:
+        assert "existing_workspace requires immutable_workspace" in str(exc)
+    else:
+        raise AssertionError("Expected existing snapshot in live mode to fail")
+
 
 def test_launch_plan_supports_sbatch_memory_override(tmp_path: Path) -> None:
     scenarios_file = tmp_path / "scenarios.json"
@@ -200,6 +213,50 @@ def test_launch_plan_supports_sbatch_memory_override(tmp_path: Path) -> None:
     assert plan["mem"] == "600G"
     assert "--time=01:00:00" in plan["sbatch_argv"]
     assert "--mem=600G" in plan["sbatch_argv"]
+
+
+def test_launch_plan_honors_scenario_array_concurrency(tmp_path: Path) -> None:
+    scenarios_file = tmp_path / "scenarios.json"
+    scenarios_file.write_text(
+        json.dumps(
+            {
+                "metadata": {
+                    "resource_profile": "standard",
+                    "array_concurrency": 2,
+                    "slurm": {
+                        "account": "rai",
+                        "partition": "rai-gpu-grn",
+                        "qos": "rai-gpu-grn-short",
+                        "gres": "gpu:h200:1",
+                        "cpus_per_task": 12,
+                        "mem": "200G",
+                        "time": "02:00:00",
+                    },
+                },
+                "scenarios": [{"name": f"row-{index}"} for index in range(5)],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    plan = render_launch_plan(
+        cluster="granite",
+        scenarios_file=scenarios_file,
+        output_root=tmp_path / "runs",
+        run_id="throttled-array",
+        immutable_workspace=False,
+        live_workspace_rationale="test array rendering",
+    )
+
+    assert plan["array_range"] == "0-4%2"
+    assert "--array=0-4%2" in plan["sbatch_argv"]
+    assert "--account=rai" in plan["sbatch_argv"]
+    assert "--partition=rai-gpu-grn" in plan["sbatch_argv"]
+    assert "--qos=rai-gpu-grn-short" in plan["sbatch_argv"]
+    assert "--gres=gpu:h200:1" in plan["sbatch_argv"]
+    assert "--cpus-per-task=12" in plan["sbatch_argv"]
+    assert "--mem=200G" in plan["sbatch_argv"]
+    assert "--time=02:00:00" in plan["sbatch_argv"]
 
 
 def test_build_baseline_registry_from_wave0_roots(tmp_path: Path) -> None:

@@ -247,10 +247,11 @@ C2 closure gate.
 
 ## Phase E - Staged Constrained Governor Integration
 
-The initial runtime integration is complete, but the 2026-07-14 immutable gate
-reopened Phase E. Full/tiled CLT and PLT passed parity; forced recompute exposed
-incorrect configuration selection and cost accounting. Governor v0.3 is the
-bounded correction pass before rerunning the gate.
+The runtime integration and governor-v0.3 correction gate are complete. The
+immutable 2026-07-15 1B CLT/PLT traces passed compact parity against the
+original corrected-hook Granite artifacts and exposed the next limitation:
+historical logical batches and fetch ceilings still prevented a meaningful
+upward optimization search.
 
 The v0.3 contract separates loose implementation safety limits from calibration
 support. A fitting value outside observed support is legal but explicitly
@@ -264,9 +265,9 @@ Memory admission uses per-phase concurrent peaks. Walltime is an additive phase
 projection: observed completed time plus predicted remaining work. Storage and
 cache costs apply only to the phases they affect; no row-policy multiplier may
 scale the whole trace. Loaded and phase-boundary observations replace matching
-estimates and never refit the active run. The v0.3 implementation and CPU gates
-completed on 2026-07-15; the immutable CLT/PLT gate is the remaining Phase E
-validation.
+estimates and never refit the active run. The v0.3 implementation, CPU gates,
+and immutable CLT/PLT gate completed on 2026-07-15. Phase E now enters staged
+calibration rather than treating the two gate observations as a fitted model.
 
 1. enumerate provisional candidates and enforce hard user requirements during
    pre-execution admission (true pre-load admission still needs a typed loader
@@ -278,16 +279,13 @@ validation.
 5. grant/release resources and record candidates, constraints, objective scores,
    predictions, actuals, and prediction error at every epoch.
 
-**E v0.3 gate:** run one roomy unconstrained `361_base` trace for 1B CLT and one
-for 1B PLT. Strict artifacts must match the original corrected-hook Granite
-baselines; C2 is runtime context only. Inspect the selected configuration,
-support classification, phase predictions/actuals, H200/host/disk utilization,
-all planning epochs, semantic fingerprints, phase-local peaks, terminal
-incremental telemetry, and compact parity.
-
-After this gate, run the 38-row causal and model-scaling campaign defined in
-`docs/governor_calibration_matrix.md`. Do not promote coefficients from the two
-gate traces alone.
+**E calibration:** execute the staged campaign in
+`docs/governor_calibration_matrix.md`. Wave A is a 36-row 1B upward search: 17
+CLT and 19 PLT rows spanning larger logical batches, strict decoder fetch/cache
+controls, coupled high corners, isolated opt-in semantic axes, refresh cadence,
+and exact repeats. Wave B transfers the useful range to 4B/12B. Wave C fits
+phase-local mechanisms around the discovered knee. Do not promote coefficients
+from the v0.3 gate or Wave A alone.
 
 Hard requirements constrain variables rather than replacing optimization. The
 runtime re-solves at pre-execution, loaded-state, post-Phase-0, and safe phase

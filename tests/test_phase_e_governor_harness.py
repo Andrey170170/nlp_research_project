@@ -5,10 +5,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from circuit_tracer import FidelityMode
 
 from nlp_research_project.exact_trace_bench.config import base_trace_defaults
 from nlp_research_project.exact_trace_bench.trace_runtime import tracing
 from nlp_research_project.exact_trace_bench.trace_runtime.request import (
+    _cap_walltime_to_slurm,
     trace_policy_from_scenario,
 )
 
@@ -45,6 +47,66 @@ def test_governed_policy_resolves_named_profile_and_envelope() -> None:
     assert policy.resources.effective_vram_budget_bytes == int(141 * GIB * 0.9)
     assert policy.resources.host_budget_bytes == 200 * GIB
     assert policy.evidence.metadata["governor_profile_name"] == PROFILE
+    assert policy.governor_fidelity.mode is FidelityMode.STRICT
+
+
+def test_governor_walltime_is_capped_to_live_slurm_remainder() -> None:
+    envelope = {"walltime_seconds": 7200}
+
+    capped = _cap_walltime_to_slurm(
+        envelope,
+        environ={"SLURM_JOB_END_TIME": "10000"},
+        now_seconds=6000,
+        reserve_seconds=120,
+    )
+
+    assert capped["walltime_seconds"] == 3880
+    assert envelope["walltime_seconds"] == 3880
+
+
+def test_governor_walltime_is_unchanged_outside_slurm() -> None:
+    envelope = {"walltime_seconds": 7200}
+
+    assert _cap_walltime_to_slurm(envelope, environ={}) == envelope
+
+
+def test_governed_policy_forwards_explicit_research_authorization() -> None:
+    scenario = _governed_scenario()
+    scenario.update(
+        governor_fidelity_mode="research",
+        governor_fidelity_override_fields=["source_batch_size", "feature_batch_size"],
+    )
+
+    policy = trace_policy_from_scenario(scenario)
+    request = policy.request(model=SimpleNamespace(), prompt=[1, 2])
+
+    assert policy.governor_fidelity.mode is FidelityMode.RESEARCH
+    assert policy.governor_fidelity.override_fields == (
+        "feature_batch_size",
+        "source_batch_size",
+    )
+    assert request.governor_fidelity is policy.governor_fidelity
+
+
+@pytest.mark.parametrize(
+    "fidelity",
+    [
+        {"governor_fidelity_mode": "research"},
+        {
+            "governor_fidelity_mode": "strict",
+            "governor_fidelity_override_fields": ["source_batch_size"],
+        },
+        {
+            "governor_fidelity_mode": "validated_relaxed",
+            "governor_fidelity_override_fields": ["source_batch_size"],
+        },
+    ],
+)
+def test_governed_policy_rejects_incomplete_fidelity_authorization(
+    fidelity: dict[str, object],
+) -> None:
+    with pytest.raises(ValueError):
+        trace_policy_from_scenario({**_governed_scenario(), **fidelity})
 
 
 @pytest.mark.parametrize(

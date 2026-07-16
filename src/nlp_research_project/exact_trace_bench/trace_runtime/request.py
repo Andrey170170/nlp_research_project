@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+import os
+import time
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -10,8 +12,10 @@ from circuit_tracer import (
     AttributionProblem,
     DecoderCachePolicy,
     ExecutionConstraints,
+    FidelityMode,
     FrontierExpansionPlan,
     FrontierSemantics,
+    GovernorFidelityPolicy,
     ObservabilityPolicy,
     ReplayPlan,
     RowStoragePlan,
@@ -48,6 +52,9 @@ class TracePolicy:
     resources: ResourceEnvelope | None = None
     provider_profile: ProviderProfile | None = None
     physical_requirements: PhysicalExecutionRequirements | None = None
+    governor_fidelity: GovernorFidelityPolicy = field(
+        default_factory=GovernorFidelityPolicy
+    )
 
     def request(
         self,
@@ -78,6 +85,7 @@ class TracePolicy:
             execution=execution,
             evidence=self.evidence,
             physical_requirements=self.physical_requirements,
+            governor_fidelity=self.governor_fidelity,
         )
 
 
@@ -89,6 +97,7 @@ def trace_policy_from_scenario(
     """Resolve one scenario into the canonical sibling-owned policy types."""
 
     resources, provider_profile = _governor_policy_from_scenario(scenario)
+    governor_fidelity = _governor_fidelity_from_scenario(scenario)
     physical_requirements = (
         _physical_requirements_from_scenario(scenario)
         if provider_profile is not None
@@ -279,6 +288,7 @@ def trace_policy_from_scenario(
         resources=resources,
         provider_profile=provider_profile,
         physical_requirements=physical_requirements,
+        governor_fidelity=governor_fidelity,
     )
 
 
@@ -305,7 +315,7 @@ def _governor_policy_from_scenario(
     if not isinstance(envelope_value, Mapping):
         raise ValueError("governor_resource_envelope must be an object")
 
-    envelope = dict(envelope_value)
+    envelope = _cap_walltime_to_slurm(dict(envelope_value))
     if "cache_policy" in envelope:
         envelope["cache_policy"] = CachePolicy(envelope["cache_policy"])
     if "spill_roots" in envelope:
@@ -315,6 +325,49 @@ def _governor_policy_from_scenario(
     except TypeError as error:
         raise ValueError(f"invalid governor_resource_envelope: {error}") from error
     return resources, provider_profile
+
+
+def _cap_walltime_to_slurm(
+    envelope: dict[str, Any],
+    *,
+    environ: Mapping[str, str] | None = None,
+    now_seconds: float | None = None,
+    reserve_seconds: float = 120.0,
+) -> dict[str, Any]:
+    """Cap a requested governor walltime to the live allocation's remainder."""
+
+    values = os.environ if environ is None else environ
+    end_time = values.get("SLURM_JOB_END_TIME")
+    if end_time is None:
+        return envelope
+    try:
+        allocation_end = float(end_time)
+    except ValueError as error:
+        raise ValueError("SLURM_JOB_END_TIME must be epoch seconds") from error
+    now = time.time() if now_seconds is None else now_seconds
+    remaining = max(1.0, allocation_end - now - reserve_seconds)
+    requested = float(envelope["walltime_seconds"])
+    envelope["walltime_seconds"] = min(requested, remaining)
+    return envelope
+
+
+def _governor_fidelity_from_scenario(
+    scenario: Mapping[str, Any],
+) -> GovernorFidelityPolicy:
+    mode = FidelityMode(str(scenario.get("governor_fidelity_mode", "strict")))
+    raw_fields = scenario.get("governor_fidelity_override_fields", ())
+    if isinstance(raw_fields, (str, bytes)) or not isinstance(raw_fields, (list, tuple)):
+        raise ValueError("governor_fidelity_override_fields must be a list of strings")
+    if any(not isinstance(field, str) or not field for field in raw_fields):
+        raise ValueError(
+            "governor_fidelity_override_fields must contain non-empty strings"
+        )
+    return GovernorFidelityPolicy(
+        mode=mode,
+        override_fields=tuple(sorted(raw_fields)),
+        evidence_name=scenario.get("governor_fidelity_evidence_name"),
+        evidence_version=scenario.get("governor_fidelity_evidence_version"),
+    )
 
 
 def _physical_requirements_from_scenario(

@@ -724,9 +724,10 @@ rung selection under constrained envelopes, complete epoch telemetry, and
 strict compact-output/semantic-fingerprint parity.
 
 The governor-v0.3 correction gate uses one unconstrained CLT and one
-unconstrained PLT trace. The subsequent 38-run causal/model-scaling campaign is
-defined in `docs/governor_calibration_matrix.md`; only that campaign may promote
-new calibration coefficients.
+unconstrained PLT trace. The subsequent staged campaign is defined in
+`docs/governor_calibration_matrix.md`: Wave A is a 36-row 1B upward search,
+Wave B checks 4B/12B transfer, and Wave C fits local physical mechanisms. Only
+the complete staged evidence may promote new calibration coefficients.
 
 ### Step 9 / Phase F — Governed harness consolidation and final validation
 

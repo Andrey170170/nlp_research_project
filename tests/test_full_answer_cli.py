@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -46,7 +47,10 @@ def tiny_trajectory() -> dict:
 
 
 def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
-    env = {"PYTHONPATH": str(SRC_ROOT)}
+    env = {
+        "HOME": os.environ["HOME"],
+        "PYTHONPATH": str(SRC_ROOT),
+    }
     return subprocess.run(
         [sys.executable, "-m", "nlp_research_project.exact_trace_bench", *args],
         check=False,
