@@ -106,17 +106,15 @@ Clean/current toy parity follow-up (May 2026):
 
 Near-term implementation focus:
 
-1. run the five-row 1B PLT Phase-4 feedback diagnostic that separates session
-   capacity, logical frontier grouping, physical microbatch shape, and stale
-   1024-versus-512 frontier windows;
-2. use its paired compact comparisons to decide whether frontier-window size
-   needs an independent governor cap while physical batches remain scalable;
-3. run the bounded Wave B transfer on 4B/12B PLT using the provider reference
+1. encode the Phase-4 diagnostic split in governor policy: logical feature
+   grouping and frontier window are fidelity-controlled semantic choices, while
+   session capacity and physical microbatch remain resource-optimized controls;
+2. run the bounded Wave B transfer on 4B/12B PLT using the provider reference
    and `b256` as primary batch candidates, `b512` only as an upper drift probe,
    and opt-in fetch chunks `16384/32768`;
-4. run Wave C local mechanism fitting around the transferred knee, then fit and
+3. run Wave C local mechanism fitting around the transferred knee, then fit and
    validate governor coefficients before promotion;
-5. consolidate governed harness workflows in Phase F after the calibrated
+4. consolidate governed harness workflows in Phase F after the calibrated
    solver passes its final Granite gates.
 
 Phase C1 closed on July 11 with immutable jobs `1613108`/`1613109`: compact NPZ

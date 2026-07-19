@@ -1,6 +1,6 @@
 # Governor Calibration Run Plan
 
-Status: Wave A analyzed; Phase-4 feedback diagnostic next; Wave B/C pending
+Status: Wave A and Phase-4 feedback diagnostic analyzed; Wave B/C pending
 Last updated: 2026-07-19
 
 This campaign finds the fastest fitting governor configuration instead of only
@@ -106,13 +106,30 @@ and all other tracing semantics fixed.
 | constant-window physical | 256 | 2 | 512 | 256 | 256 | physical matmul/backtrace shape only |
 | stale-window | 256 | 4 | 1024 | 256 | 128 | feedback staleness only |
 
-Evaluate the paired contrasts rather than treating these as five independent
-scores. The primary hypothesis is that the stale-window contrast explains most
-graph drift, while the physical-microbatch contrast retains most of the speed
-benefit with much smaller drift. Every row self-scores against the pinned
-corrected-hook artifact; also compare each paired row directly after completion.
-Do not redesign the governor or launch Wave B until this diagnostic is
-adjudicated.
+Jobs `1639225` and replacement `1639431` closed the diagnostic. Evaluate the
+paired contrasts rather than treating the rows as independent scores:
+
+| Contrast | Speedup | Feature J | Edge J | Weighted J | Top-64 J | Top-256 J | Decision |
+|---|---:|---:|---:|---:|---:|---:|---|
+| logical grouping `128x4 -> 256x2` | 1.18x | 0.99367 | 0.99521 | 0.99387 | 0.93939 | 0.98450 | semantic control |
+| session capacity `128 -> 256` | 0.95x observed | 1.00000 | 1.00000 | 1.00000 | 1.00000 | 1.00000 | physical control |
+| Phase-4 microbatch `128 -> 256` | 1.39x | 1.00000 | 1.00000 | 1.00000 | 1.00000 | 1.00000 | scalable physical control |
+| frontier window `512 -> 1024` | 1.21x | 0.99464 | 0.99203 | 0.99243 | 1.00000 | 1.00000 | semantic control |
+
+The physical-microbatch comparison differs only below compact graph precision
+(`weighted J=0.9999999979`); the session comparison is exactly equal. Logical
+grouping explains the canonical-to-`b256` graph change even when the aggregate
+frontier window remains 512, while a larger frontier window introduces separate
+tail-graph drift. The fastest tested constant-window configuration is 1.55x the
+canonical runtime, with all of its measured drift attributable to logical
+grouping rather than session or physical microbatch size.
+
+Governor candidate generation must therefore classify logical feature grouping
+and frontier feedback window as fidelity-controlled semantic choices. Session
+capacity and Phase-4 compute microbatch remain resource-optimized physical
+choices. The comparison bundle is under
+`granite/analysis/governor_calibration/phase4_feedback_diagnostic_20260719`
+inside the exact-trace VAST root.
 
 ### Stop Rules
 

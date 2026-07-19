@@ -308,6 +308,15 @@ comparisons to decide whether the
 governor should cap a frontier-window budget independently while still scaling
 physical microbatches aggressively.
 
+**Diagnostic closed 2026-07-19:** jobs `1639225` and `1639431` show that
+logical feature grouping is semantic even at a fixed 512-feature aggregate
+frontier window (`Feature J=0.99367`, `Top-64 J=0.93939`), and doubling the
+frontier window adds independent tail-graph drift (`Edge J=0.99203`). Session
+capacity is graph-exact, and Phase-4 physical microbatch `128 -> 256` is
+effectively exact while improving runtime by 1.39x. Treat logical grouping and
+frontier window as fidelity-budgeted inputs; let the solver optimize session
+capacity and physical microbatch from available resources.
+
 Hard requirements constrain variables rather than replacing optimization. The
 runtime re-solves at pre-execution, loaded-state, post-Phase-0, and safe phase
 entries, inheriting frozen decisions and replacing estimates with observations.
