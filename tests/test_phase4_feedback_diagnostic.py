@@ -16,7 +16,7 @@ from nlp_research_project.exact_trace_bench.trace_runtime.request import (
 
 EXPECTED_CASES = [
     "canonical_reference",
-    "session_capacity_256_control",
+    "constant_window_logical_b256_session128_physical_b128",
     "constant_window_logical_b256_physical_b128",
     "constant_window_logical_b256_physical_b256",
     "stale_window_logical_b256_physical_b128",
@@ -38,7 +38,7 @@ def test_phase4_feedback_diagnostic_rows_are_bounded_and_ordered() -> None:
         for row in rows
     ] == [
         (128, 4, 128, 128),
-        (128, 4, 256, 128),
+        (256, 2, 128, 128),
         (256, 2, 256, 128),
         (256, 2, 256, 256),
         (256, 4, 256, 128),
@@ -54,6 +54,7 @@ def test_phase4_feedback_diagnostic_rows_are_bounded_and_ordered() -> None:
         assert row["cross_batch_decoder_cache_bytes"] == 0
         assert row["timeout_minutes"] == 120
         assert row["governor_resource_envelope"]["walltime_seconds"] == 120 * 60
+        assert row["nnsight_session_capacity"] <= row["feature_batch_size"]
 
     assert [
         row["feature_batch_size"] * row["attribution_update_interval"]
@@ -67,13 +68,16 @@ def test_phase4_feedback_diagnostic_declares_fidelity_and_baselines() -> None:
 
     assert [row["governor_fidelity_mode"] for row in rows] == [
         "strict",
-        "strict",
+        "research",
         "research",
         "research",
         "research",
     ]
     assert "governor_fidelity_override_fields" not in rows[0]
-    assert "governor_fidelity_override_fields" not in rows[1]
+    assert rows[1]["governor_fidelity_override_fields"] == [
+        "feature_batch_size",
+        "frontier_refresh_stride",
+    ]
     assert rows[2]["governor_fidelity_override_fields"] == [
         "feature_batch_size",
         "frontier_refresh_stride",
@@ -156,12 +160,12 @@ def test_phase4_feedback_diagnostic_metadata_and_resources() -> None:
         for name, contrast in metadata["contrasts"].items()
     } == {
         "session_capacity": (
-            "canonical_reference",
-            "session_capacity_256_control",
+            "constant_window_logical_b256_session128_physical_b128",
+            "constant_window_logical_b256_physical_b128",
         ),
         "logical_grouping_constant_window": (
-            "session_capacity_256_control",
-            "constant_window_logical_b256_physical_b128",
+            "canonical_reference",
+            "constant_window_logical_b256_session128_physical_b128",
         ),
         "physical_microbatch_constant_window": (
             "constant_window_logical_b256_physical_b128",

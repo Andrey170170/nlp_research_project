@@ -300,10 +300,11 @@ physical/semantic coupling is removed or validated.
 
 **Phase-4 feedback diagnostic:** before Wave B, isolate the mechanism behind
 PLT batch drift with five 1B rows: canonical reference, session-capacity
-control, logical `b256` at a constant 512-feature refresh window and physical
-`b128`, physical `b256` at that same window, and logical `b256`/physical `b128`
-with the stale 1024-feature window. Hold source/logit semantics and decoder
-configuration fixed. Use paired compact comparisons to decide whether the
+control at logical `b256`, logical `b256` at a constant 512-feature refresh
+window with session/physical `b128`, physical `b256` at that same window, and
+logical `b256`/physical `b128` with the stale 1024-feature window. Hold
+source/logit semantics and decoder configuration fixed. Use paired compact
+comparisons to decide whether the
 governor should cap a frontier-window budget independently while still scaling
 physical microbatches aggressively.
 

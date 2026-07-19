@@ -101,8 +101,8 @@ and all other tracing semantics fixed.
 | Row | Logical feature batch | Refresh interval | Frontier window | Session | Phase-4 microbatch | Contrast |
 |---|---:|---:|---:|---:|---:|---|
 | canonical reference | 128 | 4 | 512 | 128 | 128 | corrected-hook control |
-| session control | 128 | 4 | 512 | 256 | 128 | session capacity only |
-| constant-window logical | 256 | 2 | 512 | 256 | 128 | logical grouping at fixed feedback and execution |
+| constant-window logical | 256 | 2 | 512 | 128 | 128 | logical grouping at fixed feedback, session, and execution |
+| session control | 256 | 2 | 512 | 256 | 128 | session capacity only |
 | constant-window physical | 256 | 2 | 512 | 256 | 256 | physical matmul/backtrace shape only |
 | stale-window | 256 | 4 | 1024 | 256 | 128 | feedback staleness only |
 

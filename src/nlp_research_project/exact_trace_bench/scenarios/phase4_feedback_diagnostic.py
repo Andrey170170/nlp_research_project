@@ -38,12 +38,16 @@ def _diagnostic_rows() -> tuple[dict[str, Any], ...]:
             "governor_fidelity_mode": "strict",
         },
         {
-            "diagnostic_case": "session_capacity_256_control",
-            "feature_batch_size": 128,
-            "attribution_update_interval": 4,
-            "nnsight_session_capacity": 256,
+            "diagnostic_case": "constant_window_logical_b256_session128_physical_b128",
+            "feature_batch_size": 256,
+            "attribution_update_interval": 2,
+            "nnsight_session_capacity": 128,
             "phase4_compute_microbatch_max_rows": 128,
-            "governor_fidelity_mode": "strict",
+            "governor_fidelity_mode": "research",
+            "governor_fidelity_override_fields": [
+                "feature_batch_size",
+                "frontier_refresh_stride",
+            ],
         },
         {
             "diagnostic_case": "constant_window_logical_b256_physical_b128",
@@ -209,15 +213,15 @@ def build_phase4_feedback_diagnostic_config(
                 "phase3_physical_cap": 128,
             },
             "contrasts": {
-                "session_capacity": {
-                    "reference": "canonical_reference",
-                    "comparison": "session_capacity_256_control",
-                    "change": "session capacity 128 to 256 with logical and physical Phase-4 batches fixed at 128",
-                },
                 "logical_grouping_constant_window": {
-                    "reference": "session_capacity_256_control",
+                    "reference": "canonical_reference",
+                    "comparison": "constant_window_logical_b256_session128_physical_b128",
+                    "change": "logical grouping 128x4 to 256x2 at constant 512-feature frontier window with session and physical Phase-4 batch fixed at 128",
+                },
+                "session_capacity": {
+                    "reference": "constant_window_logical_b256_session128_physical_b128",
                     "comparison": "constant_window_logical_b256_physical_b128",
-                    "change": "logical grouping 128x4 to 256x2 at constant 512-feature frontier window",
+                    "change": "session capacity 128 to 256 with logical 256x2 frontier window and physical Phase-4 batch fixed at 128",
                 },
                 "physical_microbatch_constant_window": {
                     "reference": "constant_window_logical_b256_physical_b128",
