@@ -35,23 +35,32 @@ def _edge_map(step: "StepData") -> dict[tuple[object, object], float]:
     return edge_map
 
 
-def _jaccard(a: set[Any], b: set[Any]) -> float:
+def _jaccard(a: set[Any], b: set[Any]) -> float | None:
     union = a | b
     if not union:
-        return float("nan")
+        return None
     return len(a & b) / len(union)
 
 
 def _weighted_edge_jaccard(
     edge_map_a: dict[tuple[object, object], float],
     edge_map_b: dict[tuple[object, object], float],
-) -> float:
+) -> float | None:
     keys = set(edge_map_a) | set(edge_map_b)
     if not keys:
-        return float("nan")
+        return None
     num = sum(min(edge_map_a.get(key, 0.0), edge_map_b.get(key, 0.0)) for key in keys)
     den = sum(max(edge_map_a.get(key, 0.0), edge_map_b.get(key, 0.0)) for key in keys)
-    return num / den if den > 0.0 else float("nan")
+    return num / den if den > 0.0 else None
+
+
+def _finite_mean(values: list[float | int | None]) -> float | None:
+    finite_values = [
+        float(value)
+        for value in values
+        if value is not None and np.isfinite(float(value))
+    ]
+    return float(np.mean(finite_values)) if finite_values else None
 
 
 def _safe_pearson(left: np.ndarray, right: np.ndarray) -> float | None:
@@ -93,23 +102,22 @@ def _topk_edge_overlap(
     left_sorted = sorted(left_edges, key=lambda key: (-left_edges[key], repr(key)))
     right_sorted = sorted(right_edges, key=lambda key: (-right_edges[key], repr(key)))
     for k in ks:
-        k_eff = min(k, len(left_sorted), len(right_sorted))
-        if k_eff <= 0:
-            result[str(k)] = {
-                "k_effective": 0,
-                "shared_count": 0,
-                "overlap_fraction_of_k": None,
-                "jaccard": None,
-            }
-            continue
-        left_top = set(left_sorted[:k_eff])
-        right_top = set(right_sorted[:k_eff])
+        left_k = min(k, len(left_sorted))
+        right_k = min(k, len(right_sorted))
+        left_top = set(left_sorted[:left_k])
+        right_top = set(right_sorted[:right_k])
         shared = left_top & right_top
+        union = left_top | right_top
+        denominator = max(left_k, right_k)
         result[str(k)] = {
-            "k_effective": k_eff,
+            "k_effective": min(left_k, right_k),
+            "left_k_effective": left_k,
+            "right_k_effective": right_k,
             "shared_count": len(shared),
-            "overlap_fraction_of_k": len(shared) / k_eff,
-            "jaccard": _jaccard(left_top, right_top),
+            "overlap_fraction_of_k": (
+                len(shared) / denominator if denominator else 1.0
+            ),
+            "jaccard": len(shared) / len(union) if union else 1.0,
         }
     return result
 
@@ -279,6 +287,7 @@ def compare_step_pair(step_a: "StepData", step_b: "StepData") -> dict[str, Any]:
         "n_edges_b": len(edges_b),
         "edge_jaccard": _jaccard(set(edges_a), set(edges_b)),
         "weighted_edge_jaccard": _weighted_edge_jaccard(edges_a, edges_b),
+        "topk_edge_overlap": _topk_edge_overlap(edges_a, edges_b),
         "n_logit_rows_a": len(
             {int(row) for row in step_a.row_idx if int(row) >= step_a.n_features}
         ),
@@ -342,9 +351,6 @@ def compare_artifact_dirs(
         }
         shared_step_indices = sorted(set(steps_a) & set(steps_b))
         n_aligned_steps = len(shared_step_indices)
-        if n_aligned_steps == 0:
-            continue
-
         step_rows = [
             compare_step_pair(steps_a[step_idx], steps_b[step_idx])
             for step_idx in shared_step_indices
@@ -356,18 +362,28 @@ def compare_artifact_dirs(
         completion_rows.append(
             {
                 "completion_key": completion_key,
+                "n_steps_left": len(steps_a),
+                "n_steps_right": len(steps_b),
                 "n_steps_aligned": n_aligned_steps,
-                "mean_feature_jaccard": float(
-                    np.nanmean([row["feature_jaccard"] for row in step_rows])
+                "left_only_step_count": len(set(steps_a) - set(steps_b)),
+                "right_only_step_count": len(set(steps_b) - set(steps_a)),
+                "mean_feature_jaccard": _finite_mean(
+                    [row["feature_jaccard"] for row in step_rows]
                 ),
-                "mean_edge_jaccard": float(
-                    np.nanmean([row["edge_jaccard"] for row in step_rows])
+                "mean_edge_jaccard": _finite_mean(
+                    [row["edge_jaccard"] for row in step_rows]
                 ),
-                "mean_weighted_edge_jaccard": float(
-                    np.nanmean([row["weighted_edge_jaccard"] for row in step_rows])
+                "mean_weighted_edge_jaccard": _finite_mean(
+                    [row["weighted_edge_jaccard"] for row in step_rows]
                 ),
-                "mean_shared_features": float(
-                    np.nanmean([row["n_features_shared"] for row in step_rows])
+                "mean_top256_edge_jaccard": _finite_mean(
+                    [
+                        row["topk_edge_overlap"]["256"]["jaccard"]
+                        for row in step_rows
+                    ]
+                ),
+                "mean_shared_features": _finite_mean(
+                    [row["n_features_shared"] for row in step_rows]
                 ),
             }
         )
@@ -382,19 +398,36 @@ def compare_artifact_dirs(
         "right_only_completion_count": len(
             set(right_completions) - set(left_completions)
         ),
+        "aligned_completion_count": sum(
+            row["n_steps_aligned"] > 0 for row in completion_rows
+        ),
+        "aligned_step_count": sum(
+            row["n_steps_aligned"] for row in completion_rows
+        ),
+        "comparison_complete": bool(completion_rows)
+        and not (set(left_completions) ^ set(right_completions))
+        and all(
+            row["n_steps_aligned"] > 0
+            and row["left_only_step_count"] == 0
+            and row["right_only_step_count"] == 0
+            for row in completion_rows
+        ),
         "completion_comparisons": completion_rows,
         "step_comparisons": all_step_rows,
     }
 
     if completion_rows:
-        summary["overall_mean_feature_jaccard"] = float(
-            np.nanmean([row["mean_feature_jaccard"] for row in completion_rows])
+        summary["overall_mean_feature_jaccard"] = _finite_mean(
+            [row["mean_feature_jaccard"] for row in completion_rows]
         )
-        summary["overall_mean_edge_jaccard"] = float(
-            np.nanmean([row["mean_edge_jaccard"] for row in completion_rows])
+        summary["overall_mean_edge_jaccard"] = _finite_mean(
+            [row["mean_edge_jaccard"] for row in completion_rows]
         )
-        summary["overall_mean_weighted_edge_jaccard"] = float(
-            np.nanmean([row["mean_weighted_edge_jaccard"] for row in completion_rows])
+        summary["overall_mean_weighted_edge_jaccard"] = _finite_mean(
+            [row["mean_weighted_edge_jaccard"] for row in completion_rows]
+        )
+        summary["overall_mean_top256_edge_jaccard"] = _finite_mean(
+            [row["mean_top256_edge_jaccard"] for row in completion_rows]
         )
 
     return summary

@@ -620,6 +620,12 @@ def main() -> None:
     args = parser.parse_args()
 
     scenarios, metadata = load_scenarios(args.scenarios_file)
+    fail_on_baseline_missing = args.fail_on_baseline_missing or bool(
+        metadata.get("fail_on_baseline_missing", False)
+    )
+    fail_on_validation_fail = args.fail_on_validation_fail or bool(
+        metadata.get("fail_on_validation_fail", False)
+    )
     baseline_registry_path = args.baseline_registry
     if baseline_registry_path is None and metadata.get("baseline_registry"):
         baseline_registry_path = Path(str(metadata["baseline_registry"]))
@@ -691,8 +697,8 @@ def main() -> None:
             run_metadata=run_metadata,
             baseline_registry=baseline_registry,
             baseline_registry_path=baseline_registry_path,
-            fail_on_baseline_missing=args.fail_on_baseline_missing,
-            fail_on_validation_fail=args.fail_on_validation_fail,
+            fail_on_baseline_missing=fail_on_baseline_missing,
+            fail_on_validation_fail=fail_on_validation_fail,
             cross_batch_decoder_cache_bytes_override=args.cross_batch_decoder_cache_bytes,
         )
         results.append(result)

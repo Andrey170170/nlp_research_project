@@ -383,6 +383,12 @@ def render_launch_plan(
 
     scenarios_payload = read_json(scenarios_file)
     scenarios_metadata = scenarios_payload.get("metadata") or {}
+    fail_on_baseline_missing = fail_on_baseline_missing or bool(
+        scenarios_metadata.get("fail_on_baseline_missing", False)
+    )
+    fail_on_validation_fail = fail_on_validation_fail or bool(
+        scenarios_metadata.get("fail_on_validation_fail", False)
+    )
     slurm_metadata = scenarios_metadata.get("slurm") or {}
     if not isinstance(slurm_metadata, dict):
         raise ValueError("metadata.slurm must be an object")

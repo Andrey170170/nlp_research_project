@@ -281,11 +281,22 @@ calibration rather than treating the two gate observations as a fitted model.
 
 **E calibration:** execute the staged campaign in
 `docs/governor_calibration_matrix.md`. Wave A is a 36-row 1B upward search: 17
-CLT and 19 PLT rows spanning larger logical batches, strict decoder fetch/cache
+CLT and 19 PLT rows spanning larger logical batches, decoder fetch/cache
 controls, coupled high corners, isolated opt-in semantic axes, refresh cadence,
 and exact repeats. Wave B transfers the useful range to 4B/12B. Wave C fits
 phase-local mechanisms around the discovered knee. Do not promote coefficients
 from the v0.3 gate or Wave A alone.
+
+**Wave A analyzed 2026-07-19:** both provider references match the original
+corrected-hook Granite baseline. CLT is bounded by successful `b1500` at 132.98
+GiB reserved and OOM at `b2000`; its useful low-risk gain is `c10080` at 1.43x.
+PLT's primary transfer range is `b256` through exploratory `b512`, with
+`c16384/c32768` as opt-in fetch candidates. The measured `b512/c8192` corner is
+5.08x but misses the Top-256 floor at `0.9617`; `c32768` is the fastest measured
+row above all four floors at 4.01x. `b768+` and the 12-16x high corners drift too
+far for governed defaults. Non-reference PLT decoder chunks are not strict:
+they introduce small measured graph drift and must remain opt-in until the
+physical/semantic coupling is removed or validated.
 
 Hard requirements constrain variables rather than replacing optimization. The
 runtime re-solves at pre-execution, loaded-state, post-Phase-0, and safe phase

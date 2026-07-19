@@ -16,6 +16,9 @@ from ..transcoder_config import (
 GIB = 1024**3
 GOVERNOR_CALIBRATION_FIXTURE = "361_base"
 GOVERNOR_CALIBRATION_RESOURCE_PROFILE = "governor_calibration_h200"
+GOVERNOR_CALIBRATION_BASELINE_REGISTRY = Path(
+    "experiments/baselines/governor_calibration_granite_20260719.json"
+)
 
 
 @dataclass(frozen=True)
@@ -23,6 +26,7 @@ class GovernorCalibrationProvider:
     name: str
     provider_family: str
     governor_profile: str
+    baseline_registry_key: str
     reference_logical_batch: int
     reference_decoder_cache_bytes: int
     logical_batch_ladder: tuple[int, ...]
@@ -44,6 +48,7 @@ GOVERNOR_CALIBRATION_PROVIDERS = {
             name="gemma3_1b_clt",
             provider_family="gemmascope2-clt-1b-medium-affine",
             governor_profile="granite_h200_1b_clt_b1000_c4096_cache8",
+            baseline_registry_key="governor_calibration/gemma3_1b_clt/361_base",
             reference_logical_batch=1000,
             reference_decoder_cache_bytes=8 * GIB,
             logical_batch_ladder=(1000, 1500, 2000, 3000, 4096),
@@ -65,6 +70,7 @@ GOVERNOR_CALIBRATION_PROVIDERS = {
             name="gemma3_1b_plt",
             provider_family="gemmascope2-plt-1b-small",
             governor_profile="granite_h200_1b_plt_b128_c4096_cache0",
+            baseline_registry_key="governor_calibration/gemma3_1b_plt/361_base",
             reference_logical_batch=128,
             reference_decoder_cache_bytes=0,
             logical_batch_ladder=(128, 256, 512, 768, 1024, 1536),
@@ -287,6 +293,7 @@ def build_governor_calibration_config(
     catalog_by_name: dict[str, dict[str, Any]] | None = None,
     scratch_root: Path = DEFAULT_SCRATCH_ROOT,
     model_cache_root: Path | None = None,
+    baseline_registry: Path = GOVERNOR_CALIBRATION_BASELINE_REGISTRY,
 ) -> dict[str, Any]:
     try:
         provider = GOVERNOR_CALIBRATION_PROVIDERS[variant]
@@ -344,21 +351,26 @@ def build_governor_calibration_config(
     scenarios = []
     for row in _wave_a_rows(provider):
         case = str(row["calibration_case"])
-        scenarios.append(
-            {
-                "name": f"granite_governor_calibration_wave_a_{variant}_{case}",
-                "run_name": f"governor-calibration-wave-a-{variant}-{case}",
-                "run_goal": (
-                    f"Measure {row['calibration_factor']} in the Wave A upward search "
-                    "while recording admission, utilization, timing, and graph parity."
-                ),
-                "calibration_stage": "wave_a_upward_1b",
-                **fixture.to_source_payload(),
-                **row,
-                "governor_resource_envelope": envelope,
-                "timeout_minutes": provider.timeout_minutes,
-            }
-        )
+        scenario = {
+            "name": f"granite_governor_calibration_wave_a_{variant}_{case}",
+            "run_name": f"governor-calibration-wave-a-{variant}-{case}",
+            "run_goal": (
+                f"Measure {row['calibration_factor']} in the Wave A upward search "
+                "while recording admission, utilization, timing, and graph parity."
+            ),
+            "calibration_stage": "wave_a_upward_1b",
+            **fixture.to_source_payload(),
+            **row,
+            "governor_resource_envelope": envelope,
+            "timeout_minutes": provider.timeout_minutes,
+        }
+        scenario["baseline_check"] = {
+            "enabled": True,
+            "mode": "metrics",
+            "registry_key": provider.baseline_registry_key,
+            "baseline_required": True,
+        }
+        scenarios.append(scenario)
     return {
         "schema_version": 1,
         "defaults": defaults,
@@ -377,6 +389,14 @@ def build_governor_calibration_config(
             },
             "resource_profile": GOVERNOR_CALIBRATION_RESOURCE_PROFILE,
             "array_concurrency": 1,
+            "array_concurrency_reason": (
+                "Serial execution preserves inspectable cache order and isolates "
+                "per-row resource measurements; baseline scoring uses a pinned "
+                "registry and does not depend on array task order."
+            ),
+            "baseline_registry": str(baseline_registry),
+            "fail_on_baseline_missing": True,
+            "fail_on_validation_fail": True,
             "immutable_validation_config": True,
             "recommended_output_root": str(output_root),
             "matrix_variant": variant,
@@ -447,6 +467,7 @@ def write_all_governor_calibration_configs(
     output_dir: Path = DEFAULT_GENERATED_DIR,
     scratch_root: Path = DEFAULT_SCRATCH_ROOT,
     model_cache_root: Path | None = None,
+    baseline_registry: Path = GOVERNOR_CALIBRATION_BASELINE_REGISTRY,
 ) -> tuple[Path, ...]:
     return tuple(
         write_governor_calibration_config(
@@ -454,6 +475,7 @@ def write_all_governor_calibration_configs(
                 variant=variant,
                 scratch_root=scratch_root,
                 model_cache_root=model_cache_root,
+                baseline_registry=baseline_registry,
             ),
             variant=variant,
             output_dir=output_dir,

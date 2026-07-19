@@ -115,7 +115,10 @@ registry:
 
 `mode=metrics` writes comparison metrics without failing the run. `mode=gate`
 also evaluates numeric thresholds such as
-`overall_mean_weighted_edge_jaccard_min`.
+`overall_mean_weighted_edge_jaccard_min`. Compact summaries include
+`overall_mean_top256_edge_jaccard`, derived by independently ranking each
+step's edges before computing Top-256 Jaccard. Missing completion/step coverage
+or non-finite required summaries is always recorded as `compare_error`.
 
 Each self-scored scenario emits:
 

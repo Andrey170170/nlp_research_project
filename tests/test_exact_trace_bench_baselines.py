@@ -5,6 +5,8 @@ import inspect
 import sys
 from pathlib import Path
 
+import pytest
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -15,7 +17,7 @@ from nlp_research_project.exact_trace_bench.jobs import (  # noqa: E402
     render_fixture_prep_plan,
     render_launch_plan,
 )
-from experiments.run_sparsification_experiment import run_scenario  # noqa: E402
+from experiments.run_sparsification_experiment import main, run_scenario  # noqa: E402
 
 
 def test_baseline_comparison_writes_metrics(monkeypatch, tmp_path: Path) -> None:
@@ -32,11 +34,15 @@ def test_baseline_comparison_writes_metrics(monkeypatch, tmp_path: Path) -> None
         assert right == current_artifacts
         return {
             "shared_completion_count": 1,
+            "aligned_completion_count": 1,
+            "aligned_step_count": 1,
+            "comparison_complete": True,
             "left_only_completion_count": 0,
             "right_only_completion_count": 0,
             "overall_mean_feature_jaccard": 1.0,
             "overall_mean_edge_jaccard": 0.99,
             "overall_mean_weighted_edge_jaccard": 0.98,
+            "overall_mean_top256_edge_jaccard": 0.97,
         }
 
     monkeypatch.setattr(baselines, "compare_artifact_dirs", fake_compare)
@@ -58,7 +64,60 @@ def test_baseline_comparison_writes_metrics(monkeypatch, tmp_path: Path) -> None
     assert status["status"] == "gate_pass"
     assert status["passed"] is True
     assert metrics["overall_mean_weighted_edge_jaccard"] == 0.98
+    assert metrics["overall_mean_top256_edge_jaccard"] == 0.97
     assert (scenario_root / "baseline_compare.json").exists()
+
+    row = baselines.build_scenario_metrics_row(
+        scenario={"name": "current"},
+        result={"status": "success"},
+        baseline_status=status,
+        comparison_metrics=metrics,
+    )
+    baselines.write_scenario_metrics(scenario_root, row, baseline_status=status)
+    persisted = json.loads(
+        (scenario_root / "scenario_metrics.json").read_text(encoding="utf-8")
+    )
+    assert persisted["metrics"]["overall_mean_top256_edge_jaccard"] == 0.97
+
+
+def test_baseline_comparison_rejects_incomplete_alignment(
+    monkeypatch, tmp_path: Path
+) -> None:
+    baseline_artifacts = tmp_path / "baseline" / "artifacts"
+    current_artifacts = tmp_path / "current" / "artifacts"
+    baseline_artifacts.mkdir(parents=True)
+    current_artifacts.mkdir(parents=True)
+    baseline_result = tmp_path / "baseline" / "result.json"
+    baseline_result.write_text(json.dumps({"status": "success"}))
+    monkeypatch.setattr(
+        baselines,
+        "compare_artifact_dirs",
+        lambda _left, _right: {
+            "shared_completion_count": 1,
+            "aligned_completion_count": 0,
+            "aligned_step_count": 0,
+            "comparison_complete": False,
+        },
+    )
+
+    status, _metrics = baselines.run_baseline_comparison(
+        scenario_root=tmp_path / "current",
+        current_artifacts=current_artifacts,
+        baseline_check={
+            "enabled": True,
+            "mode": "metrics",
+            "thresholds": {},
+            "failure_reasons": [],
+        },
+        baseline_entry={
+            "artifacts_dir": str(baseline_artifacts),
+            "result_json": str(baseline_result),
+        },
+    )
+
+    assert status["status"] == "compare_error"
+    assert status["passed"] is False
+    assert "no aligned steps" in " ".join(status["failure_reasons"])
 
 
 def test_threshold_evaluation_reports_failures() -> None:
@@ -108,6 +167,49 @@ def test_run_scenario_skips_required_missing_baseline(tmp_path: Path) -> None:
     assert (scenario_root / "result.json").exists()
     assert (scenario_root / "scenario_metrics.csv").exists()
     assert not (scenario_root / "run.log").exists()
+
+
+def test_runner_honors_metadata_failure_policy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    scenarios_file = tmp_path / "scenarios.json"
+    scenarios_file.write_text(
+        json.dumps(
+            {
+                "metadata": {"fail_on_baseline_missing": True},
+                "defaults": base_trace_defaults(),
+                "scenarios": [
+                    {
+                        "name": "required_baseline",
+                        "stage": "test",
+                        "method": "exact",
+                        "gsm8k_indices": [828],
+                        "baseline_check": {
+                            "enabled": True,
+                            "mode": "metrics",
+                            "registry_key": "missing/key",
+                            "baseline_required": True,
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_sparsification_experiment.py",
+            "--scenarios-file",
+            str(scenarios_file),
+            "--output-root",
+            str(tmp_path / "results"),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="Required baseline invalid"):
+        main()
 
 
 def test_fixture_prep_plan_uses_cluster_script_and_exports(tmp_path: Path) -> None:
@@ -223,6 +325,8 @@ def test_launch_plan_honors_scenario_array_concurrency(tmp_path: Path) -> None:
                 "metadata": {
                     "resource_profile": "standard",
                     "array_concurrency": 2,
+                    "fail_on_baseline_missing": True,
+                    "fail_on_validation_fail": True,
                     "slurm": {
                         "account": "rai",
                         "partition": "rai-gpu-grn",
@@ -257,6 +361,19 @@ def test_launch_plan_honors_scenario_array_concurrency(tmp_path: Path) -> None:
     assert "--cpus-per-task=12" in plan["sbatch_argv"]
     assert "--mem=200G" in plan["sbatch_argv"]
     assert "--time=02:00:00" in plan["sbatch_argv"]
+    assert "FAIL_ON_BASELINE_MISSING=1" in plan["sbatch_command"]
+    assert "FAIL_ON_VALIDATION_FAIL=1" in plan["sbatch_command"]
+
+
+def test_granite_h200_script_forwards_baseline_controls() -> None:
+    script = (
+        PROJECT_ROOT / "slurm/exact_trace_bench/trace_baseline_h200.granite.sbatch"
+    ).read_text(encoding="utf-8")
+
+    assert 'BASELINE_ARGS+=(--baseline-registry "${BASELINE_REGISTRY}")' in script
+    assert "BASELINE_ARGS+=(--fail-on-baseline-missing)" in script
+    assert "BASELINE_ARGS+=(--fail-on-validation-fail)" in script
+    assert '"${BASELINE_ARGS[@]}"' in script
 
 
 def test_build_baseline_registry_from_wave0_roots(tmp_path: Path) -> None:

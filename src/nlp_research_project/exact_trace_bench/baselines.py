@@ -23,11 +23,15 @@ BASELINE_DISABLED = {
 
 COMPARISON_SUMMARY_KEYS = (
     "shared_completion_count",
+    "aligned_completion_count",
+    "aligned_step_count",
+    "comparison_complete",
     "left_only_completion_count",
     "right_only_completion_count",
     "overall_mean_feature_jaccard",
     "overall_mean_edge_jaccard",
     "overall_mean_weighted_edge_jaccard",
+    "overall_mean_top256_edge_jaccard",
 )
 
 SCENARIO_IDENTITY_KEYS = (
@@ -296,11 +300,37 @@ def run_baseline_comparison(
         _append_reason(status, f"baseline comparison failed: {exc}")
         return status, {}
 
+    required_metrics = (
+        "overall_mean_feature_jaccard",
+        "overall_mean_edge_jaccard",
+        "overall_mean_weighted_edge_jaccard",
+        "overall_mean_top256_edge_jaccard",
+    )
+    structural_reasons: list[str] = []
+    if not summary.get("comparison_complete"):
+        structural_reasons.append(
+            "baseline comparison did not align all completions and steps"
+        )
+    if int(summary.get("aligned_completion_count") or 0) <= 0:
+        structural_reasons.append("baseline comparison had no aligned completions")
+    if int(summary.get("aligned_step_count") or 0) <= 0:
+        structural_reasons.append("baseline comparison had no aligned steps")
+    for key in required_metrics:
+        if _as_finite_float(summary.get(key)) is None:
+            structural_reasons.append(f"baseline comparison missing finite {key}")
+
     comparison_path = scenario_root / "baseline_compare.json"
     write_json(comparison_path, summary)
     metrics = flatten_comparison_summary(summary)
     status["comparison_json"] = str(comparison_path)
     status.update(metrics)
+
+    if structural_reasons:
+        status["status"] = "compare_error"
+        status["passed"] = False
+        for reason in structural_reasons:
+            _append_reason(status, reason)
+        return status, metrics
 
     if status.get("mode") == "gate":
         passed, reasons = evaluate_thresholds(metrics, status.get("thresholds"))

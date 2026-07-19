@@ -1,7 +1,7 @@
 # Experiments inventory
 
 Status: Current compact index and interpretation summary
-Last updated: 2026-07-10
+Last updated: 2026-07-19
 
 This file is the readable front page for experiment provenance. It should stay
 small enough to edit by hand.
@@ -64,6 +64,23 @@ Baseline preservation notes:
 
 ## Current interpretation
 
+Governor Wave A completed on Granite H200 and was analyzed on 2026-07-19. The
+provider-local CLT/PLT references match the original corrected-hook Granite
+`361_base` artifacts. CLT has a useful `c10080` fetch candidate at 1.43x warm
+speed with effectively exact output; `b1500` consumes 132.98 GiB reserved VRAM
+for only 1.05x and `b2000+` OOMs. For PLT, `b256` gives 1.68x at minimum
+Jaccard `0.9845`; `c32768` is the fastest measured row above all `0.97`
+feature/edge/weighted-edge/Top-256 floors at 4.01x. The `b512/c8192` corner
+reaches 5.08x but misses the Top-256 floor at `0.9617`; the 12-16x `b1024+`
+corners are not acceptable defaults because broad graph overlap falls as low as
+`0.51-0.87`. The full report is under
+`exact_trace_bench/granite/analysis/governor_calibration/wave_a_20260716/`.
+
+Decoder-fetch chunk size is not strictly semantic-neutral for PLT: `c32768`
+gives 4.01x speed with about 0.25-0.28% broad graph drift. Keep non-reference
+chunks opt-in until the physical fetch/reduction coupling is eliminated or a
+versioned validated-relaxed evidence package is promoted.
+
 Track-A cross-cluster localization is mostly complete:
 
 - the observed Ascend/Cardinal divergence is primarily driven by Phase-3 gradient
@@ -89,19 +106,15 @@ Clean/current toy parity follow-up (May 2026):
 
 Near-term implementation focus:
 
-1. implement Phase D direct session/per-phase microbatch controls so Phase 1 no
-   longer fixes the later phases to its 80-90 GiB peak; add column-tiled dense
-   operators and no-retention replay so extreme paths create no `K x N` tensor
-   or file,
-2. after the running Phase D D/E jobs are terminal and artifact-adjudicated,
-   execute Phase C2: replace the whole project-to-sibling tracing path with one
-   comprehensible domain runtime, atomically migrate callers, and delete the old
-   argument-bag/compatibility paths,
-3. adjudicate the immutable Phase E 1B CLT/PLT governed-versus-explicit gate;
-   the sibling runtime now consumes plans through three decision epochs and
-   phase-level resource grants,
-4. consolidate governed harness workflows in Phase F and preserve the current
-   baselines through the gated Granite matrix.
+1. use the pinned corrected-hook baseline registry so every calibration row
+   self-scores independently of Slurm array order;
+2. run the bounded Wave B transfer on 4B/12B PLT using the provider reference
+   and `b256` as primary batch candidates, `b512` only as an upper drift probe,
+   and opt-in fetch chunks `16384/32768`;
+3. run Wave C local mechanism fitting around the transferred knee, then fit and
+   validate governor coefficients before promotion;
+4. consolidate governed harness workflows in Phase F after the calibrated
+   solver passes its final Granite gates.
 
 Phase C1 closed on July 11 with immutable jobs `1613108`/`1613109`: compact NPZ
 artifacts were byte-identical to baseline, live/final telemetry counts matched,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from nlp_research_project.exact_trace_bench.scenarios.governor_calibration import (
     GIB,
+    GOVERNOR_CALIBRATION_BASELINE_REGISTRY,
     GOVERNOR_CALIBRATION_PROVIDERS,
     GOVERNOR_CALIBRATION_RESOURCE_PROFILE,
     build_governor_calibration_config,
@@ -30,6 +31,15 @@ def test_governor_calibration_wave_a_is_upward_and_complete() -> None:
         assert metadata["immutable_validation_config"] is True
         assert metadata["calibration_wave"] == "A"
         assert metadata["array_concurrency"] == 1
+        assert (
+            "does not depend on array task order"
+            in metadata["array_concurrency_reason"]
+        )
+        assert metadata["baseline_registry"] == str(
+            GOVERNOR_CALIBRATION_BASELINE_REGISTRY
+        )
+        assert metadata["fail_on_baseline_missing"] is True
+        assert metadata["fail_on_validation_fail"] is True
         assert metadata["resource_profile"] == GOVERNOR_CALIBRATION_RESOURCE_PROFILE
         assert metadata["fixed_protocol"]["hardware"] == "single_h200"
         assert metadata["slurm"]["qos"] == "rai-gpu-grn-short"
@@ -57,12 +67,22 @@ def test_governor_calibration_wave_a_is_upward_and_complete() -> None:
         )
 
         reference = cases["reference"]
+        assert payload["scenarios"][0] is reference
         assert reference["governor_fidelity_mode"] == "strict"
         assert "governor_fidelity_override_fields" not in reference
         assert reference["attribution_batch_size"] == provider.reference_logical_batch
-        assert max(
-            row["attribution_batch_size"] for row in cases.values()
-        ) > provider.reference_logical_batch
+        assert (
+            max(row["attribution_batch_size"] for row in cases.values())
+            > provider.reference_logical_batch
+        )
+
+        for row in payload["scenarios"]:
+            assert row["baseline_check"] == {
+                "enabled": True,
+                "mode": "metrics",
+                "registry_key": provider.baseline_registry_key,
+                "baseline_required": True,
+            }
 
         for row in cases.values():
             policy = trace_policy_from_scenario({**payload["defaults"], **row})
