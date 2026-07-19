@@ -1,6 +1,6 @@
 # Governor Calibration Run Plan
 
-Status: Wave A analyzed; Wave B range selected; Wave C pending
+Status: Wave A analyzed; Phase-4 feedback diagnostic next; Wave B/C pending
 Last updated: 2026-07-19
 
 This campaign finds the fastest fitting governor configuration instead of only
@@ -90,6 +90,29 @@ corrected-hook Granite artifacts. Wave A bounds the next search but does not fit
 or promote governor coefficients: loaded-state walltime estimates remain several
 times too conservative, and peak-VRAM estimates are about 9% high for CLT and
 31% high at PLT `b1536`.
+
+### Phase-4 feedback diagnostic
+
+Before Wave B, run a five-row 1B PLT causal diagnostic to separate frontier
+feedback cadence from physical batch numerics. Keep source/logit semantics at
+`128`, decoder chunk at `4096`, decoder cache at zero, update policy standard,
+and all other tracing semantics fixed.
+
+| Row | Logical feature batch | Refresh interval | Frontier window | Session | Phase-4 microbatch | Contrast |
+|---|---:|---:|---:|---:|---:|---|
+| canonical reference | 128 | 4 | 512 | 128 | 128 | corrected-hook control |
+| session control | 128 | 4 | 512 | 256 | 128 | session capacity only |
+| constant-window logical | 256 | 2 | 512 | 256 | 128 | logical grouping at fixed feedback and execution |
+| constant-window physical | 256 | 2 | 512 | 256 | 256 | physical matmul/backtrace shape only |
+| stale-window | 256 | 4 | 1024 | 256 | 128 | feedback staleness only |
+
+Evaluate the paired contrasts rather than treating these as five independent
+scores. The primary hypothesis is that the stale-window contrast explains most
+graph drift, while the physical-microbatch contrast retains most of the speed
+benefit with much smaller drift. Every row self-scores against the pinned
+corrected-hook artifact; also compare each paired row directly after completion.
+Do not redesign the governor or launch Wave B until this diagnostic is
+adjudicated.
 
 ### Stop Rules
 

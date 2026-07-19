@@ -298,6 +298,15 @@ far for governed defaults. Non-reference PLT decoder chunks are not strict:
 they introduce small measured graph drift and must remain opt-in until the
 physical/semantic coupling is removed or validated.
 
+**Phase-4 feedback diagnostic:** before Wave B, isolate the mechanism behind
+PLT batch drift with five 1B rows: canonical reference, session-capacity
+control, logical `b256` at a constant 512-feature refresh window and physical
+`b128`, physical `b256` at that same window, and logical `b256`/physical `b128`
+with the stale 1024-feature window. Hold source/logit semantics and decoder
+configuration fixed. Use paired compact comparisons to decide whether the
+governor should cap a frontier-window budget independently while still scaling
+physical microbatches aggressively.
+
 Hard requirements constrain variables rather than replacing optimization. The
 runtime re-solves at pre-execution, loaded-state, post-Phase-0, and safe phase
 entries, inheriting frozen decisions and replacing estimates with observations.
