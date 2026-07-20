@@ -81,12 +81,13 @@ The current exact-trace workflow depends on both checkouts being present.
   complete: safety/support contracts, bounded independent search, staged phase
   cost models, measured-unit refinement, and replay-cache ownership are wired.
   The 1B Granite calibration and Phase-4 feedback diagnostic are complete. A
-  static Phase-4 coalescing correction is now at its immutable gate: preserve
-  the canonical semantic scheduler and refresh checkpoints while scaling only
-  physical execution batches to the prepared frontier. The sibling
-  implementation is `phase-b-governor-contract@1ea7929`; dynamic refresh
-  remains deferred. Multi-model calibration and Phase F governed harness
-  consolidation follow the accepted static gate.
+  static Phase-4 coalescing correction passed its immutable 1B PLT gate:
+  semantic schedules, prepared frontiers, and compact topology were identical
+  at execution caps 128/256/512. The sibling implementation is
+  `phase-b-governor-contract@1ea7929`; dynamic refresh remains deferred. The
+  256-row execution cap is the current 1B PLT efficiency knee, while 512 remains
+  valid headroom. Multi-model calibration and Phase F governed harness
+  consolidation follow this accepted static gate.
 - Descriptive architecture details now live under `docs/architecture/`.
 - Current baseline decisions stay in `EXPERIMENTS.md`; active work stays in the owning spec.
 - Reports are not treated as source-of-truth unless a current doc explicitly cites them.

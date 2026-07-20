@@ -327,16 +327,18 @@ executor. The canonical control is `phase4_execution_batch_max_rows`; it may be
 larger than `feature_batch_size` but cannot cross the prepared refresh frontier.
 For the current `128x4` baseline, 512 is therefore the useful static ceiling.
 
-The first immutable gate is a strict 1B PLT matrix with execution/session caps
+The first immutable gate completed as a strict 1B PLT matrix with execution/session caps
 `128`, `256`, and `512`, fixed semantic batch 128, refresh stride 4, and all
 other controls pinned to the corrected-hook baseline. Require equal refresh
 counts, semantic batch counts, prepared-frontier membership/order hashes, exact
 compact graph topology, and weighted-edge Jaccard of at least `0.999999`.
 Record score-ranked pre-locality order as advisory because physical floating-point
 differences may reorder equal-membership candidates before canonical locality
-scheduling. Compare
-Phase-4 execution-call count, walltime, and peak VRAM. Adaptive refresh remains
-deferred until this static mechanism is accepted.
+scheduling. The gate passed: semantic batches stayed at 65, refreshes at 17,
+and execution calls fell from 65 to 33 to 17. Total runtime improved by
+`1.434x` at 256 and `1.455x` at 512, but 512 nearly doubled reserved CUDA memory
+over 256 for only `1.4%` additional total speedup. Treat 256 as the current 1B
+PLT knee and 512 as valid headroom. Adaptive refresh remains deferred.
 
 Hard requirements constrain variables rather than replacing optimization. The
 runtime re-solves at pre-execution, loaded-state, post-Phase-0, and safe phase

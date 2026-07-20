@@ -117,6 +117,20 @@ Near-term implementation focus:
 4. consolidate governed harness workflows in Phase F after the calibrated
    solver passes its final Granite gates.
 
+Static Phase-4 coalescing gate (Granite H200, 1B PLT, `361_base`, 2026-07-19):
+
+- execution caps `128/256/512` preserved the same semantic fingerprint, 65
+  semantic batches, 17 prepared frontiers, frontier membership and execution
+  order, and exact compact feature/edge/top-256 topology;
+- weighted-edge Jaccard versus 128 was `0.9999999979` at 256 and
+  `0.9999999964` at 512;
+- execution calls fell `65 -> 33 -> 17`; total runtime was
+  `3125.24s -> 2178.85s -> 2147.83s`, while reserved CUDA memory rose
+  `13.30 -> 24.67 -> 46.57 GiB`;
+- use 256 as the current 1B PLT efficiency knee. The 512 cap is validated
+  headroom, but its additional `1.4%` total speedup does not justify nearly
+  doubling reserved CUDA memory for this workload.
+
 Phase C1 closed on July 11 with immutable jobs `1613108`/`1613109`: compact NPZ
 artifacts were byte-identical to baseline, live/final telemetry counts matched,
 and both sinks closed without errors. The CLT job reached its `32G` host-memory
