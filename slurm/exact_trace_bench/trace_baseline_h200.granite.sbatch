@@ -118,6 +118,20 @@ echo "HF token available: $(if [[ -n "${HUGGING_FACE_HUB_TOKEN:-${HF_TOKEN:-}}" 
 echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-unset}"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
 
+GPU_MONITOR_DIR="${OUTPUT_ROOT}/_slurm_gpu_monitor/${SLURM_ARRAY_JOB_ID:-${SLURM_JOB_ID}}_${SLURM_ARRAY_TASK_ID}"
+mkdir -p "$GPU_MONITOR_DIR"
+(
+    cd "$GPU_MONITOR_DIR"
+    exec /uufs/chpc.utah.edu/sys/installdir/chpcscripts/gpu/gpu-monitor.sh
+) 2>"$GPU_MONITOR_DIR/gpu-monitor.stderr.log" &
+GPU_MONITOR_PID=$!
+cleanup_gpu_monitor() {
+    kill "$GPU_MONITOR_PID" 2>/dev/null || true
+    wait "$GPU_MONITOR_PID" 2>/dev/null || true
+}
+trap cleanup_gpu_monitor EXIT
+echo "GPU monitor directory: ${GPU_MONITOR_DIR}"
+
 "$UV_PROJECT_ENVIRONMENT/bin/python" -u experiments/run_sparsification_experiment.py \
     --scenarios-file "${SCENARIOS_FILE}" \
     --output-root "${OUTPUT_ROOT}" \

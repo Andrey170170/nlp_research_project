@@ -48,7 +48,7 @@ headroom.
 | Canonical 1B PLT baseline | Full H200 | 12 CPU / 200G | 1-1.5h | Preserve `b128`; include export time |
 | 1B upward sweep row | Full H200 | 12 CPU / 200G | CLT 1h; PLT 2h | Array concurrency `%1` on short QOS |
 | 4B PLT baseline/sweep | Full H200 | 12 CPU / 300-400G | 2h | Requires regular RAI QOS; short QOS caps memory at 250G |
-| 12B PLT baseline/sweep | Full H200 | 12 CPU / 400G | 4-6h | Start at 5h until calibrated |
+| 12B PLT baseline/sweep | Full H200 | 12 CPU / 600G | 8h | The `361_base` reference took about 6.4h; use regular RAI QOS |
 | Long trace/full answer | Full H200 | 12 CPU / 400G+ | Measured p95 + margin | Use regular QOS and checkpointable units where possible |
 
 For a CLT smoke on a GPU below 96GB, reduce the Phase-1 source batch and use

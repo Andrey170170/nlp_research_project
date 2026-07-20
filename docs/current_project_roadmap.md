@@ -317,7 +317,7 @@ effectively exact while improving runtime by 1.39x. Treat logical grouping and
 frontier window as fidelity-budgeted inputs; let the solver optimize session
 capacity and physical microbatch from available resources.
 
-**Static coalescing correction in progress:** the diagnostic also exposed an
+**Static coalescing correction closed 2026-07-20:** the diagnostic also exposed an
 avoidable implementation coupling. At a nominal 512-row window, changing
 `128x4` to `256x2` changed the locality-shaped frontier from, for example, 509
 rows to 512 before execution. The next frontier therefore started from a
@@ -339,6 +339,18 @@ and execution calls fell from 65 to 33 to 17. Total runtime improved by
 `1.434x` at 256 and `1.455x` at 512, but 512 nearly doubled reserved CUDA memory
 over 256 for only `1.4%` additional total speedup. Treat 256 as the current 1B
 PLT knee and 512 as valid headroom. Adaptive refresh remains deferred.
+
+**Wave B corrected transfer matrix:** do not rerun the complete 36-row Wave A
+campaign. Its old coupled PLT batch rows remain semantic/stress evidence, while
+the immutable static-coalescing gate supplies the strict physical Phase-4
+`128/256/512` evidence. Wave B fixes canonical 4B/12B source, feature, logit,
+Phase-1, Phase-3, and refresh semantics; tests coupled session/Phase-4 execution
+envelopes while deferring their isolated cost fit to Wave C; keeps
+`c16384/c32768` opt-in; and includes one constant-frontier semantic-transfer row
+per model. Run seven bounded rows per model through the immutable packaged
+launcher on regular RAI H200 QOS: 4B at `400G/2h`, 12B at `600G/8h`. The
+existing generated 4B/12B session/tiled-policy files are historical gates, not
+Wave B inputs.
 
 Hard requirements constrain variables rather than replacing optimization. The
 runtime re-solves at pre-execution, loaded-state, post-Phase-0, and safe phase

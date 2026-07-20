@@ -7,10 +7,41 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from nlp_research_project.exact_trace_bench import cli, presets, workspace
+from nlp_research_project.exact_trace_bench.fixtures import resolve_fixture
+from nlp_research_project.exact_trace_bench.scenarios.governor_calibration import (
+    build_governor_calibration_config,
+)
 
 
 def _fake_module(file_path: Path) -> SimpleNamespace:
     return SimpleNamespace(__file__=str(file_path))
+
+
+def test_wave_b_fallback_fixture_paths_are_snapshot_relative() -> None:
+    workspace_root = Path("/tmp/snapshot/workspace")
+    fixture = resolve_fixture("361_base", catalog_by_name={})
+
+    expected_root = Path("experiments/generated/weekend_exact_chunked_fixtures")
+    for path_text, expected_name in (
+        (fixture.prepared_prompt_file, "prompt.txt"),
+        (fixture.prepared_prompt_meta_file, "fixture_meta.json"),
+    ):
+        relative_path = Path(path_text)
+        assert not relative_path.is_absolute()
+        assert relative_path.parent == expected_root / "361_base"
+        assert relative_path.name == expected_name
+        assert (workspace_root / relative_path).resolve().is_relative_to(
+            workspace_root.resolve()
+        )
+
+    payload = build_governor_calibration_config(variant="gemma3_4b_plt")
+    for scenario in payload["scenarios"]:
+        for key in ("prepared_prompt_file", "prepared_prompt_meta_file"):
+            relative_path = Path(scenario[key])
+            assert not relative_path.is_absolute()
+            assert (workspace_root / relative_path).resolve().is_relative_to(
+                workspace_root.resolve()
+            )
 
 
 def test_verify_import_paths_prefers_workspace_src_and_reports_files(

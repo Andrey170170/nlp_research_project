@@ -106,12 +106,13 @@ Clean/current toy parity follow-up (May 2026):
 
 Near-term implementation focus:
 
-1. encode the Phase-4 diagnostic split in governor policy: logical feature
-   grouping and frontier window are fidelity-controlled semantic choices, while
-   session capacity and physical microbatch remain resource-optimized controls;
-2. run the bounded Wave B transfer on 4B/12B PLT using the provider reference
-   and `b256` as primary batch candidates, `b512` only as an upper drift probe,
-   and opt-in fetch chunks `16384/32768`;
+1. run the corrected bounded Wave B transfer on 4B/12B PLT with canonical
+   semantic batches held fixed, coupled session/Phase-4 execution envelopes
+   `128/256/512` and `64/128/256`, opt-in fetch chunks `16384/32768`, and one
+   constant-frontier semantic-transfer row per model;
+2. interpret the old Wave A PLT coupled-batch rows as semantic/stress evidence,
+   not strict physical execution-cost calibration; the static-coalescing gate
+   is the corrected 1B physical supplement;
 3. run Wave C local mechanism fitting around the transferred knee, then fit and
    validate governor coefficients before promotion;
 4. consolidate governed harness workflows in Phase F after the calibrated

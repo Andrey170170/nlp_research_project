@@ -1,7 +1,7 @@
 # Governor Calibration Run Plan
 
-Status: Wave A and Phase-4 feedback diagnostic analyzed; Wave B/C pending
-Last updated: 2026-07-19
+Status: Wave A and static Phase-4 correction closed; Wave B launch preparation
+Last updated: 2026-07-20
 
 This campaign finds the fastest fitting governor configuration instead of only
 measuring settings below the historical reference. It deliberately separates:
@@ -91,6 +91,16 @@ or promote governor coefficients: loaded-state walltime estimates remain several
 times too conservative, and peak-VRAM estimates are about 9% high for CLT and
 31% high at PLT `b1536`.
 
+Do not rerun the complete Wave A matrix after the static Phase-4 coalescing
+correction. Preserve its coupled PLT batch rows as measurements of logical
+batch semantics and stress behavior, but exclude those rows from fitting the
+strict physical Phase-4 execution cost. The immutable `128/256/512` static gate
+is the corrected physical supplement: it held the canonical `128x4` semantic
+schedule fixed, preserved prepared frontiers and compact topology, and selected
+256 execution rows as the current 1B PLT efficiency knee. Decoder-fetch rows,
+cache rows, CLT bounds, and explicit semantic rows remain valid for their stated
+factors.
+
 ### Phase-4 feedback diagnostic
 
 Before Wave B, run a five-row 1B PLT causal diagnostic to separate frontier
@@ -155,19 +165,46 @@ run records.
 
 ## Wave B - Larger-Model Transfer
 
-Wave B starts only after choosing the top two useful 1B PLT fetch chunks and a
-bounded batch range from Wave A.
+Wave B transfers the corrected independent-control design rather than the old
+coupled logical-batch ladder. Canonical source, feature, and logit batches stay
+fixed at 128 for 4B and 64 for 12B. The canonical refresh stride remains four;
+Phase-1 and Phase-3 widths remain fixed. Strict physical-envelope rows raise
+session capacity and `phase4_execution_batch_max_rows` together without changing
+the prepared semantic batches or crossing a prepared refresh frontier. Wave B
+tests transferable fitting configurations; Wave C later isolates the session
+and execution cost terms.
 
-| Provider | Logical batch candidates | Fetch chunks | Host RAM | Walltime |
-|---|---|---|---:|---:|
-| Gemma 3 4B PLT | `128, 256, 512` | `16384, 32768` | 300-400 GiB | up to 2h |
-| Gemma 3 12B PLT | `64, 128, 256` | `16384, 32768` | 400-600 GiB | 4-5h |
+| Provider | Canonical semantic batch | Session/execution envelope | Fetch chunks | Host RAM | Walltime |
+|---|---:|---|---|---:|---:|
+| Gemma 3 4B PLT | `128` | `128, 256, 512` | `4096, 16384, 32768` | 400 GiB | 2h |
+| Gemma 3 12B PLT | `64` | `64, 128, 256` | `4096, 16384, 32768` | 600 GiB | 8h |
 
-Each model gets an exact reference, upward batch rows, the selected opt-in
-fetch-chunk rows, a bounded `b256` coupled candidate, and only the semantic
-research rows needed to test whether the 1B relation transfers. `b512` is an
-upper drift probe, not a prospective default. Do not blindly run the full 1B
-Cartesian space.
+Each model has seven causal rows:
+
+1. exact canonical reference;
+2. middle strict session/Phase-4 execution envelope;
+3. upper strict session/Phase-4 execution envelope;
+4. isolated opt-in decoder fetch chunk 16384 at reference execution capacity;
+5. isolated opt-in decoder fetch chunk 32768 at reference execution capacity;
+6. coupled middle execution capacity plus decoder fetch chunk 32768;
+7. one semantic-transfer row that doubles logical feature grouping, halves the
+   refresh stride to preserve the aggregate frontier window, and uses the
+   middle physical execution capacity.
+
+The two non-reference fetch chunks remain research opt-ins because PLT decoder
+fetch/reduction shape still causes small numerical graph drift. The semantic
+transfer row is also opt-in and exists only to test whether the 1B logical
+grouping effect transfers. Do not run a Cartesian product. The bounded matrix
+runs all seven independent rows; VRAM, graph-floor, and diminishing-return
+conditions are post-run continuation and promotion gates rather than automatic
+array cancellation. An upper execution row is headroom evidence, not a
+prospective default.
+
+Launch Wave B only through `exact-trace-bench launch-plan` with immutable
+workspace mode. The shared Slurm template defaults are not the campaign
+resources; the rendered command must carry the scenario metadata's regular RAI
+QOS, `400G/2h` or `600G/8h`, 12 CPUs, H200 GRES, and serialized array range.
+Run `sbatch --test-only` on that exact rendered command before submission.
 
 ## Wave C - Local Mechanism Fit
 
