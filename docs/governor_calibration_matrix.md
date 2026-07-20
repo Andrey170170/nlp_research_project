@@ -1,6 +1,6 @@
 # Governor Calibration Run Plan
 
-Status: Wave A and static Phase-4 correction closed; Wave B launch preparation
+Status: Wave A and static Phase-4 correction closed; Wave B running
 Last updated: 2026-07-20
 
 This campaign finds the fastest fitting governor configuration instead of only
@@ -205,6 +205,12 @@ workspace mode. The shared Slurm template defaults are not the campaign
 resources; the rendered command must carry the scenario metadata's regular RAI
 QOS, `400G/2h` or `600G/8h`, 12 CPUs, H200 GRES, and serialized array range.
 Run `sbatch --test-only` on that exact rendered command before submission.
+
+The first corrected Wave B launch uses snapshot
+`workspace_20260720_050003_governor-wave-b-20260720`. Granite arrays
+`1642077` (4B) and `1642078` (12B) each contain seven rows serialized with
+`%1`; both were pending for ordinary priority at launch rather than a policy
+or resource-limit reason.
 
 ## Wave C - Local Mechanism Fit
 

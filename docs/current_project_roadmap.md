@@ -352,6 +352,13 @@ launcher on regular RAI H200 QOS: 4B at `400G/2h`, 12B at `600G/8h`. The
 existing generated 4B/12B session/tiled-policy files are historical gates, not
 Wave B inputs.
 
+**Wave B launched 2026-07-20:** immutable Granite arrays `1642077` (4B,
+`400G/2h`) and `1642078` (12B, `600G/8h`) use regular RAI H200 QOS and
+seven serialized rows each. Both exact scheduler shapes passed
+`sbatch --test-only`; launch state was `PENDING (Priority)`. Analyze strict
+physical-envelope parity and the two opt-in semantic families before selecting
+transfer ranges or starting Wave C.
+
 Hard requirements constrain variables rather than replacing optimization. The
 runtime re-solves at pre-execution, loaded-state, post-Phase-0, and safe phase
 entries, inheriting frozen decisions and replacing estimates with observations.
