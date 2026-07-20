@@ -70,7 +70,7 @@ def base_trace_defaults() -> dict[str, Any]:
         "row_subchunk_size": None,
         "nnsight_session_capacity": None,
         "phase3_compute_microbatch_max_rows": None,
-        "phase4_compute_microbatch_max_rows": None,
+        "phase4_execution_batch_max_rows": None,
         "full_retention_backend": "full_file",
         "feature_row_column_tile_size": 2048,
         "influence_row_tile_size": 4096,

@@ -33,7 +33,7 @@ def test_phase4_feedback_diagnostic_rows_are_bounded_and_ordered() -> None:
             row["feature_batch_size"],
             row["attribution_update_interval"],
             row["nnsight_session_capacity"],
-            row["phase4_compute_microbatch_max_rows"],
+            row["phase4_execution_batch_max_rows"],
         )
         for row in rows
     ] == [

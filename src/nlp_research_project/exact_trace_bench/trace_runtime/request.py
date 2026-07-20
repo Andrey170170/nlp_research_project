@@ -158,8 +158,8 @@ def trace_policy_from_scenario(
             phase3_microbatch_max_rows=_optional_int(
                 scenario.get("phase3_compute_microbatch_max_rows")
             ),
-            phase4_microbatch_max_rows=_optional_int(
-                scenario.get("phase4_compute_microbatch_max_rows")
+            phase4_execution_batch_max_rows=_optional_int(
+                _phase4_execution_batch_max_rows(scenario)
             ),
             phase1_trace_batch_policy=_choice(
                 scenario, "phase1_trace_batch_policy", "legacy"
@@ -403,9 +403,7 @@ def _physical_requirements_from_scenario(
             if scenario.get("phase1_trace_batch_policy") == "cap_effective_batches"
             else None
         ),
-        feature_microbatch_size=_optional_int(
-            scenario.get("phase4_compute_microbatch_max_rows")
-        ),
+        feature_microbatch_size=_optional_int(_phase4_execution_batch_max_rows(scenario)),
         logit_microbatch_size=_optional_int(
             scenario.get("phase3_compute_microbatch_max_rows")
         ),
@@ -422,6 +420,13 @@ def _physical_requirements_from_scenario(
 
 def _optional_int(value: Any) -> int | None:
     return None if value is None else int(value)
+
+
+def _phase4_execution_batch_max_rows(scenario: Mapping[str, Any]) -> Any:
+    value = scenario.get("phase4_execution_batch_max_rows")
+    if value is not None:
+        return value
+    return scenario.get("phase4_compute_microbatch_max_rows")
 
 
 def _decoder_cache_policy(value: Any) -> DecoderCachePolicy:

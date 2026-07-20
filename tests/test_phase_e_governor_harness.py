@@ -284,7 +284,7 @@ def test_phase_e_gate_scenarios_leave_governed_mechanisms_unpinned(
         "phase1_trace_batch_policy",
         "phase1_trace_batch_size_max",
         "phase3_compute_microbatch_max_rows",
-        "phase4_compute_microbatch_max_rows",
+        "phase4_execution_batch_max_rows",
         "full_retention_backend",
         "feature_row_column_tile_size",
         "feature_row_retention",

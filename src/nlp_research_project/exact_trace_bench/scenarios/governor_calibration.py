@@ -115,7 +115,7 @@ def _physical_controls(
             None if capacity == provider.reference_logical_batch else capacity
         ),
         "phase3_compute_microbatch_max_rows": capacity,
-        "phase4_compute_microbatch_max_rows": capacity,
+        "phase4_execution_batch_max_rows": capacity,
         "cross_batch_decoder_cache_bytes": cache_bytes,
         "chunked_feature_replay_window": 4,
         "error_vector_prefetch_lookahead": 2,
@@ -244,7 +244,7 @@ def _wave_a_rows(provider: GovernorCalibrationProvider) -> list[dict[str, Any]]:
                 research_fields=("feature_batch_size",),
                 feature_batch_size=axis_batch,
                 nnsight_session_capacity=axis_batch,
-                phase4_compute_microbatch_max_rows=axis_batch,
+                phase4_execution_batch_max_rows=axis_batch,
             ),
             _row(
                 provider,

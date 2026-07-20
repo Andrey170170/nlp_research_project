@@ -68,6 +68,8 @@ SCENARIO_KNOB_KEYS = (
     "row_subchunk_size",
     "nnsight_session_capacity",
     "phase3_compute_microbatch_max_rows",
+    "phase4_execution_batch_max_rows",
+    # Historical scenario JSON used this name before static coalescing.
     "phase4_compute_microbatch_max_rows",
     "full_retention_backend",
     "feature_row_column_tile_size",

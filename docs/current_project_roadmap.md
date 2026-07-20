@@ -317,6 +317,24 @@ effectively exact while improving runtime by 1.39x. Treat logical grouping and
 frontier window as fidelity-budgeted inputs; let the solver optimize session
 capacity and physical microbatch from available resources.
 
+**Static coalescing correction in progress:** the diagnostic also exposed an
+avoidable implementation coupling. At a nominal 512-row window, changing
+`128x4` to `256x2` changed the locality-shaped frontier from, for example, 509
+rows to 512 before execution. The next frontier therefore started from a
+different committed graph. Preserve the canonical semantic planner and refresh
+checkpoints, then coalesce consecutive semantic batches only in the physical
+executor. The canonical control is `phase4_execution_batch_max_rows`; it may be
+larger than `feature_batch_size` but cannot cross the prepared refresh frontier.
+For the current `128x4` baseline, 512 is therefore the useful static ceiling.
+
+The first immutable gate is a strict 1B PLT matrix with execution/session caps
+`128`, `256`, and `512`, fixed semantic batch 128, refresh stride 4, and all
+other controls pinned to the corrected-hook baseline. Require equal refresh
+counts, semantic batch counts, frontier membership/order hashes, exact compact
+graph topology, and weighted-edge Jaccard of at least `0.999999`. Compare
+Phase-4 execution-call count, walltime, and peak VRAM. Adaptive refresh remains
+deferred until this static mechanism is accepted.
+
 Hard requirements constrain variables rather than replacing optimization. The
 runtime re-solves at pre-execution, loaded-state, post-Phase-0, and safe phase
 entries, inheriting frozen decisions and replacing estimates with observations.

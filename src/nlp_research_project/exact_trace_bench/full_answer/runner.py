@@ -587,8 +587,10 @@ def _trace_request(
             phase3_microbatch_max_rows=knobs.get(
                 "phase3_compute_microbatch_max_rows"
             ),
-            phase4_microbatch_max_rows=knobs.get(
-                "phase4_compute_microbatch_max_rows"
+            phase4_execution_batch_max_rows=(
+                knobs["phase4_execution_batch_max_rows"]
+                if knobs.get("phase4_execution_batch_max_rows") is not None
+                else knobs.get("phase4_compute_microbatch_max_rows")
             ),
             phase1_trace_batch_policy=str(
                 knobs.get("phase1_trace_batch_policy", "legacy")

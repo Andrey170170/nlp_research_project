@@ -34,7 +34,7 @@ def _diagnostic_rows() -> tuple[dict[str, Any], ...]:
             "feature_batch_size": 128,
             "attribution_update_interval": 4,
             "nnsight_session_capacity": 128,
-            "phase4_compute_microbatch_max_rows": 128,
+            "phase4_execution_batch_max_rows": 128,
             "governor_fidelity_mode": "strict",
         },
         {
@@ -42,7 +42,7 @@ def _diagnostic_rows() -> tuple[dict[str, Any], ...]:
             "feature_batch_size": 256,
             "attribution_update_interval": 2,
             "nnsight_session_capacity": 128,
-            "phase4_compute_microbatch_max_rows": 128,
+            "phase4_execution_batch_max_rows": 128,
             "governor_fidelity_mode": "research",
             "governor_fidelity_override_fields": [
                 "feature_batch_size",
@@ -54,7 +54,7 @@ def _diagnostic_rows() -> tuple[dict[str, Any], ...]:
             "feature_batch_size": 256,
             "attribution_update_interval": 2,
             "nnsight_session_capacity": 256,
-            "phase4_compute_microbatch_max_rows": 128,
+            "phase4_execution_batch_max_rows": 128,
             "governor_fidelity_mode": "research",
             "governor_fidelity_override_fields": [
                 "feature_batch_size",
@@ -66,7 +66,7 @@ def _diagnostic_rows() -> tuple[dict[str, Any], ...]:
             "feature_batch_size": 256,
             "attribution_update_interval": 2,
             "nnsight_session_capacity": 256,
-            "phase4_compute_microbatch_max_rows": 256,
+            "phase4_execution_batch_max_rows": 256,
             "governor_fidelity_mode": "research",
             "governor_fidelity_override_fields": [
                 "feature_batch_size",
@@ -78,7 +78,7 @@ def _diagnostic_rows() -> tuple[dict[str, Any], ...]:
             "feature_batch_size": 256,
             "attribution_update_interval": 4,
             "nnsight_session_capacity": 256,
-            "phase4_compute_microbatch_max_rows": 128,
+            "phase4_execution_batch_max_rows": 128,
             "governor_fidelity_mode": "research",
             "governor_fidelity_override_fields": ["feature_batch_size"],
         },

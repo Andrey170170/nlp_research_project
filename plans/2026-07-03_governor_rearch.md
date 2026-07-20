@@ -545,7 +545,7 @@ Use direct runtime values rather than umbrella policy names:
 
 - `nnsight_session_capacity`;
 - `phase3_compute_microbatch_max_rows` and
-  `phase4_compute_microbatch_max_rows`;
+  `phase4_execution_batch_max_rows`;
 - `phase3_gradient_replay_window_layers` and
   `phase4_gradient_replay_window_layers`;
 - `decoder_contraction_row_tile_size`;
@@ -565,9 +565,11 @@ capability limitation; it must not silently reinterpret the control.
 Make NNSight session capacity explicit and independent of logical batch sizes.
 Every backward microbatch must be no larger than the session capacity. Phase 3
 partitions ordered logit work into physical microbatches. Phase 4 keeps the
-logical/reference frontier batch and refresh cadence, but may partition that
-batch into physical microbatches; it commits rows in canonical order and never
-refreshes between subdivisions of one reference batch.
+logical/reference frontier batches and refresh cadence, but may split an
+oversized semantic batch or coalesce consecutive semantic batches into one
+physical execution batch. It commits rows in canonical order and never crosses
+a prepared refresh frontier. Session capacity bounds the physical execution
+batch rather than the individual semantic batch.
 
 Refactor row computation so temporary buffers use active lanes rather than the
 cached session width. Prefer one reusable bounded session initially. Add
@@ -766,12 +768,12 @@ Freeze matrix:
 | decoder fetch/cache ownership, source/Phase-1 scheduling, replay window, prefetch | loaded-state, before Phase 0 |
 | row-store policy/placement, encoder residency | post-Phase-0, before row production |
 | Phase-3 microbatch and phase-local buffers | Phase-3 entry |
-| Phase-4 microbatch, row/influence tiles, phase-local buffers | Phase-4 entry |
+| Phase-4 execution batch, row/influence tiles, phase-local buffers | Phase-4 entry |
 
-Session capacity, Phase-1 source scheduling, Phase-3 physical microbatch, and
-Phase-4 physical microbatch are independent variables with independent profile
-bounds and demand formulas. No umbrella physical-batch cap may silently drive
-all four.
+Session capacity, Phase-1 source scheduling, Phase-3 physical microbatch size,
+and Phase-4 physical execution-batch size are independent variables with
+independent profile bounds and demand formulas. No umbrella physical-batch cap
+may silently drive all four.
 
 Logical semantics remain fixed. The governor may choose only mechanisms that
 passed the Phase D gate; otherwise strict admission refuses.

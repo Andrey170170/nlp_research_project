@@ -242,6 +242,30 @@ def test_trace_request_builds_canonical_domain_policies() -> None:
     assert request.evidence.metadata["prefix_view_metadata"] == {}
 
 
+def test_trace_request_uses_legacy_phase4_rows_when_canonical_default_is_none() -> None:
+    spec = cast(
+        Any,
+        {
+            "target_token_id": 7,
+            "target_position": 3,
+            "graph_knobs": {
+                "phase4_execution_batch_max_rows": None,
+                "phase4_compute_microbatch_max_rows": 23,
+            },
+        },
+    )
+
+    request = _trace_request(
+        model=types.SimpleNamespace(backend="nnsight"),
+        prompt_token_ids=[101, 102, 201],
+        spec=spec,
+        prefix_metadata={"mode": "independent_prefix"},
+        full_sequence_mode=False,
+    )
+
+    assert request.execution.session.phase4_execution_batch_max_rows == 23
+
+
 def test_prefix_view_metadata_matches_reconstructed_prefix(tmp_path: Path) -> None:
     trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
     trajectory, specs, _shard = load_shard_inputs(

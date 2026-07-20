@@ -34,7 +34,7 @@ from nlp_research_project.exact_trace_bench.trace_runtime.request import (  # no
 PHASE_D_KEYS = (
     "nnsight_session_capacity",
     "phase3_compute_microbatch_max_rows",
-    "phase4_compute_microbatch_max_rows",
+    "phase4_execution_batch_max_rows",
     "full_retention_backend",
     "feature_row_column_tile_size",
     "influence_row_tile_size",
@@ -147,11 +147,43 @@ def test_phase_d_fields_are_extracted_for_comparison(tmp_path: Path) -> None:
     assert row["validation_mechanism"] == "D_reduced_session_column_tiled_v1"
 
 
+def test_extractor_uses_legacy_phase4_rows_when_canonical_default_is_none(
+    tmp_path: Path,
+) -> None:
+    scenario_root = tmp_path / "scenario"
+    artifact_root = scenario_root / "artifacts"
+    artifact_root.mkdir(parents=True)
+    (scenario_root / "scenario.json").write_text(
+        json.dumps(
+            {
+                "name": "legacy_phase4_extract",
+                "phase4_execution_batch_max_rows": None,
+                "phase4_compute_microbatch_max_rows": 17,
+            }
+        )
+    )
+    (scenario_root / "result.json").write_text(
+        json.dumps({"status": "success", "output_dir": str(artifact_root)})
+    )
+    (artifact_root / "run_config.json").write_text(
+        json.dumps(
+            {
+                "phase4_execution_batch_max_rows": None,
+                "phase4_compute_microbatch_max_rows": 23,
+            }
+        )
+    )
+
+    row = build_benchmark_index_row(scenario_root / "result.json")
+
+    assert row["phase4_execution_batch_max_rows"] == 23
+
+
 def test_phase_d_controls_flow_into_owned_canonical_policies() -> None:
     controls = {
         "nnsight_session_capacity": 13,
         "phase3_compute_microbatch_max_rows": 12,
-        "phase4_compute_microbatch_max_rows": 13,
+        "phase4_execution_batch_max_rows": 13,
         "full_retention_backend": "column_tiled_v1",
         "feature_row_column_tile_size": 14,
         "influence_row_tile_size": 15,
@@ -162,7 +194,7 @@ def test_phase_d_controls_flow_into_owned_canonical_policies() -> None:
     policy = trace_policy_from_scenario({"method": "exact", **controls})
     assert policy.execution.session.capacity == 13
     assert policy.execution.session.phase3_microbatch_max_rows == 12
-    assert policy.execution.session.phase4_microbatch_max_rows == 13
+    assert policy.execution.session.phase4_execution_batch_max_rows == 13
     assert policy.execution.storage.full_retention_backend == "column_tiled_v1"
     assert policy.execution.storage.feature_column_tile_size == 14
     assert policy.execution.storage.influence_row_tile_size == 15
