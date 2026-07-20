@@ -149,7 +149,8 @@ def build_phase4_static_coalescing_config(
             "acceptance": {
                 "semantic_batch_count_equal": True,
                 "refresh_count_equal": True,
-                "frontier_membership_and_order_hashes_equal": True,
+                "prepared_frontier_membership_and_order_hashes_equal": True,
+                "ranker_pre_locality_order_hash_advisory": True,
                 "compact_graph_parity_required": True,
                 "weighted_edge_jaccard_min": 0.999999,
                 "validator": "experiments/analyze_phase4_static_coalescing.py",

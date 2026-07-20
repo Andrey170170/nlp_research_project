@@ -89,6 +89,7 @@ def _write_validation_case(
     case: str,
     execution_groups: tuple[tuple[int, ...], ...],
     pending_hash: str = "pending-a",
+    ranker_order_hash: str = "order-a",
 ) -> None:
     scenario_root = run_root / case
     telemetry_path = (
@@ -113,7 +114,7 @@ def _write_validation_case(
             "attrs": {
                 "refresh_index": 0,
                 "pending_hash": pending_hash,
-                "ranker_frontier_selected_order_hash": "order-a",
+                "ranker_frontier_selected_order_hash": ranker_order_hash,
                 "ranker_frontier_selected_membership_hash": "members-a",
                 "ranker_frontier_selected_count": 4,
             },
@@ -126,7 +127,7 @@ def _write_validation_case(
                 "name": "phase4.feature_batch",
                 "attrs": {
                     "phase4_semantic_batch_index_start": semantic_index,
-                    "phase4_semantic_batch_rows": list(rows),
+                    "phase4_semantic_batch_rows": json.dumps(list(rows)),
                     "phase4_execution_batch_count": execution_index,
                     "scheduler_refresh_index": 0,
                 },
@@ -158,7 +159,12 @@ def test_static_coalescing_post_matrix_validator_accepts_physical_regrouping(
         "execution_b512": ((128, 128, 128, 128),),
     }
     for case in EXPECTED_CASES:
-        _write_validation_case(tmp_path, case=case, execution_groups=groups[case])
+        _write_validation_case(
+            tmp_path,
+            case=case,
+            execution_groups=groups[case],
+            ranker_order_hash=f"ranked-{case}",
+        )
     monkeypatch.setattr(
         phase4_static_validation, "compare_artifact_dirs", _exact_graph_comparison
     )
@@ -168,6 +174,10 @@ def test_static_coalescing_post_matrix_validator_accepts_physical_regrouping(
     assert report["passed"] is True
     assert report["status"] == "pass"
     assert not report["failures"]
+    assert all(
+        comparison["ranker_pre_locality_order_hash_equal"] is False
+        for comparison in report["comparisons"]
+    )
 
 
 def test_static_coalescing_post_matrix_validator_rejects_refresh_drift(

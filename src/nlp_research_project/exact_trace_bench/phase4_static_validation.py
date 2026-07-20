@@ -11,6 +11,19 @@ from .io_utils import read_json, write_json
 EXPECTED_CASES = ("execution_b128", "execution_b256", "execution_b512")
 
 
+def _semantic_batch_rows(value: object, *, path: Path) -> list[int]:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"invalid semantic batch telemetry in {path}") from exc
+    if not isinstance(value, (list, tuple)) or not all(
+        isinstance(row, int) for row in value
+    ):
+        raise ValueError(f"missing semantic batch telemetry in {path}")
+    return [int(row) for row in value]
+
+
 def _telemetry_evidence(artifacts_dir: Path) -> dict[str, Any]:
     completion_rows: list[dict[str, Any]] = []
     for path in sorted(artifacts_dir.glob("prompt_*/completion_*/telemetry.live.jsonl")):
@@ -40,9 +53,11 @@ def _telemetry_evidence(artifacts_dir: Path) -> dict[str, Any]:
                     )
                 elif name == "phase4.feature_batch":
                     start = attrs.get("phase4_semantic_batch_index_start")
-                    rows = attrs.get("phase4_semantic_batch_rows")
+                    rows = _semantic_batch_rows(
+                        attrs.get("phase4_semantic_batch_rows"), path=path
+                    )
                     refresh_index = attrs.get("scheduler_refresh_index")
-                    if not isinstance(start, int) or not isinstance(rows, (list, tuple)):
+                    if not isinstance(start, int) or not isinstance(refresh_index, int):
                         raise ValueError(
                             f"missing semantic batch telemetry in {path}"
                         )
@@ -95,6 +110,36 @@ def _discover_cases(run_root: Path) -> dict[str, Path]:
     return cases
 
 
+def _semantic_contract(completions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "completion": row["completion"],
+            "refreshes": [
+                {
+                    key: refresh[key]
+                    for key in (
+                        "refresh_index",
+                        "pending_hash",
+                        "membership_hash",
+                        "selected_count",
+                    )
+                }
+                for refresh in row["refreshes"]
+            ],
+            "semantic_schedule": row["semantic_schedule"],
+            "semantic_batch_count": row["semantic_batch_count"],
+        }
+        for row in completions
+    ]
+
+
+def _ranker_order_hashes(completions: list[dict[str, Any]]) -> list[list[str]]:
+    return [
+        [str(refresh["order_hash"]) for refresh in row["refreshes"]]
+        for row in completions
+    ]
+
+
 def validate_phase4_static_coalescing_run(
     run_root: Path,
     *,
@@ -134,26 +179,14 @@ def validate_phase4_static_coalescing_run(
     comparisons: list[dict[str, Any]] = []
     for case in EXPECTED_CASES[1:]:
         candidate = cases[case]
-        # Execution counts intentionally differ, so compare only semantic and refresh evidence.
-        reference_contract = [
-            {
-                "completion": row["completion"],
-                "refreshes": row["refreshes"],
-                "semantic_schedule": row["semantic_schedule"],
-                "semantic_batch_count": row["semantic_batch_count"],
-            }
-            for row in reference["completions"]
-        ]
-        candidate_contract = [
-            {
-                "completion": row["completion"],
-                "refreshes": row["refreshes"],
-                "semantic_schedule": row["semantic_schedule"],
-                "semantic_batch_count": row["semantic_batch_count"],
-            }
-            for row in candidate["completions"]
-        ]
+        # Execution counts and pre-locality score order may differ. The prepared
+        # pending hash is the canonical order that Phase 4 actually executes.
+        reference_contract = _semantic_contract(reference["completions"])
+        candidate_contract = _semantic_contract(candidate["completions"])
         semantic_equal = candidate_contract == reference_contract
+        ranker_order_equal = _ranker_order_hashes(
+            candidate["completions"]
+        ) == _ranker_order_hashes(reference["completions"])
         if not semantic_equal:
             failures.append(f"{case}: semantic schedule or refresh identity diverged")
 
@@ -181,6 +214,7 @@ def validate_phase4_static_coalescing_run(
                 "reference_case": reference_case,
                 "candidate_case": case,
                 "semantic_and_refresh_contract_equal": semantic_equal,
+                "ranker_pre_locality_order_hash_equal": ranker_order_equal,
                 "graph_requirements": graph_requirements,
                 "graph_metrics": {
                     key: graph.get(key)
