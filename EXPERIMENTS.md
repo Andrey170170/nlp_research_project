@@ -81,6 +81,14 @@ gives 4.01x speed with about 0.25-0.28% broad graph drift. Keep non-reference
 chunks opt-in until the physical fetch/reduction coupling is eliminated or a
 versioned validated-relaxed evidence package is promoted.
 
+Wave B completed all 14 Gemma 3 4B/12B PLT rows on Granite H200. Larger
+Phase-4 execution envelopes improved total runtime by `1.52-1.60x` at 4B and
+`1.70-2.14x` at 12B, but failed the strict prepared-frontier transfer gate.
+The 4B 256 arm is compact-graph exact to numerical tolerance despite two later
+frontier-membership changes; the 12B 128 arm drifts by about 1% on edge metrics,
+and the 12B 256 arm is closer but still changes later frontiers. Treat the
+validated 1B execution knee as model-scoped, not as a universal physical rung.
+
 Track-A cross-cluster localization is mostly complete:
 
 - the observed Ascend/Cardinal divergence is primarily driven by Phase-3 gradient
@@ -106,15 +114,12 @@ Clean/current toy parity follow-up (May 2026):
 
 Near-term implementation focus:
 
-1. run the corrected bounded Wave B transfer on 4B/12B PLT with canonical
-   semantic batches held fixed, coupled session/Phase-4 execution envelopes
-   `128/256/512` and `64/128/256`, opt-in fetch chunks `16384/32768`, and one
-   constant-frontier semantic-transfer row per model;
-2. interpret the old Wave A PLT coupled-batch rows as semantic/stress evidence,
-   not strict physical execution-cost calibration; the static-coalescing gate
-   is the corrected 1B physical supplement;
-3. run Wave C local mechanism fitting around the transferred knee, then fit and
-   validate governor coefficients before promotion;
+1. localize the scale-dependent numerical feedback in static Phase-4
+   coalescing, or define an explicit model-scoped `validated_relaxed` contract;
+2. preserve Wave B as performance/resource evidence without promoting its
+   larger-model execution envelopes into strict governor candidates;
+3. run Wave C local mechanism fitting only around a validated model-local knee,
+   then fit and validate governor coefficients before promotion;
 4. consolidate governed harness workflows in Phase F after the calibrated
    solver passes its final Granite gates.
 

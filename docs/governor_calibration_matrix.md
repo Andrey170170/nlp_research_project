@@ -1,7 +1,7 @@
 # Governor Calibration Run Plan
 
-Status: Wave A and static Phase-4 correction closed; Wave B running
-Last updated: 2026-07-20
+Status: Wave A, static Phase-4 correction, and Wave B closed; strict transfer issue open
+Last updated: 2026-07-21
 
 This campaign finds the fastest fitting governor configuration instead of only
 measuring settings below the historical reference. It deliberately separates:
@@ -212,9 +212,42 @@ The first corrected Wave B launch uses snapshot
 `%1`; both were pending for ordinary priority at launch rather than a policy
 or resource-limit reason.
 
+### Wave B outcome
+
+All 14 tasks completed successfully with complete compact artifacts,
+incremental telemetry, and GPU-monitor logs. The performance transfer is strong,
+but the strict static-coalescing contract did not transfer cleanly from 1B:
+
+| Model/case | Speedup | Peak reserved | Feature J | Edge J | Weighted J | Prepared-frontier contract |
+|---|---:|---:|---:|---:|---:|---|
+| 4B execution `128 -> 256` | 1.52x | 42.95 GiB | 1.00000 | 1.00000 | 0.99999999 | failed at 2/17 refreshes |
+| 4B execution `128 -> 512` | 1.60x | 77.64 GiB | 0.99902 | 0.99840 | 0.99888 | failed at 6/17 refreshes |
+| 12B execution `64 -> 128` | 1.70x | 54.41 GiB | 0.99976 | 0.98946 | 0.99009 | failed at 17/33 refreshes |
+| 12B execution `64 -> 256` | 2.14x | 83.22 GiB | 0.99902 | 0.99950 | 0.99953 | failed at 13/33 refreshes |
+
+The semantic batch sizes and refresh count remained canonical, but numerical
+differences from larger physical execution groups changed later frontier
+membership. The 12B `256` arm also produced 130 semantic batches versus 129 in
+the reference after the frontier diverged. Therefore none of the larger-model
+execution envelopes passes the declared strict transfer gate, even though 4B
+`256` has effectively exact final compact output. The 1B `256` knee remains
+validated only for its recorded 1B PLT scope.
+
+The opt-in chunk rows remain useful research evidence. At 4B, `c16384` and
+`c32768` reached 2.49x and 3.76x with weighted-edge Jaccard 0.99667 and 0.98508.
+At 12B they reached 2.94x and 4.11x with weighted-edge Jaccard 0.98977 and
+0.98957. Coupling the middle execution envelope with `c32768` reached 4.59x at
+4B and 4.23x at 12B, but is not a strict candidate. Do not fit or promote a
+cross-model strict execution rung from these rows. First either make physical
+coalescing numerically frontier-stable or define an explicit model-scoped
+`validated_relaxed` package and accepted drift budget.
+
 ## Wave C - Local Mechanism Fit
 
-Wave C fits the remaining physical cost terms around the Wave A/B knee:
+Wave C fits the remaining physical cost terms around a validated model-local
+knee. The failed larger-model strict transfer must be resolved or explicitly
+scoped as `validated_relaxed` before a non-reference Phase-4 execution envelope
+is used as that knee:
 
 - session, Phase-1, Phase-3, and Phase-4 widths at lower/selected/higher rungs;
 - cache neighbors around the selected size;

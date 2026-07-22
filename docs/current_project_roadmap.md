@@ -352,12 +352,18 @@ launcher on regular RAI H200 QOS: 4B at `400G/2h`, 12B at `600G/8h`. The
 existing generated 4B/12B session/tiled-policy files are historical gates, not
 Wave B inputs.
 
-**Wave B launched 2026-07-20:** immutable Granite arrays `1642077` (4B,
-`400G/2h`) and `1642078` (12B, `600G/8h`) use regular RAI H200 QOS and
-seven serialized rows each. Both exact scheduler shapes passed
-`sbatch --test-only`; launch state was `PENDING (Priority)`. Analyze strict
-physical-envelope parity and the two opt-in semantic families before selecting
-transfer ranges or starting Wave C.
+**Wave B closed 2026-07-21:** immutable Granite arrays `1642077` (4B,
+`400G/2h`) and `1642078` (12B, `600G/8h`) completed all 14 rows successfully.
+Execution coalescing transferred substantial speed (`1.52-1.60x` at 4B and
+`1.70-2.14x` at 12B), but no larger-model arm preserved the full prepared
+frontier contract. The 4B 256 arm retained exact compact topology and
+weighted-edge Jaccard `0.99999999`, while its frontier membership still differed
+at 2/17 refreshes. The 12B 128 arm reached only `0.98946` edge and `0.99009`
+weighted-edge Jaccard; the 256 arm was closer at `0.99950`/`0.99953`, but also
+diverged in frontier membership. Keep the 1B coalescing promotion model-scoped.
+Before Wave C uses a larger-model execution knee, fix the scale-dependent
+numerical feedback or explicitly authorize a versioned `validated_relaxed`
+profile. Decoder-chunk and coupled rows remain opt-in research evidence.
 
 Hard requirements constrain variables rather than replacing optimization. The
 runtime re-solves at pre-execution, loaded-state, post-Phase-0, and safe phase
