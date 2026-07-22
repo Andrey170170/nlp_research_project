@@ -1,16 +1,23 @@
 # Governor Calibration Run Plan
 
-Status: Wave A, static Phase-4 correction, and Wave B closed; strict transfer issue open
+Status: Wave A, static Phase-4 correction, and Wave B closed; observation ingestion active
 Last updated: 2026-07-21
 
-This campaign finds the fastest fitting governor configuration instead of only
-measuring settings below the historical reference. It deliberately separates:
+This campaign supplies training and validation observations for a staged
+constrained optimizer. It measures the joint resource, runtime, and fidelity
+response above and below historical settings. It does not divide rows into
+globally accepted and rejected governor configurations.
 
-- strict physical controls, which must preserve the canonical trace;
-- opt-in research semantics, which may improve throughput with measured graph
-  drift;
-- later mechanism fitting, which begins only after the upward resource knee is
-  known.
+Each row is useful in one or more response families. Exact repeats estimate
+noise and certify narrow invariant scopes. Numerically sensitive and semantic
+contrasts estimate fidelity loss. OOM/refusal constrain feasibility, timeout
+constrains runtime from below, and infrastructure failures carry provenance but
+no scientific response value.
+
+The request chooses the policy: `exact` requires exact or scope-certified
+candidates; `bounded` enforces conservative metric floors; `best_effort`
+treats fidelity loss as a soft penalty; and `research` permits safe
+extrapolation while labeling unsupported predictions unknown.
 
 All runs use one Granite H200, fp32 exact tracing, `361_base`, one trace,
 incremental telemetry, verbose profiling, compact graph comparison, and one
@@ -68,9 +75,10 @@ Logical-batch, isolated-axis, and refresh rows declare
 `governor_fidelity_mode=research` plus the exact `PlanningWorkload` fields they
 override. The current governor contract still represents fetch chunk as a
 physical requirement, but Wave A shows that non-reference PLT chunks introduce
-small numerical graph drift. Treat those rows as opt-in research evidence until
-that physical/reduction coupling is removed or explicitly covered by a
-versioned validated-relaxed package. Decoder-cache rows remain strict.
+small numerical graph drift. Classify fetch and physical execution grouping as
+numerically sensitive until the coupling is removed. Decoder cache remains an
+exact axis. All observations remain available to the response models; fidelity
+policy controls runtime eligibility.
 
 ### Wave A outcome
 
@@ -93,8 +101,8 @@ times too conservative, and peak-VRAM estimates are about 9% high for CLT and
 
 Do not rerun the complete Wave A matrix after the static Phase-4 coalescing
 correction. Preserve its coupled PLT batch rows as measurements of logical
-batch semantics and stress behavior, but exclude those rows from fitting the
-strict physical Phase-4 execution cost. The immutable `128/256/512` static gate
+batch semantics and stress behavior, but do not confuse them with isolated
+physical Phase-4 execution cost. The immutable `128/256/512` static gate
 is the corrected physical supplement: it held the canonical `128x4` semantic
 schedule fixed, preserved prepared frontiers and compact topology, and selected
 256 execution rows as the current 1B PLT efficiency knee. Decoder-fetch rows,
@@ -168,7 +176,7 @@ run records.
 Wave B transfers the corrected independent-control design rather than the old
 coupled logical-batch ladder. Canonical source, feature, and logit batches stay
 fixed at 128 for 4B and 64 for 12B. The canonical refresh stride remains four;
-Phase-1 and Phase-3 widths remain fixed. Strict physical-envelope rows raise
+Phase-1 and Phase-3 widths remain fixed. Physical-envelope rows raise
 session capacity and `phase4_execution_batch_max_rows` together without changing
 the prepared semantic batches or crossing a prepared refresh frontier. Wave B
 tests transferable fitting configurations; Wave C later isolates the session
@@ -182,8 +190,8 @@ and execution cost terms.
 Each model has seven causal rows:
 
 1. exact canonical reference;
-2. middle strict session/Phase-4 execution envelope;
-3. upper strict session/Phase-4 execution envelope;
+2. middle session/Phase-4 execution envelope;
+3. upper session/Phase-4 execution envelope;
 4. isolated opt-in decoder fetch chunk 16384 at reference execution capacity;
 5. isolated opt-in decoder fetch chunk 32768 at reference execution capacity;
 6. coupled middle execution capacity plus decoder fetch chunk 32768;
@@ -191,14 +199,12 @@ Each model has seven causal rows:
    refresh stride to preserve the aggregate frontier window, and uses the
    middle physical execution capacity.
 
-The two non-reference fetch chunks remain research opt-ins because PLT decoder
-fetch/reduction shape still causes small numerical graph drift. The semantic
-transfer row is also opt-in and exists only to test whether the 1B logical
-grouping effect transfers. Do not run a Cartesian product. The bounded matrix
-runs all seven independent rows; VRAM, graph-floor, and diminishing-return
-conditions are post-run continuation and promotion gates rather than automatic
-array cancellation. An upper execution row is headroom evidence, not a
-prospective default.
+The two non-reference fetch chunks and the semantic-transfer row are explicit
+research probes. Do not run a Cartesian product. The bounded matrix runs all
+seven independent rows; VRAM, graph-floor, and diminishing-return conditions
+are campaign continuation checks rather than global solver eligibility rules.
+An upper execution row is headroom and response-surface evidence, not a
+prospective default by itself.
 
 Launch Wave B only through `exact-trace-bench launch-plan` with immutable
 workspace mode. The shared Slurm template defaults are not the campaign
@@ -215,8 +221,8 @@ or resource-limit reason.
 ### Wave B outcome
 
 All 14 tasks completed successfully with complete compact artifacts,
-incremental telemetry, and GPU-monitor logs. The performance transfer is strong,
-but the strict static-coalescing contract did not transfer cleanly from 1B:
+incremental telemetry, and GPU-monitor logs. Performance transfer is strong and
+the rows reveal scale-dependent numerical sensitivity:
 
 | Model/case | Speedup | Peak reserved | Feature J | Edge J | Weighted J | Prepared-frontier contract |
 |---|---:|---:|---:|---:|---:|---|
@@ -229,25 +235,26 @@ The semantic batch sizes and refresh count remained canonical, but numerical
 differences from larger physical execution groups changed later frontier
 membership. The 12B `256` arm also produced 130 semantic batches versus 129 in
 the reference after the frontier diverged. Therefore none of the larger-model
-execution envelopes passes the declared strict transfer gate, even though 4B
-`256` has effectively exact final compact output. The 1B `256` knee remains
-validated only for its recorded 1B PLT scope.
+execution envelopes is certified for exact mode by the existing
+prepared-frontier contract, even though 4B `256` has effectively exact final
+compact output. The 1B `256` exact certification remains limited to its recorded
+1B PLT scope. All larger-model rows remain valid runtime, resource, and fidelity
+observations for bounded/best-effort/research planning.
 
 The opt-in chunk rows remain useful research evidence. At 4B, `c16384` and
 `c32768` reached 2.49x and 3.76x with weighted-edge Jaccard 0.99667 and 0.98508.
 At 12B they reached 2.94x and 4.11x with weighted-edge Jaccard 0.98977 and
 0.98957. Coupling the middle execution envelope with `c32768` reached 4.59x at
-4B and 4.23x at 12B, but is not a strict candidate. Do not fit or promote a
-cross-model strict execution rung from these rows. First either make physical
-coalescing numerically frontier-stable or define an explicit model-scoped
-`validated_relaxed` package and accepted drift budget.
+4B and 4.23x at 12B. Do not infer a cross-model exact rung. Fit these as
+scope-labeled observations with conservative uncertainty; bounded requests may
+use them only when predicted metric floors pass, while best-effort/research can
+surface the speed/fidelity tradeoff explicitly.
 
 ## Wave C - Local Mechanism Fit
 
-Wave C fits the remaining physical cost terms around a validated model-local
-knee. The failed larger-model strict transfer must be resolved or explicitly
-scoped as `validated_relaxed` before a non-reference Phase-4 execution envelope
-is used as that knee:
+Wave C fits the remaining physical cost terms around measured model-local knees.
+It samples both sides of each knee and reserves held-out rows so the response
+models learn local shape and uncertainty instead of one promoted setting:
 
 - session, Phase-1, Phase-3, and Phase-4 widths at lower/selected/higher rungs;
 - cache neighbors around the selected size;
@@ -275,19 +282,43 @@ Every row must record:
 - semantic and execution fingerprints;
 - compact graph parity against the original corrected-hook Granite artifacts.
 
+Every row also emits one normalized calibration observation containing:
+
+- outcome class (`completed`, `refused`, `oom`, `timeout`, or
+  `infrastructure_failure`) and censoring semantics;
+- hardware, provider/checkpoint/hooks/dtype, both code snapshots, workload, and
+  reference artifact identity;
+- complete requested/selected decision vectors and changed-axis classes;
+- phase/runtime, CUDA/host/disk/cache observations and uncertainty;
+- graph metrics, frontier diagnostics, confidence/support classification, and
+  pointers to source telemetry/comparison artifacts.
+
+Campaign-reference comparison is automatic when a reference is configured.
+The observation must join graph metrics, lifecycle telemetry, Slurm accounting,
+and GPU-monitor summaries without depending on array order or parsing human
+logs.
+
 The resource envelope walltime must be capped to the live Slurm allocation's
 remaining time. Scenario walltime and `timeout_minutes` must match the submitted
 allocation before launch; neither may promise time the job does not own.
 
-## Promotion
+## Ingestion, authorization, and defaults
 
-Wave A discovers the feasible upward range and semantic tradeoff. It does not
-by itself promote coefficients. Fit only after Waves B/C provide transfer and
-local-mechanism evidence. Keep explicit support ranges and evidence IDs;
-extrapolated values remain legal only inside implementation safety limits and
-must be labeled as extrapolation.
+These are separate operations:
 
-Research rows remain opt-in. A range may move to `validated_relaxed` only with a
-named, versioned evidence package that records provider/model scope, parity
-metrics, runtime benefit, and the accepted drift threshold. Strict mode never
-consumes that evidence implicitly.
+1. **Ingest observations.** Preserve every scientifically interpretable row as
+   resource/runtime/fidelity evidence, including censored outcomes.
+2. **Publish a response bundle.** Fit conservative models, record support and
+   held-out diagnostics, and content-address the exact observation set.
+3. **Authorize fidelity scope.** Exact certification and bounded metric budgets
+   are reviewed claims tied to provider/model/hardware/code scope. Observations
+   alone do not broaden them.
+4. **Change defaults.** A launch default changes only after held-out validation
+   and an explicit project decision. Solver evidence does not silently mutate
+   scenarios.
+
+Values inside implementation safety limits may be explored outside calibrated
+support only in research mode and must be labeled extrapolated/unknown. The MVP
+predictor uses deterministic nearest-supported evidence and conservative bounds;
+hierarchical transfer and learned interaction models are deferred until Wave C
+contains enough held-out data.

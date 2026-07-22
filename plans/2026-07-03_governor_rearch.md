@@ -1,7 +1,7 @@
 # Memory governor + rearchitecture execution plan
 
-Status: active; Phase E reopened for staged constrained optimizer correction
-Date: 2026-07-03; last updated 2026-07-14
+Status: superseded as an execution checklist; retained for implementation history
+Date: 2026-07-03; last updated 2026-07-21
 Scope: sibling library `../circuit-tracer_chunked` rewrite + project harness
 restructure + validation campaigns
 
@@ -11,6 +11,11 @@ there" companion. Rearchitecture evidence base: the two scout reports,
 `reports/circuit_tracer_architecture_scout.md` and
 `reports/harness_architecture_scout.md` (both 2026-06-30, pre-merge — see
 Phase R0).
+
+The active work state now lives in `docs/current_project_roadmap.md`. Fidelity,
+calibration, and solver language below that still refers to `strict` or
+`validated_relaxed` is historical. The current contract is the four-policy
+`exact` / `bounded` / `best_effort` / `research` design in the target spec.
 
 ## Problem statement
 

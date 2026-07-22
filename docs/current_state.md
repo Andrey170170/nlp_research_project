@@ -77,17 +77,19 @@ The current exact-trace workflow depends on both checkouts being present.
   the pure resolver are complete at sibling `phase-b-governor-contract@0ce3f96`.
   Phase C1 structural runtime/observability extraction and its Granite gate are
   complete. Phase D mechanism validation and the Phase C2 canonical runtime
-  rewrite are complete. Phase E governor v0.3 implementation and CPU gates are
-  complete: safety/support contracts, bounded independent search, staged phase
-  cost models, measured-unit refinement, and replay-cache ownership are wired.
+  rewrite are complete. Phase E staged governor execution and CPU gates are
+  complete: safety contracts, independent constrained search, staged phase cost
+  models, measured-unit refinement, and replay-cache ownership are wired.
   The 1B Granite calibration and Phase-4 feedback diagnostic are complete. A
   static Phase-4 coalescing correction passed its immutable 1B PLT gate:
   semantic schedules, prepared frontiers, and compact topology were identical
   at execution caps 128/256/512. The sibling implementation is
   `phase-b-governor-contract@1ea7929`; dynamic refresh remains deferred. The
   256-row execution cap is the current 1B PLT efficiency knee, while 512 remains
-  valid headroom. Multi-model calibration and Phase F governed harness
-  consolidation follow this accepted static gate.
+  valid headroom. Wave B supplies 4B/12B resource, runtime, and fidelity
+  observations rather than one universal exact rung. The active work adds typed
+  calibration observations and exact/bounded/best-effort/research policy to the
+  staged solver before Wave C and Phase F consolidation.
 - Descriptive architecture details now live under `docs/architecture/`.
 - Current baseline decisions stay in `EXPERIMENTS.md`; active work stays in the owning spec.
 - Reports are not treated as source-of-truth unless a current doc explicitly cites them.

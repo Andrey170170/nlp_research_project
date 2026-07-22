@@ -76,14 +76,22 @@ corners are not acceptable defaults because broad graph overlap falls as low as
 `0.51-0.87`. The full report is under
 `exact_trace_bench/granite/analysis/governor_calibration/wave_a_20260716/`.
 
-Decoder-fetch chunk size is not strictly semantic-neutral for PLT: `c32768`
+Wave A/B rows are calibration observations, not a global pass/fail list. They
+train separate feasibility/resource, phase-runtime, and fidelity response
+models. Exact mode remains scope-certified; bounded mode enforces explicit
+metric floors; best-effort mode assigns fidelity loss a soft objective penalty;
+research mode permits labeled extrapolation. Campaign ingestion, fidelity-scope
+authorization, and launch-default changes are separate decisions.
+
+Decoder-fetch chunk size is numerically sensitive for PLT: `c32768`
 gives 4.01x speed with about 0.25-0.28% broad graph drift. Keep non-reference
-chunks opt-in until the physical fetch/reduction coupling is eliminated or a
-versioned validated-relaxed evidence package is promoted.
+chunks out of exact mode unless scope-certified; retain them as bounded,
+best-effort, and research calibration evidence.
 
 Wave B completed all 14 Gemma 3 4B/12B PLT rows on Granite H200. Larger
 Phase-4 execution envelopes improved total runtime by `1.52-1.60x` at 4B and
-`1.70-2.14x` at 12B, but failed the strict prepared-frontier transfer gate.
+`1.70-2.14x` at 12B, but did not receive cross-model exact certification under
+the prepared-frontier contract.
 The 4B 256 arm is compact-graph exact to numerical tolerance despite two later
 frontier-membership changes; the 12B 128 arm drifts by about 1% on edge metrics,
 and the 12B 256 arm is closer but still changes later frontiers. Treat the
@@ -114,12 +122,12 @@ Clean/current toy parity follow-up (May 2026):
 
 Near-term implementation focus:
 
-1. localize the scale-dependent numerical feedback in static Phase-4
-   coalescing, or define an explicit model-scoped `validated_relaxed` contract;
-2. preserve Wave B as performance/resource evidence without promoting its
-   larger-model execution envelopes into strict governor candidates;
-3. run Wave C local mechanism fitting only around a validated model-local knee,
-   then fit and validate governor coefficients before promotion;
+1. normalize Wave A/B and future rows into joined calibration observations with
+   automatic campaign-reference comparisons;
+2. add conservative support, uncertainty, fidelity-budget filtering, and Pareto
+   alternatives to every staged governor report;
+3. run Wave C local mechanism fitting around measured model-local knees and
+   retain held-out rows for response-model validation;
 4. consolidate governed harness workflows in Phase F after the calibrated
    solver passes its final Granite gates.
 

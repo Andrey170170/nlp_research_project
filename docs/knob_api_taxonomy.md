@@ -1,7 +1,7 @@
 # Exact-trace knob/API taxonomy map
 
-Status: Phase B requirements contract complete; governor v0 implemented
-Last updated: 2026-07-12
+Status: Phase B taxonomy complete; Phase E fidelity-aware optimizer active
+Last updated: 2026-07-21
 
 This document maps the exact-trace knobs that currently exist across the project
 repo and sibling `../circuit-tracer_chunked` library. It is intentionally detailed:
@@ -19,12 +19,11 @@ The first sections are the binding Phase B requirements for governor v0. The
 later surface inventory is a pre-C2 evidence/deletion map, not a compatibility
 contract. Phase C2 replaces the old Python surfaces atomically.
 
-Implementation record: sibling `phase-b-governor-contract@0ce3f96`. The
-package-owned trusted validation-evidence registry is intentionally empty, so
-caller-created records cannot self-authorize `validated_relaxed`. Recorded
-Granite profiles are resource calibration only and resolver plans remain
-advisory through Phase D mechanism validation and the Phase C2 runtime rewrite.
-Phase E is the first runtime integration.
+Historical implementation record: sibling
+`phase-b-governor-contract@0ce3f96`. Phase E replaces its allowlist model with
+typed fidelity budgets and normalized calibration observations. Caller-created
+records never self-authorize exact certification; support, uncertainty, and
+artifact provenance remain explicit solver inputs.
 
 Admission enforcement is a separate operational policy, not a trace semantic
 or physical mechanism. `governor_admission_mode=enforce` is the default and
@@ -45,18 +44,18 @@ architecture labels. Provider semantics knobs — for example a top-k transcoder
 top-k/cap setting — stay scenario/provider-owned unless explicitly proven
 output-invariant; memory pressure must not change them.
 
-Phase-A readout note (updated 2026-07-09): corrected-hook A4 Cardinal evidence
-establishes a narrow validated-relaxed envelope for Gemma-3-1B with the
+Phase-A readout note (updated 2026-07-21): corrected-hook A4 Cardinal evidence
+is a narrow fidelity observation for Gemma-3-1B with the
 GemmaScope2 PLT-small provider on `t01_361_s1002_g300`. Changing decoder chunk
 size from `8192` to `4096` at batch `256` retained feature/edge/weighted-edge
 Jaccards of `0.994643/0.988269/0.987517`, with exact Top64 overlap. Changing the
 coupled batch family from `256` to `128` at chunk `8192` retained
 `0.990040/0.987479/0.984281`, but Top64 overlap fell to `0.969`. These are scoped
 drift measurements, not output-invariance proofs and not guarantees for other
-providers, models, prompts, or hardware. Strict mode therefore keeps both
-logical choices scenario-pinned; an explicit validated-relaxed policy may
-authorize named axes under a versioned validation profile. The delayed Ascend
-axis is a non-blocking environment follow-up, not a prerequisite for Phase B.
+providers, models, prompts, or hardware. Exact mode therefore keeps both
+logical choices scenario-pinned. Bounded/best-effort requests may consume this
+evidence only when scope, metric budget, and uncertainty permit it. The delayed
+Ascend axis is a non-blocking environment follow-up.
 
 Batch-coupling note (A3 survival-v2/v3): the NNSight exact backend currently
 pre-initializes one forward/backward trace capacity as
@@ -72,15 +71,14 @@ reason so inconsistent configs are visible.
 
 ### Governor fidelity and logical/physical split
 
-The target governor API has three fidelity modes:
+The governor API has four fidelity policies:
 
-- `strict` (default): only output-invariant residency and execution mechanisms
-  may be selected from resource conditions;
-- `validated_relaxed`: the user explicitly authorizes named semantic-relaxation
-  axes under a versioned `validated_under` profile;
-- `research`: explicit low-level overrides, with no stability claim.
+- `exact` (default): only exact or scope-certified axes may vary;
+- `bounded`: conservative metric lower bounds must meet caller floors;
+- `best_effort`: explicitly allowed fidelity loss is a soft objective penalty;
+- `research`: safe caller-enumerated extrapolation, with no stability claim.
 
-Observed Jaccard deltas are validation evidence, not a runtime error bound. Live
+Observed Jaccard deltas are calibration evidence, not a runtime error bound. Live
 frontier margins may produce diagnostics and warnings, but they must not silently
 authorize semantics changes based on free memory.
 
@@ -122,9 +120,8 @@ have no governor-owned byte formula: they are fingerprinted request constraints.
 
 ### Ownership and caste rules
 
-- `scenario-declared semantic`: fixed before admission. `strict` never changes
-  it. `validated_relaxed` requires a named, scope-matched evidence record;
-  `research` requires an explicit override.
+- `scenario-declared semantic`: fixed before admission. Exact and bounded never
+  change it. Best-effort/research require explicit axis allowances.
 - `provider-declared semantic/capability`: part of provider identity and the
   semantic fingerprint. The resolver consumes it but never invents it.
 - `governor-derived physical`: may be selected from resource conditions only
@@ -149,14 +146,14 @@ have no governor-owned byte formula: they are fingerprinted request constraints.
 | `max_n_logits` / explicit targets | VRAM; semantic target set | profile target workspace `targets * Qtarget` | scenario semantic | scenario-specific | scenario | preserve |
 | `diagnostic_feature_cap` | logical | may lower `N`, but changes candidate set | research semantic | profiling only | scenario | research-only; never derive |
 | sparsification top-k/global cap | logical | may lower `N`, but changes candidate set | approximate semantic | explicit sparsification campaigns only | scenario/provider | preserve explicit values; never derive |
-| `phase0_activation_threshold_compare_mode` | logical | none | debug semantic | historical Track-A only | scenario | strict-pinned |
+| `phase0_activation_threshold_compare_mode` | logical | none | debug semantic | historical Track-A only | scenario | exact-pinned |
 | `decoder_chunk_size` (legacy) | VRAM + walltime | mixed: reduction order plus decoder work `chunk * D * O * b` | compatibility-mixed | A4 only: Cardinal 1B PLT-small fp32 named target/window | scenario + adapter | preserve logical tile; do not auto-change |
 | decoder reduction tile/order (new) | logical | none | scenario semantic | A4 drift evidence is not invariance | scenario | semantic fingerprint |
 | decoder fetch/cache chunk (new) | VRAM + walltime; rigid | `fetch_chunk * D * O * b` plus provider overhead | physical | requires Phase D fixed-semantics parity | governor from provider limits | derive conservatively; separate execution fingerprint |
 | `cross_batch_decoder_cache_bytes` | VRAM; rigid | requested/derived bytes exactly | physical override | exact within fixed decoder chunk in corrected-regime cache probes | governor or explicit override | clamp to available headroom/capability; 0 when unsupported |
-| `attribution_batch_size` / `Bs` | logical + VRAM | contributes to `C`; later workspace `Bs * Qsource` | compatibility-mixed | A4 batch drift within narrow 1B PLT scope | scenario | strict-pinned member of coupled family |
-| `feature_batch_size` / `Bf` | logical refresh + VRAM | contributes to `C`; workspace `Bf * Qfeature` | compatibility-mixed | A4 batch drift; Top64 changed | scenario | strict-pinned; separate physical microbatch in Phase D |
-| `logit_batch_size` / `Bl` | logical + VRAM | contributes to `C`; workspace `Bl * Qlogit` | compatibility-mixed | no broad invariance proof | scenario | strict-pinned member of coupled family |
+| `attribution_batch_size` / `Bs` | logical + VRAM | contributes to `C`; later workspace `Bs * Qsource` | compatibility-mixed | A4 batch drift within narrow 1B PLT scope | scenario | exact-pinned member of coupled family |
+| `feature_batch_size` / `Bf` | logical refresh + VRAM | contributes to `C`; workspace `Bf * Qfeature` | compatibility-mixed | A4 batch drift; Top64 changed | scenario | exact-pinned; separate physical microbatch in Phase D |
+| `logit_batch_size` / `Bl` | logical + VRAM | contributes to `C`; workspace `Bl * Qlogit` | compatibility-mixed | no broad invariance proof | scenario | exact-pinned member of coupled family |
 | `phase1_trace_batch_size_max` | VRAM intent | source candidate `min(Bs, cap)`; actual `C=max(Bs,Bf,Bl)` | compatibility/resource intent | A3 survival-v2/v3 coupling evidence | scenario | report binding; warn when another family member dominates |
 | derived `trace_capacity` | VRAM; rigid | `C=max(Bs,Bf,Bl)`; profile trace term `C * T * Qtrace` | derived fact | implementation invariant from NNSight path | governor report | always emit value and all binding reasons |
 | physical source/logit microbatches and Phase-4 execution batches | VRAM + walltime; rigid | `batch * Qphase` | physical | Phase-4 coalescing requires the static parity gate | governor | source/logit remain no larger than logical capacities; Phase 4 may coalesce within one fixed semantic refresh frontier |
@@ -165,9 +162,9 @@ have no governor-owned byte formula: they are fingerprinted request constraints.
 | `feature_row_column_tile_size` / influence row+column tiles (new) | host/VRAM working set | `row_tile * column_tile * b` | physical | Phase D tiled/replay gate | governor or explicit override | canonical order; requested bounded path cannot fall back to full width |
 | `feature_row_retention` (new) | file/disk/walltime | full file is `(K + 1) * N * b`; replay retains recipes and compact projection | physical | Phase D replay gate | governor or explicit override | `full_file` or `none_recompute`; latter creates no `K x N` file |
 | frontier refresh stride/checkpoints (new) | logical | none; walltime profile may depend on refresh count | scenario semantic | A4 shows legacy batch/refresh sensitivity | scenario | preserve and fingerprint |
-| `phase4_refresh_policy` / multiplier | logical cadence | none directly; changes refresh count | scenario semantic | explicit optimization experiments only | scenario | strict-pinned; translate to checkpoints in Phase D |
-| `phase4_ranker` | logical frontier membership | profile workspace only | scenario semantic | non-default tie behavior not invariant | scenario | strict-pinned |
-| `phase4_scheduler_mode` | execution order, potentially semantic until proven | scheduler workspace `Qplanner` | unclassified -> semantic in strict | planner-specific tests only | scenario | preserve; no automatic rung in v0 |
+| `phase4_refresh_policy` / multiplier | logical cadence | none directly; changes refresh count | scenario semantic | explicit optimization experiments only | scenario | exact-pinned; translate to checkpoints in Phase D |
+| `phase4_ranker` | logical frontier membership | profile workspace only | scenario semantic | non-default tie behavior not invariant | scenario | exact-pinned |
+| `phase4_scheduler_mode` | execution order, potentially semantic until proven | scheduler workspace `Qplanner` | unclassified -> semantic in exact | planner-specific tests only | scenario | preserve; no automatic rung in v0 |
 | `phase4_refresh_optimization` | VRAM/walltime | profile `Qrefresh`; prepared buffers if enabled | physical candidate | existing focused tests, not yet full fixed-semantics Phase D proof | scenario until promoted | explicit override only in v0 |
 | prepared refresh cache bytes | VRAM; rigid | requested bytes exactly | physical candidate | experimental/retired path | scenario | explicit 0 default; not auto-selected |
 | active-row accumulation / row reduction | VRAM/walltime | `microbatch * Qrow` | physical candidate | focused reference-path tests | scenario until promoted | explicit in v0; Phase D may promote |
@@ -207,23 +204,20 @@ schema/profile version, topology, dimensions, supported physical mechanisms,
 checkpoint/model bytes, calibrated unit coefficients, observed resource ranges,
 and walltime ranges. Granite 1B/4B/12B baselines are profile fixtures.
 
-Semantic-relaxation evidence is a separate schema containing an evidence ID,
-provider/checkpoint/hooks, model, dtype, scenario/window, compared logical
-configurations, metrics, thresholds, and environment. Cardinal A4 may support an
-explicit named `validated_relaxed` request in its exact scope after artifacts are
-transferred and regenerated; it is not a calibration profile and is not a
-default. Profile IDs and evidence IDs are fingerprinted independently. Trusted
-evidence must be shipped in the sibling's immutable registry with source
-artifact/report fingerprints, compared configurations, metrics, and acceptance
-thresholds; a caller-supplied evidence object is never authority.
+Calibration observations use a separate normalized schema containing scope,
+decision vector, outcome/censoring, resources, phase runtimes, fidelity metrics,
+uncertainty, and source artifact provenance. Cardinal A4 may contribute only in
+its exact recorded scope after artifacts are transferred and regenerated; it is
+not a default. Observation catalogs and response bundles are content-addressed.
+Caller-supplied metric claims are never authority for exact certification.
 
 ### B1 completion decision
 
 B1 is complete for governor v0. Any field absent from the governor matrix is
-strict-pinned and non-governor-controlled by default. Promotion to a physical
-governor lever requires a named mechanism, a bytes/cost formula, capability
-metadata, and fixed-semantics validation. This fail-closed rule prevents future
-knobs from entering memory policy as unclassified dials.
+classified semantic and non-governor-controlled by default. Adding an optimizer
+axis requires a named mechanism, bytes/cost formula, sensitivity class, freeze
+epoch, capability metadata, and calibration plan. This fail-closed rule prevents
+future knobs from entering memory policy as unclassified dials.
 
 ## Intended taxonomy
 

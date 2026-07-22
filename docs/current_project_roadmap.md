@@ -1,13 +1,14 @@
 # Current Project Roadmap
 
 Status: Current scratch roadmap
-Last updated: 2026-07-15
+Last updated: 2026-07-21
 
 ## Active Priority
 
-The active work is the memory-governor and reusable tracing-runtime program in
-`plans/2026-07-03_governor_rearch.md`, targeting the contract in
-`docs/memory_governor_rearchitecture_spec.md`.
+The active work is Phase E calibration-model integration and then Phase F
+harness consolidation, targeting the contract in
+`docs/memory_governor_rearchitecture_spec.md`. The original execution checklist
+in `plans/2026-07-03_governor_rearch.md` is retained as implementation history.
 
 Phase A is closed for implementation purposes:
 
@@ -36,13 +37,13 @@ models or run attribution.
 1. Complete `docs/knob_api_taxonomy.md` with tier, demand class, bytes-cost
    formula, caste, validation scope, and ownership for every governor-relevant
    field.
-2. Keep semantic choices scenario/provider-owned in `strict`; memory pressure
+2. Keep semantic choices scenario/provider-owned in exact mode; memory pressure
    may select only separately represented physical mechanisms.
 3. Record the coupled NNSight trace-capacity family explicitly:
    `max(source_batch_size, feature_batch_size, logit_batch_size)`.
-4. Version provider calibration profiles separately from semantic-relaxation
-   evidence. Granite data calibrates cost/resources; Cardinal A4 remains the
-   only current validated-relaxed evidence scope.
+4. Version provider calibration profiles separately from fidelity evidence.
+   Granite data calibrates cost/resources; Cardinal A4 remains a narrow
+   historical fidelity observation scope.
 
 ### B2. Land governor v0 in the sibling
 
@@ -253,6 +254,13 @@ original corrected-hook Granite artifacts and exposed the next limitation:
 historical logical batches and fetch ceilings still prevented a meaningful
 upward optimization search.
 
+The governor is now treated as a staged constrained mixed-variable optimizer,
+not a strict-rung lookup table. At every safe epoch it minimizes predicted
+remaining runtime under hardware/resource limits, frozen state, hard user pins,
+and one immutable fidelity budget. Its four policies are `exact`, `bounded`,
+`best_effort`, and `research`. Calibration observations train resource, runtime,
+and fidelity response models; campaign names never determine eligibility.
+
 The v0.3 contract separates loose implementation safety limits from calibration
 support. A fitting value outside observed support is legal but explicitly
 extrapolated; a value beyond the safety limit is invalid. Session capacity,
@@ -283,20 +291,22 @@ calibration rather than treating the two gate observations as a fitted model.
 `docs/governor_calibration_matrix.md`. Wave A is a 36-row 1B upward search: 17
 CLT and 19 PLT rows spanning larger logical batches, decoder fetch/cache
 controls, coupled high corners, isolated opt-in semantic axes, refresh cadence,
-and exact repeats. Wave B transfers the useful range to 4B/12B. Wave C fits
-phase-local mechanisms around the discovered knee. Do not promote coefficients
-from the v0.3 gate or Wave A alone.
+and exact repeats. Wave B observes 4B/12B transfer. Wave C fits phase-local
+mechanisms around useful model-local knees and supplies held-out checks. Ingest
+all scientifically valid rows immediately as observations, but separately
+review response-model bundles, fidelity-scope authorization, and launch-default
+changes.
 
 **Wave A analyzed 2026-07-19:** both provider references match the original
 corrected-hook Granite baseline. CLT is bounded by successful `b1500` at 132.98
 GiB reserved and OOM at `b2000`; its useful low-risk gain is `c10080` at 1.43x.
-PLT's primary transfer range is `b256` through exploratory `b512`, with
+PLT's primary measured range is `b256` through exploratory `b512`, with
 `c16384/c32768` as opt-in fetch candidates. The measured `b512/c8192` corner is
 5.08x but misses the Top-256 floor at `0.9617`; `c32768` is the fastest measured
-row above all four floors at 4.01x. `b768+` and the 12-16x high corners drift too
-far for governed defaults. Non-reference PLT decoder chunks are not strict:
-they introduce small measured graph drift and must remain opt-in until the
-physical/semantic coupling is removed or validated.
+row above the campaign's illustrative four floors at 4.01x. `b768+` and the
+12-16x high corners establish the high-loss region. These rows are not discarded:
+they train feasibility/runtime/fidelity response surfaces. Whether a candidate
+is usable is decided later by its request's fidelity budget.
 
 **Phase-4 feedback diagnostic:** before Wave B, isolate the mechanism behind
 PLT batch drift with five 1B rows: canonical reference, session-capacity
@@ -342,7 +352,7 @@ PLT knee and 512 as valid headroom. Adaptive refresh remains deferred.
 
 **Wave B corrected transfer matrix:** do not rerun the complete 36-row Wave A
 campaign. Its old coupled PLT batch rows remain semantic/stress evidence, while
-the immutable static-coalescing gate supplies the strict physical Phase-4
+the immutable static-coalescing gate supplies exact 1B Phase-4
 `128/256/512` evidence. Wave B fixes canonical 4B/12B source, feature, logit,
 Phase-1, Phase-3, and refresh semantics; tests coupled session/Phase-4 execution
 envelopes while deferring their isolated cost fit to Wave C; keeps
@@ -356,14 +366,22 @@ Wave B inputs.
 `400G/2h`) and `1642078` (12B, `600G/8h`) completed all 14 rows successfully.
 Execution coalescing transferred substantial speed (`1.52-1.60x` at 4B and
 `1.70-2.14x` at 12B), but no larger-model arm preserved the full prepared
-frontier contract. The 4B 256 arm retained exact compact topology and
+frontier contract. The 4B 256 arm retained compact topology and
 weighted-edge Jaccard `0.99999999`, while its frontier membership still differed
 at 2/17 refreshes. The 12B 128 arm reached only `0.98946` edge and `0.99009`
 weighted-edge Jaccard; the 256 arm was closer at `0.99950`/`0.99953`, but also
-diverged in frontier membership. Keep the 1B coalescing promotion model-scoped.
-Before Wave C uses a larger-model execution knee, fix the scale-dependent
-numerical feedback or explicitly authorize a versioned `validated_relaxed`
-profile. Decoder-chunk and coupled rows remain opt-in research evidence.
+diverged in frontier membership. This is not a failure of the governor design:
+it establishes that execution grouping is numerically sensitive and gives the
+fidelity model high-value observations at useful speed points. Exact mode must
+remain model/scope-certified; bounded and best-effort modes may use these rows
+when their predicted lower bounds or penalties permit it. Wave C may fit around
+these measured knees without first turning them into exact defaults.
+
+**Current implementation task:** normalize campaign outputs into typed
+calibration observations, add conservative support/uncertainty predictions to
+the sibling solver, and emit automatic campaign-reference comparisons. The MVP
+uses deterministic nearest-supported evidence and Pareto reporting. Learned or
+hierarchical response models remain a later Wave C improvement.
 
 Hard requirements constrain variables rather than replacing optimization. The
 runtime re-solves at pre-execution, loaded-state, post-Phase-0, and safe phase

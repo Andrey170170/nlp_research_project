@@ -1,7 +1,7 @@
 # Memory Governor and Library Rearchitecture Spec
 
-Status: Phase D and C2 complete; Phase E governor v0.3 awaiting Granite gate
-Last updated: 2026-07-15
+Status: Phase D and C2 complete; Phase E staged optimizer calibration active
+Last updated: 2026-07-21
 
 This is the "how it is supposed to be" document for the next major rework of
 the sibling library `../circuit-tracer_chunked` and its project-side harness
@@ -10,8 +10,8 @@ surface. It folds together two previously separate threads:
 1. the architecture restructure motivated by the scouting reports
    (`reports/circuit_tracer_architecture_scout.md`,
    `reports/harness_architecture_scout.md`), and
-2. the reframing of the optimization-knob sprawl as a budget-driven,
-   three-tier **memory governor**.
+2. the reframing of the optimization-knob sprawl as a staged, budget-driven,
+   fidelity-aware **memory governor**.
 
 The execution plan lives in `plans/2026-07-03_governor_rearch.md`; section 10
 below is the summary-level version. Step 1 (PLT merge) completed 2026-07-03:
@@ -79,12 +79,13 @@ Three principles:
    ladder of *semantically identical* residency/execution modes (mechanism).
    The governor's job is to pick rungs given budgets (policy). Neither knows
    the other's internals.
-2. **Degrade without changing semantics.** Every large structure should expose
-   slower semantics-preserving rungs. “Never die; degrade” applies only while
-   such a rung exists. If no semantics-preserving plan fits, `strict` admission
-   refuses before model load with the binding resource and actionable ways to
-   change the request or allocation. It must never survive by silently changing
-   logical trace semantics. Walltime remains a first-class predicted constraint.
+2. **Optimize under an explicit fidelity contract.** Every large structure
+   should expose slower exact rungs and, where measured evidence exists, faster
+   numerically sensitive alternatives. Exact requests fail closed when no
+   certified exact plan fits. Bounded and best-effort requests may trade measured
+   fidelity for throughput only within their declared budgets. Research requests
+   may extrapolate, but never imply equivalence. Walltime remains a first-class
+   predicted constraint in every mode.
 3. **Provider-agnostic coverage.** The governor is for every model/transcoder
    pair the library can currently run through the exact/chunked provider path,
    not just the Gemma/GemmaScope2 pairs that motivated the work. If Gemma 3
@@ -266,25 +267,36 @@ refresh checkpoints remain independent of physical backward-call boundaries.
 Combined legacy values translate into both sides deterministically; explicit
 old/new conflicts are rejected before a lifecycle or model load begins.
 
-### 4.2 Fidelity modes
+### 4.2 Fidelity budgets and decision-axis classes
 
-- **`strict` (default):** only semantics-preserving physical plans and mechanism
-  rungs are admissible. If none fits, admission refuses actionably before model
-  load. “Never die; degrade” applies only within this semantics-preserving set.
-- **`validated_relaxed`:** named semantic substitutions may be selected only
-  from an explicit allowlist. Every entry names its semantic delta and carries a
-  versioned evidence record with provider/checkpoint/hook, model, dtype,
-  scenario/window, environment, compared configurations, metrics, and acceptance
-  thresholds. The request must match that scope. Drift evidence is not a
-  guarantee and cannot be generalized to an unlisted regime.
-- **`research`:** the caller supplies explicit semantic overrides. The request,
-  result, semantic fingerprint, and provenance label them as research; the
-  runtime makes no equivalence claim.
+Every request carries one immutable `FidelityBudget`; the budget is inherited by
+every planning epoch and is never weakened at runtime.
 
-Unclassified legacy knobs are semantics-touching and remain pinned in `strict`.
-Performance mechanisms such as cache budgets, physical fetch chunks, prefetch,
-residency, and spill may be governor-controlled only after tests establish that
-their implementations preserve a fixed `TraceSemantics`.
+- **`exact` (default):** only axes classified as exact may vary. A numerically
+  sensitive axis is eligible only when a scope-matched calibration observation
+  certifies the requested exact metrics. Unknown support refuses actionably.
+- **`bounded`:** exact axes and explicitly allowed numerically sensitive axes
+  may vary. Conservative predicted metric lower bounds must satisfy every
+  caller-supplied floor at the requested confidence. Semantic axes stay fixed.
+- **`best_effort`:** explicitly allowed sensitive axes may vary. Fidelity loss
+  is a soft objective penalty rather than a hard floor; the report must expose
+  the selected tradeoff and non-dominated alternatives.
+- **`research`:** caller-enumerated alternatives and safe extrapolation are
+  allowed. Unsupported predictions are labeled unknown with no equivalence or
+  bound claim.
+
+The sibling owns a complete decision-axis catalog. Each axis is classified as
+`exact`, `numerically_sensitive`, or `semantic`, names its subsystem owner and
+freeze epoch, and declares dependencies. Cache capacity, residency, storage,
+spill, and proven invariant prefetch policies are exact. Physical execution
+grouping and decoder fetch/reduction grouping are numerically sensitive while
+floating-point grouping can feed later frontiers. Logical source/feature/logit
+grouping, refresh cadence, reduction order, dtype, caps, and provider
+approximation are semantic. Axis class describes mechanism behavior; one exact
+experimental comparison does not reclassify an axis globally.
+
+Unclassified axes are semantic and remain pinned outside explicitly enumerated
+research work. No fidelity mode silently broadens the allowed axis set.
 
 ### 4.3 A4 decision and exact validation scope
 
@@ -335,18 +347,29 @@ No candidate that violates a hard requirement is admissible. When the hard
 constraint set is infeasible, the result reports conflicts and nearest rejected
 candidates rather than silently relaxing a requirement.
 
-Provider profiles declare two distinct physical domains. `ProviderSafetyLimits`
-contains loose implementation ceilings. `CalibrationSupport` contains observed
-ranges, supported policies, and evidence IDs. Safety limits gate validity;
-calibration support determines confidence. A safe extrapolation may run, but it
-must not silently outrank a fitting supported candidate under the ordinary
-objective.
+Provider profiles declare loose implementation safety limits. A separate,
+immutable calibration catalog contains normalized observations with workload,
+hardware/code scope, decision vector, outcome, runtime, resources, fidelity,
+uncertainty, and artifact provenance. OOM/refusal are censored feasibility
+evidence, timeout is a runtime lower bound, and infrastructure failure carries
+no scientific response value. Wave labels are provenance only, never solver
+gates.
 
-The default objective is deterministic and lexicographic: strict semantics and
-hard constraints; resource/walltime fit with safety margins; supported before
-extrapolated predictions; minimum predicted remaining time; then lower peak
-pressure, I/O amplification, and stable fingerprint order. Minimum memory is
-not the objective when additional safe resource use improves throughput.
+The first response model is intentionally conservative and deterministic:
+analytic resource formulas plus empirical correction envelopes, additive phase
+runtime with nearest-supported multipliers, and fidelity lower bounds from
+scope-matched nearby observations. It does not interpolate across semantic
+axes. More sophisticated transfer or statistical surrogates belong to later
+calibration work, not the runtime contract.
+
+Candidate selection is deterministic: satisfy provider safety, resource and
+walltime budgets, frozen decisions, and user pins; apply the fidelity budget;
+prefer better-supported/lower-risk predictions; then minimize predicted
+remaining time, peak pressure, I/O amplification, and stable fingerprint order.
+Best-effort adds its declared fidelity-loss penalty to the objective. Minimum
+memory is not the objective when additional safe resource improves throughput.
+Each report includes a bounded Pareto set over fidelity loss, walltime, VRAM,
+host RAM, and I/O so callers can inspect meaningful alternatives.
 
 The epochs are:
 
@@ -492,7 +515,9 @@ host_budget:        auto          # from SLURM/cgroup limit; explicit override a
 cache_policy:       auto          # warm | bounded | streaming | auto
 planner:            v2            # planner/machinery version
 spill_roots:        auto          # tmp -> scratch ladder; explicit override allowed
-fidelity:           strict        # strict | validated_relaxed | research
+fidelity:           exact         # exact | bounded | best_effort | research
+fidelity_metrics:   {}            # metric floors/confidence for bounded mode
+fidelity_penalty:   0.0           # soft loss weight for best_effort mode
 ```
 
 - `cache_policy=auto` resolves from projected file working set vs host
@@ -502,8 +527,9 @@ fidelity:           strict        # strict | validated_relaxed | research
 - Canonical physical constraints and semantic choices are represented directly
   by `ExecutionConstraints` and `TraceSemantics`; the runtime does not preserve
   old flat knob names as a second control surface. Logical overrides require
-  `research` or a named `validated_relaxed` allowlist entry, while physical
-  constraints remain plan inputs.
+  explicit research alternatives, while physical constraints remain plan
+  inputs. Numerically sensitive physical axes require calibration support under
+  exact/bounded modes.
 - Existing explicit model/transcoder/provider selection remains outside the
   budget surface. The governor receives the resolved provider profile and plans
   from capabilities; it does not infer policy from repo names or model family
@@ -649,7 +675,7 @@ Extend `docs/knob_api_taxonomy.md`: for every knob — tier, bytes-cost
 formula, caste, validated-under provenance, and whether it is provider-declared,
 scenario-declared, or governor-derived. This is the requirements doc for the
 governor. Define `TraceSemantics`, semantic/execution fingerprint schemas,
-fidelity allowlist evidence schema, provider calibration profile schema, and the
+   fidelity-budget evidence schema, provider calibration profile schema, and the
 canonical domain-field ownership map before mechanisms move.
 
 ### Step 4 — Governor v0 as a pure resolver in the sibling (DONE 2026-07-10)
@@ -663,9 +689,9 @@ are arithmetic fixtures, not semantic-equivalence evidence.
 Implemented at sibling `phase-b-governor-contract@0ce3f96`. Resolver outputs are
 explicitly advisory through Phase D mechanism validation and the Phase C2
 runtime rewrite; Phase E is the first runtime consumer. The package-owned
-trusted validation-evidence registry is empty; this intentionally prevents A4
-from authorizing `validated_relaxed` until the source artifacts are transferred,
-the report is regenerated, and a reviewed record is shipped.
+   trusted validation-evidence registry is empty; this intentionally prevents A4
+   from certifying exact or bounded scope until the source artifacts are
+   transferred, the report is regenerated, and a reviewed record is shipped.
 
 ### Step 5 / Phase C1 — Behavior-preserving sibling cleanup
 
@@ -680,7 +706,7 @@ duplicate log formatting. Preserve existing algorithms, defaults, artifacts,
 entry points, and telemetry semantics. Do not apply governor plans or introduce
 new mechanisms in this phase.
 
-Gate C1 with immutable Granite H200 strict runs on `361_base` for 1B CLT and 1B
+Gate C1 with immutable Granite H200 exact-reference runs on `361_base` for 1B CLT and 1B
 PLT. Require exact compact graph/artifact parity, required telemetry
 lifecycle/schema coverage, terminal incremental JSONL, and no unexplained peak
 VRAM or walltime regression over 10% versus the recorded baseline; rerun an
@@ -733,17 +759,19 @@ execution waits for the recorded D behavior references.
 Connect pre-execution admission, loaded-state measurement/re-planning,
 post-Phase-0 active-universe re-planning, Phase-3/4 entry re-planning, and
 phase-level grants/releases. The governor may select only Phase D mechanisms
-that passed parity; strict mode refuses when no such rung fits.
+that passed parity; exact mode refuses when no certified rung fits.
 
 Gate E on `361_base` 1B CLT/PLT governed-versus-explicit equivalence, expected
 rung selection under constrained envelopes, complete epoch telemetry, and
-strict compact-output/semantic-fingerprint parity.
+exact compact-output/semantic-fingerprint parity.
 
 The governor-v0.3 correction gate uses one unconstrained CLT and one
 unconstrained PLT trace. The subsequent staged campaign is defined in
 `docs/governor_calibration_matrix.md`: Wave A is a 36-row 1B upward search,
-Wave B checks 4B/12B transfer, and Wave C fits local physical mechanisms. Only
-the complete staged evidence may promote new calibration coefficients.
+Wave B measures 4B/12B transfer, and Wave C fits local physical mechanisms.
+Every completed, refused, OOM, and timed-out row becomes a typed calibration
+observation. Evidence ingestion, authorization for a fidelity scope, and a
+change to launch defaults are three separate reviewed actions.
 
 ### Step 9 / Phase F — Governed harness consolidation and final validation
 
@@ -766,15 +794,14 @@ provenance.
    overridable. `trace_batch` and `open_session` are first-class, not harness
    loops over private internals.
 2. Semantic and execution fingerprints are independently stable and persisted.
-   Changing physical fetch/cache chunk or microbatch in `strict` changes only
+   Changing an exact physical fetch/cache or microbatch axis changes only
    the execution fingerprint; logical reduction or refresh changes the semantic
    fingerprint.
-3. `strict` uses only semantics-preserving rungs and demonstrates actionable
-   actionable refusal when none fits. True pre-load refusal requires the future
-   loader boundary described above. `validated_relaxed` requires a named,
-   versioned, scope-matched allowlist record. `research` overrides are explicit
-   in request, result, and provenance. Drift evidence is never represented as a
-   guarantee.
+3. `exact` uses only exact or scope-certified rungs and refuses actionably when
+   none fits. `bounded` enforces declared conservative metric floors;
+   `best_effort` reports its fidelity penalty and Pareto tradeoff; `research`
+   labels unknown/extrapolated support. True pre-load refusal still requires the
+   future loader boundary. Drift evidence is never represented as a guarantee.
 4. The canonical runtime has no legacy kwargs, reflected legacy signature,
    translator, compatibility facade, or stale project/sibling imports of the
    removed tracing paths.
@@ -787,7 +814,7 @@ provenance.
    reuse, independent sequence steps, the A4 298--300 window regression, reset,
    cleanup, and failure recovery.
 7. The row store completes more slowly where full materialization exceeds local
-   capacity via semantics-preserving tiled/recompute rungs, or strict admission
+   capacity via semantics-preserving tiled/recompute rungs, or exact admission
    refuses actionably if no validated rung fits.
 8. The sibling resolver consumes promoted, versioned provider calibration
    profiles. The project retains calibration generation, campaigns, CHPC policy,
@@ -820,7 +847,9 @@ provenance.
 2. Whether the recompute rung of the row-store ladder is ever cheaper than
    tiled streaming in practice on Lustre, or is kept only as the
    survivability floor.
-3. Which additional regimes merit their own `validated_relaxed` evidence. A4
-   itself remains limited to the section 4.3 scope.
-4. Whether a third package/plugin boundary becomes justified after the sibling
+3. Which fidelity metrics and confidence method should become the canonical
+   bounded-mode contract after Wave C; A4 remains limited to section 4.3 scope.
+4. Whether hierarchical transfer across model sizes/providers can be supported
+   without hiding uncertainty; the MVP uses scope-matched nearest evidence.
+5. Whether a third package/plugin boundary becomes justified after the sibling
    API and project adapter have stabilized; it is not part of this rework.

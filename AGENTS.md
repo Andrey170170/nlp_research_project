@@ -36,11 +36,13 @@ orchestration may move into `../circuit-tracer_chunked` so the library can run
 more independently. Until that is an explicit task, keep this repo as the
 orchestration/provenance layer and avoid opportunistic cross-repo merges.
 
-The Phase B pure governor resolver remains advisory through Phase D
-explicit-mechanism work and Phase C2 ("cleanup strikes again"). Phase E is the
-first phase allowed to consume plans at runtime, after both the Phase D and C2
-immutable Granite gates pass. Do not treat a resolved plan as an executed
-configuration or promote its outputs to launch defaults before then.
+Phase E consumes governor plans through the canonical runtime after the Phase D
+and C2 immutable Granite gates. The governor is a staged constrained optimizer:
+it replans still-free axes from progressively better measurements while
+preserving hard user pins and already-frozen state. Its fidelity policies are
+`exact`, `bounded`, `best_effort`, and `research`. Calibration observations,
+fidelity-scope authorization, and launch-default changes are separate reviewed
+actions; do not treat a fitted or selected plan as a default promotion.
 
 Tracing cleanup phases must extract logging and telemetry mechanics into deep
 sibling modules. Tracing algorithms should emit typed domain events or
