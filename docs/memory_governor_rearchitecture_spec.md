@@ -359,8 +359,12 @@ The first response model is intentionally conservative and deterministic:
 analytic resource formulas plus empirical correction envelopes, additive phase
 runtime with nearest-supported multipliers, and fidelity lower bounds from
 scope-matched nearby observations. It does not interpolate across semantic
-axes. More sophisticated transfer or statistical surrogates belong to later
-calibration work, not the runtime contract.
+axes. Later calibration work may fit compact statistical response surfaces,
+regressions, interaction terms, or hierarchical transfer where held-out evidence
+supports them. Neural models are not part of the design requirement; model
+complexity should increase only when it measurably improves prediction and
+uncertainty calibration. These fitting choices are not part of the runtime
+contract.
 
 Candidate selection is deterministic: satisfy provider safety, resource and
 walltime budgets, frozen decisions, and user pins; apply the fidelity budget;

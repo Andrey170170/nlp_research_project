@@ -258,8 +258,9 @@ The governor is now treated as a staged constrained mixed-variable optimizer,
 not a strict-rung lookup table. At every safe epoch it minimizes predicted
 remaining runtime under hardware/resource limits, frozen state, hard user pins,
 and one immutable fidelity budget. Its four policies are `exact`, `bounded`,
-`best_effort`, and `research`. Calibration observations train resource, runtime,
-and fidelity response models; campaign names never determine eligibility.
+`best_effort`, and `research`. Calibration observations fit compact statistical
+resource, runtime, and fidelity response models; no neural model is implied or
+required. Campaign names never determine eligibility.
 
 The v0.3 contract separates loose implementation safety limits from calibration
 support. A fitting value outside observed support is legal but explicitly
@@ -380,8 +381,10 @@ these measured knees without first turning them into exact defaults.
 **Current implementation task:** normalize campaign outputs into typed
 calibration observations, add conservative support/uncertainty predictions to
 the sibling solver, and emit automatic campaign-reference comparisons. The MVP
-uses deterministic nearest-supported evidence and Pareto reporting. Learned or
-hierarchical response models remain a later Wave C improvement.
+uses deterministic nearest-supported evidence and Pareto reporting. Fitted
+regressions, interpolation, interaction terms, and optionally hierarchical
+statistical transfer remain later Wave C improvements, subject to held-out
+validation.
 
 Hard requirements constrain variables rather than replacing optimization. The
 runtime re-solves at pre-execution, loaded-state, post-Phase-0, and safe phase

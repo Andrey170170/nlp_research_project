@@ -77,8 +77,9 @@ corners are not acceptable defaults because broad graph overlap falls as low as
 `exact_trace_bench/granite/analysis/governor_calibration/wave_a_20260716/`.
 
 Wave A/B rows are calibration observations, not a global pass/fail list. They
-train separate feasibility/resource, phase-runtime, and fidelity response
-models. Exact mode remains scope-certified; bounded mode enforces explicit
+fit separate compact statistical feasibility/resource, phase-runtime, and
+fidelity response models. This does not imply neural training. Exact mode
+remains scope-certified; bounded mode enforces explicit
 metric floors; best-effort mode assigns fidelity loss a soft objective penalty;
 research mode permits labeled extrapolation. Campaign ingestion, fidelity-scope
 authorization, and launch-default changes are separate decisions.

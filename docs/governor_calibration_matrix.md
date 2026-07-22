@@ -1,12 +1,16 @@
 # Governor Calibration Run Plan
 
 Status: Wave A, static Phase-4 correction, and Wave B closed; observation ingestion active
-Last updated: 2026-07-21
+Last updated: 2026-07-22
 
-This campaign supplies training and validation observations for a staged
+This campaign supplies fitting and validation observations for a staged
 constrained optimizer. It measures the joint resource, runtime, and fidelity
-response above and below historical settings. It does not divide rows into
-globally accepted and rejected governor configurations.
+response above and below historical settings. The intended response models are
+compact statistical models: analytic formulas with fitted correction terms,
+local regression or interpolation where supported, and conservative uncertainty
+envelopes for extrapolation. Neural models are neither required nor currently
+planned. The campaign does not divide rows into globally accepted and rejected
+governor configurations.
 
 Each row is useful in one or more response families. Exact repeats estimate
 noise and certify narrow invariant scopes. Numerically sensitive and semantic
@@ -254,7 +258,7 @@ surface the speed/fidelity tradeoff explicitly.
 
 Wave C fits the remaining physical cost terms around measured model-local knees.
 It samples both sides of each knee and reserves held-out rows so the response
-models learn local shape and uncertainty instead of one promoted setting:
+models estimate local shape and uncertainty instead of one promoted setting:
 
 - session, Phase-1, Phase-3, and Phase-4 widths at lower/selected/higher rungs;
 - cache neighbors around the selected size;
@@ -320,5 +324,7 @@ These are separate operations:
 Values inside implementation safety limits may be explored outside calibrated
 support only in research mode and must be labeled extrapolated/unknown. The MVP
 predictor uses deterministic nearest-supported evidence and conservative bounds;
-hierarchical transfer and learned interaction models are deferred until Wave C
-contains enough held-out data.
+the next step is fitted statistical response surfaces and interaction terms.
+More elaborate hierarchical transfer should be added only when Wave C contains
+enough held-out data to demonstrate that the added complexity improves
+prediction and uncertainty calibration.
