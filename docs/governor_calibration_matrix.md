@@ -256,20 +256,74 @@ surface the speed/fidelity tradeoff explicitly.
 
 ## Wave C - Local Mechanism Fit
 
-Wave C fits the remaining physical cost terms around measured model-local knees.
-It samples both sides of each knee and reserves held-out rows so the response
-models estimate local shape and uncertainty instead of one promoted setting:
+Wave C fits local physical cost terms around the Wave-B model-local knees. It is
+a ten-row causal matrix, not a Cartesian sweep. All rows use `361_base`, fp32,
+one Granite H200, decoder chunk `4096`, refresh stride `4`, advisory admission,
+incremental telemetry, and the pinned corrected-hook baseline registry.
+Semantic source/feature/logit batches remain `128` for 4B and `64` for 12B.
 
-- session, Phase-1, Phase-3, and Phase-4 widths at lower/selected/higher rungs;
-- cache neighbors around the selected size;
-- replay windows `2/4/8` and prefetch depths `0/2/4`;
-- full-file, tiled, and recompute row policies;
-- lazy/eager encoder residency and local/scratch spill where admissible;
-- reference repeats for run-noise estimation.
+| Order | Model | Split | Isolated change |
+|---:|---|---|---|
+| 0 | 4B PLT | fit/noise | canonical reference repeat |
+| 1 | 4B PLT | fit | session `256`, Phase-4 execution fixed at `128` |
+| 2 | 4B PLT | fit | Phase-1 cap `64` with `cap_effective_batches` |
+| 3 | 4B PLT | fit | Phase-3 microbatch `64` |
+| 4 | 4B PLT | fit | replay window `2` |
+| 5 | 4B PLT | fit | replay window `8` |
+| 6 | 4B PLT | fit | decoder cache `4 GiB` |
+| 7 | 4B PLT | fit | decoder cache `8 GiB` |
+| 8 | 4B PLT | held-out | session/execution `256`, replay `8`, cache `8 GiB` |
+| 9 | 12B PLT | fit | session `128`, Phase-4 execution fixed at `64` |
 
-These are local causal contrasts, not another broad grid. Hold all unrelated
-controls at the selected configuration and reserve held-out rows for checking
-the fitted model.
+The completed Wave-B 4B `physical_envelope_b256` and 12B
+`physical_envelope_b128` rows are reserved held-out observations and are not
+rerun. Fitting code must reject any held-out sample passed to a fit operation.
+The Phase-1 row estimates scheduling/runtime behavior; with larger semantic
+batches still fixed, it is not evidence that the initial trace-capacity VRAM
+peak changes.
+
+`error_vector_prefetch_lookahead` is excluded because the current runtime does
+not have an execution consumer for it. Full/tiled/recompute storage, encoder
+residency, replay-cache, and spill-placement transfer are a Wave-C extension
+after the core matrix closes. Existing 1B Phase-D/C2 rows seed that extension;
+do not launch expensive 4B/12B recompute rows until a representative
+memory-pressure workload and acceptance contract are fixed.
+
+The 4B array uses `400G` and two hours per task. The single 12B row uses `600G`
+and eight hours. Each model array is serialized; the two model arrays may queue
+independently from one immutable project+sibling snapshot.
+
+`exact-trace-bench build-governor-wave-c` emits two launcher-ready scenario
+files, one per model allocation. It does not emit a mixed-resource combined
+launch file. Each file carries `metadata.slurm`, the pinned registry path, and
+fail-closed missing-baseline policy; immutable launch rendering remaps the
+registry into the shared project+sibling snapshot.
+
+### Wave C prelaunch gate
+
+Before submission:
+
+1. backfill Wave A/B observations from explicit campaign roots;
+2. persist fit/held-out roles, selected planning vectors, artifact fingerprints,
+   and scheduler-finalization provenance in normalized observations;
+3. publish and reload a content-addressed preliminary response bundle;
+4. prove held-out exclusion, censored-outcome handling, deterministic bundle
+   serialization, analytic fallback, and conservative intervals in tests;
+5. render both immutable launch plans and pass `sbatch --test-only` on the exact
+   commands.
+
+The backfill command accepts only explicit campaign roots and writes an
+explicit observation manifest. The preliminary bundle is published from that
+manifest and reloaded through the sibling validator. Runtime consumption is
+opt-in through an absolute `governor_response_bundle_path`; publishing evidence
+does not activate it or promote defaults.
+
+An `afterany` CPU finalizer joins terminal Slurm accounting and GPU sidecars,
+regenerates missing observations, refits the response bundle from fit rows only,
+and evaluates all declared held-outs. Finalizer success publishes evidence; it
+does not authorize exact scope or change launch defaults. Finalizer submissions
+map every array task explicitly as `<array-job-id>_<task-id>::<scenario-root>`
+and reuse the preliminary historical-observation manifest.
 
 ## Required Measurements
 

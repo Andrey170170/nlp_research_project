@@ -56,7 +56,7 @@ def test_granite_templates_source_snapshot_guard_without_submit_dir_fallback() -
     paths = sorted(
         (PROJECT_ROOT / "slurm" / "exact_trace_bench").glob("*.granite.sbatch")
     )
-    assert len(paths) == 8
+    assert len(paths) == 9
     for path in paths:
         text = path.read_text(encoding="utf-8")
         assert 'source "$WORKSPACE_ROOT/slurm/exact_trace_bench/require_snapshot_workspace.sh"' in text

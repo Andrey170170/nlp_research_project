@@ -135,6 +135,20 @@ def test_build_observation_joins_structured_artifacts(tmp_path: Path) -> None:
             }
         )
         + "\n"
+        + json.dumps(
+            {
+                "name": "planning.post_phase0",
+                "attrs": {
+                    "session_capacity": 256,
+                    "feature_microbatch_size": 128,
+                    "candidate_count": 7,
+                    "admissible_candidate_count": 3,
+                    "selected_objective": [["predicted_walltime_high_seconds", 10.5]],
+                    "execution_fingerprint": "plan-execution",
+                },
+            }
+        )
+        + "\n"
     )
     comparison_path = scenario_root / "baseline_compare.json"
     comparison_path.write_text(
@@ -208,7 +222,21 @@ def test_build_observation_joins_structured_artifacts(tmp_path: Path) -> None:
             "requested_value": 256,
         },
     ]
-    assert observation["runtime"]["phase_telemetry"]["event_count"] == 1
+    assert observation["runtime"]["phase_telemetry"]["event_count"] == 2
+    assert observation["runtime"]["planning"] == [
+        {
+            "epoch": "post_phase0",
+            "selected_vector": {
+                "session_capacity": 256,
+                "feature_microbatch_size": 128,
+            },
+            "candidate_count": 7,
+            "admissible_candidate_count": 3,
+            "selected_objective": [["predicted_walltime_high_seconds", 10.5]],
+            "execution_fingerprint": "plan-execution",
+            "semantic_fingerprint": None,
+        }
+    ]
     assert observation["resources"]["step_peaks"]["cuda_peak_reserved_gib"] == 4.0
     assert observation["resources"]["gpu_sidecar"]["sample_count"] == 1
     assert observation["fidelity"]["comparison"][
@@ -216,6 +244,7 @@ def test_build_observation_joins_structured_artifacts(tmp_path: Path) -> None:
     ] == 0.995
     assert observation["uncertainty"]["missing_measurements"] == []
     assert observation["provenance"]["slurm"]["SLURM_JOB_ID"] == "123"
+    assert len(observation["observation_fingerprint"]) == 64
 
 
 def test_timeout_is_runtime_lower_bound_observation(tmp_path: Path) -> None:

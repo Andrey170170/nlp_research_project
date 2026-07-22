@@ -378,13 +378,19 @@ remain model/scope-certified; bounded and best-effort modes may use these rows
 when their predicted lower bounds or penalties permit it. Wave C may fit around
 these measured knees without first turning them into exact defaults.
 
-**Current implementation task:** normalize campaign outputs into typed
-calibration observations, add conservative support/uncertainty predictions to
-the sibling solver, and emit automatic campaign-reference comparisons. The MVP
-uses deterministic nearest-supported evidence and Pareto reporting. Fitted
-regressions, interpolation, interaction terms, and optionally hierarchical
-statistical transfer remain later Wave C improvements, subject to held-out
-validation.
+**Current implementation task:** execute the Wave-C prelaunch gate and ten-row
+local-mechanism matrix defined in `docs/governor_calibration_matrix.md`. The
+sibling governor owns the extensible response-model registry, fitting,
+uncertainty, immutable bundles, and runtime evaluation. The project owns
+artifact normalization, explicit fit/held-out splits, historical backfill,
+Slurm finalization, campaign generation, and publication orchestration. The
+initial estimators are intentionally small, but their family registry and bundle
+contract must support later replacements without changing ingestion.
+The prelaunch implementation must emit separate 4B/12B launcher files, backfill
+historical rows through an explicit observation manifest, publish and reload a
+preliminary bundle, and keep bundle activation opt-in. The dependent finalizer
+maps each array task to one scenario root, preserves baseline provenance, joins
+step accounting/GPU sidecars, and publishes the post-campaign bundle.
 
 Hard requirements constrain variables rather than replacing optimization. The
 runtime re-solves at pre-execution, loaded-state, post-Phase-0, and safe phase

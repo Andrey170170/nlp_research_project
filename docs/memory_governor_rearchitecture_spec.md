@@ -347,24 +347,43 @@ No candidate that violates a hard requirement is admissible. When the hard
 constraint set is infeasible, the result reports conflicts and nearest rejected
 candidates rather than silently relaxing a requirement.
 
-Provider profiles declare loose implementation safety limits. A separate,
-immutable calibration catalog contains normalized observations with workload,
-hardware/code scope, decision vector, outcome, runtime, resources, fidelity,
-uncertainty, and artifact provenance. OOM/refusal are censored feasibility
-evidence, timeout is a runtime lower bound, and infrastructure failure carries
-no scientific response value. Wave labels are provenance only, never solver
-gates.
+Provider profiles declare loose implementation safety limits. The sibling
+governor also owns an extensible response-model registry and immutable response
+bundles. Project campaigns convert artifacts into the sibling's typed
+calibration samples; the sibling owns fitting, evaluation, uncertainty, bundle
+validation, and runtime prediction. Each bundle contains independently
+replaceable feasibility, resource, phase-runtime, and fidelity model artifacts,
+plus their feature schemas, support scopes, fit configuration, held-out
+diagnostics, observation-set hash, and content fingerprint. Adding a model
+family must not require changing campaign ingestion or the other response
+families.
 
-The first response model is intentionally conservative and deterministic:
-analytic resource formulas plus empirical correction envelopes, additive phase
-runtime with nearest-supported multipliers, and fidelity lower bounds from
-scope-matched nearby observations. It does not interpolate across semantic
-axes. Later calibration work may fit compact statistical response surfaces,
-regressions, interaction terms, or hierarchical transfer where held-out evidence
-supports them. Neural models are not part of the design requirement; model
-complexity should increase only when it measurably improves prediction and
-uncertainty calibration. These fitting choices are not part of the runtime
-contract.
+Normalized observations contain workload, hardware/code scope, decision vector,
+outcome, runtime, resources, fidelity, uncertainty, and artifact provenance.
+OOM/refusal are censored feasibility evidence, timeout is a runtime lower bound,
+and infrastructure failure carries no scientific response value. Held-out rows
+are never fit inputs. Wave labels are provenance only, never solver gates.
+Response coordinates use the last selected value recorded for each physical
+axis, not merely the requested scenario value. Feature schemas are derived from
+fit rows only. Project-side legacy names are normalized to the sibling's typed
+row-store and residency values before fitting.
+
+The first registered models remain deliberately small: conservative censored
+feasibility envelopes, regularized corrections around analytic resource and
+phase-runtime estimates, and local conservative fidelity prediction. Every
+family has a deterministic undersupported-data fallback. Models may not
+interpolate across semantic axes without explicit authorization. Later model
+families may add richer response surfaces, interactions, or hierarchical
+transfer where held-out evidence supports them. Neural models are not part of
+the design requirement; complexity should increase only when it measurably
+improves prediction and uncertainty calibration. Bundle and predictor protocols,
+not one particular statistical estimator, are the runtime contract.
+
+Response bundles are inert unless a caller supplies one explicitly. The project
+harness loads a validated bundle only through `governor_response_bundle_path`
+and forwards the typed object into `TraceRequest`; bundle fingerprints are part
+of execution provenance. Publication, held-out evaluation, fidelity-scope
+authorization, and default activation remain separate review points.
 
 Candidate selection is deterministic: satisfy provider safety, resource and
 walltime budgets, frozen decisions, and user pins; apply the fidelity budget;

@@ -555,6 +555,93 @@ def _cmd_verify_imports(args: argparse.Namespace) -> None:
     print(json.dumps(result, indent=2))
 
 
+def _cmd_build_governor_wave_c(args: argparse.Namespace) -> None:
+    from .scenarios.governor_calibration_wave_c import (
+        build_wave_c_config,
+        write_wave_c_configs,
+    )
+
+    payload = build_wave_c_config(
+        scratch_root=args.scratch_root,
+        model_cache_root=args.model_cache_root,
+        baseline_registry=args.baseline_registry,
+    )
+    paths = write_wave_c_configs(payload, output_dir=args.output_dir)
+    print(
+        json.dumps(
+            {
+                "outputs": {name: str(path) for name, path in paths.items()},
+                "rows": len(payload["scenarios"]),
+            },
+            indent=2,
+        )
+    )
+
+
+def _cmd_backfill_calibration_observations(args: argparse.Namespace) -> None:
+    from .calibration.backfill import backfill_observations
+
+    entries: dict[str, dict[str, Any]] = {}
+    if args.baseline_registry is not None:
+        registry = json.loads(args.baseline_registry.read_text(encoding="utf-8"))
+        raw_entries = registry.get("entries") or {}
+        if isinstance(raw_entries, dict):
+            entries = raw_entries
+    summary = backfill_observations(args.root, baseline_entries=entries)
+    if args.observation_manifest is not None:
+        observations = sorted(summary["written"] + summary["unchanged"])
+        args.observation_manifest.parent.mkdir(parents=True, exist_ok=True)
+        args.observation_manifest.write_text(
+            "".join(f"{path}\n" for path in observations), encoding="utf-8"
+        )
+        summary["observation_manifest"] = str(args.observation_manifest)
+    print(json.dumps(summary, indent=2))
+
+
+def _cmd_finalize_calibration(args: argparse.Namespace) -> None:
+    from .calibration.finalizer import finalize_observations
+
+    entries: dict[str, dict[str, Any]] = {}
+    if args.baseline_registry is not None:
+        registry = json.loads(args.baseline_registry.read_text(encoding="utf-8"))
+        raw_entries = registry.get("entries") or {}
+        if isinstance(raw_entries, dict):
+            entries = raw_entries
+    print(
+        json.dumps(
+            finalize_observations(
+                args.root, job_id=args.job_id, baseline_entries=entries
+            ),
+            indent=2,
+        )
+    )
+
+
+def _cmd_publish_response_bundle(args: argparse.Namespace) -> None:
+    from .calibration.response_bundles import publish_response_bundle
+
+    observations = list(args.observation or ())
+    if args.observation_manifest is not None:
+        observations.extend(
+            Path(line.strip())
+            for line in args.observation_manifest.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        )
+    print(
+        json.dumps(
+            publish_response_bundle(observations, output=args.output),
+            indent=2,
+            default=str,
+        )
+    )
+
+
+def _cmd_validate_response_bundle(args: argparse.Namespace) -> None:
+    from .calibration.response_bundles import validate_response_bundle
+
+    print(json.dumps(validate_response_bundle(args.bundle), indent=2, default=str))
+
+
 def _cmd_describe_fixtures(_: argparse.Namespace) -> None:
     print(json.dumps(describe_fixture_tiers(), indent=2))
 
@@ -2761,6 +2848,55 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional explicit sibling library root to prepend",
     )
     verify_imports.set_defaults(func=_cmd_verify_imports)
+
+    wave_c = subparsers.add_parser(
+        "build-governor-wave-c",
+        help="Write the separate ten-row Wave C calibration matrix",
+    )
+    wave_c.add_argument("--output-dir", type=Path, default=DEFAULT_GENERATED_DIR)
+    wave_c.add_argument("--scratch-root", type=Path, default=DEFAULT_SCRATCH_ROOT)
+    wave_c.add_argument("--model-cache-root", type=Path, default=None)
+    wave_c.add_argument(
+        "--baseline-registry",
+        type=Path,
+        default=REPO_ROOT / "experiments/baselines/governor_calibration_granite_20260719.json",
+    )
+    wave_c.set_defaults(func=_cmd_build_governor_wave_c)
+
+    backfill = subparsers.add_parser(
+        "backfill-calibration-observations",
+        help="Backfill Wave A/B observations from explicit roots only",
+    )
+    backfill.add_argument("--root", type=Path, action="append", required=True)
+    backfill.add_argument("--baseline-registry", type=Path, default=None)
+    backfill.add_argument("--observation-manifest", type=Path, default=None)
+    backfill.set_defaults(func=_cmd_backfill_calibration_observations)
+
+    finalize = subparsers.add_parser(
+        "finalize-calibration",
+        help="Regenerate observations from terminal scheduler accounting",
+    )
+    finalize.add_argument("--job-id", required=True)
+    finalize.add_argument("--root", type=Path, action="append", required=True)
+    finalize.add_argument("--baseline-registry", type=Path, default=None)
+    finalize.set_defaults(func=_cmd_finalize_calibration)
+
+    publish_bundle = subparsers.add_parser(
+        "publish-response-bundle",
+        help="Publish then validate a response-model bundle through public sibling APIs",
+    )
+    publish_sources = publish_bundle.add_mutually_exclusive_group(required=True)
+    publish_sources.add_argument("--observation", type=Path, action="append")
+    publish_sources.add_argument("--observation-manifest", type=Path)
+    publish_bundle.add_argument("--output", type=Path, required=True)
+    publish_bundle.set_defaults(func=_cmd_publish_response_bundle)
+
+    validate_bundle = subparsers.add_parser(
+        "validate-response-bundle",
+        help="Validate a response-model bundle through the public sibling API",
+    )
+    validate_bundle.add_argument("--bundle", type=Path, required=True)
+    validate_bundle.set_defaults(func=_cmd_validate_response_bundle)
 
     return parser
 

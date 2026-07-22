@@ -213,6 +213,7 @@ STABLE_PUBLIC_SCENARIO_KEYS = (
     "governor_fidelity_override_fields",
     "governor_fidelity_evidence_name",
     "governor_fidelity_evidence_version",
+    "governor_response_bundle_path",
 )
 
 ADVANCED_PUBLIC_TUNING_KEYS = (

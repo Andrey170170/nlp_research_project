@@ -59,6 +59,7 @@ SCENARIO_KNOB_KEYS = (
     "governor_fidelity_override_fields",
     "governor_fidelity_evidence_name",
     "governor_fidelity_evidence_version",
+    "governor_response_bundle_path",
     "attribution_batch_size",
     "feature_batch_size",
     "logit_batch_size",

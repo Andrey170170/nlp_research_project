@@ -21,7 +21,7 @@ from .baselines import COMPARISON_SUMMARY_KEYS, SCENARIO_KNOB_KEYS
 from .io_utils import iter_jsonl, read_json, write_json
 
 
-CALIBRATION_OBSERVATION_SCHEMA_VERSION = 1
+CALIBRATION_OBSERVATION_SCHEMA_VERSION = 2
 FIDELITY_MODES = frozenset({"exact", "bounded", "best_effort", "research"})
 _SCENARIO_AXIS_IDS = {
     "attribution_batch_size": "source_batch_size",
@@ -173,10 +173,31 @@ def normalize_calibration_campaign(scenario: Mapping[str, Any]) -> dict[str, Any
     registry_key = reference.get("registry_key")
     if not isinstance(registry_key, str) or not registry_key:
         raise ValueError("calibration campaign reference requires registry_key")
+    split = str(raw.get("split") or "fit")
+    role = str(
+        raw.get("role")
+        or (
+            "reference"
+            if scenario.get("calibration_case") in {"reference", "reference_repeat"}
+            else "fit"
+        )
+    )
+    if split not in {"fit", "heldout", "reference"}:
+        raise ValueError("calibration_campaign.split must be fit, heldout, or reference")
+    if role not in {"fit", "heldout", "reference"}:
+        raise ValueError("calibration_campaign.role must be fit, heldout, or reference")
+    fixed_controls = raw.get("fixed_controls") or {}
+    if not isinstance(fixed_controls, Mapping):
+        raise ValueError("calibration_campaign.fixed_controls must be an object")
     return {
         "campaign_id": campaign_id,
         "case": scenario.get("calibration_case"),
         "factor": scenario.get("calibration_factor"),
+        "split": split,
+        "role": role,
+        "fit_group": raw.get("fit_group"),
+        "holdout_group": raw.get("holdout_group"),
+        "fixed_controls": dict(sorted(fixed_controls.items())),
         "reference": {"kind": kind, "registry_key": registry_key},
     }
 
@@ -216,6 +237,8 @@ def build_calibration_observation(
     baseline_entry: Mapping[str, Any] | None,
     resource_sidecar_paths: Iterable[Path] = (),
     environ: Mapping[str, str] | None = None,
+    scheduler_accounting: Mapping[str, Any] | None = None,
+    finalization: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Join one persisted scenario into a stable calibration observation."""
 
@@ -225,7 +248,7 @@ def build_calibration_observation(
     fidelity = parse_fidelity_policy(scenario)
     artifacts_dir = Path(str(result.get("output_dir") or scenario_root / "artifacts"))
     completions = _completion_manifests(artifacts_dir)
-    telemetry = _telemetry_summary(artifacts_dir)
+    telemetry, planning = _telemetry_summary(artifacts_dir)
     sidecars = _resource_sidecar_summary(resource_sidecar_paths)
     comparison = _comparison_summary(scenario_root, result)
     outcome = _outcome(result)
@@ -275,7 +298,9 @@ def build_calibration_observation(
             "profiling_summary": result.get("profiling_summary") or {},
             "completion_timing": _completion_timing(completions),
             "phase_telemetry": telemetry,
+            "planning": planning,
         },
+        "workload": _workload(result),
         "resources": {
             "completion_snapshots": [
                 row.get("resource_snapshot")
@@ -311,9 +336,12 @@ def build_calibration_observation(
                 )
                 if environment.get(key) is not None
             },
+            "scheduler_accounting": dict(scheduler_accounting or {}),
+            "finalization": dict(finalization or {}),
         },
     }
-    payload["observation_id"] = _observation_id(payload)
+    payload["observation_fingerprint"] = _observation_fingerprint(payload)
+    payload["observation_id"] = f"calobs-{payload['observation_fingerprint'][:24]}"
     return payload
 
 
@@ -348,7 +376,7 @@ def _completion_manifests(artifacts_dir: Path) -> list[dict[str, Any]]:
     ]
 
 
-def _telemetry_summary(artifacts_dir: Path) -> dict[str, Any]:
+def _telemetry_summary(artifacts_dir: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     paths = sorted(artifacts_dir.glob("prompt_*/completion_*/telemetry.live.jsonl"))
     stream = "telemetry.live.jsonl"
     if not paths:
@@ -357,6 +385,7 @@ def _telemetry_summary(artifacts_dir: Path) -> dict[str, Any]:
     events: dict[str, dict[str, Any]] = {}
     total = 0
     invalid = 0
+    planning: list[dict[str, Any]] = []
     for path in paths:
         try:
             records = iter_jsonl(path)
@@ -370,6 +399,34 @@ def _telemetry_summary(artifacts_dir: Path) -> dict[str, Any]:
                 attrs: Mapping[str, Any] = (
                     raw_attrs if isinstance(raw_attrs, Mapping) else record
                 )
+                if name.startswith("planning.") and name not in {
+                    "planning.observation",
+                    "planning.resource_actual",
+                    "planning.terminal_cleanup",
+                }:
+                    vector_keys = (
+                        "row_store_policy", "row_store_bytes", "spill_target",
+                        "session_capacity", "phase1_source_batch_size",
+                        "source_microbatch_size", "feature_microbatch_size",
+                        "logit_microbatch_size", "decoder_cache_bytes",
+                        "decoder_fetch_chunk_size", "replay_window", "prefetch_depth",
+                        "replay_tile_cache_bytes",
+                    )
+                    planning.append(
+                        {
+                            "epoch": name.removeprefix("planning."),
+                            "selected_vector": {
+                                key: attrs[key] for key in vector_keys if key in attrs
+                            },
+                            "candidate_count": attrs.get("candidate_count"),
+                            "admissible_candidate_count": attrs.get(
+                                "admissible_candidate_count"
+                            ),
+                            "selected_objective": attrs.get("selected_objective"),
+                            "execution_fingerprint": attrs.get("execution_fingerprint"),
+                            "semantic_fingerprint": attrs.get("semantic_fingerprint"),
+                        }
+                    )
                 summary = events.setdefault(name, {"count": 0, "numeric": {}})
                 summary["count"] += 1
                 for key, value in attrs.items():
@@ -391,7 +448,7 @@ def _telemetry_summary(artifacts_dir: Path) -> dict[str, Any]:
         "event_count": total,
         "invalid_file_count": invalid,
         "events": events,
-    }
+    }, planning
 
 
 def _resource_sidecar_summary(paths: Iterable[Path]) -> dict[str, Any]:
@@ -475,10 +532,29 @@ def _outcome(result: Mapping[str, Any]) -> dict[str, Any]:
 def _scope(scenario: Mapping[str, Any]) -> dict[str, Any]:
     keys = (
         "name", "stage", "cluster", "resource_profile", "method", "model_name",
-        "model_id", "transcoder_provider_family", "transcoder_set", "fixture_name",
+        "model_id", "transcoder_architecture", "transcoder_provider_family",
+        "transcoder_set", "fixture_name",
         "fixture_kind", "exact_trace_internal_dtype", "governor_profile_name",
     )
     return {key: scenario.get(key) for key in keys if key in scenario}
+
+
+def _workload(result: Mapping[str, Any]) -> dict[str, float | int]:
+    summary = result.get("artifact_summary")
+    if not isinstance(summary, Mapping):
+        return {}
+    keys = (
+        "prompt_token_count",
+        "initial_input_token_count",
+        "generated_token_count",
+        "n_steps_traced",
+        "max_active_features",
+    )
+    return {
+        key: value
+        for key in keys
+        if (value := _number(summary.get(key))) is not None
+    }
 
 
 def _completion_timing(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -541,10 +617,11 @@ def _missing_measurements(
     return missing
 
 
-def _observation_id(payload: Mapping[str, Any]) -> str:
+def _observation_fingerprint(payload: Mapping[str, Any]) -> str:
     canonical = dict(payload)
     canonical["observation_id"] = None
+    canonical["observation_fingerprint"] = None
     digest = hashlib.sha256(
         json.dumps(canonical, sort_keys=True, separators=(",", ":"), default=str).encode()
     ).hexdigest()
-    return f"calobs-{digest[:24]}"
+    return digest

@@ -36,6 +36,10 @@ from circuit_tracer.governor import (
     StorageTier,
 )
 from circuit_tracer.governor.calibration import FidelityBudget as SiblingFidelityBudget
+from circuit_tracer.governor.response_models import (
+    ResponseBundle,
+    load_response_bundle,
+)
 
 from nlp_research_project.exact_trace_bench.calibration_observations import (
     NormalizedFidelityPolicy,
@@ -63,6 +67,7 @@ class TracePolicy:
         default_factory=GovernorFidelityPolicy
     )
     governor_admission_mode: AdmissionMode = AdmissionMode.ENFORCE
+    response_bundle: ResponseBundle | None = field(default=None, repr=False)
 
     def request(
         self,
@@ -95,6 +100,7 @@ class TracePolicy:
             physical_requirements=self.physical_requirements,
             governor_fidelity=self.governor_fidelity,
             governor_admission_mode=self.governor_admission_mode,
+            response_bundle=self.response_bundle,
         )
 
 
@@ -110,6 +116,7 @@ def trace_policy_from_scenario(
     governor_admission_mode = AdmissionMode(
         str(scenario.get("governor_admission_mode", "enforce"))
     )
+    response_bundle = _response_bundle_from_scenario(scenario)
     physical_requirements = (
         _physical_requirements_from_scenario(scenario)
         if provider_profile is not None
@@ -303,7 +310,22 @@ def trace_policy_from_scenario(
         physical_requirements=physical_requirements,
         governor_fidelity=governor_fidelity,
         governor_admission_mode=governor_admission_mode,
+        response_bundle=response_bundle,
     )
+
+
+def _response_bundle_from_scenario(
+    scenario: Mapping[str, Any],
+) -> ResponseBundle | None:
+    raw = scenario.get("governor_response_bundle_path")
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not raw:
+        raise ValueError("governor_response_bundle_path must be a non-empty path")
+    path = Path(raw)
+    if not path.is_absolute():
+        raise ValueError("governor_response_bundle_path must be absolute")
+    return load_response_bundle(path)
 
 
 def _governor_policy_from_scenario(

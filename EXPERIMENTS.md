@@ -1,7 +1,7 @@
 # Experiments inventory
 
 Status: Current compact index and interpretation summary
-Last updated: 2026-07-19
+Last updated: 2026-07-22
 
 This file is the readable front page for experiment provenance. It should stay
 small enough to edit by hand.
@@ -84,6 +84,13 @@ metric floors; best-effort mode assigns fidelity loss a soft objective penalty;
 research mode permits labeled extrapolation. Campaign ingestion, fidelity-scope
 authorization, and launch-default changes are separate decisions.
 
+Wave C uses a ten-row local causal matrix: nine serialized 4B PLT rows at
+`400G/2h` and one 12B PLT row at `600G/8h`. The response-model implementation
+is now split at the intended ownership boundary: project artifacts become typed
+fit/held-out observations, while the sibling owns model families, uncertainty,
+immutable bundles, validation, and staged runtime evaluation. Bundle activation
+is explicit and remains off for calibration launches.
+
 Decoder-fetch chunk size is numerically sensitive for PLT: `c32768`
 gives 4.01x speed with about 0.25-0.28% broad graph drift. Keep non-reference
 chunks out of exact mode unless scope-certified; retain them as bounded,
@@ -123,12 +130,11 @@ Clean/current toy parity follow-up (May 2026):
 
 Near-term implementation focus:
 
-1. normalize Wave A/B and future rows into joined calibration observations with
-   automatic campaign-reference comparisons;
-2. add conservative support, uncertainty, fidelity-budget filtering, and Pareto
-   alternatives to every staged governor report;
-3. run Wave C local mechanism fitting around measured model-local knees and
-   retain held-out rows for response-model validation;
+1. backfill Wave A/B into the v2 observation schema and publish the preliminary
+   response bundle;
+2. run the separate Wave C 4B/12B arrays and dependent finalizer;
+3. inspect held-out coverage, prediction error, resource use, and graph parity
+   before authorizing any new fidelity scope;
 4. consolidate governed harness workflows in Phase F after the calibrated
    solver passes its final Granite gates.
 

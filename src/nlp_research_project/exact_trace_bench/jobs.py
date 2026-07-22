@@ -383,6 +383,10 @@ def render_launch_plan(
 
     scenarios_payload = read_json(scenarios_file)
     scenarios_metadata = scenarios_payload.get("metadata") or {}
+    if baseline_registry is None:
+        metadata_registry = scenarios_metadata.get("baseline_registry")
+        if isinstance(metadata_registry, str) and metadata_registry:
+            baseline_registry = Path(metadata_registry)
     fail_on_baseline_missing = fail_on_baseline_missing or bool(
         scenarios_metadata.get("fail_on_baseline_missing", False)
     )
@@ -512,8 +516,15 @@ def render_launch_plan(
                 f"EXACT_TRACE_LIVE_WORKSPACE_RATIONALE={normalized_live_rationale}",
             ]
         )
-    if baseline_registry is not None:
-        export_parts.append(f"BASELINE_REGISTRY={baseline_registry.resolve()}")
+    launch_baseline_registry = (
+        None
+        if baseline_registry is None
+        else _path_in_workspace(
+            baseline_registry, workspace=workspace, source_root=source_root
+        )
+    )
+    if launch_baseline_registry is not None:
+        export_parts.append(f"BASELINE_REGISTRY={launch_baseline_registry}")
     if fail_on_baseline_missing:
         export_parts.append("FAIL_ON_BASELINE_MISSING=1")
     if fail_on_validation_fail:
@@ -586,8 +597,8 @@ def render_launch_plan(
         "mem": resolved_mem,
         "walltime": resolved_walltime,
         "baseline_registry": None
-        if baseline_registry is None
-        else str(baseline_registry.resolve()),
+        if launch_baseline_registry is None
+        else str(launch_baseline_registry),
         "fail_on_baseline_missing": fail_on_baseline_missing,
         "fail_on_validation_fail": fail_on_validation_fail,
         "sbatch_argv": command_parts,

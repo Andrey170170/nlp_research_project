@@ -9,6 +9,7 @@ from circuit_tracer import AdmissionMode, FidelityMode
 
 from nlp_research_project.exact_trace_bench.config import base_trace_defaults
 from nlp_research_project.exact_trace_bench.trace_runtime import tracing
+from nlp_research_project.exact_trace_bench.trace_runtime import request as request_module
 from nlp_research_project.exact_trace_bench.trace_runtime.request import (
     _cap_walltime_to_slurm,
     trace_policy_from_scenario,
@@ -49,6 +50,25 @@ def test_governed_policy_resolves_named_profile_and_envelope() -> None:
     assert policy.evidence.metadata["governor_profile_name"] == PROFILE
     assert policy.governor_fidelity.mode is FidelityMode.EXACT
     assert policy.governor_admission_mode is AdmissionMode.ENFORCE
+
+
+def test_governed_policy_loads_opt_in_response_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundle_path = tmp_path / "bundle.json"
+    bundle_path.write_text("placeholder")
+    bundle = SimpleNamespace(content_fingerprint="bundle-fingerprint")
+    monkeypatch.setattr(request_module, "load_response_bundle", lambda path: bundle)
+    scenario = {
+        **_governed_scenario(),
+        "governor_response_bundle_path": str(bundle_path),
+    }
+
+    policy = trace_policy_from_scenario(scenario)
+    request = policy.request(model=object(), prompt="test")
+
+    assert policy.response_bundle is bundle
+    assert request.response_bundle is bundle
 
 
 def test_governor_walltime_is_capped_to_live_slurm_remainder() -> None:
