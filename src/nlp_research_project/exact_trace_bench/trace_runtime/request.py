@@ -35,6 +35,12 @@ from circuit_tracer.governor import (
     RowStorePolicy,
     StorageTier,
 )
+from circuit_tracer.governor.calibration import FidelityBudget as SiblingFidelityBudget
+
+from nlp_research_project.exact_trace_bench.calibration_observations import (
+    NormalizedFidelityPolicy,
+    parse_fidelity_policy,
+)
 
 
 @dataclass(frozen=True)
@@ -362,19 +368,56 @@ def _cap_walltime_to_slurm(
 def _governor_fidelity_from_scenario(
     scenario: Mapping[str, Any],
 ) -> GovernorFidelityPolicy:
-    mode = FidelityMode(str(scenario.get("governor_fidelity_mode", "strict")))
-    raw_fields = scenario.get("governor_fidelity_override_fields", ())
-    if isinstance(raw_fields, (str, bytes)) or not isinstance(raw_fields, (list, tuple)):
-        raise ValueError("governor_fidelity_override_fields must be a list of strings")
-    if any(not isinstance(field, str) or not field for field in raw_fields):
-        raise ValueError(
-            "governor_fidelity_override_fields must contain non-empty strings"
+    normalized = parse_fidelity_policy(scenario)
+    return _sibling_fidelity_policy(normalized)
+
+
+def _sibling_fidelity_policy(
+    policy: NormalizedFidelityPolicy,
+) -> GovernorFidelityPolicy:
+    """Bridge the project contract while the sibling four-mode API lands."""
+
+    mode = FidelityMode(policy.mode)
+    kwargs: dict[str, Any] = {"mode": mode, "override_fields": policy.override_fields}
+    fields = getattr(GovernorFidelityPolicy, "__dataclass_fields__", {})
+    if "evidence_name" in fields:
+        kwargs["evidence_name"] = policy.evidence_name
+    if "evidence_version" in fields:
+        kwargs["evidence_version"] = policy.evidence_version
+    if "budget" in fields and (
+        policy.budget.metrics or policy.budget.allowed_sensitive_axes
+    ):
+        kwargs["budget"] = SiblingFidelityBudget(
+            metric_floors=tuple(
+                (name, metric.minimum)
+                for name, metric in policy.budget.metrics.items()
+            ),
+            allowed_sensitive_axes=policy.budget.allowed_sensitive_axes,
+            confidence=max(
+                (metric.confidence for metric in policy.budget.metrics.values()),
+                default=0.95,
+            ),
+            penalty_weight=(
+                policy.budget.penalty
+                if policy.budget.penalty is not None
+                else 1.0
+            ),
         )
+    if "penalty" in fields:
+        kwargs["penalty"] = policy.budget.penalty
+    if "fidelity_budget" in fields:
+        kwargs["fidelity_budget"] = {
+            "metrics": {
+                name: {
+                    "minimum": metric.minimum,
+                    "confidence": metric.confidence,
+                }
+                for name, metric in policy.budget.metrics.items()
+            },
+            "penalty": policy.budget.penalty,
+        }
     return GovernorFidelityPolicy(
-        mode=mode,
-        override_fields=tuple(sorted(raw_fields)),
-        evidence_name=scenario.get("governor_fidelity_evidence_name"),
-        evidence_version=scenario.get("governor_fidelity_evidence_version"),
+        **kwargs,
     )
 
 

@@ -180,7 +180,7 @@ def _row(
         "calibration_case": case,
         "calibration_factor": factor,
         "calibration_pair": factor,
-        "governor_fidelity_mode": "research" if research_fields else "strict",
+        "governor_fidelity_mode": "research" if research_fields else "exact",
         **_physical_controls(provider),
         **overrides,
     }
@@ -516,6 +516,13 @@ def build_governor_calibration_config(
             "mode": "metrics",
             "registry_key": provider.baseline_registry_key,
             "baseline_required": True,
+        }
+        scenario["calibration_campaign"] = {
+            "campaign_id": stage,
+            "reference": {
+                "kind": "baseline_registry",
+                "registry_key": provider.baseline_registry_key,
+            },
         }
         scenarios.append(scenario)
     return {

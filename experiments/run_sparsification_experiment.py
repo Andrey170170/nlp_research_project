@@ -27,6 +27,11 @@ from nlp_research_project.exact_trace_bench.baselines import (  # noqa: E402
     validate_baseline_entry,
     write_scenario_metrics,
 )
+from nlp_research_project.exact_trace_bench.calibration_observations import (  # noqa: E402
+    apply_campaign_reference_to_baseline_check,
+    build_calibration_observation,
+    write_calibration_observation,
+)
 from nlp_research_project.exact_trace_bench.config import (  # noqa: E402
     DEFAULT_SCRATCH_ROOT,
 )
@@ -352,9 +357,13 @@ def run_scenario(
     _assert_fresh_scenario_root(scenario_root)
     scenario_root.mkdir(parents=True, exist_ok=True)
     run_output_dir.mkdir(parents=True, exist_ok=True)
-    effective_scenario = apply_runtime_overrides(
-        scenario,
-        cross_batch_decoder_cache_bytes_override=cross_batch_decoder_cache_bytes_override,
+    effective_scenario = apply_campaign_reference_to_baseline_check(
+        apply_runtime_overrides(
+            scenario,
+            cross_batch_decoder_cache_bytes_override=(
+                cross_batch_decoder_cache_bytes_override
+            ),
+        )
     )
     scenario_payload = dict(effective_scenario)
     scenario_payload.pop(_EXPLICIT_SCENARIO_KEYS, None)
@@ -431,6 +440,13 @@ def run_scenario(
             baseline_status=baseline_check,
         )
         (scenario_root / "result.json").write_text(json.dumps(result, indent=2))
+        _write_calibration_observation(
+            scenario_root=scenario_root,
+            scenario=effective_scenario,
+            result=result,
+            baseline_entry=baseline_entry,
+            env=env,
+        )
         if fail_on_baseline_missing:
             raise RuntimeError(
                 f"Required baseline invalid for scenario {scenario_name}: "
@@ -455,6 +471,7 @@ def run_scenario(
         log_file.write(f"Command: {shlex.join(cmd)}\n\n")
         log_file.flush()
 
+        execution_error: Exception | None = None
         try:
             completed = subprocess.run(
                 cmd,
@@ -470,15 +487,22 @@ def run_scenario(
             result["status"] = "timeout"
             result["returncode"] = None
             log_file.write(f"\nTimed out after {timeout_minutes} minutes.\n")
+        except Exception as exc:  # persist a failure observation before surfacing it
+            execution_error = exc
+            result["status"] = "failed"
+            result["returncode"] = None
+            result["execution_error"] = f"{type(exc).__name__}: {exc}"
+            log_file.write(f"\nExecution failed: {result['execution_error']}\n")
         else:
             result["returncode"] = completed.returncode
 
     result["duration_seconds"] = round(time.time() - start, 2)
     result["log_path"] = str(log_path)
-    result["status"] = _classify_status(
-        log_path,
-        returncode=result.get("returncode"),
-    )
+    if result["status"] == "unknown":
+        result["status"] = _classify_status(
+            log_path,
+            returncode=result.get("returncode"),
+        )
     result["profiling_summary"] = _extract_benchmark_metrics(log_path)
     result["artifact_summary"] = _summarize_artifacts(run_output_dir)
 
@@ -515,6 +539,23 @@ def run_scenario(
         baseline_status=baseline_check,
     )
     (scenario_root / "result.json").write_text(json.dumps(result, indent=2))
+    try:
+        _write_calibration_observation(
+            scenario_root=scenario_root,
+            scenario=effective_scenario,
+            result=result,
+            baseline_entry=baseline_entry,
+            env=env,
+        )
+    except Exception as observation_error:
+        result["calibration_observation_error"] = (
+            f"{type(observation_error).__name__}: {observation_error}"
+        )
+        (scenario_root / "result.json").write_text(json.dumps(result, indent=2))
+        if execution_error is None:
+            raise
+    if execution_error is not None:
+        raise execution_error
     if (
         fail_on_validation_fail
         and baseline_check.get("enabled")
@@ -526,6 +567,30 @@ def run_scenario(
             f"{baseline_check.get('failure_reasons')}"
         )
     return result
+
+
+def _write_calibration_observation(
+    *,
+    scenario_root: Path,
+    scenario: dict[str, Any],
+    result: dict[str, Any],
+    baseline_entry: dict[str, Any] | None,
+    env: dict[str, str],
+) -> None:
+    sidecar_dir = env.get("GPU_MONITOR_DIR")
+    sidecar_paths = () if sidecar_dir is None else Path(sidecar_dir).glob("*.gpulog")
+    observation = build_calibration_observation(
+        scenario_root=scenario_root,
+        scenario=scenario,
+        result=result,
+        baseline_entry=baseline_entry,
+        resource_sidecar_paths=sidecar_paths,
+        environ=env,
+    )
+    if observation is not None:
+        path = write_calibration_observation(scenario_root, observation)
+        result["calibration_observation_json"] = str(path)
+        (scenario_root / "result.json").write_text(json.dumps(result, indent=2))
 
 
 def load_scenarios(scenarios_file: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:

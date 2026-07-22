@@ -35,7 +35,7 @@ def _diagnostic_rows() -> tuple[dict[str, Any], ...]:
             "attribution_update_interval": 4,
             "nnsight_session_capacity": 128,
             "phase4_execution_batch_max_rows": 128,
-            "governor_fidelity_mode": "strict",
+            "governor_fidelity_mode": "exact",
         },
         {
             "diagnostic_case": "constant_window_logical_b256_session128_physical_b128",

@@ -47,7 +47,7 @@ def test_governed_policy_resolves_named_profile_and_envelope() -> None:
     assert policy.resources.effective_vram_budget_bytes == int(141 * GIB * 0.9)
     assert policy.resources.host_budget_bytes == 200 * GIB
     assert policy.evidence.metadata["governor_profile_name"] == PROFILE
-    assert policy.governor_fidelity.mode is FidelityMode.STRICT
+    assert policy.governor_fidelity.mode is FidelityMode.EXACT
     assert policy.governor_admission_mode is AdmissionMode.ENFORCE
 
 
@@ -117,7 +117,7 @@ def test_governed_policy_rejects_invalid_admission_mode() -> None:
             "governor_fidelity_override_fields": ["source_batch_size"],
         },
         {
-            "governor_fidelity_mode": "validated_relaxed",
+            "governor_fidelity_mode": "bounded",
             "governor_fidelity_override_fields": ["source_batch_size"],
         },
     ],

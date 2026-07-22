@@ -119,6 +119,7 @@ echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-unset}"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
 
 GPU_MONITOR_DIR="${OUTPUT_ROOT}/_slurm_gpu_monitor/${SLURM_ARRAY_JOB_ID:-${SLURM_JOB_ID}}_${SLURM_ARRAY_TASK_ID}"
+export GPU_MONITOR_DIR
 mkdir -p "$GPU_MONITOR_DIR"
 (
     cd "$GPU_MONITOR_DIR"

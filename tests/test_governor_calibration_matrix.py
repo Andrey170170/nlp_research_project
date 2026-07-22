@@ -72,7 +72,7 @@ def test_governor_calibration_wave_a_is_upward_and_complete() -> None:
 
         reference = cases["reference"]
         assert payload["scenarios"][0] is reference
-        assert reference["governor_fidelity_mode"] == "strict"
+        assert reference["governor_fidelity_mode"] == "exact"
         assert "governor_fidelity_override_fields" not in reference
         assert reference["attribution_batch_size"] == provider.reference_logical_batch
         assert (
@@ -92,7 +92,7 @@ def test_governor_calibration_wave_a_is_upward_and_complete() -> None:
             policy = trace_policy_from_scenario({**payload["defaults"], **row})
             assert policy.governor_admission_mode is AdmissionMode.ADVISORY
             assert policy.governor_fidelity.mode.value == row["governor_fidelity_mode"]
-            if row["governor_fidelity_mode"] == "strict":
+            if row["governor_fidelity_mode"] == "exact":
                 assert "governor_fidelity_override_fields" not in row
             else:
                 assert row["governor_fidelity_mode"] == "research"
@@ -120,7 +120,7 @@ def test_clt_wave_a_covers_high_batches_chunks_caches_and_semantic_axes() -> Non
         "semantic_feature_b1500",
         "semantic_logit_b1500",
     } <= cases.keys()
-    assert cases["decoder_chunk_c10080"]["governor_fidelity_mode"] == "strict"
+    assert cases["decoder_chunk_c10080"]["governor_fidelity_mode"] == "exact"
     assert (
         _physical_requirements_from_scenario(cases["decoder_chunk_c10080"])
         .decoder_fetch_chunk_size
@@ -155,7 +155,7 @@ def test_plt_wave_a_covers_high_batches_chunks_cache_and_refresh_research() -> N
         "semantic_refresh_g2",
         "semantic_refresh_g8",
     } <= cases.keys()
-    assert cases["decoder_chunk_c32768"]["governor_fidelity_mode"] == "strict"
+    assert cases["decoder_chunk_c32768"]["governor_fidelity_mode"] == "exact"
     assert (
         _physical_requirements_from_scenario(cases["decoder_chunk_c32768"])
         .decoder_fetch_chunk_size
@@ -278,5 +278,5 @@ def test_governor_calibration_wave_b_research_rows_name_exact_overrides() -> Non
         }
 
         for row in rows[:3]:
-            assert row["governor_fidelity_mode"] == "strict"
+            assert row["governor_fidelity_mode"] == "exact"
             assert "governor_fidelity_override_fields" not in row

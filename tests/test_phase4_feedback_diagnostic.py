@@ -67,7 +67,7 @@ def test_phase4_feedback_diagnostic_declares_fidelity_and_baselines() -> None:
     rows = payload["scenarios"]
 
     assert [row["governor_fidelity_mode"] for row in rows] == [
-        "strict",
+        "exact",
         "research",
         "research",
         "research",

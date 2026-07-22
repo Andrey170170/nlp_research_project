@@ -208,6 +208,11 @@ STABLE_PUBLIC_SCENARIO_KEYS = (
     "governor_admission_mode",
     "governor_profile_name",
     "governor_resource_envelope",
+    "governor_fidelity_mode",
+    "governor_fidelity_budget",
+    "governor_fidelity_override_fields",
+    "governor_fidelity_evidence_name",
+    "governor_fidelity_evidence_version",
 )
 
 ADVANCED_PUBLIC_TUNING_KEYS = (
