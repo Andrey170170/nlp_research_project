@@ -14,6 +14,7 @@ from ..calibration_observations import (
 from ..io_utils import read_json, write_json
 
 SACCT_FIELDS = (
+    "JobID",
     "JobIDRaw",
     "State",
     "ExitCode",
@@ -44,6 +45,7 @@ TERMINAL_FAILURE = frozenset(
 
 @dataclass(frozen=True)
 class SchedulerAccounting:
+    scheduler_job_id: str
     job_id: str
     state: str
     exit_code: str | None = None
@@ -115,6 +117,7 @@ def parse_sacct(text: str) -> tuple[SchedulerAccounting, ...]:
         elapsed = row["ElapsedRaw"]
         records.append(
             SchedulerAccounting(
+                scheduler_job_id=row["JobID"],
                 job_id=row["JobIDRaw"],
                 state=row["State"],
                 exit_code=row["ExitCode"] or None,
@@ -147,8 +150,8 @@ def _synthetic_result(root: Path, accounting: SchedulerAccounting) -> dict[str, 
     }
 
 
-def _resource_sidecars(root: Path, job_id: str) -> tuple[Path, ...]:
-    monitor_root = root.parent / "_slurm_gpu_monitor" / job_id
+def _resource_sidecars(root: Path, scheduler_job_id: str) -> tuple[Path, ...]:
+    monitor_root = root.parent / "_slurm_gpu_monitor" / scheduler_job_id
     if not monitor_root.is_dir():
         return ()
     return tuple(sorted(monitor_root.glob("*.gpulog")))
@@ -163,16 +166,18 @@ def finalize_observations(
     baseline_entries: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     accounting_rows = sacct_parser(sacct_runner(job_id))
-    by_id = {row.job_id: row for row in accounting_rows}
-    fallback = by_id.get(job_id) or (
-        accounting_rows[0] if len(accounting_rows) == 1 else None
+    allocation_rows = tuple(
+        row for row in accounting_rows if row.scheduler_job_id == job_id
     )
-    if fallback is None:
+    if len(allocation_rows) != 1:
         raise ValueError(f"no unambiguous sacct allocation record for {job_id}")
+    fallback = allocation_rows[0]
     if not fallback.terminal:
         raise ValueError(f"job {fallback.job_id} is not terminal: {fallback.state}")
     step_rows = tuple(
-        row for row in accounting_rows if row.job_id.startswith(f"{fallback.job_id}.")
+        row
+        for row in accounting_rows
+        if row.scheduler_job_id.startswith(f"{fallback.scheduler_job_id}.")
     )
     scheduler_accounting = {
         **fallback.to_json(),
@@ -213,7 +218,8 @@ def finalize_observations(
             write_json(result_path, result)
         finalization = {
             "kind": "scheduler_afterany",
-            "source_job_id": fallback.job_id,
+            "source_job_id": fallback.scheduler_job_id,
+            "source_job_id_raw": fallback.job_id,
             "source_state": fallback.state,
             "regenerated_after_runner_loss": result.get("result_origin")
             == "scheduler_finalizer",
@@ -224,7 +230,7 @@ def finalize_observations(
             scenario=scenario,
             result=result,
             baseline_entry=baseline_entry,
-            resource_sidecar_paths=_resource_sidecars(root, fallback.job_id),
+            resource_sidecar_paths=_resource_sidecars(root, fallback.scheduler_job_id),
             scheduler_accounting=scheduler_accounting,
             finalization=finalization,
         )

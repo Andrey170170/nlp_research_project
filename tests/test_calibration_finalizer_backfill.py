@@ -89,13 +89,15 @@ def test_sacct_parser_and_finalizer_regenerate_after_runner_death(
     root = tmp_path / "row"
     _write_root(root, result=False)
     sacct = (
-        "123|TIMEOUT|0:0|7200|20G|30G|cpu=1,mem=400G|400G|start|end|node|TimeLimit\n"
+        "123|123|TIMEOUT|0:0|7200|20G|30G|cpu=1,mem=400G|400G|start|end|node|TimeLimit\n"
     )
 
     summary = finalize_observations([root], job_id="123", sacct_runner=lambda _: sacct)
     observation = json.loads((root / "calibration_observation.json").read_text())
 
     assert summary["accounting"][0]["classification"] == "censored"
+    assert summary["accounting"][0]["scheduler_job_id"] == "123"
+    assert summary["accounting"][0]["job_id"] == "123"
     assert (
         json.loads((root / "result.json").read_text())["result_origin"]
         == "scheduler_finalizer"
@@ -111,7 +113,7 @@ def test_sacct_parser_and_finalizer_regenerate_after_runner_death(
 def test_finalizer_rejects_nonterminal_accounting(tmp_path: Path) -> None:
     root = tmp_path / "row"
     _write_root(root)
-    sacct = "123|RUNNING|0:0|1||||||||\n"
+    sacct = "123|123|RUNNING|0:0|1||||||||\n"
     with pytest.raises(ValueError, match="not terminal"):
         finalize_observations([root], job_id="123", sacct_runner=lambda _: sacct)
 
@@ -119,3 +121,40 @@ def test_finalizer_rejects_nonterminal_accounting(tmp_path: Path) -> None:
 def test_parse_sacct_rejects_short_rows() -> None:
     with pytest.raises(ValueError, match="expected"):
         parse_sacct("123|FAILED\n")
+
+
+def test_finalizer_selects_granite_array_allocation_by_scheduler_job_id(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "row"
+    _write_root(root, result=False)
+    monitor = root.parent / "_slurm_gpu_monitor" / "1649303_0"
+    monitor.mkdir(parents=True)
+    (monitor / "1649304.gpulog").write_text("gpu telemetry\n")
+    sacct = (
+        "1649303_0|1649304|COMPLETED|0:0|10||||||||\n"
+        "1649303_0.batch|1649304.batch|COMPLETED|0:0|10||||||||\n"
+    )
+
+    summary = finalize_observations(
+        [root], job_id="1649303_0", sacct_runner=lambda _: sacct
+    )
+    observation = json.loads((root / "calibration_observation.json").read_text())
+    accounting = observation["provenance"]["scheduler_accounting"]
+
+    assert summary["accounting"][0]["scheduler_job_id"] == "1649303_0"
+    assert summary["accounting"][0]["job_id"] == "1649304"
+    assert accounting["scheduler_job_id"] == "1649303_0"
+    assert accounting["job_id"] == "1649304"
+    assert accounting["steps"][0]["scheduler_job_id"] == "1649303_0.batch"
+    assert observation["provenance"]["finalization"] == {
+        "kind": "scheduler_afterany",
+        "source_job_id": "1649303_0",
+        "source_job_id_raw": "1649304",
+        "source_state": "COMPLETED",
+        "regenerated_after_runner_loss": True,
+        "finalized_at": None,
+    }
+    assert observation["resources"]["gpu_sidecar"]["paths"] == [
+        str(monitor / "1649304.gpulog")
+    ]
