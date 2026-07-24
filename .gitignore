@@ -39,6 +39,7 @@ docs/*
 !docs/tracing_runtime_rewrite_spec.md
 !docs/next_exact_optimization_paths_spec.md
 !docs/tracing_profiling_spec.md
+!docs/performance_optimization_loop.md
 !docs/history/
 !docs/history/*.md
 

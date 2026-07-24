@@ -24,6 +24,7 @@ plans.
 | `../CLAUDE.md` | Pointer back to `AGENTS.md` |
 | `../EXPERIMENTS.md` | Compact experiment baseline/index and current interpretation |
 | `harness.md` | Current exact-bench harness overview |
+| `performance_optimization_loop.md` | Isolated H200 performance and graph-parity loop on `perf/exact-trace-loop` |
 | `chpc_setup.md` | CHPC Granite setup, caches, SLURM profiles, and migration checklist |
 | `chpc_resource_pools.md` | CHPC GPU pool candidates and job-class routing |
 | `metric_calibration.md` | Phase-0/Phase-1 decoder-cache and metric calibration workflow |

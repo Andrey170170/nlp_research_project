@@ -19,6 +19,9 @@ from nlp_research_project.exact_trace_bench.graph_compare import (  # noqa: E402
     compare_artifact_dirs,
     compare_step_pair,
 )
+from nlp_research_project.exact_trace_bench.baselines import (  # noqa: E402
+    evaluate_thresholds,
+)
 
 
 @dataclass
@@ -33,14 +36,22 @@ class SimpleStep:
     n_features: int
 
 
-def _step(*, feature_ids, rows, cols, weights) -> SimpleStep:
+def _step(
+    *,
+    feature_ids,
+    rows,
+    cols,
+    weights,
+    step_idx: int = 0,
+    token_text: str = "Let",
+) -> SimpleStep:
     return SimpleStep(
-        step_idx=0,
+        step_idx=step_idx,
         row_idx=np.asarray(rows, dtype=np.int32),
         col_idx=np.asarray(cols, dtype=np.int32),
         weights=np.asarray(weights, dtype=np.float32),
         feature_ids=np.asarray(feature_ids, dtype=np.int64),
-        token_text="Let",
+        token_text=token_text,
         logprob=-0.1,
         n_features=len(feature_ids),
     )
@@ -83,6 +94,51 @@ def test_compare_step_pair_reports_shared_unique_edge_decomposition() -> None:
     assert shared_edge_stability["topk_overlap"]["64"]["shared_count"] == 1
 
     assert result["all_edge_weighted_jaccard"] < 1.0
+
+
+def test_all_edge_metrics_and_token_identity_detect_logit_drift() -> None:
+    left = _step(
+        feature_ids=[(0, 0, 1), (0, 0, 2)],
+        rows=[1, 2],
+        cols=[0, 0],
+        weights=[0.5, 0.5],
+        token_text="A",
+    )
+    right = _step(
+        feature_ids=[(0, 0, 1), (0, 0, 2)],
+        rows=[1, 3],
+        cols=[0, 0],
+        weights=[0.5, 0.5],
+        token_text="B",
+    )
+
+    result = compare_step_pair(cast(Any, left), cast(Any, right))
+
+    assert result["edge_jaccard"] == 1.0
+    assert result["all_edge_jaccard"] == pytest.approx(1 / 3)
+    assert result["all_edge_topk_overlap"]["256"]["jaccard"] == pytest.approx(1 / 3)
+    assert result["target_token_match"] == 0.0
+
+
+def test_all_edge_deviation_detects_magnitude_difference() -> None:
+    left = _step(
+        feature_ids=[(0, 0, 1)],
+        rows=[1],
+        cols=[0],
+        weights=[1.0],
+    )
+    right = _step(
+        feature_ids=[(0, 0, 1)],
+        rows=[1],
+        cols=[0],
+        weights=[0.5],
+    )
+
+    result = compare_step_pair(cast(Any, left), cast(Any, right))
+
+    assert result["all_edge_jaccard"] == 1.0
+    assert result["all_edge_weighted_jaccard"] == 0.5
+    assert result["all_edge_normalized_l1_deviation"] == 0.5
 
 
 def test_topk_overlap_penalizes_edges_present_on_only_one_side() -> None:
@@ -192,3 +248,47 @@ def test_compare_artifact_dirs_reports_incomplete_step_alignment(
     assert result["aligned_step_count"] == 1
     assert result["comparison_complete"] is False
     assert result["completion_comparisons"][0]["left_only_step_count"] == 1
+
+
+def test_compare_artifact_dirs_persists_worst_step_not_only_mean(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for side in ("left", "right"):
+        completion = tmp_path / side / "prompt_000" / "completion_000"
+        _write_npz(completion / "step_000.npz")
+        _write_npz(completion / "step_001.npz")
+
+    from nlp_research_project.exact_trace_bench import compact_io
+
+    def load_compact(path: Path) -> SimpleStep:
+        step_idx = int(path.stem.split("_")[1])
+        is_right = "right" in path.parts
+        rows = [0] if step_idx == 0 or not is_right else [1]
+        return _step(
+            feature_ids=[(0, 0, 1)],
+            rows=rows,
+            cols=[0],
+            weights=[1.0],
+            step_idx=step_idx,
+        )
+
+    monkeypatch.setattr(compact_io, "load_compact", load_compact)
+
+    result = compare_artifact_dirs(tmp_path / "left", tmp_path / "right")
+
+    assert result["overall_mean_all_edge_jaccard"] == 0.5
+    assert result["worst_step_all_edge_jaccard"] == 0.0
+    assert result["worst_step_evidence"]["worst_step_all_edge_jaccard"] == [
+        {
+            "completion_key": "prompt_000/completion_000",
+            "step_index_a": 1,
+            "step_index_b": 1,
+            "value": 0.0,
+        }
+    ]
+    passed, reasons = evaluate_thresholds(
+        result,
+        {"worst_step_all_edge_jaccard_min": 0.98},
+    )
+    assert passed is False
+    assert reasons == ["worst_step_all_edge_jaccard=0.0 < min 0.98"]

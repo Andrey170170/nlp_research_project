@@ -63,6 +63,24 @@ def _finite_mean(values: list[float | int | None]) -> float | None:
     return float(np.mean(finite_values)) if finite_values else None
 
 
+def _finite_min(values: list[float | int | None]) -> float | None:
+    finite_values = [
+        float(value)
+        for value in values
+        if value is not None and np.isfinite(float(value))
+    ]
+    return min(finite_values) if finite_values else None
+
+
+def _finite_max(values: list[float | int | None]) -> float | None:
+    finite_values = [
+        float(value)
+        for value in values
+        if value is not None and np.isfinite(float(value))
+    ]
+    return max(finite_values) if finite_values else None
+
+
 def _safe_pearson(left: np.ndarray, right: np.ndarray) -> float | None:
     if left.size < 2 or right.size < 2:
         return None
@@ -184,6 +202,23 @@ def _all_edge_map(step: "StepData") -> dict[tuple[object, object], float]:
     return edge_map
 
 
+def _normalized_l1_deviation(
+    left_edges: dict[tuple[object, object], float],
+    right_edges: dict[tuple[object, object], float],
+) -> float:
+    keys = set(left_edges) | set(right_edges)
+    numerator = sum(
+        abs(left_edges.get(key, 0.0) - right_edges.get(key, 0.0))
+        for key in keys
+    )
+    denominator = max(
+        sum(abs(value) for value in left_edges.values()),
+        sum(abs(value) for value in right_edges.values()),
+        1e-12,
+    )
+    return numerator / denominator
+
+
 def _edge_class_maps(
     step: "StepData", shared_features: set[tuple[int, int, int]]
 ) -> dict[str, dict[tuple[object, object], float]]:
@@ -288,6 +323,20 @@ def compare_step_pair(step_a: "StepData", step_b: "StepData") -> dict[str, Any]:
         "edge_jaccard": _jaccard(set(edges_a), set(edges_b)),
         "weighted_edge_jaccard": _weighted_edge_jaccard(edges_a, edges_b),
         "topk_edge_overlap": _topk_edge_overlap(edges_a, edges_b),
+        "all_edge_jaccard": _jaccard(set(all_edges_a), set(all_edges_b)),
+        "all_edge_weighted_jaccard": _weighted_edge_jaccard(
+            all_edges_a, all_edges_b
+        ),
+        "all_edge_topk_overlap": _topk_edge_overlap(all_edges_a, all_edges_b),
+        "all_edge_normalized_l1_deviation": (
+            _normalized_l1_deviation(
+                all_edges_a,
+                all_edges_b,
+            )
+        ),
+        "target_token_match": float(step_a.token_text == step_b.token_text),
+        "target_token_a": step_a.token_text,
+        "target_token_b": step_b.token_text,
         "n_logit_rows_a": len(
             {int(row) for row in step_a.row_idx if int(row) >= step_a.n_features}
         ),
@@ -306,7 +355,6 @@ def compare_step_pair(step_a: "StepData", step_b: "StepData") -> dict[str, Any]:
             edge_class_maps_a.get("shared_to_shared", {}),
             edge_class_maps_b.get("shared_to_shared", {}),
         ),
-        "all_edge_weighted_jaccard": _weighted_edge_jaccard(all_edges_a, all_edges_b),
     }
 
 
@@ -382,6 +430,27 @@ def compare_artifact_dirs(
                         for row in step_rows
                     ]
                 ),
+                "mean_all_edge_jaccard": _finite_mean(
+                    [row["all_edge_jaccard"] for row in step_rows]
+                ),
+                "mean_all_edge_weighted_jaccard": _finite_mean(
+                    [row["all_edge_weighted_jaccard"] for row in step_rows]
+                ),
+                "mean_all_edge_top256_jaccard": _finite_mean(
+                    [
+                        row["all_edge_topk_overlap"]["256"]["jaccard"]
+                        for row in step_rows
+                    ]
+                ),
+                "mean_target_token_match": _finite_mean(
+                    [row["target_token_match"] for row in step_rows]
+                ),
+                "mean_all_edge_normalized_l1_deviation": _finite_mean(
+                    [
+                        row["all_edge_normalized_l1_deviation"]
+                        for row in step_rows
+                    ]
+                ),
                 "mean_shared_features": _finite_mean(
                     [row["n_features_shared"] for row in step_rows]
                 ),
@@ -429,5 +498,70 @@ def compare_artifact_dirs(
         summary["overall_mean_top256_edge_jaccard"] = _finite_mean(
             [row["mean_top256_edge_jaccard"] for row in completion_rows]
         )
+        summary["overall_mean_all_edge_jaccard"] = _finite_mean(
+            [row["mean_all_edge_jaccard"] for row in completion_rows]
+        )
+        summary["overall_mean_all_edge_weighted_jaccard"] = _finite_mean(
+            [row["mean_all_edge_weighted_jaccard"] for row in completion_rows]
+        )
+        summary["overall_mean_all_edge_top256_jaccard"] = _finite_mean(
+            [row["mean_all_edge_top256_jaccard"] for row in completion_rows]
+        )
+        summary["overall_mean_target_token_match"] = _finite_mean(
+            [row["mean_target_token_match"] for row in completion_rows]
+        )
+        summary["overall_mean_all_edge_normalized_l1_deviation"] = (
+            _finite_mean(
+                [
+                    row["mean_all_edge_normalized_l1_deviation"]
+                    for row in completion_rows
+                ]
+            )
+        )
+
+    worst_metric_sources = {
+        "worst_step_feature_jaccard": "feature_jaccard",
+        "worst_step_all_edge_jaccard": "all_edge_jaccard",
+        "worst_step_all_edge_weighted_jaccard": "all_edge_weighted_jaccard",
+        "worst_step_all_edge_top256_jaccard": "all_edge_top256_jaccard",
+        "worst_step_target_token_match": "target_token_match",
+        "worst_step_all_edge_normalized_l1_deviation": (
+            "all_edge_normalized_l1_deviation"
+        ),
+    }
+    for summary_key, row_key in worst_metric_sources.items():
+        if row_key == "all_edge_top256_jaccard":
+            values = [
+                row["all_edge_topk_overlap"]["256"]["jaccard"]
+                for row in all_step_rows
+            ]
+        else:
+            values = [row[row_key] for row in all_step_rows]
+        summary[summary_key] = (
+            _finite_max(values)
+            if row_key == "all_edge_normalized_l1_deviation"
+            else _finite_min(values)
+        )
+
+    summary["worst_step_evidence"] = {}
+    for summary_key, row_key in worst_metric_sources.items():
+        worst_value = summary[summary_key]
+        matching_rows = []
+        for row in all_step_rows:
+            value = (
+                row["all_edge_topk_overlap"]["256"]["jaccard"]
+                if row_key == "all_edge_top256_jaccard"
+                else row[row_key]
+            )
+            if worst_value is not None and value == worst_value:
+                matching_rows.append(
+                    {
+                        "completion_key": row["completion_key"],
+                        "step_index_a": row["step_index_a"],
+                        "step_index_b": row["step_index_b"],
+                        "value": value,
+                    }
+                )
+        summary["worst_step_evidence"][summary_key] = matching_rows
 
     return summary

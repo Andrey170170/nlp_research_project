@@ -32,6 +32,17 @@ COMPARISON_SUMMARY_KEYS = (
     "overall_mean_edge_jaccard",
     "overall_mean_weighted_edge_jaccard",
     "overall_mean_top256_edge_jaccard",
+    "overall_mean_all_edge_jaccard",
+    "overall_mean_all_edge_weighted_jaccard",
+    "overall_mean_all_edge_top256_jaccard",
+    "overall_mean_target_token_match",
+    "overall_mean_all_edge_normalized_l1_deviation",
+    "worst_step_feature_jaccard",
+    "worst_step_all_edge_jaccard",
+    "worst_step_all_edge_weighted_jaccard",
+    "worst_step_all_edge_top256_jaccard",
+    "worst_step_target_token_match",
+    "worst_step_all_edge_normalized_l1_deviation",
 )
 
 SCENARIO_IDENTITY_KEYS = (
@@ -231,6 +242,37 @@ def validate_baseline_entry(
                         status,
                         f"baseline result status {actual!r} != expected {expected!r}",
                     )
+
+    artifact_sha256 = entry.get("artifact_sha256")
+    if artifact_sha256 is not None:
+        if not isinstance(artifact_sha256, dict) or result_json is None:
+            _append_reason(status, "baseline artifact_sha256 must be an object")
+        else:
+            scenario_root = Path(str(result_json)).parent
+            verified_digests: dict[str, str] = {}
+            for relative_name, expected_digest in artifact_sha256.items():
+                relative_path = Path(str(relative_name))
+                if relative_path.is_absolute() or ".." in relative_path.parts:
+                    _append_reason(
+                        status,
+                        f"unsafe baseline digest path: {relative_name}",
+                    )
+                    continue
+                artifact_path = scenario_root / relative_path
+                actual_digest = _sha256_file(artifact_path)
+                if actual_digest is None:
+                    _append_reason(
+                        status,
+                        f"baseline digest artifact missing: {artifact_path}",
+                    )
+                elif actual_digest != str(expected_digest):
+                    _append_reason(
+                        status,
+                        f"baseline digest mismatch for {artifact_path}",
+                    )
+                else:
+                    verified_digests[str(relative_name)] = actual_digest
+            status["verified_artifact_sha256"] = verified_digests
 
     if status.get("failure_reasons"):
         status["status"] = "baseline_invalid"
