@@ -88,6 +88,7 @@ Named profiles make the tested physical controls auditable:
 | `plt-bounded-fast-v2` | same, with decoder chunk 65,536 | bounded only |
 | `plt-bounded-fast-v3` | v2 plus a 16 GiB cross-batch decoder cache | bounded only |
 | `plt-bounded-tape-v1` | v2 plus a two-execution-batch VJP tape with a 12 GiB simultaneous-owned-byte cap; decoder cache disabled | bounded only |
+| `plt-bounded-tape-prefetch-v1` | tape-v1 plus one physically fenced decoder-page lookahead slot; decoder cache disabled | bounded only |
 | `plt-bounded-frontier-v1` | v2 with one bounded 512-row physical execution batch per four-semantic-batch refresh frontier; decoder cache disabled | bounded only |
 
 The 16 GiB cache in v3 is sized to retain the reusable 1B PLT decoder, which is
@@ -113,6 +114,13 @@ uv run exact-trace-perf run plt-hard \
   --fidelity bounded \
   --run-id perf-plt-tape-w2-c65536-01
 ```
+
+The prefetch profile is an opt-in diagnostic candidate built on the same tape
+and cache-disabled fallback. It owns one persistent worker and CUDA stream for
+Phase 4 and uses a consumer-completion fence so that final decoder-page
+residency is physically bounded to the current and next pages. It is not a
+promoted speed profile; the H200 characterization below rejected direct-GPU
+prefetch for timing.
 
 The default run goal can be replaced with iteration-specific wording, and is
 persisted in both the performance manifest/report and the existing runner's
@@ -280,9 +288,11 @@ in every timing claim.
    reduction order, decoder access, or memory behavior.
 5. Use `all` before treating a change as a viable Gemma 3 1B optimization
    candidate.
-6. Keep only changes with a reproducible speedup and a passing parity report.
+6. Promote performance profiles only with a reproducible speedup and passing
+   parity. A default-off bounded-safety primitive may remain when its memory
+   contract is verified and its negative timing result is recorded explicitly.
 
-## 2026-07-24 H200 characterization
+## Job 1654070 H200 characterization
 
 On Granite job `1654070`, the v3 profile completed the 1B PLT `361_base`
 one-token trace twice from the same project and sibling source state:
@@ -308,6 +318,72 @@ metrics as the cache-resident runs show that the 113.20s Phase-4 difference is
 decoder reuse cost, while the remaining 225s cache-resident Phase 4 is a
 separate repeated-contraction and launch-utilization floor.
 
+### Cache-disabled architectural candidates
+
+The two-execution-batch VJP tape was then tested under the same 65,536-row
+decoder-page and zero-cache envelope. Source state changed only at the recorded
+candidate checkpoints; each row was protected by the loop's before/after
+content hashes.
+
+| Run | Mechanism | Project / sibling | End-to-end | Phase 4 | Peak framebuffer | Decision |
+|---|---|---|---:|---:|---:|---|
+| `perf-plt-streaming-baseline-c65536-20260724-03` | one-batch streaming | `49da3d7` / `f324d70` | 391.32s | 338.54s | 26,113 MiB | bounded survival reference |
+| `perf-plt-tape-w2-c65536-20260725-01` | tape window 2, 12 GiB cap | `9b26258` / `1ec99f7` | 307.34s | 250.81s | 26,265 MiB | selected bounded candidate |
+| `perf-plt-tape-w2-c65536-20260725-02` | repeat of tape window 2 | `9b26258` / `1ec99f7` | 312.65s | 255.31s | 26,125 MiB | repeat supports approximately 5.1–5.2 min |
+| `perf-plt-tape-gather-c65536-20260725-01` | tape plus gather-before-cast | `9b26258` / `793e2ef` | 318.07s | 261.58s | 26,127 MiB | retain workspace bound; reject for speed |
+| `perf-plt-frontier512-c65536-20260725-01` | one 512-row execution group | `c55a222` / `793e2ef` | 341.44s | 285.60s | 49,669 MiB | reject for speed and memory |
+| `perf-plt-tape-prefetch-c65536-20260725-01` | unfenced direct-GPU lookahead | `e6a6daa` / `e1b8ad6` | 465.72s | 409.74s | 38,609 MiB | invalid physical bound; superseded |
+| `perf-plt-tape-prefetch-fenced-c65536-20260725-01` | persistent fenced direct-GPU lookahead | `38825a8` / `c8c578c` | 571.31s | 495.74s | 26,917 MiB | bound verified; reject for speed |
+
+Both tape repeats reduced Phase 4 by 24.6–25.9% relative to cache-disabled
+streaming and completed in 307.34s and 312.65s. The 12 GiB tape cap was not
+filled for appearance: its observed simultaneous high-water was 8,022,227,568
+bytes, comprising 2,631,260,160 pinned-host bytes, 5,262,520,320 replay-device
+bytes, and 141,792,240 row bytes. It executed 17 decoder traversals for 34
+execution batches. Phase 4 loaded 1,500 decoder pages totaling 226,492,416,000
+bytes.
+
+The tape, gather-before-cast, Frontier-512, and fenced-prefetch rows passed the
+same bounded compact gate reported above. That is bounded engineering parity,
+not strict/exact compact parity or internal edge-sign parity. The
+gather-before-cast change remains valuable because its FP32 replay workspace is
+bounded by the selected rows rather than a whole decoder page, but it is not a
+speed promotion. The 512-row frontier candidate was slower and raised peak
+framebuffer residency by roughly 23 GiB, so larger execution groups are not a
+substitute for the tape.
+
+The first direct-GPU lookahead implementation was only logically depth one:
+Python could enqueue additional page uses faster than the consumer completed,
+and recreating CUDA streams across tape windows fragmented allocator pools.
+The corrected implementation uses one Phase-4 owner, one worker, one producer
+stream, and a consumer-completion retirement fence. Its live evidence matched
+the intended contract:
+
+- final-page pipeline high-water: 2 pages / 301,989,888 bytes;
+- owner high-water: 1, with one open and one close;
+- all active, retained, in-flight, and owner gauges: zero at Phase-4 exit;
+- Phase-4 loads unchanged at 1,500 pages / 226,492,416,000 bytes;
+- peak framebuffer: 26,917 MiB, stable rather than climbing to 38,609 MiB.
+
+That candidate nevertheless spent 426.11s in decoder replay and 495.74s in
+Phase 4, versus 189.83–205.56s replay and 250.81–255.31s Phase 4 for tape-only.
+Whole-run GPU SM utilization was 9.58% and allocated-CPU utilization was 15.12%.
+It passed the 600s hard gate at 571.31s but missed the 300s stretch target and
+the candidate-specific 313s no-go threshold, so it was not repeated or
+promoted. The result isolates the next architectural seam: if page overlap is
+revisited, use fixed GPU slots with bounded pinned-CPU staging and CPU-side
+checkpoint reads rather than direct safetensors CUDA allocations. Separately,
+the dominant remaining tape-only floor is many small decoder contractions; a
+bounded fused/coalesced contraction kernel is the more promising sub-five-minute
+direction.
+
+CLT regression controls completed in 89.58s before gather-before-cast, 89.43s
+after it, and 85.84s at the committed prefetch-profile source state. Their
+compact artifacts matched exactly. Because CLT does not advertise the PLT page
+prefetch capability, the final control exercised the depth-zero fallback, not
+the lookahead mechanism. These are compatibility controls, not a new general
+CLT timing claim.
+
 Passing this live-workspace loop supports only a post-run engineering claim
 that the tested Gemma 3 1B source state is an optimization candidate under the
 selected parity policy and the applicable timing target. It is not a release
@@ -331,8 +407,8 @@ page, and one row tile. If the irreducible unit cannot fit, admission must refus
 before the phase starts rather than discovering infeasibility through a late
 memory spike.
 
-The next Phase-3/4 mechanism is a byte-bounded cross-execution-batch VJP tape
-within one already-fixed semantic refresh frontier:
+The implemented Phase-3/4 mechanism is a byte-bounded cross-execution-batch VJP
+tape within one already-fixed semantic refresh frontier:
 
 ```text
 fixed semantic frontier
@@ -394,18 +470,19 @@ then tape placement. All queues and transient tensors require leases. Runtime
 pressure produces a recorded plan revision or checkpointed restart with a
 smaller grant, never an unrecorded fallback.
 
-Initial acceptance under an intentionally constrained decoder-cache envelope:
+Acceptance status under the intentionally constrained decoder-cache envelope:
 
 1. window one reproduces the current streaming result and remains the survival
    path;
-2. exact tape windowing preserves strict compact parity and reduces decoder
-   loads by at least 35% and Phase 4 by at least 20% against the same-budget
-   cache-disabled baseline;
-3. bounded coalescing passes the existing bounded graph floors, beats
-   prefetch-only and exact windowing, and reduces Phase 4 by at least 25%;
+2. tape window two passes the bounded compact gate and reduces Phase 4 by
+   24.6–25.9% against the same-budget cache-disabled baseline; strict/exact
+   compact parity remains unestablished and must not be inferred;
+3. the tested 512-row bounded coalescing and direct-GPU prefetch candidates are
+   rejected for speed; neither is a launch-default candidate;
 4. telemetry reports tape bytes and tier high-watermarks, decoder pages and
-   bytes loaded, contraction calls, transfer/compute overlap, durable tile
-   progress, and plan revisions;
+   bytes loaded, page-pipeline ownership, contraction/replay time, durable tile
+   progress, and plan revisions; transfer/compute overlap is not established by
+   the current evidence;
 5. no result may be described as a 1k-prefix, 4B/12B, or extreme-regime result
    until a corresponding gate exists.
 
