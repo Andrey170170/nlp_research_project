@@ -225,6 +225,8 @@ ADVANCED_PUBLIC_TUNING_KEYS = (
     "nnsight_session_capacity",
     "phase3_compute_microbatch_max_rows",
     "phase4_execution_batch_max_rows",
+    "feature_vjp_tape_batch_window",
+    "feature_vjp_tape_max_bytes",
     "full_retention_backend",
     "feature_row_column_tile_size",
     "influence_row_tile_size",

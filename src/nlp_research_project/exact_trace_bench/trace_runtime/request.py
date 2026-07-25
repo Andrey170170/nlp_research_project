@@ -257,6 +257,12 @@ def trace_policy_from_scenario(
             feature_batch_probe_batches=int(
                 scenario.get("feature_batch_probe_batches", 1)
             ),
+            feature_vjp_tape_batch_window=int(
+                scenario.get("feature_vjp_tape_batch_window", 1)
+            ),
+            feature_vjp_tape_max_bytes=int(
+                scenario.get("feature_vjp_tape_max_bytes", 0)
+            ),
         ),
         observability=ObservabilityPolicy(
             verbose=bool(scenario.get("verbose_attribution", False)),

@@ -672,6 +672,12 @@ def _trace_request(
             feature_batch_probe_batches=int(
                 knobs.get("feature_batch_probe_batches", 1)
             ),
+            feature_vjp_tape_batch_window=int(
+                knobs.get("feature_vjp_tape_batch_window", 1)
+            ),
+            feature_vjp_tape_max_bytes=int(
+                knobs.get("feature_vjp_tape_max_bytes", 0)
+            ),
         ),
         observability=ObservabilityPolicy(
             verbose=bool(knobs.get("verbose_attribution", True)),

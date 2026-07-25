@@ -264,17 +264,26 @@ def test_case_scenario_reuses_canonical_builder_and_adds_gate() -> None:
 
 
 @pytest.mark.parametrize(
-    ("profile", "decoder_chunk_size", "decoder_cache_bytes"),
+    (
+        "profile",
+        "decoder_chunk_size",
+        "decoder_cache_bytes",
+        "tape_batch_window",
+        "tape_max_bytes",
+    ),
     [
-        ("plt-bounded-fast-v1", 32768, 0),
-        ("plt-bounded-fast-v2", 65536, 0),
-        ("plt-bounded-fast-v3", 65536, 16 * 1024**3),
+        ("plt-bounded-fast-v1", 32768, 0, 1, 0),
+        ("plt-bounded-fast-v2", 65536, 0, 1, 0),
+        ("plt-bounded-fast-v3", 65536, 16 * 1024**3, 1, 0),
+        ("plt-bounded-tape-v1", 65536, 0, 2, 12 * 1024**3),
     ],
 )
 def test_bounded_fast_profile_changes_only_plt_physical_controls(
     profile: str,
     decoder_chunk_size: int,
     decoder_cache_bytes: int,
+    tape_batch_window: int,
+    tape_max_bytes: int,
 ) -> None:
     plt_case = perf_cli.Case("gemma3_1b_plt", "361_base")
     clt_case = perf_cli.Case("gemma3_1b_clt", "361_base")
@@ -293,6 +302,9 @@ def test_bounded_fast_profile_changes_only_plt_physical_controls(
     }
     if decoder_cache_bytes:
         expected_overrides["cross_batch_decoder_cache_bytes"] = decoder_cache_bytes
+    if tape_batch_window > 1:
+        expected_overrides["feature_vjp_tape_batch_window"] = tape_batch_window
+        expected_overrides["feature_vjp_tape_max_bytes"] = tape_max_bytes
     assert perf_cli._candidate_overrides(plt_case, profile) == expected_overrides
     assert plt["attribution_batch_size"] == 128
     assert plt["feature_batch_size"] == 128
@@ -301,6 +313,8 @@ def test_bounded_fast_profile_changes_only_plt_physical_controls(
     assert plt["decoder_chunk_size"] == decoder_chunk_size
     assert plt["cross_batch_decoder_cache_bytes"] == decoder_cache_bytes
     assert plt["phase4_execution_batch_max_rows"] == 256
+    assert plt.get("feature_vjp_tape_batch_window", 1) == tape_batch_window
+    assert plt.get("feature_vjp_tape_max_bytes", 0) == tape_max_bytes
     assert plt_payload["defaults"]["row_subchunk_size"] is None
     assert clt["decoder_chunk_size"] == 4096
     assert "phase4_execution_batch_max_rows" not in clt
@@ -312,6 +326,7 @@ def test_bounded_fast_profile_changes_only_plt_physical_controls(
         "plt-bounded-fast-v1",
         "plt-bounded-fast-v2",
         "plt-bounded-fast-v3",
+        "plt-bounded-tape-v1",
     ],
 )
 def test_bounded_fast_profile_rejects_exact_fidelity(

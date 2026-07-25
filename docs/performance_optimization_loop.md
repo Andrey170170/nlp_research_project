@@ -87,6 +87,7 @@ Named profiles make the tested physical controls auditable:
 | `plt-bounded-fast-v1` | decoder chunk 32,768; Phase 1/3 cap 128; Phase 4 execution cap 256; session 256 | bounded only |
 | `plt-bounded-fast-v2` | same, with decoder chunk 65,536 | bounded only |
 | `plt-bounded-fast-v3` | v2 plus a 16 GiB cross-batch decoder cache | bounded only |
+| `plt-bounded-tape-v1` | v2 plus a two-execution-batch VJP tape with a 12 GiB simultaneous-owned-byte cap; decoder cache disabled | bounded only |
 
 The 16 GiB cache in v3 is sized to retain the reusable 1B PLT decoder, which is
 about 14.6 GiB in bf16. It is not an instruction to fill HBM. The cache remains
@@ -97,6 +98,19 @@ uv run exact-trace-perf run plt-hard \
   --candidate-profile plt-bounded-fast-v3 \
   --fidelity bounded \
   --run-id perf-plt-cache16g-c65536-01
+```
+
+The tape profile is the first cache-independent architectural candidate. Its
+12 GiB value is a hard ceiling across simultaneous host gradients, replay-device
+materializations, and row buffers, not a reservation or utilization target. It
+falls back to a one-batch flush whenever the next captured record would exceed
+the byte limit:
+
+```bash
+uv run exact-trace-perf run plt-hard \
+  --candidate-profile plt-bounded-tape-v1 \
+  --fidelity bounded \
+  --run-id perf-plt-tape-w2-c65536-01
 ```
 
 The default run goal can be replaced with iteration-specific wording, and is

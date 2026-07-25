@@ -66,10 +66,22 @@ def test_physical_frontier_knobs_change_only_execution_fingerprint() -> None:
         ("phase4_refresh_active_row_accumulation", "zero_fill"),
         ("phase4_row_executor", "streaming_v1"),
         ("phase4_row_reduction", "off"),
+        (
+            "feature_vjp_tape_max_bytes",
+            1024,
+        ),
     ):
         changed = _fingerprints({key: value})
         assert changed[0] == baseline[0], key
         assert changed[1] != baseline[1], key
+    changed = _fingerprints(
+        {
+            "feature_vjp_tape_batch_window": 2,
+            "feature_vjp_tape_max_bytes": 1024,
+        }
+    )
+    assert changed[0] == baseline[0]
+    assert changed[1] != baseline[1]
 
 
 def test_exact_child_boundary_is_scenario_file_not_flat_flags(tmp_path: Path) -> None:

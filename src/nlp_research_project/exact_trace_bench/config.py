@@ -71,6 +71,8 @@ def base_trace_defaults() -> dict[str, Any]:
         "nnsight_session_capacity": None,
         "phase3_compute_microbatch_max_rows": None,
         "phase4_execution_batch_max_rows": None,
+        "feature_vjp_tape_batch_window": 1,
+        "feature_vjp_tape_max_bytes": 0,
         "full_retention_backend": "full_file",
         "feature_row_column_tile_size": 2048,
         "influence_row_tile_size": 4096,
