@@ -96,6 +96,17 @@ gives 4.01x speed with about 0.25-0.28% broad graph drift. Keep non-reference
 chunks out of exact mode unless scope-certified; retain them as bounded,
 best-effort, and research calibration evidence.
 
+The isolated 1B PLT performance loop now has a reproducible short-prefix
+bounded candidate on Granite H200. `c65536` plus a 16 GiB cross-batch decoder
+cache, Phase-1/3 cap 128, Phase-4 execution cap 256, and session 256 completed
+`361_base` in 279.89s and 280.58s versus the 2805.70s frozen anchor. Both runs
+passed the bounded compact gate with identical comparison metrics (minimum
+feature/all-edge/Top-256/weighted Jaccard
+`0.994643/0.996008/0.992218/0.995133`, magnitude L1 `0.004879`, exact target
+token). This is a 124-token, 1B engineering result, not an exact-mode default,
+long-prefix validation, or evidence that the same cache envelope is safe for
+4B/12B.
+
 Wave B completed all 14 Gemma 3 4B/12B PLT rows on Granite H200. Larger
 Phase-4 execution envelopes improved total runtime by `1.52-1.60x` at 4B and
 `1.70-2.14x` at 12B, but did not receive cross-model exact certification under

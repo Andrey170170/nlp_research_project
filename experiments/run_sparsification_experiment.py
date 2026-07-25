@@ -46,16 +46,23 @@ _EXPLICIT_SCENARIO_KEYS = "_explicit_scenario_keys"
 
 PHASE_DURATION_RE = re.compile(r"completed in (?P<seconds>\d+(?:\.\d+)?)s")
 PHASE4_BATCH_RE = re.compile(
-    r"Phase 4 batch (?P<batch_idx>\d+)/(?P<total_batches>\d+) in (?P<seconds>\d+(?:\.\d+)?)s"
+    r"Phase 4 batch (?P<batch_idx>\d+)"
+    r"(?:/(?P<total_batches>\d+))?"
+    r" in (?P<seconds>\d+(?:\.\d+)?)s"
 )
-MEMORY_RE = re.compile(
-    r"rss=(?P<rss>n/a|\d+(?:\.\d+)?(?: GiB)?), "
-    r"(?:rss_current=(?P<rss_current>n/a|\d+(?:\.\d+)?(?: GiB)?), )?"
-    r"cuda_alloc=(?P<cuda_alloc>n/a|\d+(?:\.\d+)?(?: GiB)?), "
-    r"cuda_reserved=(?P<cuda_reserved>n/a|\d+(?:\.\d+)?(?: GiB)?), "
-    r"cuda_peak_alloc=(?P<cuda_peak_alloc>n/a|\d+(?:\.\d+)?(?: GiB)?), "
-    r"cuda_peak_reserved=(?P<cuda_peak_reserved>n/a|\d+(?:\.\d+)?(?: GiB)?)"
+PHASE4_EXECUTION_BATCH_COUNT_RE = re.compile(
+    r"phase4_execution_batch_count=(?P<total_batches>\d+)"
 )
+MEMORY_VALUE_RES = {
+    key: re.compile(rf"\b{key}=(?P<value>n/a|\d+(?:\.\d+)?(?: GiB)?)")
+    for key in (
+        "rss_current",
+        "cuda_alloc",
+        "cuda_reserved",
+        "cuda_peak_alloc",
+        "cuda_peak_reserved",
+    )
+}
 
 
 def apply_runtime_overrides(
@@ -148,42 +155,51 @@ def _extract_benchmark_metrics(log_path: Path) -> dict[str, Any]:
         batch_match = PHASE4_BATCH_RE.search(line)
         if batch_match:
             phase4_batch_durations.append(float(batch_match.group("seconds")))
-            phase4_total_batches = int(batch_match.group("total_batches"))
+            if batch_match.group("total_batches") is not None:
+                phase4_total_batches = int(batch_match.group("total_batches"))
 
-        memory_match = MEMORY_RE.search(line)
-        if memory_match:
-            rss_gib = _parse_optional_gib(memory_match.group("rss"))
-            cuda_alloc_gib = _parse_optional_gib(memory_match.group("cuda_alloc"))
-            cuda_reserved_gib = _parse_optional_gib(memory_match.group("cuda_reserved"))
-            cuda_peak_alloc_gib = _parse_optional_gib(
-                memory_match.group("cuda_peak_alloc")
-            )
-            cuda_peak_reserved_gib = _parse_optional_gib(
-                memory_match.group("cuda_peak_reserved")
+        execution_batch_count_match = PHASE4_EXECUTION_BATCH_COUNT_RE.search(line)
+        if execution_batch_count_match:
+            phase4_total_batches = int(
+                execution_batch_count_match.group("total_batches")
             )
 
-            if rss_gib is not None:
-                peak_rss_gib = max(peak_rss_gib or rss_gib, rss_gib)
-            if cuda_alloc_gib is not None:
-                peak_cuda_allocated_gib = max(
-                    peak_cuda_allocated_gib or cuda_alloc_gib,
-                    cuda_alloc_gib,
-                )
-            if cuda_reserved_gib is not None:
-                peak_cuda_reserved_gib = max(
-                    peak_cuda_reserved_gib or cuda_reserved_gib,
-                    cuda_reserved_gib,
-                )
-            if cuda_peak_alloc_gib is not None:
-                peak_cuda_peak_allocated_gib = max(
-                    peak_cuda_peak_allocated_gib or cuda_peak_alloc_gib,
-                    cuda_peak_alloc_gib,
-                )
-            if cuda_peak_reserved_gib is not None:
-                peak_cuda_peak_reserved_gib = max(
-                    peak_cuda_peak_reserved_gib or cuda_peak_reserved_gib,
-                    cuda_peak_reserved_gib,
-                )
+        memory_values = {
+            key: (
+                _parse_optional_gib(match.group("value"))
+                if (match := pattern.search(line))
+                else None
+            )
+            for key, pattern in MEMORY_VALUE_RES.items()
+        }
+        rss_gib = memory_values["rss_current"]
+        cuda_alloc_gib = memory_values["cuda_alloc"]
+        cuda_reserved_gib = memory_values["cuda_reserved"]
+        cuda_peak_alloc_gib = memory_values["cuda_peak_alloc"]
+        cuda_peak_reserved_gib = memory_values["cuda_peak_reserved"]
+
+        if rss_gib is not None:
+            peak_rss_gib = max(peak_rss_gib or rss_gib, rss_gib)
+        if cuda_alloc_gib is not None:
+            peak_cuda_allocated_gib = max(
+                peak_cuda_allocated_gib or cuda_alloc_gib,
+                cuda_alloc_gib,
+            )
+        if cuda_reserved_gib is not None:
+            peak_cuda_reserved_gib = max(
+                peak_cuda_reserved_gib or cuda_reserved_gib,
+                cuda_reserved_gib,
+            )
+        if cuda_peak_alloc_gib is not None:
+            peak_cuda_peak_allocated_gib = max(
+                peak_cuda_peak_allocated_gib or cuda_peak_alloc_gib,
+                cuda_peak_alloc_gib,
+            )
+        if cuda_peak_reserved_gib is not None:
+            peak_cuda_peak_reserved_gib = max(
+                peak_cuda_peak_reserved_gib or cuda_peak_reserved_gib,
+                cuda_peak_reserved_gib,
+            )
 
     phase4_avg_batch_seconds = None
     phase4_projected_total_seconds = None

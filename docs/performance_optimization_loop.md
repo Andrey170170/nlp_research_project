@@ -18,8 +18,11 @@ projects/worktrees/exact-trace-perf/
 ```
 
 Both worktrees should be on `perf/exact-trace-loop`. The CLI records the branch,
-commit, and dirty-file list for both repositories before execution and verifies
-the same state after every case. A source-state change aborts the suite.
+commit, dirty-file list, and content hash for both repositories before execution,
+then compares that recorded state before and after every case. A detected
+source-state change aborts the suite. This is after-the-fact change detection,
+not a filesystem lock: the operator remains responsible for making no edits
+while a case runs.
 
 This is an explicit live-workspace exception to the ordinary immutable
 experiment policy: `run_manifest.json` records `workspace_mode=live`, the
@@ -34,7 +37,7 @@ a case is running.
 | `clt-smoke` | Gemma 3 1B GemmaScope-2 CLT | `361_base` | shortest inner loop |
 | `clt-pair` | Gemma 3 1B GemmaScope-2 CLT | `828_base`, `361_base` | broader CLT gate |
 | `plt-hard` | Gemma 3 1B GemmaScope-2 PLT | `361_base` | longer, harder gate |
-| `all` | both above | CLT pair plus PLT hard | release candidate gate |
+| `all` | both above | CLT pair plus PLT hard | 1B optimization-candidate gate |
 
 List the fixed cases without loading a model:
 
@@ -76,10 +79,40 @@ The longer PLT checkpoint is:
 uv run exact-trace-perf run plt-hard --run-id perf-column-kernel-v2-plt
 ```
 
+Named profiles make the tested physical controls auditable:
+
+| Profile | PLT physical controls | Fidelity scope |
+|---|---|---|
+| `canonical` | frozen scenario defaults | bounded or exact |
+| `plt-bounded-fast-v1` | decoder chunk 32,768; Phase 1/3 cap 128; Phase 4 execution cap 256; session 256 | bounded only |
+| `plt-bounded-fast-v2` | same, with decoder chunk 65,536 | bounded only |
+| `plt-bounded-fast-v3` | v2 plus a 16 GiB cross-batch decoder cache | bounded only |
+
+The 16 GiB cache in v3 is sized to retain the reusable 1B PLT decoder, which is
+about 14.6 GiB in bf16. It is not an instruction to fill HBM. The cache remains
+a physical candidate, not a promoted default:
+
+```bash
+uv run exact-trace-perf run plt-hard \
+  --candidate-profile plt-bounded-fast-v3 \
+  --fidelity bounded \
+  --run-id perf-plt-cache16g-c65536-01
+```
+
+The default run goal can be replaced with iteration-specific wording, and is
+persisted in both the performance manifest/report and the existing runner's
+metadata:
+
+```bash
+uv run exact-trace-perf run plt-hard \
+  --run-id perf-column-kernel-v2-plt \
+  --run-goal "Evaluate the column kernel candidate under bounded parity."
+```
+
 `--allow-non-h200-test-only` exists only for focused automated tests. Results
 produced with that override are not H200 performance evidence.
 
-## Fidelity policies
+## Acceptance gates
 
 The harness reuses `graph_compare.compare_artifact_dirs` through the existing
 sparsification runner's baseline gate.
@@ -106,6 +139,29 @@ performance changes. Passing it is not exact-semantics evidence and must not
 promote a runtime mechanism, governor profile, calibration observation, or
 launch default. Use `exact`, followed by the project’s separately reviewed
 immutable gates, for any exact-semantics claim.
+
+Parity and runtime are independent gates. Every case report records
+`parity_passed`, `performance_target_seconds`, `performance_passed`, and the
+overall `passed` result. PLT `361_base` has a hard
+`performance_target_seconds=600.0`; its runtime gate passes only when the
+candidate duration is at most 600 seconds. A missing duration or a duration
+above 600 seconds fails the run and makes the CLI exit nonzero even if parity
+passes. CLT cases currently have no hard runtime budget, so they record
+`performance_target_seconds=null` and `performance_passed=null`; their overall
+result still requires parity and successful runner execution.
+
+PLT `361_base` also records a 300-second stretch target. Stretch attainment is
+reported independently and does not weaken or replace the hard gate. The
+working objective is reproducible sub-five-minute 1B PLT execution; a candidate
+should be repeated on the same allocation and source state before that timing is
+treated as stable.
+
+The suite report aggregates the same three outcomes. `parity_passed` covers
+only graph comparison, `performance_passed` covers all applicable hard runtime
+targets (and is null when the suite contains none), and overall `passed`
+requires parity, every applicable runtime target, and zero runner exit codes.
+Timing is the end-to-end candidate duration reported by the existing
+sparsification runner, not the sum of selected profiling phases.
 
 The frozen registry is
 `experiments/baselines/exact_trace_performance_granite_20260709.json`. It points
@@ -145,8 +201,17 @@ Each run contains:
 - `configs/`: generated single-case scenario files;
 - `candidates/`: ordinary sparsification runner logs, compact artifacts,
   results, scenario metrics, and baseline comparisons;
+- `candidates/<case>/gpu_samples.csv` and `resource_summary.json`: one-second
+  GPU samples plus aggregate SM, memory-controller, power, framebuffer, and
+  process-tree CPU utilization; sampler status, exit code, usable sample count,
+  and an explicit resource-validation result prevent an empty sampler from
+  looking like valid utilization evidence;
 - `performance_report.json`: candidate and baseline duration, speedup, all
-  worst-step parity metrics and evidence, and per-case/overall pass status.
+  worst-step parity metrics and evidence, the runner's `profiling_summary`,
+  resource summary, independent parity/performance/resource/overall results,
+  and per-case/overall pass status. Resource validation remains diagnostic
+  rather than changing the fidelity/runtime gate because utilization is a
+  secondary optimization objective.
 
 `--allow-non-h200-test-only` is recorded as
 `test_environment_override_used=true` and
@@ -155,7 +220,41 @@ non-evidence.
 
 The CLI invokes `experiments/run_sparsification_experiment.py` rather than
 adding a tracing path. It tails each `run.log` while the candidate is running
-and prints one compact report row after comparison.
+and prints one compact report row after comparison, including the available
+Phase 3, Phase 4, and Phase 4 batch timings.
+
+## Resource efficiency
+
+Runtime is the primary objective and parity is the hard scientific constraint.
+Resource utilization is diagnostic: high allocation alone is not success.
+Inspect useful work, cache reuse, and throughput together:
+
+- mean, p95, and maximum GPU SM and memory-controller utilization;
+- mean/maximum power and peak framebuffer residency;
+- process-tree CPU time relative to wall time and allocated CPUs;
+- runner peak RSS and CUDA allocated/reserved memory;
+- Phase 3/4 durations and Phase 4 execution-batch distribution.
+
+A memory-for-speed candidate is justified when retained data is repeatedly
+consumed and its residency removes measured I/O or recomputation. The v3 cache
+is an example: it retains the 1B PLT decoder across Phase 4 batches. Do not raise
+cache budgets merely to increase reported memory use.
+
+### Long-prefix direction
+
+The fixed gate currently uses a 124-token prefix. Passing it does not establish
+runtime or memory safety for 1k-token or longer prefixes. Prefix length increases
+activation, gradient, and attention-state pressure while the decoder size stays
+fixed, so a full-decoder cache becomes a lower-priority HBM consumer as context
+grows.
+
+Keep the runtime capable of opportunistic, reclaimable decoder caching. A
+long-prefix plan must derive the cache allowance from residual HBM after model,
+forward, retained-gradient, and row-buffer preflight; it must be able to reduce
+or disable the cache rather than OOM. Do not hard-code the 16 GiB short-prefix
+candidate as a universal launch default. Until a tractable long-prefix gate is
+frozen, report long-context performance as unverified and retain prompt length
+in every timing claim.
 
 ## Optimization cadence
 
@@ -164,8 +263,34 @@ and prints one compact report row after comparison.
 3. If it is faster and passes, run `clt-pair`.
 4. Run `plt-hard` for changes that may affect provider topology, batching,
    reduction order, decoder access, or memory behavior.
-5. Use `all` before treating a change as a viable optimization candidate.
+5. Use `all` before treating a change as a viable Gemma 3 1B optimization
+   candidate.
 6. Keep only changes with a reproducible speedup and a passing parity report.
+
+## 2026-07-24 H200 characterization
+
+On Granite job `1654070`, the v3 profile completed the 1B PLT `361_base`
+one-token trace twice from the same project and sibling source state:
+
+| Run | End-to-end | Phase 3 | Phase 4 | Speedup | Bounded gate | 300s stretch |
+|---|---:|---:|---:|---:|---|---|
+| `perf-plt-cache16g-c65536-20260724-01` | 279.89s | 15.80s | 224.40s | 10.024x | pass | pass |
+| `perf-plt-cache16g-c65536-20260724-02` | 280.58s | 15.93s | 225.34s | 10.000x | pass | pass |
+
+Both runs produced the same compact comparison metrics: feature Jaccard
+0.994643, all-edge Jaccard 0.996008, Top-256 Jaccard 0.992218, weighted-edge
+Jaccard 0.995133, normalized magnitude L1 deviation 0.004879, and exact target
+token identity. This is reproducible 1B short-prefix bounded engineering
+evidence, not exact semantics, a long-prefix result, or a 4B/12B result.
+
+Passing this live-workspace loop supports only a post-run engineering claim
+that the tested Gemma 3 1B source state is an optimization candidate under the
+selected parity policy and the applicable timing target. It is not a release
+gate, does not establish an exact-semantics claim under `bounded`, and does not
+promote a runtime mechanism, governor profile, calibration observation, or
+launch default. A broader or confirmatory claim requires the separately
+reviewed immutable project gates. This loop does not yet define or authorize
+4B or 12B performance targets.
 
 Custom Triton or CUDA operations belong in the sibling runtime, but only after
 the project-side loop is green. Such changes still use this same CLI and frozen
