@@ -1573,6 +1573,41 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
             ),
             default=None,
         ),
+        **{
+            key: max(
+                (diag.get(key) for diag in diagnostics if diag.get(key) is not None),
+                default=None,
+            )
+            for key in (
+                "decoder_prefetch_request_count",
+                "decoder_prefetch_load_count",
+                "decoder_prefetch_load_bytes",
+                "decoder_prefetch_cache_hit_count",
+                "decoder_prefetch_consume_hit_count",
+                "decoder_prefetch_host_wait_count",
+                "decoder_prefetch_host_wait_seconds",
+                "decoder_prefetch_in_flight_count",
+                "decoder_prefetch_in_flight_high_watermark",
+                "decoder_prefetch_in_flight_bytes",
+                "decoder_prefetch_in_flight_bytes_high_watermark",
+                "decoder_prefetch_consumer_active_count",
+                "decoder_prefetch_consumer_active_bytes",
+                "decoder_prefetch_consumer_retained_count",
+                "decoder_prefetch_consumer_retained_bytes",
+                "decoder_prefetch_consumer_retained_bytes_high_watermark",
+                "decoder_prefetch_consumer_retirement_count",
+                "decoder_prefetch_consumer_backpressure_count",
+                "decoder_prefetch_consumer_backpressure_seconds",
+                "decoder_prefetch_pipeline_owned_final_page_count",
+                "decoder_prefetch_pipeline_owned_final_page_high_watermark",
+                "decoder_prefetch_pipeline_owned_final_page_bytes",
+                "decoder_prefetch_pipeline_owned_final_page_bytes_high_watermark",
+                "decoder_prefetch_owner_count",
+                "decoder_prefetch_owner_high_watermark",
+                "decoder_prefetch_owner_open_count",
+                "decoder_prefetch_owner_close_count",
+            )
+        },
         "phase4_feature_batch_size_effective": (
             max(manifest_phase4_effective_sizes)
             if manifest_phase4_effective_sizes

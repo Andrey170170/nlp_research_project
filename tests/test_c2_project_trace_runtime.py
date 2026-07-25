@@ -234,3 +234,103 @@ def test_completion_preserves_compact_artifact_layout(monkeypatch, tmp_path: Pat
     assert persisted["semantic_fingerprint"] == "semantic"
     assert persisted["execution_fingerprint"] == "execution"
     assert persisted["steps"][0]["phase4_feature_batch_size"] == 8
+
+
+def test_completion_preserves_decoder_prefetch_diagnostics(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from nlp_research_project.exact_trace_bench.trace_runtime import generation
+
+    monkeypatch.setattr(
+        generation,
+        "extract_compact_chunked_attribution",
+        lambda *_args, **_kwargs: {
+            "active_features": torch.tensor([[0, 0, 7]], dtype=torch.int64),
+            "selected_features": torch.tensor([0], dtype=torch.int64),
+            "feature_row_node_indices": torch.tensor([0], dtype=torch.int64),
+            "feature_feature_edges": torch.tensor([[1.0]]),
+            "logit_feature_edges": torch.tensor([[0.5]]),
+        },
+    )
+
+    class Tokenizer:
+        eos_token_id = 9
+        pad_token_id = 0
+        unk_token_id = -1
+
+        def convert_tokens_to_ids(self, _token: str) -> int:
+            return -1
+
+        def decode(self, values, **_kwargs) -> str:
+            return "done" if list(values) else ""
+
+    class Transcoders:
+        def get_diagnostic_snapshot(self) -> dict[str, int | float]:
+            return {
+                "decoder_prefetch_request_count": 3,
+                "decoder_prefetch_load_count": 2,
+                "decoder_prefetch_load_bytes": 128,
+                "decoder_prefetch_cache_hit_count": 1,
+                "decoder_prefetch_consume_hit_count": 2,
+                "decoder_prefetch_host_wait_count": 1,
+                "decoder_prefetch_host_wait_seconds": 0.25,
+                "decoder_prefetch_in_flight_count": 0,
+                "decoder_prefetch_in_flight_high_watermark": 2,
+                "decoder_prefetch_in_flight_bytes": 0,
+                "decoder_prefetch_in_flight_bytes_high_watermark": 128,
+                "decoder_prefetch_consumer_active_count": 0,
+                "decoder_prefetch_consumer_active_bytes": 0,
+                "decoder_prefetch_consumer_retained_count": 0,
+                "decoder_prefetch_consumer_retained_bytes": 0,
+                "decoder_prefetch_consumer_retained_bytes_high_watermark": 64,
+                "decoder_prefetch_consumer_retirement_count": 2,
+                "decoder_prefetch_consumer_backpressure_count": 1,
+                "decoder_prefetch_consumer_backpressure_seconds": 0.5,
+                "decoder_prefetch_pipeline_owned_final_page_count": 0,
+                "decoder_prefetch_pipeline_owned_final_page_high_watermark": 1,
+                "decoder_prefetch_pipeline_owned_final_page_bytes": 0,
+                "decoder_prefetch_pipeline_owned_final_page_bytes_high_watermark": 64,
+                "decoder_prefetch_owner_count": 0,
+                "decoder_prefetch_owner_high_watermark": 1,
+                "decoder_prefetch_owner_open_count": 2,
+                "decoder_prefetch_owner_close_count": 2,
+            }
+
+    class Model(FakeModel):
+        tokenizer = Tokenizer()
+        transcoders = Transcoders()
+
+        def ensure_tokenized(self, _prompt: str) -> torch.Tensor:
+            return torch.tensor([1, 2], dtype=torch.int64)
+
+        def generate(self, input_ids: torch.Tensor, **_kwargs):
+            return SimpleNamespace(
+                sequences=torch.cat(
+                    [input_ids, torch.tensor([[9]], dtype=input_ids.dtype)], dim=1
+                ),
+                scores=[torch.zeros((1, 16), dtype=torch.float32)],
+            )
+
+    manifest = trace_completion_compact_chunked(
+        Model(),
+        "prompt",
+        output_dir=tmp_path,
+        prompt_idx=0,
+        completion_idx=0,
+        completion=CompletionPlan(max_steps=1),
+        trace_policy=trace_policy_from_scenario(
+            {"name": "prefetch", "method": "exact", "attribution_batch_size": 8}
+        ),
+    )
+
+    diagnostics = manifest["steps"][0]["transcoder_diagnostics"]
+    assert diagnostics["decoder_prefetch_request_count"] == 3
+    assert diagnostics["decoder_prefetch_host_wait_seconds"] == 0.25
+    assert diagnostics["decoder_prefetch_in_flight_high_watermark"] == 2
+    assert diagnostics["decoder_prefetch_in_flight_bytes_high_watermark"] == 128
+    assert diagnostics["decoder_prefetch_consumer_retirement_count"] == 2
+    assert diagnostics["decoder_prefetch_owner_high_watermark"] == 1
+    persisted = json.loads(
+        (tmp_path / "prompt_000" / "completion_000" / "completion.json").read_text()
+    )
+    assert persisted["steps"][0]["transcoder_diagnostics"] == diagnostics
