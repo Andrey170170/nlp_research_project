@@ -236,6 +236,7 @@ def test_exact_mode_knobs_are_classified_without_duplicates() -> None:
 
     assert "exact_trace_internal_dtype" in STABLE_PUBLIC_SCENARIO_KEYS
     assert "phase4_scheduler_mode" in ADVANCED_PUBLIC_TUNING_KEYS
+    assert "decoder_page_prefetch_depth" in ADVANCED_PUBLIC_TUNING_KEYS
     assert "phase3_row_replay_mode" in DEBUG_REPLAY_PUBLIC_KEYS
     assert "telemetry_max_events" in TELEMETRY_KEYS
     assert "auto_scale_feature_batch_size" in DEPRECATED_COMPAT_KEYS
@@ -248,6 +249,7 @@ def test_canonical_exact_bench_defaults_are_stable() -> None:
         assert defaults["phase0_activation_threshold_compare_mode"] == "baseline"
         assert defaults["phase4_anomaly_debug"] is False
         assert defaults["cross_cluster_debug"] is False
+        assert defaults["decoder_page_prefetch_depth"] == 0
         assert defaults["phase4_scheduler_mode"] == "locality"
         assert defaults["phase4_scheduler_debug"] is False
         assert defaults["phase4_scheduler_telemetry_detail"] == "normal"

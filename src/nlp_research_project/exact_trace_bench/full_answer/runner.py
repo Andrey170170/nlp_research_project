@@ -678,6 +678,9 @@ def _trace_request(
             feature_vjp_tape_max_bytes=int(
                 knobs.get("feature_vjp_tape_max_bytes", 0)
             ),
+            decoder_page_prefetch_depth=int(
+                knobs.get("decoder_page_prefetch_depth", 0)
+            ),
         ),
         observability=ObservabilityPolicy(
             verbose=bool(knobs.get("verbose_attribution", True)),

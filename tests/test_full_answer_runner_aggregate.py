@@ -179,6 +179,7 @@ def test_trace_request_builds_canonical_domain_policies() -> None:
             "feature_batch_size_max": 512,
             "feature_vjp_tape_batch_window": 2,
             "feature_vjp_tape_max_bytes": 4096,
+            "decoder_page_prefetch_depth": 1,
             "phase4_scheduler_mode": "planner_v1",
             "phase4_scheduler_telemetry_detail": "debug",
             "phase4_refresh_optimization": "v1",
@@ -239,6 +240,7 @@ def test_trace_request_builds_canonical_domain_policies() -> None:
     assert request.execution.replay.decoder_contraction_tile == 128
     assert request.execution.frontier.feature_vjp_tape_batch_window == 2
     assert request.execution.frontier.feature_vjp_tape_max_bytes == 4096
+    assert request.execution.frontier.decoder_page_prefetch_depth == 1
     assert request.semantics.frontier.scheduler == "planner_v1"
     assert request.execution.session.decoder_cache.enabled is True
     assert request.execution.session.decoder_cache.max_bytes == 8589934592

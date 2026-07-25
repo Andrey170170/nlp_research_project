@@ -263,6 +263,9 @@ def trace_policy_from_scenario(
             feature_vjp_tape_max_bytes=int(
                 scenario.get("feature_vjp_tape_max_bytes", 0)
             ),
+            decoder_page_prefetch_depth=int(
+                scenario.get("decoder_page_prefetch_depth", 0)
+            ),
         ),
         observability=ObservabilityPolicy(
             verbose=bool(scenario.get("verbose_attribution", False)),

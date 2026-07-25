@@ -272,13 +272,24 @@ def test_case_scenario_reuses_canonical_builder_and_adds_gate() -> None:
         "execution_batch_rows",
         "tape_batch_window",
         "tape_max_bytes",
+        "decoder_page_prefetch_depth",
     ),
     [
-        ("plt-bounded-fast-v1", 32768, 0, 256, 256, 1, 0),
-        ("plt-bounded-fast-v2", 65536, 0, 256, 256, 1, 0),
-        ("plt-bounded-fast-v3", 65536, 16 * 1024**3, 256, 256, 1, 0),
-        ("plt-bounded-tape-v1", 65536, 0, 256, 256, 2, 12 * 1024**3),
-        ("plt-bounded-frontier-v1", 65536, 0, 512, 512, 1, 0),
+        ("plt-bounded-fast-v1", 32768, 0, 256, 256, 1, 0, 0),
+        ("plt-bounded-fast-v2", 65536, 0, 256, 256, 1, 0, 0),
+        ("plt-bounded-fast-v3", 65536, 16 * 1024**3, 256, 256, 1, 0, 0),
+        ("plt-bounded-tape-v1", 65536, 0, 256, 256, 2, 12 * 1024**3, 0),
+        (
+            "plt-bounded-tape-prefetch-v1",
+            65536,
+            0,
+            256,
+            256,
+            2,
+            12 * 1024**3,
+            1,
+        ),
+        ("plt-bounded-frontier-v1", 65536, 0, 512, 512, 1, 0, 0),
     ],
 )
 def test_bounded_fast_profile_changes_only_plt_physical_controls(
@@ -289,6 +300,7 @@ def test_bounded_fast_profile_changes_only_plt_physical_controls(
     execution_batch_rows: int,
     tape_batch_window: int,
     tape_max_bytes: int,
+    decoder_page_prefetch_depth: int,
 ) -> None:
     plt_case = perf_cli.Case("gemma3_1b_plt", "361_base")
     clt_case = perf_cli.Case("gemma3_1b_clt", "361_base")
@@ -310,6 +322,10 @@ def test_bounded_fast_profile_changes_only_plt_physical_controls(
     if tape_batch_window > 1:
         expected_overrides["feature_vjp_tape_batch_window"] = tape_batch_window
         expected_overrides["feature_vjp_tape_max_bytes"] = tape_max_bytes
+    if decoder_page_prefetch_depth:
+        expected_overrides["decoder_page_prefetch_depth"] = (
+            decoder_page_prefetch_depth
+        )
     assert perf_cli._candidate_overrides(plt_case, profile) == expected_overrides
     assert plt["attribution_batch_size"] == 128
     assert plt["feature_batch_size"] == 128
@@ -320,6 +336,9 @@ def test_bounded_fast_profile_changes_only_plt_physical_controls(
     assert plt["phase4_execution_batch_max_rows"] == execution_batch_rows
     assert plt.get("feature_vjp_tape_batch_window", 1) == tape_batch_window
     assert plt.get("feature_vjp_tape_max_bytes", 0) == tape_max_bytes
+    assert (
+        plt.get("decoder_page_prefetch_depth", 0) == decoder_page_prefetch_depth
+    )
     assert plt_payload["defaults"]["row_subchunk_size"] is None
     assert clt["decoder_chunk_size"] == 4096
     assert "phase4_execution_batch_max_rows" not in clt
@@ -332,6 +351,7 @@ def test_bounded_fast_profile_changes_only_plt_physical_controls(
         "plt-bounded-fast-v2",
         "plt-bounded-fast-v3",
         "plt-bounded-tape-v1",
+        "plt-bounded-tape-prefetch-v1",
         "plt-bounded-frontier-v1",
     ],
 )

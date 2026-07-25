@@ -70,6 +70,7 @@ def test_physical_frontier_knobs_change_only_execution_fingerprint() -> None:
             "feature_vjp_tape_max_bytes",
             1024,
         ),
+        ("decoder_page_prefetch_depth", 1),
     ):
         changed = _fingerprints({key: value})
         assert changed[0] == baseline[0], key

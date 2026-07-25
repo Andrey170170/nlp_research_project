@@ -227,6 +227,7 @@ ADVANCED_PUBLIC_TUNING_KEYS = (
     "phase4_execution_batch_max_rows",
     "feature_vjp_tape_batch_window",
     "feature_vjp_tape_max_bytes",
+    "decoder_page_prefetch_depth",
     "full_retention_backend",
     "feature_row_column_tile_size",
     "influence_row_tile_size",
