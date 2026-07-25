@@ -268,20 +268,25 @@ def test_case_scenario_reuses_canonical_builder_and_adds_gate() -> None:
         "profile",
         "decoder_chunk_size",
         "decoder_cache_bytes",
+        "session_capacity",
+        "execution_batch_rows",
         "tape_batch_window",
         "tape_max_bytes",
     ),
     [
-        ("plt-bounded-fast-v1", 32768, 0, 1, 0),
-        ("plt-bounded-fast-v2", 65536, 0, 1, 0),
-        ("plt-bounded-fast-v3", 65536, 16 * 1024**3, 1, 0),
-        ("plt-bounded-tape-v1", 65536, 0, 2, 12 * 1024**3),
+        ("plt-bounded-fast-v1", 32768, 0, 256, 256, 1, 0),
+        ("plt-bounded-fast-v2", 65536, 0, 256, 256, 1, 0),
+        ("plt-bounded-fast-v3", 65536, 16 * 1024**3, 256, 256, 1, 0),
+        ("plt-bounded-tape-v1", 65536, 0, 256, 256, 2, 12 * 1024**3),
+        ("plt-bounded-frontier-v1", 65536, 0, 512, 512, 1, 0),
     ],
 )
 def test_bounded_fast_profile_changes_only_plt_physical_controls(
     profile: str,
     decoder_chunk_size: int,
     decoder_cache_bytes: int,
+    session_capacity: int,
+    execution_batch_rows: int,
     tape_batch_window: int,
     tape_max_bytes: int,
 ) -> None:
@@ -294,11 +299,11 @@ def test_bounded_fast_profile_changes_only_plt_physical_controls(
 
     expected_overrides = {
         "decoder_chunk_size": decoder_chunk_size,
-        "nnsight_session_capacity": 256,
+        "nnsight_session_capacity": session_capacity,
         "phase1_trace_batch_policy": "cap_effective_batches",
         "phase1_trace_batch_size_max": 128,
         "phase3_compute_microbatch_max_rows": 128,
-        "phase4_execution_batch_max_rows": 256,
+        "phase4_execution_batch_max_rows": execution_batch_rows,
     }
     if decoder_cache_bytes:
         expected_overrides["cross_batch_decoder_cache_bytes"] = decoder_cache_bytes
@@ -312,7 +317,7 @@ def test_bounded_fast_profile_changes_only_plt_physical_controls(
     assert plt_payload["defaults"]["attribution_update_interval"] == 4
     assert plt["decoder_chunk_size"] == decoder_chunk_size
     assert plt["cross_batch_decoder_cache_bytes"] == decoder_cache_bytes
-    assert plt["phase4_execution_batch_max_rows"] == 256
+    assert plt["phase4_execution_batch_max_rows"] == execution_batch_rows
     assert plt.get("feature_vjp_tape_batch_window", 1) == tape_batch_window
     assert plt.get("feature_vjp_tape_max_bytes", 0) == tape_max_bytes
     assert plt_payload["defaults"]["row_subchunk_size"] is None
@@ -327,6 +332,7 @@ def test_bounded_fast_profile_changes_only_plt_physical_controls(
         "plt-bounded-fast-v2",
         "plt-bounded-fast-v3",
         "plt-bounded-tape-v1",
+        "plt-bounded-frontier-v1",
     ],
 )
 def test_bounded_fast_profile_rejects_exact_fidelity(

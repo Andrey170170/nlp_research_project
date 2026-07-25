@@ -88,6 +88,7 @@ Named profiles make the tested physical controls auditable:
 | `plt-bounded-fast-v2` | same, with decoder chunk 65,536 | bounded only |
 | `plt-bounded-fast-v3` | v2 plus a 16 GiB cross-batch decoder cache | bounded only |
 | `plt-bounded-tape-v1` | v2 plus a two-execution-batch VJP tape with a 12 GiB simultaneous-owned-byte cap; decoder cache disabled | bounded only |
+| `plt-bounded-frontier-v1` | v2 with one bounded 512-row physical execution batch per four-semantic-batch refresh frontier; decoder cache disabled | bounded only |
 
 The 16 GiB cache in v3 is sized to retain the reusable 1B PLT decoder, which is
 about 14.6 GiB in bf16. It is not an instruction to fill HBM. The cache remains

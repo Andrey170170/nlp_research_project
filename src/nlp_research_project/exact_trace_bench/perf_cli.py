@@ -102,6 +102,14 @@ CANDIDATE_PROFILES: dict[str, dict[str, Any]] = {
         "feature_vjp_tape_batch_window": 2,
         "feature_vjp_tape_max_bytes": 12 * 1024**3,
     },
+    "plt-bounded-frontier-v1": {
+        "decoder_chunk_size": 65536,
+        "nnsight_session_capacity": 512,
+        "phase1_trace_batch_policy": "cap_effective_batches",
+        "phase1_trace_batch_size_max": 128,
+        "phase3_compute_microbatch_max_rows": 128,
+        "phase4_execution_batch_max_rows": 512,
+    },
 }
 BOUNDED_ONLY_CANDIDATE_PROFILES = frozenset(
     {
@@ -109,6 +117,7 @@ BOUNDED_ONLY_CANDIDATE_PROFILES = frozenset(
         "plt-bounded-fast-v2",
         "plt-bounded-fast-v3",
         "plt-bounded-tape-v1",
+        "plt-bounded-frontier-v1",
     }
 )
 GPU_SAMPLE_COMMAND = (
