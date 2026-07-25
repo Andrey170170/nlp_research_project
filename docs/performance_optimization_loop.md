@@ -272,16 +272,26 @@ in every timing claim.
 On Granite job `1654070`, the v3 profile completed the 1B PLT `361_base`
 one-token trace twice from the same project and sibling source state:
 
-| Run | End-to-end | Phase 3 | Phase 4 | Speedup | Bounded gate | 300s stretch |
-|---|---:|---:|---:|---:|---|---|
-| `perf-plt-cache16g-c65536-20260724-01` | 279.89s | 15.80s | 224.40s | 10.024x | pass | pass |
-| `perf-plt-cache16g-c65536-20260724-02` | 280.58s | 15.93s | 225.34s | 10.000x | pass | pass |
+| Run | Decoder cache | End-to-end | Phase 3 | Phase 4 | Speedup | Bounded gate | 300s stretch |
+|---|---:|---:|---:|---:|---:|---|---|
+| `perf-plt-cache16g-c65536-20260724-01` | 16 GiB | 279.89s | 15.80s | 224.40s | 10.024x | pass | pass |
+| `perf-plt-cache16g-c65536-20260724-02` | 16 GiB | 280.58s | 15.93s | 225.34s | 10.000x | pass | pass |
+| `perf-plt-streaming-baseline-c65536-20260724-03` | disabled | 391.32s | 15.52s | 338.54s | 7.170x | pass | miss |
 
-Both runs produced the same compact comparison metrics: feature Jaccard
+All three runs produced the same compact comparison metrics: feature Jaccard
 0.994643, all-edge Jaccard 0.996008, Top-256 Jaccard 0.992218, weighted-edge
 Jaccard 0.995133, normalized magnitude L1 deviation 0.004879, and exact target
 token identity. This is reproducible 1B short-prefix bounded engineering
 evidence, not exact semantics, a long-prefix result, or a 4B/12B result.
+
+The clean cache-disabled run establishes the bounded-memory architectural
+baseline. It used only 26,113 MiB peak framebuffer memory, but whole-run GPU SM
+utilization averaged 10.86% (p95 16%, maximum 21%), GPU power averaged 118.63 W,
+and the twelve allocated CPUs averaged 16.79% utilization. Phase 4 issued 34
+execution batches and averaged 8.68s per batch. The same graph comparison
+metrics as the cache-resident runs show that the 113.20s Phase-4 difference is
+decoder reuse cost, while the remaining 225s cache-resident Phase 4 is a
+separate repeated-contraction and launch-utilization floor.
 
 Passing this live-workspace loop supports only a post-run engineering claim
 that the tested Gemma 3 1B source state is an optimization candidate under the
@@ -295,3 +305,97 @@ reviewed immutable project gates. This loop does not yet define or authorize
 Custom Triton or CUDA operations belong in the sibling runtime, but only after
 the project-side loop is green. Such changes still use this same CLI and frozen
 registry; do not create a separate comparison implementation.
+
+## Bounded-throughput architecture
+
+Survival is a hard constraint; throughput is optimized inside the declared
+resource envelope. Decoder cache capacity is one elastic reuse decision, not
+the architecture. Every optimized rung must retain a bounded fallback that
+makes monotonic, checkpointable progress with one execution batch, one decoder
+page, and one row tile. If the irreducible unit cannot fit, admission must refuse
+before the phase starts rather than discovering infeasibility through a late
+memory spike.
+
+The next Phase-3/4 mechanism is a byte-bounded cross-execution-batch VJP tape
+within one already-fixed semantic refresh frontier:
+
+```text
+fixed semantic frontier
+  -> capture each execution batch VJP once
+  -> bounded FeatureVjpTape (GPU, pinned host, host, or file-backed)
+  -> source-layer / decoder-page-major contraction
+  -> bounded row tiles and durability fence
+  -> existing ordered influence refresh
+  -> frontier checkpoint
+```
+
+The current `chunked_feature_replay_window` is not this mechanism. It retains a
+small number of output-layer gradients inside one backward pass and then scans
+the decoder for that execution batch. It does not reuse a decoder page across
+Phase-4 execution batches. The cross-batch tape changes physical loop order so
+one decoder page serves several captured batches before eviction, without
+increasing `cross_batch_decoder_cache_bytes`.
+
+The canonical runtime should own explicit domain objects rather than another
+unstructured knob group:
+
+- `FrontierSlice` owns contiguous execution batches up to, but never across, a
+  semantic refresh boundary.
+- `FeatureVjpTape` owns immutable per-batch/per-layer gradients, storage
+  placement, byte accounting, checksums, and cleanup.
+- `DecoderPagePipeline` owns a bounded decoder page source, at most one
+  lookahead page in the first implementation, CUDA events, and deterministic
+  slot reuse.
+- `RowTileSink` accepts disjoint completed tiles and exposes the durability
+  fence required before influence refresh.
+- `PhaseSliceGrant` is the governor decision containing independent GPU, pinned
+  host, ordinary host, and spill limits plus the permitted execution rung.
+
+The exact rung invokes the existing per-batch contraction with the same shapes,
+dtype, row mapping, and reduction order after loop interchange. Its main gain
+is decoder-load amortization. A separately identified `coalesced_bounded` rung
+may concatenate compatible tape entries into larger contractions to reduce the
+thousands of roughly 0.14s per-layer calls observed on H200. That rung is
+numerically sensitive and must pass the bounded gate; it must never be implied
+by the exact rung.
+
+The memory contract for one frontier slice is:
+
+```text
+permanent model and session state
++ one VJP execution lane
++ bounded tape staging
++ decoder page and optional prefetch slot
++ bounded row-tile slots
++ influence working tile
++ allocator safety reserve
+<= ResourceEnvelope
+```
+
+Host and spill tiers have independent bounds. The governor shrinks only
+physical axes at safe boundaries: contraction coalescing, tape batch count,
+prefetch depth, optional hot residency, row/decoder tile width, VJP microbatch,
+then tape placement. All queues and transient tensors require leases. Runtime
+pressure produces a recorded plan revision or checkpointed restart with a
+smaller grant, never an unrecorded fallback.
+
+Initial acceptance under an intentionally constrained decoder-cache envelope:
+
+1. window one reproduces the current streaming result and remains the survival
+   path;
+2. exact tape windowing preserves strict compact parity and reduces decoder
+   loads by at least 35% and Phase 4 by at least 20% against the same-budget
+   cache-disabled baseline;
+3. bounded coalescing passes the existing bounded graph floors, beats
+   prefetch-only and exact windowing, and reduces Phase 4 by at least 25%;
+4. telemetry reports tape bytes and tier high-watermarks, decoder pages and
+   bytes loaded, contraction calls, transfer/compute overlap, durable tile
+   progress, and plan revisions;
+5. no result may be described as a 1k-prefix, 4B/12B, or extreme-regime result
+   until a corresponding gate exists.
+
+The extreme path also needs bounded forward activation replay/offload,
+file-backed active-feature ranking, model placement or parallelism when
+permanent weights do not fit, and checkpoints that can continue across Slurm
+jobs. Until those mechanisms are certified, the guarantee is bounded progress
+or early actionable refusal—not that every finite request fits one process.
