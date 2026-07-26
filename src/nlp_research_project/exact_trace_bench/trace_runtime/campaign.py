@@ -9,9 +9,15 @@ from typing import Any, Mapping
 from circuit_tracer import SparsificationConfig
 
 from .generation import CompletionPlan, trace_completion_compact_chunked
+from .numeric_precision import pin_float32_matmul_precision, resolved_float32_precision
 from .prompts import load_prompts, write_prompt_record
 from .provider import ProviderLoadPolicy, get_model_transcoder_metadata
 from .request import trace_policy_from_scenario
+
+
+def _describe_numeric_precision(state: Mapping[str, Any]) -> str:
+    parts = [f"{key}={value}" for key, value in sorted(state.items())]
+    return " | ".join(parts)
 
 
 def run_scenario_file(scenario_file: Path, output_dir: Path) -> None:
@@ -28,6 +34,8 @@ def run_campaign(scenario: Mapping[str, Any], *, output_dir: Path) -> None:
         raise ValueError("C2 canonical campaign supports compact trace results only")
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    numeric_precision = pin_float32_matmul_precision()
+    print(f"Numeric precision | {_describe_numeric_precision(numeric_precision)}")
     provider = ProviderLoadPolicy.from_scenario(scenario)
     model = provider.load()
     prompts = load_prompts(model, scenario)
@@ -36,7 +44,13 @@ def run_campaign(scenario: Mapping[str, Any], *, output_dir: Path) -> None:
         scenario,
         sparsification=sparsification,
     )
-    _write_run_config(output_dir, scenario, provider, model)
+    _write_run_config(
+        output_dir,
+        scenario,
+        provider,
+        model,
+        numeric_precision=numeric_precision,
+    )
 
     completions = int(scenario.get("completions", 1))
     total = len(prompts) * completions
@@ -120,6 +134,8 @@ def _write_run_config(
     scenario: Mapping[str, Any],
     provider: ProviderLoadPolicy,
     model: Any,
+    *,
+    numeric_precision: Mapping[str, Any] | None = None,
 ) -> None:
     transcoder = get_model_transcoder_metadata(model)
     payload = {
@@ -130,5 +146,8 @@ def _write_run_config(
         "provider_load_policy": provider.__dict__,
         "transcoder": transcoder,
         "graph_packaging_mode": "compact_chunked_no_full_graph",
+        "numeric_precision": dict(numeric_precision or resolved_float32_precision()),
     }
-    (output_dir / "run_config.json").write_text(json.dumps(payload, indent=2, default=str))
+    (output_dir / "run_config.json").write_text(
+        json.dumps(payload, indent=2, default=str)
+    )
