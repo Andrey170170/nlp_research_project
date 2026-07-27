@@ -141,6 +141,44 @@ def test_all_edge_deviation_detects_magnitude_difference() -> None:
     assert result["all_edge_normalized_l1_deviation"] == 0.5
 
 
+def test_signed_compact_gate_rejects_sign_flip_hidden_by_magnitude_metrics() -> None:
+    left = _step(
+        feature_ids=[(0, 0, 1)],
+        rows=[1],
+        cols=[0],
+        weights=[1.0],
+    )
+    right = _step(
+        feature_ids=[(0, 0, 1)],
+        rows=[1],
+        cols=[0],
+        weights=[-1.0],
+    )
+
+    result = compare_step_pair(cast(Any, left), cast(Any, right))
+
+    assert result["all_edge_weighted_jaccard"] == 1.0
+    assert result["all_edge_normalized_l1_deviation"] == 0.0
+    assert result["all_edge_shared_sign_agreement"] == 0.0
+    assert result["all_edge_signed_normalized_l1_deviation"] == 2.0
+    passed, reasons = evaluate_thresholds(
+        {
+            "worst_step_all_edge_shared_sign_agreement": result[
+                "all_edge_shared_sign_agreement"
+            ],
+            "worst_step_all_edge_signed_normalized_l1_deviation": result[
+                "all_edge_signed_normalized_l1_deviation"
+            ],
+        },
+        {
+            "worst_step_all_edge_shared_sign_agreement_min": 1.0,
+            "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.000001,
+        },
+    )
+    assert passed is False
+    assert any("shared_sign_agreement" in reason for reason in reasons)
+
+
 def test_topk_overlap_penalizes_edges_present_on_only_one_side() -> None:
     left = _step(
         feature_ids=[(0, 0, 1), (0, 0, 2), (0, 0, 3)],

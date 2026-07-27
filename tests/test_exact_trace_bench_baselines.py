@@ -49,6 +49,98 @@ def test_baseline_check_preserves_typed_comparison_scope() -> None:
         )
 
 
+def test_registry_loader_and_resolver_enforce_scope_at_shared_boundary(
+    tmp_path: Path,
+) -> None:
+    scientific_path = tmp_path / "legacy-scientific.json"
+    scientific_path.write_text(
+        json.dumps({"registry_id": "legacy", "entries": {"case": {}}})
+    )
+    scientific = baselines.load_baseline_registry(scientific_path)
+    assert scientific.scope == "frozen_scientific"
+    assert scientific.scope_declared is False
+    status, entry = baselines.resolve_baseline_entry(
+        {
+            "enabled": True,
+            "scope": "frozen_scientific",
+            "registry_key": "case",
+            "failure_reasons": [],
+        },
+        registry=scientific,
+        registry_path=scientific_path,
+    )
+    assert status["registry_scope"] == "frozen_scientific"
+    assert entry == {}
+
+    mechanism_missing_entry_scope = tmp_path / "bad-mechanism.json"
+    mechanism_missing_entry_scope.write_text(
+        json.dumps(
+            {
+                "registry_id": "bad",
+                "scope": "same_regime_mechanism",
+                "entries": {"case": {}},
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="must declare scope"):
+        baselines.load_baseline_registry(mechanism_missing_entry_scope)
+
+    status, entry = baselines.resolve_baseline_entry(
+        {
+            "enabled": True,
+            "scope": "same_regime_mechanism",
+            "registry_key": "case",
+            "failure_reasons": [],
+        },
+        registry={"case": {"scope": "same_regime_mechanism"}},
+        registry_path=None,
+    )
+    assert entry is None
+    assert status["status"] == "baseline_invalid"
+    assert "explicitly scoped" in " ".join(status["failure_reasons"])
+
+
+def test_run_scenario_rejects_unscoped_mechanism_registry(tmp_path: Path) -> None:
+    scenario = {
+        **base_trace_defaults(),
+        "name": "mechanism_scope_smoke",
+        "stage": "test",
+        "method": "exact",
+        "gsm8k_indices": [828],
+        "attribution_batch_size": 1,
+        "feature_batch_size": 1,
+        "logit_batch_size": 1,
+        "decoder_chunk_size": 256,
+        "cross_batch_decoder_cache_bytes": 0,
+        "baseline_check": {
+            "enabled": True,
+            "mode": "gate",
+            "scope": "same_regime_mechanism",
+            "registry_key": "case",
+            "baseline_required": True,
+        },
+    }
+    result = run_scenario(
+        tmp_path,
+        scenario,
+        env={},
+        run_metadata={
+            "run_id": "run",
+            "run_name": "test",
+            "run_description": None,
+            "run_goal": None,
+        },
+        baseline_registry={"case": {"scope": "same_regime_mechanism"}},
+    )
+
+    assert result["status"] == "baseline_invalid"
+    assert result["returncode"] is None
+    assert "explicitly scoped" in " ".join(
+        result["baseline_check"]["failure_reasons"]
+    )
+    assert not (tmp_path / "mechanism_scope_smoke" / "run.log").exists()
+
+
 def test_baseline_comparison_writes_metrics(monkeypatch, tmp_path: Path) -> None:
     baseline_artifacts = tmp_path / "baseline" / "artifacts"
     current_artifacts = tmp_path / "current" / "artifacts"

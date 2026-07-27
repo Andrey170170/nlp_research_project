@@ -37,12 +37,16 @@ COMPARISON_SUMMARY_KEYS = (
     "overall_mean_all_edge_top256_jaccard",
     "overall_mean_target_token_match",
     "overall_mean_all_edge_normalized_l1_deviation",
+    "overall_mean_all_edge_shared_sign_agreement",
+    "overall_mean_all_edge_signed_normalized_l1_deviation",
     "worst_step_feature_jaccard",
     "worst_step_all_edge_jaccard",
     "worst_step_all_edge_weighted_jaccard",
     "worst_step_all_edge_top256_jaccard",
     "worst_step_target_token_match",
     "worst_step_all_edge_normalized_l1_deviation",
+    "worst_step_all_edge_shared_sign_agreement",
+    "worst_step_all_edge_signed_normalized_l1_deviation",
 )
 
 SCENARIO_IDENTITY_KEYS = (
@@ -138,12 +142,58 @@ METRICS_PREFERRED_HEADERS = (
 )
 
 
-def load_baseline_registry(path: Path) -> dict[str, dict[str, Any]]:
+BASELINE_SCOPES = frozenset({"frozen_scientific", "same_regime_mechanism"})
+
+
+class LoadedBaselineRegistry(dict[str, dict[str, Any]]):
+    def __init__(
+        self,
+        entries: dict[str, dict[str, Any]],
+        *,
+        scope: str,
+        scope_declared: bool,
+        registry_id: str | None,
+    ) -> None:
+        super().__init__(entries)
+        self.scope = scope
+        self.scope_declared = scope_declared
+        self.registry_id = registry_id
+
+
+def load_baseline_registry(path: Path) -> LoadedBaselineRegistry:
     payload = read_json(path)
     entries = payload.get("entries")
     if not isinstance(entries, dict):
         raise ValueError(f"Baseline registry must contain an object 'entries': {path}")
-    return {str(key): value for key, value in entries.items()}
+    declared_scope = payload.get("scope")
+    scope_declared = declared_scope is not None
+    scope = str(declared_scope or "frozen_scientific")
+    if scope not in BASELINE_SCOPES:
+        raise ValueError(f"Unsupported baseline registry scope: {scope!r}")
+    normalized: dict[str, dict[str, Any]] = {}
+    for key, value in entries.items():
+        if not isinstance(value, dict):
+            raise ValueError(f"Baseline registry entry {key!r} must be an object")
+        entry_scope_raw = value.get("scope")
+        if scope == "same_regime_mechanism" and entry_scope_raw is None:
+            raise ValueError(
+                f"Mechanism baseline registry entry {key!r} must declare "
+                "scope 'same_regime_mechanism'"
+            )
+        if entry_scope_raw is not None and str(entry_scope_raw) != scope:
+            raise ValueError(
+                f"Baseline registry entry {key!r} scope {entry_scope_raw!r} "
+                f"does not match registry scope {scope!r}"
+            )
+        normalized[str(key)] = value
+    return LoadedBaselineRegistry(
+        normalized,
+        scope=scope,
+        scope_declared=scope_declared,
+        registry_id=(
+            None if payload.get("registry_id") is None else str(payload["registry_id"])
+        ),
+    )
 
 
 def normalize_baseline_check(scenario: dict[str, Any]) -> dict[str, Any]:
@@ -165,6 +215,8 @@ def normalize_baseline_check(scenario: dict[str, Any]) -> dict[str, Any]:
         "enabled": True,
         "mode": mode,
         "scope": scope,
+        "comparison_semantics": raw.get("comparison_semantics"),
+        "claim_limitation": raw.get("claim_limitation"),
         "registry_key": raw.get("registry_key"),
         "baseline_required": bool(raw.get("baseline_required", True)),
         "thresholds": raw.get("thresholds") or {},
@@ -185,6 +237,7 @@ def resolve_baseline_entry(
     *,
     registry: dict[str, dict[str, Any]] | None,
     registry_path: Path | None,
+    registry_scope: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     if not baseline_check.get("enabled"):
         return dict(baseline_check), None
@@ -201,10 +254,57 @@ def resolve_baseline_entry(
         status["status"] = "baseline_missing"
         _append_reason(status, "baseline registry was not provided")
         return status, None
+    expected_scope = str(status.get("scope") or "frozen_scientific")
+    if isinstance(registry, LoadedBaselineRegistry):
+        actual_scope = registry.scope
+        scope_declared = registry.scope_declared
+        if registry.registry_id is not None:
+            status["registry_id"] = registry.registry_id
+    else:
+        actual_scope = str(registry_scope or "frozen_scientific")
+        scope_declared = registry_scope is not None
+    status["registry_scope"] = actual_scope
+    status["registry_scope_declared"] = scope_declared
+    if actual_scope not in BASELINE_SCOPES:
+        status["status"] = "baseline_invalid"
+        _append_reason(status, f"unsupported baseline registry scope: {actual_scope!r}")
+        return status, None
+    if expected_scope == "same_regime_mechanism" and not scope_declared:
+        status["status"] = "baseline_invalid"
+        _append_reason(
+            status,
+            "same_regime_mechanism comparison requires an explicitly scoped "
+            "baseline registry",
+        )
+        return status, None
+    if actual_scope != expected_scope:
+        status["status"] = "baseline_invalid"
+        _append_reason(
+            status,
+            f"baseline registry scope {actual_scope!r} does not match requested "
+            f"scope {expected_scope!r}",
+        )
+        return status, None
     entry = registry.get(str(key))
     if not isinstance(entry, dict):
         status["status"] = "baseline_missing"
         _append_reason(status, f"baseline registry key not found: {key}")
+        return status, None
+    entry_scope = entry.get("scope")
+    if expected_scope == "same_regime_mechanism" and entry_scope is None:
+        status["status"] = "baseline_invalid"
+        _append_reason(
+            status,
+            "same_regime_mechanism baseline entry must explicitly declare scope",
+        )
+        return status, None
+    if entry_scope is not None and str(entry_scope) != actual_scope:
+        status["status"] = "baseline_invalid"
+        _append_reason(
+            status,
+            f"baseline entry scope {entry_scope!r} does not match registry scope "
+            f"{actual_scope!r}",
+        )
         return status, None
     return status, entry
 

@@ -44,6 +44,10 @@ METRIC_KEYS = {
     "weighted_edge_jaccard": "worst_step_all_edge_weighted_jaccard",
     "target_token_match": "worst_step_target_token_match",
     "edge_magnitude_l1_deviation": ("worst_step_all_edge_normalized_l1_deviation"),
+    "edge_sign_agreement": "worst_step_all_edge_shared_sign_agreement",
+    "edge_signed_l1_deviation": (
+        "worst_step_all_edge_signed_normalized_l1_deviation"
+    ),
 }
 FIDELITY_THRESHOLDS = {
     "bounded": {
@@ -61,8 +65,19 @@ FIDELITY_THRESHOLDS = {
         "worst_step_all_edge_weighted_jaccard_min": 0.999999,
         "worst_step_target_token_match_min": 1.0,
         "worst_step_all_edge_normalized_l1_deviation_max": 0.000001,
+        "worst_step_all_edge_shared_sign_agreement_min": 1.0,
+        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.000001,
     },
 }
+COMPARISON_SEMANTICS = {
+    "bounded": "magnitude_only_compact_bounded",
+    "exact": "signed_compact_strict",
+}
+COMPARISON_CLAIM_LIMITATION = (
+    "Compact graph artifacts preserve signed retained edge weights, but omit "
+    "raw intermediates and non-retained state. Passing this gate establishes "
+    "only signed compact-graph parity, not exact semantic or full-mechanism parity."
+)
 DEFAULT_RUN_GOAL = (
     "Improve exact-trace runtime without exceeding the selected parity budget."
 )
@@ -343,6 +358,22 @@ _LEGACY_CANDIDATE_OVERRIDES: dict[str, dict[str, Any]] = {
 class BaselineScope(str, Enum):
     SCIENTIFIC = "frozen_scientific"
     MECHANISM = "same_regime_mechanism"
+
+
+@dataclass(frozen=True)
+class BaselineRegistryEntry:
+    key: str
+    scope: BaselineScope
+    payload: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class BaselineRegistryContract:
+    registry_id: str
+    scope: BaselineScope
+    scope_declared: bool
+    entries: Mapping[str, BaselineRegistryEntry]
+    payload: Mapping[str, Any]
 
 
 @dataclass(frozen=True)
@@ -860,21 +891,173 @@ def _baseline_registry_path(scope: BaselineScope) -> Path:
     return DEFAULT_BASELINE_REGISTRY
 
 
+def _load_baseline_registry_contract(
+    registry_path: Path,
+    *,
+    expected_scope: BaselineScope,
+) -> BaselineRegistryContract:
+    payload = read_json(registry_path)
+    declared_scope_raw = payload.get("scope")
+    scope_declared = declared_scope_raw is not None
+    if declared_scope_raw is None:
+        if expected_scope is not BaselineScope.SCIENTIFIC:
+            raise ValueError(
+                f"baseline registry {registry_path} must declare scope "
+                f"{expected_scope.value!r}"
+            )
+        scope = BaselineScope.SCIENTIFIC
+    else:
+        try:
+            scope = BaselineScope(str(declared_scope_raw))
+        except ValueError as exc:
+            raise ValueError(
+                f"baseline registry {registry_path} has unsupported scope "
+                f"{declared_scope_raw!r}"
+            ) from exc
+    if scope is not expected_scope:
+        raise ValueError(
+            f"baseline registry {registry_path} scope {scope.value!r} does not "
+            f"match required scope {expected_scope.value!r}"
+        )
+    entries_raw = payload.get("entries")
+    if not isinstance(entries_raw, Mapping):
+        raise ValueError(f"baseline registry {registry_path} must contain entries")
+    entries: dict[str, BaselineRegistryEntry] = {}
+    for key, entry_raw in entries_raw.items():
+        if not isinstance(entry_raw, Mapping):
+            raise ValueError(f"baseline registry entry {key!r} must be an object")
+        entry_scope_raw = entry_raw.get("scope")
+        if entry_scope_raw is None:
+            if scope is BaselineScope.MECHANISM:
+                raise ValueError(
+                    f"mechanism baseline entry {key!r} must declare scope "
+                    f"{scope.value!r}"
+                )
+            entry_scope = scope
+        else:
+            try:
+                entry_scope = BaselineScope(str(entry_scope_raw))
+            except ValueError as exc:
+                raise ValueError(
+                    f"baseline registry entry {key!r} has unsupported scope "
+                    f"{entry_scope_raw!r}"
+                ) from exc
+            if entry_scope is not scope:
+                raise ValueError(
+                    f"baseline registry entry {key!r} scope "
+                    f"{entry_scope.value!r} does not match registry scope "
+                    f"{scope.value!r}"
+                )
+        entries[str(key)] = BaselineRegistryEntry(
+            key=str(key),
+            scope=entry_scope,
+            payload=entry_raw,
+        )
+    return BaselineRegistryContract(
+        registry_id=str(payload.get("registry_id") or ""),
+        scope=scope,
+        scope_declared=scope_declared,
+        entries=entries,
+        payload=payload,
+    )
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _verify_baseline_pin_facts(
+    *,
+    baseline_entry: Mapping[str, Any],
+    scope: BaselineScope,
+) -> dict[str, Any]:
+    declared = baseline_entry.get("baseline_pins")
+    if declared is not None and not isinstance(declared, Mapping):
+        raise ValueError("baseline_pins must be an object")
+    result_json_raw = baseline_entry.get("result_json")
+    scenario_path_raw = baseline_entry.get("scenario_json")
+    scenario_path = (
+        Path(str(scenario_path_raw))
+        if scenario_path_raw is not None
+        else (
+            Path(str(result_json_raw)).with_name("scenario.json")
+            if result_json_raw is not None
+            else None
+        )
+    )
+    if scenario_path is not None and scenario_path.is_file():
+        scenario = read_json(scenario_path)
+        observed = {
+            "exact_trace_internal_dtype": scenario.get(
+                "exact_trace_internal_dtype"
+            ),
+            "decoder_chunk_size": scenario.get("decoder_chunk_size"),
+        }
+        expected_sha = baseline_entry.get("scenario_sha256")
+        observed_sha = _sha256_file(scenario_path)
+        if expected_sha is not None and str(expected_sha) != observed_sha:
+            raise ValueError(
+                f"baseline scenario checksum mismatch for {scenario_path}"
+            )
+        if declared is not None:
+            mismatches = [
+                f"{key}: declared={value!r}, observed={observed.get(key)!r}"
+                for key, value in declared.items()
+                if observed.get(key) != value
+            ]
+            if mismatches:
+                raise ValueError(
+                    "baseline pin declarations do not match referenced scenario: "
+                    + "; ".join(mismatches)
+                )
+        if any(value is None for value in observed.values()):
+            raise ValueError(
+                f"referenced baseline scenario lacks typed pin facts: {scenario_path}"
+            )
+        return {
+            "status": "verified_referenced_scenario",
+            "values": observed,
+            "scenario_json": str(scenario_path),
+            "scenario_sha256": observed_sha,
+        }
+    if scope is BaselineScope.MECHANISM:
+        raise ValueError(
+            "same-regime mechanism exact baseline pins require a readable "
+            "referenced scenario_json"
+        )
+    fallback = (
+        dict(declared)
+        if isinstance(declared, Mapping)
+        else {
+            "exact_trace_internal_dtype": "fp32",
+            "decoder_chunk_size": 4096,
+        }
+    )
+    return {
+        "status": "legacy_frozen_scientific_contract",
+        "values": fallback,
+        "scenario_json": None if scenario_path is None else str(scenario_path),
+        "scenario_sha256": None,
+    }
+
+
 def _validate_exact_baseline_pins(
     *,
     case: Case,
     candidate_profile: str,
     baseline_entry: Mapping[str, Any],
-) -> None:
+    scope: BaselineScope,
+) -> dict[str, Any]:
     candidate = _profile_variant(case, candidate_profile).baseline_pins.as_overrides()
-    baseline = baseline_entry.get("baseline_pins")
-    if not isinstance(baseline, Mapping):
-        # The frozen registry predates typed pins; its canonical scenario contract is
-        # reconstructed without mutating that immutable scientific record.
-        baseline = {
-            "exact_trace_internal_dtype": "fp32",
-            "decoder_chunk_size": 4096,
-        }
+    verification = _verify_baseline_pin_facts(
+        baseline_entry=baseline_entry,
+        scope=scope,
+    )
+    baseline = verification["values"]
     mismatches = [
         f"{key}: candidate={value!r}, baseline={baseline.get(key)!r}"
         for key, value in candidate.items()
@@ -885,6 +1068,27 @@ def _validate_exact_baseline_pins(
             f"candidate profile {candidate_profile!r} cannot run with "
             "--fidelity exact because compatibility-mixed or semantic baseline "
             "pins differ: "
+            + "; ".join(mismatches)
+        )
+    return {
+        **verification,
+        "candidate_values": candidate,
+    }
+
+
+def _assert_generated_scenario_pins(
+    scenario: Mapping[str, Any],
+    pins: BaselinePins,
+) -> None:
+    expected = pins.as_overrides()
+    mismatches = [
+        f"{key}: expected={value!r}, generated={scenario.get(key)!r}"
+        for key, value in expected.items()
+        if scenario.get(key) != value
+    ]
+    if mismatches:
+        raise ValueError(
+            "generated candidate scenario violates typed baseline pins: "
             + "; ".join(mismatches)
         )
 
@@ -906,6 +1110,11 @@ def _case_scenario(
     scenario["tier"] = "sweep"
     scenario["resource_profile"] = "performance_optimization_h200"
     scenario.update(_candidate_overrides(case, candidate_profile))
+    selected_variant = CANDIDATE_PROFILES[candidate_profile].variant_for(
+        case.provider_capabilities()
+    )
+    if selected_variant is not None:
+        _assert_generated_scenario_pins(scenario, selected_variant.baseline_pins)
     scenario["baseline_check"] = {
         "enabled": True,
         "mode": "gate",
@@ -915,6 +1124,8 @@ def _case_scenario(
             baseline_scope
             or _baseline_scope(candidate_profile, fidelity)
         ).value,
+        "comparison_semantics": COMPARISON_SEMANTICS[fidelity],
+        "claim_limitation": COMPARISON_CLAIM_LIMITATION,
         "thresholds": FIDELITY_THRESHOLDS[fidelity],
     }
     return {"defaults": payload["defaults"], "scenarios": [scenario]}
@@ -1339,13 +1550,18 @@ def _tail_logs(output_root: Path, offsets: dict[Path, int]) -> None:
 def _baseline_entries(
     registry_path: Path = DEFAULT_BASELINE_REGISTRY,
 ) -> dict[str, dict[str, Any]]:
-    registry = read_json(registry_path)
-    entries = registry.get("entries")
-    if not isinstance(entries, dict):
-        raise ValueError(
-            f"Invalid performance baseline registry: {registry_path}"
-        )
-    return entries
+    expected_scope = (
+        BaselineScope.MECHANISM
+        if registry_path == DEFAULT_MECHANISM_BASELINE_REGISTRY
+        else BaselineScope.SCIENTIFIC
+    )
+    contract = _load_baseline_registry_contract(
+        registry_path,
+        expected_scope=expected_scope,
+    )
+    return {
+        key: dict(entry.payload) for key, entry in contract.entries.items()
+    }
 
 
 def _active_row_mechanism_gate(
@@ -1843,6 +2059,12 @@ def _result_report(
         "worst_step_evidence": comparison.get("worst_step_evidence", {}),
         "profiling_summary": result.get("profiling_summary") or {},
         "resource_summary": resource_summary,
+        "comparison_semantics": (
+            (scenario.get("baseline_check") or {}).get("comparison_semantics")
+            or COMPARISON_SEMANTICS["exact"]
+        ),
+        "claim_limitation": COMPARISON_CLAIM_LIMITATION,
+        "exact_semantics_claim_allowed": False,
         "performance_target_seconds": performance_target,
         "performance_requirement": performance_requirement,
         "performance_stretch_target_seconds": stretch_target,
@@ -1943,6 +2165,8 @@ def _print_report(report: dict[str, Any]) -> None:
         f"all_top256={render(report.get('top256_edge_jaccard'), 6)} "
         f"all_weighted={render(report.get('weighted_edge_jaccard'), 6)} "
         f"edge_magnitude_l1={render(report.get('edge_magnitude_l1_deviation'), 6)} "
+        f"edge_sign={render(report.get('edge_sign_agreement'), 6)} "
+        f"edge_signed_l1={render(report.get('edge_signed_l1_deviation'), 6)} "
         f"token={render(report.get('target_token_match'), 0)} "
         f"parity={'PASS' if report.get('parity_passed') else 'FAIL'} "
         f"performance={performance_status} "
@@ -2006,6 +2230,10 @@ def _run(args: argparse.Namespace) -> int:
     }
     scope = _baseline_scope(args.candidate_profile, args.fidelity)
     baseline_registry_path = _baseline_registry_path(scope)
+    baseline_registry_contract = _load_baseline_registry_contract(
+        baseline_registry_path,
+        expected_scope=scope,
+    )
     baseline_entries = (
         _baseline_entries()
         if baseline_registry_path == DEFAULT_BASELINE_REGISTRY
@@ -2017,12 +2245,14 @@ def _run(args: argparse.Namespace) -> int:
             f"{scope.value} baseline is not registered for: "
             + ", ".join(missing_baselines)
         )
+    verified_baseline_pins: dict[str, dict[str, Any]] = {}
     if args.fidelity == "exact":
         for case in cases:
-            _validate_exact_baseline_pins(
+            verified_baseline_pins[case.key] = _validate_exact_baseline_pins(
                 case=case,
                 candidate_profile=args.candidate_profile,
                 baseline_entry=baseline_entries[case.key],
+                scope=scope,
             )
     run_id = args.run_id or time.strftime("perf-%Y%m%d-%H%M%S")
     run_root = args.output_root / run_id
@@ -2046,7 +2276,7 @@ def _run(args: argparse.Namespace) -> int:
         provenance,
         allow_test_environment=args.allow_non_h200_test_only,
     )
-    baseline_registry = read_json(baseline_registry_path)
+    baseline_registry = baseline_registry_contract.payload
     run_root.mkdir(parents=True, exist_ok=False)
     (run_root / "configs").mkdir()
     (run_root / "candidates").mkdir()
@@ -2071,12 +2301,17 @@ def _run(args: argparse.Namespace) -> int:
         },
         "suite": args.suite,
         "fidelity": args.fidelity,
+        "comparison_semantics": COMPARISON_SEMANTICS[args.fidelity],
+        "claim_limitation": COMPARISON_CLAIM_LIMITATION,
+        "exact_semantics_claim_allowed": False,
         "thresholds": FIDELITY_THRESHOLDS[args.fidelity],
         "baseline_scope": scope.value,
+        "baseline_scope_declared": baseline_registry_contract.scope_declared,
         "baseline_registry": str(baseline_registry_path),
         "baseline_registry_id": baseline_registry.get("registry_id"),
         "baseline_registry_provenance": baseline_registry.get("source_provenance"),
         "baseline_references": {case.key: baseline_entries[case.key] for case in cases},
+        "verified_baseline_pins": verified_baseline_pins,
         "workspace_mode": "live",
         "live_workspace_rationale": (
             "The isolated optimization worktree is the candidate under test; "

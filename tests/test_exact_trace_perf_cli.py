@@ -85,6 +85,8 @@ def test_fidelity_thresholds_are_explicit() -> None:
         "worst_step_all_edge_weighted_jaccard_min": 0.999999,
         "worst_step_target_token_match_min": 1.0,
         "worst_step_all_edge_normalized_l1_deviation_max": 0.000001,
+        "worst_step_all_edge_shared_sign_agreement_min": 1.0,
+        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.000001,
     }
 
 
@@ -118,6 +120,118 @@ def test_mechanism_and_scientific_baseline_registries_are_separate() -> None:
         "baseline_pins"
     ]["decoder_chunk_size"] == 4096
     assert "scope" not in scientific
+
+
+def test_registry_scope_is_typed_and_fail_closed(tmp_path: Path) -> None:
+    legacy_scientific = tmp_path / "scientific.json"
+    legacy_scientific.write_text(
+        json.dumps({"registry_id": "legacy", "entries": {"case": {}}})
+    )
+    contract = perf_cli._load_baseline_registry_contract(
+        legacy_scientific,
+        expected_scope=perf_cli.BaselineScope.SCIENTIFIC,
+    )
+    assert contract.scope is perf_cli.BaselineScope.SCIENTIFIC
+    assert contract.scope_declared is False
+
+    missing_scope = tmp_path / "mechanism-missing-scope.json"
+    missing_scope.write_text(
+        json.dumps({"registry_id": "bad", "entries": {"case": {}}})
+    )
+    with pytest.raises(ValueError, match="must declare scope"):
+        perf_cli._load_baseline_registry_contract(
+            missing_scope,
+            expected_scope=perf_cli.BaselineScope.MECHANISM,
+        )
+
+    mismatched_entry = tmp_path / "mechanism-entry-mismatch.json"
+    mismatched_entry.write_text(
+        json.dumps(
+            {
+                "registry_id": "bad-entry",
+                "scope": "same_regime_mechanism",
+                "entries": {
+                    "case": {"scope": "frozen_scientific"},
+                },
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="does not match registry scope"):
+        perf_cli._load_baseline_registry_contract(
+            mismatched_entry,
+            expected_scope=perf_cli.BaselineScope.MECHANISM,
+        )
+
+
+def test_exact_pin_facts_verify_reference_and_generated_scenario(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = perf_cli.Case("gemma3_4b_plt", "361_base")
+    entry = json.loads(
+        perf_cli.DEFAULT_MECHANISM_BASELINE_REGISTRY.read_text()
+    )["entries"][case.key]
+    verified = perf_cli._validate_exact_baseline_pins(
+        case=case,
+        candidate_profile="plt-active-rows-4b-c4096-v1",
+        baseline_entry=entry,
+        scope=perf_cli.BaselineScope.MECHANISM,
+    )
+    assert verified["status"] == "verified_referenced_scenario"
+    assert verified["values"] == {
+        "exact_trace_internal_dtype": "fp32",
+        "decoder_chunk_size": 4096,
+    }
+
+    with pytest.raises(ValueError, match="readable referenced scenario_json"):
+        perf_cli._verify_baseline_pin_facts(
+            baseline_entry={
+                "baseline_pins": {
+                    "exact_trace_internal_dtype": "fp32",
+                    "decoder_chunk_size": 4096,
+                },
+                "scenario_json": str(tmp_path / "missing.json"),
+            },
+            scope=perf_cli.BaselineScope.MECHANISM,
+        )
+
+    monkeypatch.setattr(
+        perf_cli,
+        "_candidate_overrides",
+        lambda _case, _profile: {"decoder_chunk_size": 65536},
+    )
+    with pytest.raises(ValueError, match="generated candidate scenario"):
+        perf_cli._case_scenario(
+            case,
+            "exact",
+            "plt-active-rows-4b-c4096-v1",
+        )
+
+
+def test_compact_strict_semantics_prohibit_exact_semantics_claim() -> None:
+    assert perf_cli.COMPARISON_SEMANTICS == {
+        "bounded": "magnitude_only_compact_bounded",
+        "exact": "signed_compact_strict",
+    }
+    assert "not exact semantic" in perf_cli.COMPARISON_CLAIM_LIMITATION
+    exact_scenario = perf_cli._case_scenario(
+        perf_cli.Case("gemma3_1b_clt", "361_base"),
+        "exact",
+        "canonical",
+    )["scenarios"][0]
+    assert (
+        exact_scenario["baseline_check"]["comparison_semantics"]
+        == "signed_compact_strict"
+    )
+    bounded_scenario = perf_cli._case_scenario(
+        perf_cli.Case("gemma3_1b_clt", "361_base"),
+        "bounded",
+        "canonical",
+    )["scenarios"][0]
+    assert (
+        bounded_scenario["baseline_check"]["comparison_semantics"]
+        == "magnitude_only_compact_bounded"
+    )
 
 
 def test_profiling_parser_accepts_execution_batches_without_total(
@@ -549,6 +663,8 @@ def test_case_scenario_reuses_canonical_builder_and_adds_gate() -> None:
         "registry_key": case.key,
         "baseline_required": True,
         "scope": "frozen_scientific",
+        "comparison_semantics": perf_cli.COMPARISON_SEMANTICS["bounded"],
+        "claim_limitation": perf_cli.COMPARISON_CLAIM_LIMITATION,
         "thresholds": perf_cli.FIDELITY_THRESHOLDS["bounded"],
     }
 
@@ -1133,6 +1249,8 @@ def test_result_report_enforces_plt_duration_target(
     assert report["parity_passed"] is True
     assert report["performance_passed"] is performance_passed
     assert report["passed"] is passed
+    assert report["comparison_semantics"] == "signed_compact_strict"
+    assert report["exact_semantics_claim_allowed"] is False
     assert report["resource_validation_passed"] is True
     assert report["resource_failure_reasons"] == []
     assert report["profiling_summary"]["phase4_duration_seconds"] == 500.0

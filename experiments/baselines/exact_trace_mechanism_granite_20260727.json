@@ -6,8 +6,11 @@
   "scope": "same_regime_mechanism",
   "entries": {
     "performance/gemma3_1b_plt/361_base": {
+      "scope": "same_regime_mechanism",
       "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/perf-plt-phase0-control-exact-dev-20260726-01/candidates/gemma3_1b_plt_361_base/perf_gemma3_1b_plt_361_base/artifacts",
       "result_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/perf-plt-phase0-control-exact-dev-20260726-01/candidates/gemma3_1b_plt_361_base/perf_gemma3_1b_plt_361_base/result.json",
+      "scenario_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/perf-plt-phase0-control-exact-dev-20260726-01/candidates/gemma3_1b_plt_361_base/perf_gemma3_1b_plt_361_base/scenario.json",
+      "scenario_sha256": "47b0a37091dab5bd07b64fea92022fd201d9debad9290151803d0d406ef9d703",
       "duration_seconds": 108.62,
       "expected_status": "success",
       "baseline_pins": {
@@ -21,8 +24,11 @@
       }
     },
     "performance/gemma3_4b_plt/361_base": {
+      "scope": "same_regime_mechanism",
       "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/perf-plt-4b-active-rows-c4096-20260726-04/candidates/gemma3_4b_plt_361_base/perf_gemma3_4b_plt_361_base/artifacts",
       "result_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/perf-plt-4b-active-rows-c4096-20260726-04/candidates/gemma3_4b_plt_361_base/perf_gemma3_4b_plt_361_base/result.json",
+      "scenario_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/perf-plt-4b-active-rows-c4096-20260726-04/candidates/gemma3_4b_plt_361_base/perf_gemma3_4b_plt_361_base/scenario.json",
+      "scenario_sha256": "8623707f233820adef99a61b30c05fa48a90a34dcf32edb1bf0445413a7e6c9d",
       "duration_seconds": 335.61,
       "expected_status": "success",
       "baseline_pins": {

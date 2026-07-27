@@ -410,6 +410,7 @@ def run_scenario(
     run_metadata: dict[str, str | None],
     baseline_registry: dict[str, dict[str, Any]] | None = None,
     baseline_registry_path: Path | None = None,
+    baseline_registry_scope: str | None = None,
     fail_on_baseline_missing: bool = False,
     fail_on_validation_fail: bool = False,
     cross_batch_decoder_cache_bytes_override: int | None = None,
@@ -483,6 +484,7 @@ def run_scenario(
                 baseline_check,
                 registry=baseline_registry,
                 registry_path=baseline_registry_path,
+                registry_scope=baseline_registry_scope,
             )
             if baseline_entry is not None:
                 baseline_check = validate_baseline_entry(

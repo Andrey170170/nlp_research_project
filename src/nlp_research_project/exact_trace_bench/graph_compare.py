@@ -202,6 +202,35 @@ def _all_edge_map(step: "StepData") -> dict[tuple[object, object], float]:
     return edge_map
 
 
+def _all_edge_signed_map(step: "StepData") -> dict[tuple[object, object], float]:
+    edge_map: dict[tuple[object, object], float] = {}
+    for row, col, weight in zip(step.row_idx, step.col_idx, step.weights):
+        row_value = int(row)
+        col_value = int(col)
+        if not 0 <= col_value < step.n_features:
+            continue
+        source_label: object = ("feature",) + _feature_label(step, col_value)
+        if row_value < step.n_features:
+            target_label: object = ("feature",) + _feature_label(step, row_value)
+        else:
+            target_label = ("logit", row_value - step.n_features)
+        edge_map[(target_label, source_label)] = float(weight)
+    return edge_map
+
+
+def _shared_edge_sign_agreement(
+    left_edges: dict[tuple[object, object], float],
+    right_edges: dict[tuple[object, object], float],
+) -> float | None:
+    shared = set(left_edges) & set(right_edges)
+    if not shared:
+        return None
+    matching = sum(
+        np.sign(left_edges[key]) == np.sign(right_edges[key]) for key in shared
+    )
+    return float(matching / len(shared))
+
+
 def _normalized_l1_deviation(
     left_edges: dict[tuple[object, object], float],
     right_edges: dict[tuple[object, object], float],
@@ -306,6 +335,8 @@ def compare_step_pair(step_a: "StepData", step_b: "StepData") -> dict[str, Any]:
     edges_b = _edge_map(step_b)
     all_edges_a = _all_edge_map(step_a)
     all_edges_b = _all_edge_map(step_b)
+    signed_all_edges_a = _all_edge_signed_map(step_a)
+    signed_all_edges_b = _all_edge_signed_map(step_b)
     edge_class_maps_a = _edge_class_maps(step_a, shared_features)
     edge_class_maps_b = _edge_class_maps(step_b, shared_features)
 
@@ -333,6 +364,14 @@ def compare_step_pair(step_a: "StepData", step_b: "StepData") -> dict[str, Any]:
                 all_edges_a,
                 all_edges_b,
             )
+        ),
+        "all_edge_shared_sign_agreement": _shared_edge_sign_agreement(
+            signed_all_edges_a,
+            signed_all_edges_b,
+        ),
+        "all_edge_signed_normalized_l1_deviation": _normalized_l1_deviation(
+            signed_all_edges_a,
+            signed_all_edges_b,
         ),
         "target_token_match": float(step_a.token_text == step_b.token_text),
         "target_token_a": step_a.token_text,
@@ -451,6 +490,15 @@ def compare_artifact_dirs(
                         for row in step_rows
                     ]
                 ),
+                "mean_all_edge_shared_sign_agreement": _finite_mean(
+                    [row["all_edge_shared_sign_agreement"] for row in step_rows]
+                ),
+                "mean_all_edge_signed_normalized_l1_deviation": _finite_mean(
+                    [
+                        row["all_edge_signed_normalized_l1_deviation"]
+                        for row in step_rows
+                    ]
+                ),
                 "mean_shared_features": _finite_mean(
                     [row["n_features_shared"] for row in step_rows]
                 ),
@@ -518,6 +566,20 @@ def compare_artifact_dirs(
                 ]
             )
         )
+        summary["overall_mean_all_edge_shared_sign_agreement"] = _finite_mean(
+            [
+                row["mean_all_edge_shared_sign_agreement"]
+                for row in completion_rows
+            ]
+        )
+        summary["overall_mean_all_edge_signed_normalized_l1_deviation"] = (
+            _finite_mean(
+                [
+                    row["mean_all_edge_signed_normalized_l1_deviation"]
+                    for row in completion_rows
+                ]
+            )
+        )
 
     worst_metric_sources = {
         "worst_step_feature_jaccard": "feature_jaccard",
@@ -527,6 +589,12 @@ def compare_artifact_dirs(
         "worst_step_target_token_match": "target_token_match",
         "worst_step_all_edge_normalized_l1_deviation": (
             "all_edge_normalized_l1_deviation"
+        ),
+        "worst_step_all_edge_shared_sign_agreement": (
+            "all_edge_shared_sign_agreement"
+        ),
+        "worst_step_all_edge_signed_normalized_l1_deviation": (
+            "all_edge_signed_normalized_l1_deviation"
         ),
     }
     for summary_key, row_key in worst_metric_sources.items():
@@ -539,7 +607,11 @@ def compare_artifact_dirs(
             values = [row[row_key] for row in all_step_rows]
         summary[summary_key] = (
             _finite_max(values)
-            if row_key == "all_edge_normalized_l1_deviation"
+            if row_key
+            in {
+                "all_edge_normalized_l1_deviation",
+                "all_edge_signed_normalized_l1_deviation",
+            }
             else _finite_min(values)
         )
 
