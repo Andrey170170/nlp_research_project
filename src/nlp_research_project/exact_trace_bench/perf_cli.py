@@ -384,6 +384,7 @@ class ProviderCapabilities:
     supports_exact_chunked_provider: bool
     supports_active_decoder_row_residency: bool
     supports_phase0_decoder_row_ranges: bool
+    supports_decoder_row_source: bool
 
 
 @dataclass(frozen=True)
@@ -393,6 +394,7 @@ class CapabilityRequirements:
     supports_exact_chunked_provider: bool | None = None
     supports_active_decoder_row_residency: bool | None = None
     supports_phase0_decoder_row_ranges: bool | None = None
+    supports_decoder_row_source: bool | None = None
     minimum_layer_count: int | None = None
     maximum_layer_count: int | None = None
 
@@ -404,6 +406,7 @@ class CapabilityRequirements:
             "supports_exact_chunked_provider",
             "supports_active_decoder_row_residency",
             "supports_phase0_decoder_row_ranges",
+            "supports_decoder_row_source",
         ):
             expected = getattr(self, field)
             observed = getattr(capabilities, field)
@@ -525,6 +528,13 @@ _PLT_SAME_LAYER = CapabilityRequirements(
     supports_exact_chunked_provider=True,
     supports_active_decoder_row_residency=True,
 )
+_PLT_MAPPED_DECODER_ROWS = CapabilityRequirements(
+    **{
+        **_PLT_SAME_LAYER.__dict__,
+        "supports_phase0_decoder_row_ranges": True,
+        "supports_decoder_row_source": True,
+    }
+)
 _PLT_1B = CapabilityRequirements(
     **{
         **_PLT_SAME_LAYER.__dict__,
@@ -641,6 +651,41 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
         ),
         evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
     )
+    contracts["plt-selective-mapped-rows-large-v1"] = CandidateProfile(
+        name="plt-selective-mapped-rows-large-v1",
+        variants=(
+            _candidate_variant(
+                {
+                    **_LEGACY_CANDIDATE_OVERRIDES[
+                        "plt-active-rows-4b-c4096-v1"
+                    ],
+                    "phase0_decoder_row_ranges": True,
+                },
+                CapabilityRequirements(
+                    **{
+                        **_PLT_MAPPED_DECODER_ROWS.__dict__,
+                        "minimum_layer_count": 27,
+                        "maximum_layer_count": 34,
+                    }
+                ),
+            ),
+            _candidate_variant(
+                {
+                    **_LEGACY_CANDIDATE_OVERRIDES[
+                        "plt-active-rows-12b-c4096-v1"
+                    ],
+                    "phase0_decoder_row_ranges": True,
+                },
+                CapabilityRequirements(
+                    **{
+                        **_PLT_MAPPED_DECODER_ROWS.__dict__,
+                        "minimum_layer_count": 35,
+                    }
+                ),
+            ),
+        ),
+        evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
+    )
     return contracts
 
 
@@ -685,6 +730,7 @@ class Case:
             supports_exact_chunked_provider=True,
             supports_active_decoder_row_residency=same_layer,
             supports_phase0_decoder_row_ranges=same_layer,
+            supports_decoder_row_source=same_layer,
         )
 
 

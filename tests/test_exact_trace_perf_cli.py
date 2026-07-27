@@ -105,6 +105,21 @@ def test_capability_contract_distinguishes_same_layer_and_cross_layer() -> None:
         same_layer.decoder_output_topology,
         cross_layer.decoder_output_topology,
     ) == ("same_layer", "cross_layer")
+    assert same_layer.supports_decoder_row_source is True
+    assert cross_layer.supports_decoder_row_source is False
+
+
+def test_mapped_decoder_row_profile_refuses_provider_without_row_source() -> None:
+    capabilities = perf_cli.Case(
+        "gemma3_4b_plt", "361_base"
+    ).provider_capabilities()
+    no_source = perf_cli.ProviderCapabilities(
+        **{**capabilities.__dict__, "supports_decoder_row_source": False}
+    )
+    profile = perf_cli.CANDIDATE_PROFILES["plt-selective-mapped-rows-large-v1"]
+
+    assert profile.variant_for(capabilities) is not None
+    assert profile.variant_for(no_source) is None
 
 
 def test_mechanism_and_scientific_baseline_registries_are_separate() -> None:
@@ -1147,6 +1162,27 @@ def test_mixed_large_suite_rejects_model_specific_profile(tmp_path: Path) -> Non
         )
         == 0
     )
+
+
+def test_mapped_decoder_row_profile_selects_4b_and_12b_variants() -> None:
+    profile = perf_cli.CANDIDATE_PROFILES["plt-selective-mapped-rows-large-v1"]
+    case_4b = perf_cli.Case("gemma3_4b_plt", "361_base")
+    case_12b = perf_cli.Case("gemma3_12b_plt", "361_base")
+
+    assert profile.variant_for(case_4b.provider_capabilities()) is not None
+    assert profile.variant_for(case_12b.provider_capabilities()) is not None
+    assert perf_cli._candidate_overrides(
+        case_4b, "plt-selective-mapped-rows-large-v1"
+    ) == {
+        **perf_cli._candidate_overrides(case_4b, "plt-active-rows-4b-c4096-v1"),
+        "phase0_decoder_row_ranges": True,
+    }
+    assert perf_cli._candidate_overrides(
+        case_12b, "plt-selective-mapped-rows-large-v1"
+    ) == {
+        **perf_cli._candidate_overrides(case_12b, "plt-active-rows-12b-c4096-v1"),
+        "phase0_decoder_row_ranges": True,
+    }
 
 
 def test_phase0_coalesced_rows_profile_is_exact_eligible_and_provider_scoped() -> None:
