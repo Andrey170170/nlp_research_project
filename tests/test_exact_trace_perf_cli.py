@@ -1194,12 +1194,14 @@ def test_mapped_decoder_row_profile_selects_4b_and_12b_variants() -> None:
     ) == {
         **perf_cli._candidate_overrides(case_4b, "plt-active-rows-4b-c4096-v1"),
         "phase0_decoder_row_ranges": True,
+        "checkpoint_asset_scope": "job_private",
     }
     assert perf_cli._candidate_overrides(
         case_12b, "plt-selective-mapped-rows-large-v1"
     ) == {
         **perf_cli._candidate_overrides(case_12b, "plt-active-rows-12b-c4096-v1"),
         "phase0_decoder_row_ranges": True,
+        "checkpoint_asset_scope": "job_private",
     }
 
 

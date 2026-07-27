@@ -660,6 +660,7 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
                         "plt-active-rows-4b-c4096-v1"
                     ],
                     "phase0_decoder_row_ranges": True,
+                    "checkpoint_asset_scope": "job_private",
                 },
                 CapabilityRequirements(
                     **{
@@ -675,6 +676,7 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
                         "plt-active-rows-12b-c4096-v1"
                     ],
                     "phase0_decoder_row_ranges": True,
+                    "checkpoint_asset_scope": "job_private",
                 },
                 CapabilityRequirements(
                     **{
