@@ -8,6 +8,7 @@ from types import ModuleType
 
 def test_plt_loader_dispatches_to_transcoder_set(monkeypatch, tmp_path) -> None:
     calls: dict[str, object] = {}
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
     module_name = "nlp_research_project.exact_trace_bench.trace_runtime.provider"
     provider = importlib.import_module(module_name)
     provider = importlib.reload(provider)
@@ -119,7 +120,7 @@ def test_plt_loader_dispatches_to_transcoder_set(monkeypatch, tmp_path) -> None:
 
     replacement_kwargs = calls["replacement_model"]
     assert isinstance(replacement_kwargs, dict)
-    assert replacement_kwargs["model_name"] == "google/gemma-3-4b-it"
+    assert replacement_kwargs["model_name"] == str(tmp_path)
     metadata = provider.get_model_transcoder_metadata(model)
     assert metadata is not None
     assert metadata["requested"]["transcoder_architecture"] == "plt"

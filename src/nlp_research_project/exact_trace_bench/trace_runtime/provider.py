@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -268,6 +269,14 @@ def load_model(
 
     from huggingface_hub import snapshot_download
 
+    model_load_source = config.model_name
+    if os.environ.get("HF_HUB_OFFLINE") == "1":
+        model_load_source = snapshot_download(
+            config.model_name,
+            local_files_only=True,
+        )
+        print(f"  Offline model snapshot: {model_load_source}")
+
     if config.transcoder_architecture == "clt":
         local_dir = snapshot_download(
             config.repo_id,
@@ -353,7 +362,7 @@ def load_model(
     transcoders.exact_chunked_decoder = exact_chunked_decoder
 
     model = ReplacementModel.from_pretrained_and_transcoders(
-        model_name=config.model_name,
+        model_name=model_load_source,
         transcoders=transcoders,
         device=torch.device(DEVICE),
         dtype=DTYPE,
