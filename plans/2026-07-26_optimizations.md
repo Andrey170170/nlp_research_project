@@ -770,7 +770,7 @@ The other work paths closed as follows:
 | F timing separation | the new reporting tranche exposes subprocess, completion, attribution, Phase 0, Phase 3, and Phase 4 independently; cap128 predates completion timing |
 | G float32 precision | landed and validated as recorded above |
 | H feature cap | held fixed at 8,192; no scientific-policy change was made |
-| I provider enforcement | current Gemma-1B profiles are variant-scoped; incompatible profiles are suppressed by routing rather than rejected, so typed capability enforcement remains a pre-second-model-family task |
+| I provider enforcement | 1B/4B/12B profiles are now model-scoped and mixed-suite profile launches fail closed; broader typed capability enforcement remains future runtime work |
 | J Phase-0 ranges | landed default-off with exact fallback and full provenance; rejected as ineffective for this layout |
 
 CLT cap results against the same-allocation uncapped `361_base` control
@@ -784,9 +784,11 @@ CLT cap results against the same-allocation uncapped `361_base` control
 
 All three preserved exact compact parity. None satisfied both at least 2x
 framebuffer reduction and at most 15% runtime regression, so no governor or
-launch default changed. This also stopped long-prefix and 4B/12B expansion:
-there was no promoted 1B execution plan to expand, and H's 8,192-feature
-assumption remains a scientific decision rather than a performance lever.
+launch default changed. At this stage that stopped long-prefix and larger-model
+promotion. The later bounded-only 4B/12B engineering transfer is recorded
+below; it did not retroactively promote a CLT execution plan, and H's
+8,192-feature assumption remains a scientific decision rather than a
+performance lever.
 
 The surviving exact incumbent is `plt-active-rows-v1` at c4096. Its warm Phase
 4 remains about 61s and is now the primary speed frontier. The next exact-safe
@@ -980,3 +982,78 @@ projections from the fitted model, not authorized targets.
 - **Provider-agnosticism.** Per `AGENTS.md`, branch on provider capabilities and
   topology (`decoder_output_topology`, `supports_exact_chunked_provider`), never
   on model family or checkpoint name.
+
+## 2026-07-26 bounded reassessment and larger-model transfer
+
+The rejected-candidate reassessment is recorded in
+`reports/2026-07-26_bounded_candidate_reassessment.md`. The main conclusion is
+that the older cache, tape, gather, frontier, and prefetch experiments did not
+show detectable mechanism-specific compact drift beyond their shared chunk
+regime. They are still not current winners: active-row residency removes the
+decoder replay traffic that made cache/tape useful, and the remaining variants
+were slower or used substantially more framebuffer.
+
+The surviving 1B bounded candidate is active-row residency with
+`decoder_chunk_size=65536`: `79.37s` completion versus `84.82s` for c4096,
+with feature/all-edge/Top-256/weighted Jaccard
+`0.994643/0.996008/0.992218/0.995133` and normalized L1 `0.004879`.
+This is a bounded chunk regime, not exact equivalence.
+
+Larger-model transfer was then measured on job `1657613` (`grn029`, H200,
+250 GiB job cgroup) from project commit `e589eec` and sibling commit `4d4e048`.
+The worktree was the explicit live-workspace exception and remained unchanged
+during every run.
+
+| Model/profile | Status | Total | Phase 0 | Phase 4 | Framebuffer | Compact result |
+|---|---|---:|---:|---:|---:|---|
+| 4B active rows, b128/c4096 | completed | 335.61s | 191.09s | 113.21s | 27,685 MiB | exact fail; bounded pass |
+| 4B active rows, b512/c65536 | completed | 418.58s | 147.32s | 220.12s | 82,111 MiB | bounded pass |
+| 12B active rows, b64/c4096 | stopped after two Phase-4 batches | n/a | 1,350.83s | 187.85s and 120.29s for the first two batches | about 40.6 GiB live | no completed compact graph |
+
+The 4B b128/c4096 result is `16.30x` faster than the frozen `5471.70s`
+reference, but active-row transfer itself is not exact at 4B:
+feature/all-edge/Top-256/weighted Jaccard are
+`0.999024/0.998401/1.000000/0.998881`, normalized L1 is `0.001119`, and the
+target token matches. Treat `plt-active-rows-4b-c4096-v1` as bounded unless a
+same-regime exact reference is deliberately frozen.
+
+The combined 4B b512/c65536 candidate reduced Phase 0 by `43.77s`, but Phase 4
+regressed by `106.91s` and framebuffer tripled. Its feature/all-edge/Top-256/
+weighted Jaccard are `0.992460/0.983143/0.992218/0.985026`, normalized L1 is
+`0.015087`, and the target token matches. It passes the preregistered bounded
+gate but is slower and much closer to the fidelity floor, so do not retain the
+combined profile as the 4B incumbent. Test c65536 with b128 separately if the
+Phase-0 gain is pursued.
+
+The 250 GiB envelope was capacity-viable for both model loads. During 4B and
+12B Phase 0, the job sat at the cgroup limit with roughly 245 GiB clean file
+cache, only about 3 GiB rigid RSS, and `memory.failcnt=0`; the kernel reclaimed
+pages successfully. A total-charge guard at 240 GiB and then 249 GiB therefore
+stopped healthy cache pressure and is not the right guard for this workflow.
+Use an anonymous/RSS guard while allowing clean cache to reclaim.
+
+For 12B, capacity viability did not imply throughput viability. Phase 0 issued
+3,030 c4096 decoder loads for `95.32 GB` logical decoder bytes and took
+`1,350.83s`. Rigid anonymous memory reached `19.46 GiB`, matching the historical
+estimate, while HBM stayed below about `40.6 GiB`. Phase 3 then took only
+`0.39s`, confirming residency, but the first two Phase-4 batches took
+`187.85s` and `120.29s` even though their attribution kernels took only
+`0.20-0.22s`. Repeated model/refresh page faults under cgroup reclaim made the
+projected completion exceed remaining walltime, so only the Slurm step was
+terminated. The allocation remained healthy and `memory.failcnt` stayed zero.
+
+### Resulting work order
+
+1. Keep 4B b128/c4096 active rows as a **bounded engineering incumbent**, not an
+   exact/default promotion.
+2. Isolate c65536 at b128 on 4B; do not combine it with b512. Larger chunks
+   remain an independent floating-point regime.
+3. Use the landed cache-aware host guard: preflight the cgroup, guard
+   anonymous/RSS growth with `--host-rss-stop-gib`, and treat clean file cache
+   at the hard limit as expected.
+4. For 12B, address both sides of cache thrash before another full run:
+   selective Phase-0 row loading (or a row-oriented/indexed checkpoint layout)
+   and explicit decoder-page eviction/model-weight retention before Phase 4.
+5. Re-run 12B b64/c4096 bounded only after the projected Phase-4 refresh cost
+   fits walltime. A completed compact artifact is required before any 12B
+   parity claim.

@@ -37,6 +37,9 @@ a case is running.
 | `clt-smoke` | Gemma 3 1B GemmaScope-2 CLT | `361_base` | shortest inner loop |
 | `clt-pair` | Gemma 3 1B GemmaScope-2 CLT | `828_base`, `361_base` | broader CLT gate |
 | `plt-hard` | Gemma 3 1B GemmaScope-2 PLT | `361_base` | longer, harder gate |
+| `plt-4b` | Gemma 3 4B GemmaScope-2 PLT | `361_base` | model-scoped transfer gate |
+| `plt-12b` | Gemma 3 12B GemmaScope-2 PLT | `361_base` | model-scoped transfer gate |
+| `plt-large` | 4B and 12B PLT | both `361_base` cases | canonical-only mixed-model inspection; model-specific profiles are rejected |
 | `all` | both above | CLT pair plus PLT hard | 1B optimization-candidate gate |
 
 List the fixed cases without loading a model:
@@ -79,6 +82,30 @@ The longer PLT checkpoint is:
 uv run exact-trace-perf run plt-hard --run-id perf-column-kernel-v2-plt
 ```
 
+Larger models must use their model-specific suites and profiles. Do not pair a
+4B or 12B profile with `plt-large`; the CLI rejects this to prevent the other
+model from silently running canonical:
+
+```bash
+uv run exact-trace-perf run plt-4b \
+  --candidate-profile plt-active-rows-4b-c4096-v1 \
+  --fidelity bounded \
+  --run-id perf-plt-4b-active-rows-c4096-01
+```
+
+`--host-memory-stop-gib` is a total cgroup-charge cutoff. Decoder checkpoints
+are clean mmap-backed file cache, so a low total-charge threshold can terminate
+a healthy run immediately before kernel reclaim. For accepted-risk 250 GiB
+engineering runs, use the cache-aware RSS/anonymous guard and keep the cgroup
+hard limit as the cache boundary:
+
+```bash
+--host-rss-stop-gib 64
+```
+
+A 250 GiB result is an engineering envelope observation, not a replacement for
+the documented 400G/600G baseline resource contracts.
+
 Named profiles make the tested physical controls auditable:
 
 | Profile | PLT physical controls | Fidelity scope |
@@ -90,6 +117,13 @@ Named profiles make the tested physical controls auditable:
 | `plt-bounded-tape-v1` | v2 plus a two-execution-batch VJP tape with a 12 GiB simultaneous-owned-byte cap; decoder cache disabled | bounded only |
 | `plt-bounded-tape-prefetch-v1` | tape-v1 plus one physically fenced decoder-page lookahead slot; decoder cache disabled | bounded only |
 | `plt-bounded-frontier-v1` | v2 with one bounded 512-row physical execution batch per four-semantic-batch refresh frontier; decoder cache disabled | bounded only |
+| `plt-active-rows-4b-c4096-v1` | 4B b128/c4096 with a 4 GiB active-row cap | bounded only; measured exact fail against the frozen non-residency graph |
+| `plt-active-rows-4b-c65536-v1` | 4B b128/c65536 with a 4 GiB active-row cap | bounded only |
+| `plt-active-rows-4b-b512-c4096-v1` | 4B execution cap 512 at c4096 | bounded only |
+| `plt-active-rows-4b-b512-c65536-v1` | combined 4B execution cap 512 and c65536 | bounded only; measured slower than b128/c4096 |
+| `plt-active-rows-12b-c4096-v1` | 12B b64/c4096 with an 8 GiB active-row cap | exact gate allowed; no completed parity result yet |
+| `plt-active-rows-12b-c32768-v1` / `c65536-v1` | 12B b64 with a larger decoder chunk | bounded only |
+| `plt-active-rows-12b-b256-c4096-v1` / `c65536-v1` | 12B execution cap 256, optionally with c65536 | bounded only |
 
 The 16 GiB cache in v3 is sized to retain the reusable 1B PLT decoder, which is
 about 14.6 GiB in bf16. It is not an instruction to fill HBM. The cache remains
@@ -328,7 +362,7 @@ content hashes.
 | Run | Mechanism | Project / sibling | End-to-end | Phase 4 | Peak framebuffer | Decision |
 |---|---|---|---:|---:|---:|---|
 | `perf-plt-streaming-baseline-c65536-20260724-03` | one-batch streaming | `49da3d7` / `f324d70` | 391.32s | 338.54s | 26,113 MiB | bounded survival reference |
-| `perf-plt-tape-w2-c65536-20260725-01` | tape window 2, 12 GiB cap | `9b26258` / `1ec99f7` | 307.34s | 250.81s | 26,265 MiB | selected bounded candidate |
+| `perf-plt-tape-w2-c65536-20260725-01` | tape window 2, 12 GiB cap | `9b26258` / `1ec99f7` | 307.34s | 250.81s | 26,265 MiB | historical pre-residency winner; superseded by active rows |
 | `perf-plt-tape-w2-c65536-20260725-02` | repeat of tape window 2 | `9b26258` / `1ec99f7` | 312.65s | 255.31s | 26,125 MiB | repeat supports approximately 5.1–5.2 min |
 | `perf-plt-tape-gather-c65536-20260725-01` | tape plus gather-before-cast | `9b26258` / `793e2ef` | 318.07s | 261.58s | 26,127 MiB | retain workspace bound; reject for speed |
 | `perf-plt-frontier512-c65536-20260725-01` | one 512-row execution group | `c55a222` / `793e2ef` | 341.44s | 285.60s | 49,669 MiB | reject for speed and memory |
@@ -344,13 +378,16 @@ execution batches. Phase 4 loaded 1,500 decoder pages totaling 226,492,416,000
 bytes.
 
 The tape, gather-before-cast, Frontier-512, and fenced-prefetch rows passed the
-same bounded compact gate reported above. That is bounded engineering parity,
-not strict/exact compact parity or internal edge-sign parity. The
-gather-before-cast change remains valuable because its FP32 replay workspace is
-bounded by the selected rows rather than a whole decoder page, but it is not a
-speed promotion. The 512-row frontier candidate was slower and raised peak
-framebuffer residency by roughly 23 GiB, so larger execution groups are not a
-substitute for the tape.
+bounded compact gate with the same reported metrics. Because every row also
+uses c65536, this establishes bounded engineering behavior but cannot attribute
+numerical drift to an individual mechanism. Active-row residency later removed
+the decoder replay traffic that made tape/cache useful; a direct c4096
+post-residency tape run preserved exact parity but was slower. None of this
+establishes internal edge-sign parity. The gather-before-cast change remains
+valuable because its FP32 replay workspace is bounded by selected rows rather
+than a whole decoder page, but it is not a speed promotion. The 512-row
+frontier candidate was slower and raised peak framebuffer residency by roughly
+23 GiB.
 
 The first direct-GPU lookahead implementation was only logically depth one:
 Python could enqueue additional page uses faster than the consumer completed,

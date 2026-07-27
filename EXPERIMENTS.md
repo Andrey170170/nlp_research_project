@@ -1,7 +1,7 @@
 # Experiments inventory
 
 Status: Current compact index and interpretation summary
-Last updated: 2026-07-22
+Last updated: 2026-07-26
 
 This file is the readable front page for experiment provenance. It should stay
 small enough to edit by hand.
@@ -106,6 +106,40 @@ feature/all-edge/Top-256/weighted Jaccard
 token). This is a 124-token, 1B engineering result, not an exact-mode default,
 long-prefix validation, or evidence that the same cache envelope is safe for
 4B/12B.
+
+Fused active-row residency supersedes that pre-residency cache/tape family.
+Under the current 1B active-row path, c65536 completes in `79.37s` versus
+`84.82s` for c4096 and passes bounded parity, but its graph drift is the chunk
+regime and it is not exact-equivalent. Cache, tape, gather, frontier, and
+prefetch variants did not show additional detectable compact drift beyond their
+shared chunk regime; they remain rejected because residency removes their reuse
+benefit or because they are slower/more memory-heavy. See
+`reports/2026-07-26_bounded_candidate_reassessment.md`.
+
+The first active-row larger-model transfer on Granite H200 established:
+
+- 4B b128/c4096 completed in `335.61s` (`16.30x` versus the frozen baseline),
+  with Phase 0 `191.09s`, Phase 4 `113.21s`, and 27,685 MiB framebuffer. It
+  failed exact but passed bounded at feature/all-edge/Top-256/weighted Jaccard
+  `0.999024/0.998401/1.000000/0.998881`, L1 `0.001119`, token exact.
+- 4B b512/c65536 passed bounded but regressed to `418.58s`: Phase 0 improved to
+  `147.32s`, Phase 4 worsened to `220.12s`, framebuffer rose to 82,111 MiB, and
+  bounded metrics moved near the floor (`0.992460/0.983143/0.992218/0.985026`,
+  L1 `0.015087`). Do not select the combined profile.
+- 12B b64/c4096 proved 250 GiB capacity viability but not throughput viability.
+  Phase 0 completed in `1350.83s` with 3,030 decoder loads / 95.32 GB logical
+  bytes; rigid anonymous memory reached 19.46 GiB and HBM stayed around 40.6
+  GiB. Phase 3 took `0.39s`, but the first two Phase-4 batches took `187.85s`
+  and `120.29s` because model/refresh pages repeatedly faulted under cgroup
+  reclaim. The step was stopped before completion, so there is no 12B compact
+  parity result.
+
+In both model sizes the 250 GiB cgroup reached its hard limit almost entirely
+through clean file cache while rigid RSS remained small and `memory.failcnt`
+stayed zero. This validates the capacity hypothesis, but the 12B result shows
+why nominal cache is operationally useful: insufficient cache headroom can turn
+refresh into the bottleneck even when no OOM occurs. Guard future accepted-risk
+runs by anonymous/RSS growth rather than low total cgroup charge.
 
 Wave B completed all 14 Gemma 3 4B/12B PLT rows on Granite H200. Larger
 Phase-4 execution envelopes improved total runtime by `1.52-1.60x` at 4B and
