@@ -1,7 +1,7 @@
 # Exact-trace optimization plan: active-row residency and Phase-0 selective I/O
 
-Status: active-row residency and its fused Phase-0 seed are implemented and
-exact-H200 verified; work item J is the next optimization path
+Status: executed through the 1B exact H200 decision gates; active-row residency
+remains the incumbent, and no Phase-0 or CLT-cap candidate was promoted
 Date: 2026-07-26
 Branch: `perf/exact-trace-loop` (both project and sibling worktrees)
 Scope: sibling `../circuit-tracer_chunked` chunked attribution path + project
@@ -13,21 +13,20 @@ Work items, in priority order:
 |---|---|---|
 | A | Active-row decoder residency — removes the Phase-4 decoder scan | **implemented; exact H200 pass** |
 | B | Project knob plumbing and `plt-active-rows-v1` profile | **implemented** |
-| B2 | **Parity confound: every candidate changed `decoder_chunk_size`** | fixed for active-row exact; general guard proposed |
-| C | Source-layer fusion (`coalesced_bounded` rung) | proposed, gated on A |
-| D | Confirm or refute the per-visit cost model | proposed, parallel to A |
-| E | Phase-1 batch cap is never applied to CLT — the long-prefix blocker | diagnosed, fix proposed |
-| F | Separate startup cost from attribution cost in reporting | proposed |
+| B2 | **Parity confound: every candidate changed `decoder_chunk_size`** | confirmed independently; c4096 remains exact |
+| C | Source-layer fusion (`coalesced_bounded` rung) | deferred after telemetry payoff gate |
+| D | Confirm or refute the per-visit cost model | completed from structured telemetry |
+| E | Phase-1 batch cap is never applied to CLT — the long-prefix blocker | implemented; 128/256/512 sweep rejected for promotion |
+| F | Separate startup cost from attribution cost in reporting | implemented for the new reporting tranche |
 | G | Pin float32 matmul precision (no silent TF32) | **implemented** |
-| H | `max_feature_nodes` as the real scaling knob | decision, not a task |
-| I | Provider agnosticism: enforce the caste boundary in the harness | proposed, after A |
-| J | Phase-0 coalesced safetensor row-range loading | **proposed; next bottleneck** |
+| H | `max_feature_nodes` as the real scaling knob | held fixed; decision, not a performance task |
+| I | Provider agnosticism: enforce the caste boundary in the harness | partial variant routing; typed enforcement deferred |
+| J | Phase-0 coalesced safetensor row-range loading | implemented default-off; exact fallback verified; candidate rejected |
 
-A and B are now the verified incumbent. **B2 must still be read before any
-profile value is set** because exact comparisons must keep the baseline chunk
-size pinned. J is now the primary performance path. E remains independent and
-decides whether long-prefix CLT is possible. I generalises E and is the
-prerequisite for a second model family.
+A and B are the verified incumbent. **B2 must still be read before any profile
+value is set** because exact comparisons must keep the baseline chunk size
+pinned. J and E both completed their 1B gates without producing a promotable
+plan. I remains the prerequisite for a second model family.
 
 Companion documents:
 
@@ -708,6 +707,92 @@ H200 gates, on fixed source and workload:
    separately report Phase-0 time, logical bytes/pages/ranges, end-to-end time,
    and framebuffer.
 
+### 2026-07-26 final execution outcome
+
+This plan was executed through its 1B exact decision gates on Granite job
+`1657613`. The final Phase-0 campaign used one immutable paired snapshot:
+
+- project `8ebcaa4597ec34878ceef6ce1b2060a4812856c7`;
+- sibling `4d4e048c077b878f7265073b4cf43c4690808b2e`;
+- manifest
+  `/scratch/local/u1653998/1657613/run-snapshots/phase0-j-8ebcaa4-4d4e048/.exact_trace_bench_snapshot.json`.
+
+The control and both Phase-0 candidates were warm-page-cache measurements.
+Linux page cache was not evicted. Startup-inclusive subprocess time,
+completion time, attribution time, Phase 0, and framebuffer remain separate:
+
+| profile | subprocess | completion | attribution | Phase 0 | pages | logical bytes | framebuffer | exact parity | mechanism |
+|---|---:|---:|---:|---:|---:|---:|---:|---|---|
+| `plt-active-rows-v1` c4096 control | 108.62s | 84.82s | 83.03s | 15.49s | 1,660 | 15,665,725,440 | 26,111 MiB | pass | pass |
+| `plt-phase0-coalesced-rows-v1` | 107.93s | 84.39s | 82.59s | 15.89s | 1,660 fallback | 15,665,725,440 fallback | 26,111 MiB | pass | fail/refused |
+| `plt-active-rows-c65536-v1` | 102.48s | 79.37s | 77.59s | 11.25s | 104 | 15,703,474,176 | 26,111 MiB | **fail** | pass |
+
+The range candidate planned for 0.439s, then refused with
+`singleton_range_fraction_exceeds_max` before issuing a selective read. It
+therefore recorded zero range requests/read/gather time and used the exact
+full-page path. The 29,973 unique rows request only 69,057,792 logical bytes,
+but their layout is nearly random across the 26 decoder matrices:
+
+- gap 8 produces 25,614 ranges, 87.4% singleton ranges, and 54.6% row
+  overfetch;
+- widening to gap 512 reduces the plan to 3,920 ranges only by adding 86.1
+  requested-row equivalents of overfetch;
+- gap 1,024 produces 1,481 ranges and 144.2 requested-row equivalents of
+  overfetch, approaching full-checkpoint materialization.
+
+This refutes contiguous safetensor range coalescing as a useful policy for the
+observed 1B PLT active-row layout. The fallback is the desired behavior: it
+prevents a nominal optimization from becoming roughly one mmap slice per
+active row. Because the mechanism never became effective, there was no winner
+to repeat and no meaningful cold selective-I/O comparison to run.
+
+The independent c65536 candidate reduced Phase 0 by 4.25s and completion time
+by 5.45s, but failed the exact gate exactly as B2 predicted:
+
+- feature Jaccard `0.9946432919405892`;
+- all-edge Jaccard `0.9960079840319361`;
+- top-256 edge Jaccard `0.9922178988326849`;
+- weighted edge Jaccard `0.9951326527969755`;
+- normalized edge-magnitude L1 deviation `0.004879221634846324`.
+
+It was rejected without repetition. Larger chunks remain an independently
+measurable bounded mechanism; they are not exact semantics.
+
+The other work paths closed as follows:
+
+| work item | outcome |
+|---|---|
+| A/B active rows and project profile | landed; two exact repeats and the full 1B exact suite verified parity, the fused seed, and zero post-Phase-0 decoder loads; the original suite's aggregate resource failure was later reconciled as an outdated framebuffer threshold |
+| B2 chunk-size confound | confirmed by the independent c65536 exact failure above |
+| C source-layer fusion | deferred: persisted exact telemetry put the relevant contraction term at only 3.49s, below the 10-15% end-to-end payoff threshold |
+| D bottleneck decomposition | completed non-intrusively from structured exact telemetry: Phase-4 refreshes consume 38.51/61.69s and encoder materialization 12.92s |
+| E CLT Phase-1 cap | exact profiles at 128/256/512 landed and ran; none passed the joint memory/runtime promotion gate |
+| F timing separation | the new reporting tranche exposes subprocess, completion, attribution, Phase 0, Phase 3, and Phase 4 independently; cap128 predates completion timing |
+| G float32 precision | landed and validated as recorded above |
+| H feature cap | held fixed at 8,192; no scientific-policy change was made |
+| I provider enforcement | current Gemma-1B profiles are variant-scoped; incompatible profiles are suppressed by routing rather than rejected, so typed capability enforcement remains a pre-second-model-family task |
+| J Phase-0 ranges | landed default-off with exact fallback and full provenance; rejected as ineffective for this layout |
+
+CLT cap results against the same-allocation uncapped `361_base` control
+(74.80s, 94,643 MiB) were:
+
+| cap | subprocess | completion | Phase 4 | execution batches | framebuffer | reduction | decision |
+|---:|---:|---:|---:|---:|---:|---:|---|
+| 128 | 213.98s | not recorded by the earlier reporting tranche | 176.28s | 68 | 14,843 MiB | 6.38x | low-memory calibration only |
+| 256 | 139.50s | 113.99s | 87.65s | 34 | 26,343 MiB | 3.59x | low-memory calibration only |
+| 512 | 105.01s | 81.62s | 55.22s | 18 | 50,019 MiB | 1.89x | fastest capped point, still reject for promotion |
+
+All three preserved exact compact parity. None satisfied both at least 2x
+framebuffer reduction and at most 15% runtime regression, so no governor or
+launch default changed. This also stopped long-prefix and 4B/12B expansion:
+there was no promoted 1B execution plan to expand, and H's 8,192-feature
+assumption remains a scientific decision rather than a performance lever.
+
+The surviving exact incumbent is `plt-active-rows-v1` at c4096. Its warm Phase
+4 remains about 61s and is now the primary speed frontier. The next exact-safe
+work should target refresh and encoder materialization while preserving
+frontier membership/order and accumulation semantics.
+
 ## Explicitly deferred: multi-GPU
 
 Multi-GPU is **out of scope for this plan and should not be started until A is
@@ -828,8 +913,9 @@ A run is a success only if all of the following hold:
    the 8,192 frontier budget as the active universe;
 4. end-to-end duration is reproducible across two runs on the same allocation
    and source state;
-5. peak framebuffer does not increase relative to
-   `perf-plt-streaming-baseline-c65536-20260724-03` (26,113 MiB);
+5. peak framebuffer stays within the audited streaming reference plus the
+   admitted 152,428,032-byte resident table (26,259 MiB corrected ceiling; the
+   final control measured 26,111 MiB);
 6. the CLT control still matches its compact artifacts;
 7. Phase-0 selective-I/O candidates separately report Phase-0 time,
    page/range counts, logical bytes, end-to-end time, and framebuffer.
