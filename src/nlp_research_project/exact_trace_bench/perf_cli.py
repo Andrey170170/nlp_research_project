@@ -90,6 +90,13 @@ _PLT_BOUNDED_TAPE_V1 = {
 }
 CANDIDATE_PROFILES: dict[str, dict[str, Any]] = {
     "canonical": {},
+    "clt-phase1-cap128-v1": {
+        "phase1_trace_batch_policy": "cap_effective_batches",
+        "phase1_trace_batch_size_max": 128,
+        "nnsight_session_capacity": 128,
+        "phase3_compute_microbatch_max_rows": 128,
+        "phase4_execution_batch_max_rows": 128,
+    },
     "plt-bounded-fast-v1": {
         "decoder_chunk_size": 32768,
         "nnsight_session_capacity": 256,
@@ -348,6 +355,12 @@ def execution_evidence(
 
 
 def _candidate_overrides(case: Case, candidate_profile: str) -> dict[str, Any]:
+    if candidate_profile == "clt-phase1-cap128-v1":
+        return (
+            dict(CANDIDATE_PROFILES[candidate_profile])
+            if case.variant == "gemma3_1b_clt"
+            else {}
+        )
     if case.variant != "gemma3_1b_plt":
         return {}
     return dict(CANDIDATE_PROFILES[candidate_profile])

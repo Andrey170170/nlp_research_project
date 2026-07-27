@@ -412,6 +412,31 @@ def test_active_rows_profiles_match_exact_baseline_and_are_exact_eligible(
     )
 
 
+def test_clt_phase1_cap_profile_is_exact_eligible_and_provider_scoped() -> None:
+    clt_case = perf_cli.Case("gemma3_1b_clt", "361_base")
+    plt_case = perf_cli.Case("gemma3_1b_plt", "361_base")
+    profile = "clt-phase1-cap128-v1"
+    expected = {
+        "phase1_trace_batch_policy": "cap_effective_batches",
+        "phase1_trace_batch_size_max": 128,
+        "nnsight_session_capacity": 128,
+        "phase3_compute_microbatch_max_rows": 128,
+        "phase4_execution_batch_max_rows": 128,
+    }
+
+    assert perf_cli._candidate_overrides(clt_case, profile) == expected
+    assert perf_cli._candidate_overrides(plt_case, profile) == {}
+    assert profile not in perf_cli.BOUNDED_ONLY_CANDIDATE_PROFILES
+
+    scenario = perf_cli._case_scenario(clt_case, "exact", profile)["scenarios"][0]
+    assert {key: scenario[key] for key in expected} == expected
+    assert scenario["decoder_chunk_size"] == 4096
+    assert scenario["attribution_batch_size"] == 1000
+    assert scenario["feature_batch_size"] == 1000
+    assert scenario["logit_batch_size"] == 1000
+    assert scenario["baseline_check"]["thresholds"] == perf_cli.FIDELITY_THRESHOLDS["exact"]
+
+
 def test_h200_guard_requires_slurm_and_h200() -> None:
     with pytest.raises(RuntimeError, match="SLURM allocation"):
         perf_cli.assert_h200_allocation(
