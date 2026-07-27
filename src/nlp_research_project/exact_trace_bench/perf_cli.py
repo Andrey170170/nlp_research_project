@@ -766,6 +766,34 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
             ),
             evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
         )
+    for row_subchunk_size in (16384, 65536):
+        profile_name = (
+            "plt-selective-mapped-rows-active-cpu-12b-"
+            f"tile{row_subchunk_size}-v1"
+        )
+        contracts[profile_name] = CandidateProfile(
+            name=profile_name,
+            variants=(
+                _candidate_variant(
+                    {
+                        **_LEGACY_CANDIDATE_OVERRIDES[
+                            "plt-active-rows-12b-c4096-v1"
+                        ],
+                        "phase0_decoder_row_ranges": True,
+                        "checkpoint_asset_scope": "job_private",
+                        "exact_encoder_residency": "active_cpu",
+                        "row_subchunk_size": row_subchunk_size,
+                    },
+                    CapabilityRequirements(
+                        **{
+                            **_PLT_MAPPED_DECODER_ROWS_WITH_ENCODER_RESIDENCY.__dict__,
+                            "minimum_layer_count": 35,
+                        }
+                    ),
+                ),
+            ),
+            evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
+        )
     return contracts
 
 
