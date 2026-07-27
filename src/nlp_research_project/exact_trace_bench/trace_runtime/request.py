@@ -45,6 +45,9 @@ from nlp_research_project.exact_trace_bench.calibration_observations import (
     NormalizedFidelityPolicy,
     parse_fidelity_policy,
 )
+from nlp_research_project.exact_trace_bench.transcoder_config import (
+    resolve_transcoder_load_config,
+)
 
 
 @dataclass(frozen=True)
@@ -114,6 +117,40 @@ def trace_policy_from_scenario(
     phase0_decoder_row_ranges = _bool_knob(
         scenario, "phase0_decoder_row_ranges", False
     )
+    active_row_residency = _bool_knob(
+        scenario, "decoder_active_row_residency", False
+    )
+    reuse_phase0_window_state = _bool_knob(
+        scenario, "reuse_phase0_window_state", False
+    )
+    active_row_max_bytes = scenario.get("decoder_active_row_max_bytes", 0)
+    if phase0_decoder_row_ranges:
+        provider = resolve_transcoder_load_config(
+            scenario, preserve_default_values=True
+        )
+        if provider.transcoder_architecture != "plt":
+            raise ValueError(
+                "phase0_decoder_row_ranges requires a PLT-compatible provider"
+            )
+        if not active_row_residency:
+            raise ValueError(
+                "phase0_decoder_row_ranges requires "
+                "decoder_active_row_residency=true"
+            )
+        if (
+            isinstance(active_row_max_bytes, bool)
+            or not isinstance(active_row_max_bytes, int)
+            or active_row_max_bytes <= 0
+        ):
+            raise ValueError(
+                "phase0_decoder_row_ranges requires a positive "
+                "decoder_active_row_max_bytes"
+            )
+        if reuse_phase0_window_state:
+            raise ValueError(
+                "phase0_decoder_row_ranges is incompatible with "
+                "reuse_phase0_window_state until forward-session policy is shared"
+            )
     resources, provider_profile = _governor_policy_from_scenario(scenario)
     governor_fidelity = _governor_fidelity_from_scenario(scenario)
     governor_admission_mode = AdmissionMode(
@@ -270,11 +307,9 @@ def trace_policy_from_scenario(
                 scenario.get("decoder_page_prefetch_depth", 0)
             ),
             decoder_active_row_residency=bool(
-                scenario.get("decoder_active_row_residency", False)
+                active_row_residency
             ),
-            decoder_active_row_max_bytes=int(
-                scenario.get("decoder_active_row_max_bytes", 0)
-            ),
+            decoder_active_row_max_bytes=int(active_row_max_bytes),
             phase0_decoder_row_ranges=phase0_decoder_row_ranges,
         ),
         observability=ObservabilityPolicy(

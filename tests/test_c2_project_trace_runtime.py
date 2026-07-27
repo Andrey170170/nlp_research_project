@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import torch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -73,7 +74,6 @@ def test_physical_frontier_knobs_change_only_execution_fingerprint() -> None:
         ("decoder_page_prefetch_depth", 1),
         ("decoder_active_row_residency", True),
         ("decoder_active_row_max_bytes", 1024),
-        ("phase0_decoder_row_ranges", True),
     ):
         changed = _fingerprints({key: value})
         assert changed[0] == baseline[0], key
@@ -86,11 +86,19 @@ def test_physical_frontier_knobs_change_only_execution_fingerprint() -> None:
     )
     assert changed[0] == baseline[0]
     assert changed[1] != baseline[1]
+    changed = _fingerprints(
+        {
+            "transcoder_architecture": "plt",
+            "decoder_active_row_residency": True,
+            "decoder_active_row_max_bytes": 1024,
+            "phase0_decoder_row_ranges": True,
+        }
+    )
+    assert changed[0] == baseline[0]
+    assert changed[1] != baseline[1]
 
 
 def test_phase0_decoder_row_ranges_requires_a_bool() -> None:
-    import pytest
-
     with pytest.raises(ValueError, match="phase0_decoder_row_ranges must be a bool"):
         trace_policy_from_scenario(
             {
@@ -98,6 +106,55 @@ def test_phase0_decoder_row_ranges_requires_a_bool() -> None:
                 "method": "exact",
                 "phase0_decoder_row_ranges": 1,
             }
+        )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        (
+            {
+                "phase0_decoder_row_ranges": True,
+                "decoder_active_row_residency": True,
+                "decoder_active_row_max_bytes": 1024,
+            },
+            "PLT-compatible provider",
+        ),
+        (
+            {
+                "transcoder_architecture": "plt",
+                "phase0_decoder_row_ranges": True,
+                "decoder_active_row_max_bytes": 1024,
+            },
+            "decoder_active_row_residency=true",
+        ),
+        (
+            {
+                "transcoder_architecture": "plt",
+                "phase0_decoder_row_ranges": True,
+                "decoder_active_row_residency": True,
+            },
+            "positive decoder_active_row_max_bytes",
+        ),
+        (
+            {
+                "transcoder_architecture": "plt",
+                "phase0_decoder_row_ranges": True,
+                "decoder_active_row_residency": True,
+                "decoder_active_row_max_bytes": 1024,
+                "reuse_phase0_window_state": True,
+            },
+            "incompatible with reuse_phase0_window_state",
+        ),
+    ],
+)
+def test_phase0_decoder_row_ranges_rejects_invalid_scenario_dependencies(
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        trace_policy_from_scenario(
+            {"name": "invalid-phase0-ranges", "method": "exact", **overrides}
         )
 
 

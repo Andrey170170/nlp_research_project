@@ -185,6 +185,8 @@ def test_trace_request_builds_canonical_domain_policies() -> None:
             "decoder_active_row_residency": True,
             "decoder_active_row_max_bytes": 8192,
             "phase0_decoder_row_ranges": True,
+            "transcoder_architecture": "plt",
+            "transcoder_provider_family": "gemmascope2-plt-1b-big-affine",
             "phase4_scheduler_mode": "planner_v1",
             "phase4_scheduler_telemetry_detail": "debug",
             "phase4_refresh_optimization": "v1",

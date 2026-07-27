@@ -647,8 +647,29 @@ def _active_row_mechanism_gate(
     *,
     phase0_ranges_requested: bool = False,
 ) -> tuple[bool | None, list[str]]:
+    def is_int(value: Any) -> bool:
+        return isinstance(value, int) and not isinstance(value, bool)
+
     if not requested:
+        if phase0_ranges_requested:
+            return (
+                False,
+                [
+                    "phase0_decoder_row_ranges requires "
+                    "decoder_active_row_residency=true"
+                ],
+            )
         return None, []
+    if phase0_ranges_requested and (
+        not is_int(max_bytes) or max_bytes <= 0
+    ):
+        return (
+            False,
+            [
+                "phase0_decoder_row_ranges requires a positive "
+                "decoder_active_row_max_bytes"
+            ],
+        )
     if not isinstance(diagnostics, dict):
         return False, ["active-row diagnostics missing from result artifact summary"]
 
@@ -674,28 +695,33 @@ def _active_row_mechanism_gate(
     if not isinstance(seed, dict):
         reasons.append("active-row fused-seed diagnostics are incomplete")
         return False, reasons
+    range_diagnostics = (
+        diagnostics.get("phase0_decoder_row_ranges")
+        if phase0_ranges_requested
+        else None
+    )
     resident_bytes = resident.get("bytes")
     estimated_bytes = resident.get("estimated_bytes")
-    if not isinstance(resident_bytes, int) or resident_bytes <= 0:
+    if not is_int(resident_bytes) or resident_bytes <= 0:
         reasons.append("active-row resident bytes must be positive")
-    if not isinstance(estimated_bytes, int) or estimated_bytes <= 0:
+    if not is_int(estimated_bytes) or estimated_bytes <= 0:
         reasons.append("active-row estimated bytes must be positive")
     if (
-        isinstance(resident_bytes, int)
-        and isinstance(estimated_bytes, int)
+        is_int(resident_bytes)
+        and is_int(estimated_bytes)
         and resident_bytes != estimated_bytes
     ):
         reasons.append("active-row resident bytes differ from admitted estimate")
     if (
-        not isinstance(max_bytes, int)
+        not is_int(max_bytes)
         or max_bytes <= 0
-        or not isinstance(resident_bytes, int)
+        or not is_int(resident_bytes)
         or resident_bytes > max_bytes
     ):
         reasons.append(
             "active-row resident bytes exceed or lack the configured byte cap"
         )
-    if isinstance(resident_bytes, int) and not (
+    if is_int(resident_bytes) and not (
         ACTIVE_ROW_EXPECTED_BYTES / 10
         <= resident_bytes
         <= ACTIVE_ROW_EXPECTED_BYTES * 10
@@ -703,83 +729,118 @@ def _active_row_mechanism_gate(
         reasons.append(
             "active-row resident bytes are outside the predicted order of magnitude"
         )
-    if not isinstance(resident.get("row_count"), int) or resident["row_count"] <= 0:
+    if not is_int(resident.get("row_count")) or resident["row_count"] <= 0:
         reasons.append("active-row resident row count must be positive")
-    if resident.get("owner_count") != 1:
+    if not is_int(resident.get("owner_count")) or resident.get("owner_count") != 1:
         reasons.append("active-row owner count must equal 1")
-    if build.get("count") != 1:
+    if not is_int(build.get("count")) or build.get("count") != 1:
         reasons.append("active-row build count must equal 1")
     if build.get("source") != "phase0_fused_seed":
         reasons.append("active-row build source must equal phase0_fused_seed")
     traversal = build.get("traversal_bytes")
     loaded = build.get("decoder_load_bytes")
     if (
-        not isinstance(traversal, int)
+        not is_int(traversal)
         or traversal != 0
-        or not isinstance(loaded, int)
+        or not is_int(loaded)
         or loaded != 0
     ):
         reasons.append(
             "fused active-row materialization must add zero traversal/load bytes"
         )
     if (
-        not isinstance(build.get("decoder_page_load_count"), int)
+        not is_int(build.get("decoder_page_load_count"))
         or build["decoder_page_load_count"] != 0
     ):
         reasons.append("fused active-row materialization must add zero decoder page loads")
     shared_traversal = seed.get("shared_traversal_bytes")
     shared_loaded = seed.get("shared_decoder_load_bytes")
-    if (
-        not isinstance(shared_traversal, int)
-        or shared_traversal <= 0
-        or not isinstance(shared_loaded, int)
-        or shared_loaded <= 0
-        or shared_traversal != shared_loaded
-    ):
-        reasons.append(
-            "fused active-row seed shared traversal/load bytes are missing or inconsistent"
+    effective_phase0_ranges = (
+        isinstance(range_diagnostics, dict)
+        and range_diagnostics.get("effective") is True
+    )
+    if effective_phase0_ranges:
+        logical_materialized_bytes = range_diagnostics.get(
+            "logical_materialized_bytes"
         )
-    if (
-        not isinstance(seed.get("shared_decoder_page_load_count"), int)
-        or seed["shared_decoder_page_load_count"] <= 0
-    ):
-        reasons.append("fused active-row seed shared decoder page-load count must be positive")
+        if (
+            not is_int(shared_traversal)
+            or shared_traversal <= 0
+            or shared_traversal != logical_materialized_bytes
+        ):
+            reasons.append(
+                "fused active-row range seed traversal bytes must equal "
+                "Phase0 logical materialized bytes"
+            )
+        if (
+            not is_int(shared_loaded)
+            or shared_loaded != 0
+            or not is_int(seed.get("shared_decoder_page_load_count"))
+            or seed.get("shared_decoder_page_load_count") != 0
+        ):
+            reasons.append(
+                "effective Phase0 ranges must record zero legacy decoder "
+                "page loads and load bytes"
+            )
+    else:
+        if (
+            not is_int(shared_traversal)
+            or shared_traversal <= 0
+            or not is_int(shared_loaded)
+            or shared_loaded <= 0
+            or shared_traversal != shared_loaded
+        ):
+            reasons.append(
+                "fused active-row seed shared traversal/load bytes are "
+                "missing or inconsistent"
+            )
+        if (
+            not is_int(seed.get("shared_decoder_page_load_count"))
+            or seed["shared_decoder_page_load_count"] <= 0
+        ):
+            reasons.append(
+                "fused active-row seed shared decoder page-load count must be positive"
+            )
     seed_bytes = seed.get("bytes")
     if (
-        not isinstance(seed_bytes, int)
+        not is_int(seed_bytes)
         or seed_bytes <= 0
-        or not isinstance(resident_bytes, int)
+        or not is_int(resident_bytes)
         or seed_bytes > resident_bytes
     ):
         reasons.append("active-row seed bytes must be positive and no larger than resident bytes")
     unique_row_count = seed.get("unique_row_count")
     resident_row_count = resident.get("row_count")
     if (
-        not isinstance(unique_row_count, int)
+        not is_int(unique_row_count)
         or unique_row_count <= 0
-        or not isinstance(resident_row_count, int)
+        or not is_int(resident_row_count)
         or unique_row_count > resident_row_count
     ):
         reasons.append(
             "active-row seed unique-row count must be positive and no larger than resident rows"
         )
-    if seed.get("materialization_h2d_bytes") != resident_bytes:
+    if (
+        not is_int(seed.get("materialization_h2d_bytes"))
+        or seed.get("materialization_h2d_bytes") != resident_bytes
+    ):
         reasons.append("active-row seed H2D bytes must equal resident bytes")
-    if seed.get("missing_keys") != 0:
+    if not is_int(seed.get("missing_keys")) or seed.get("missing_keys") != 0:
         reasons.append("active-row seed must cover every final decoder-row key")
     if not isinstance(resident.get("device"), str) or not resident["device"].startswith(
         "cuda"
     ):
         reasons.append("active-row residency device must be CUDA")
     if (
-        phase4.get("decoder_page_load_count_delta") != 0
+        not is_int(phase4.get("decoder_page_load_count_delta"))
+        or phase4.get("decoder_page_load_count_delta") != 0
+        or not is_int(phase4.get("decoder_load_bytes_delta"))
         or phase4.get("decoder_load_bytes_delta") != 0
     ):
         reasons.append(
             "Phase4 decoder page-load and load-byte deltas must both equal zero"
         )
     if phase0_ranges_requested:
-        range_diagnostics = diagnostics.get("phase0_decoder_row_ranges")
         if not isinstance(range_diagnostics, dict):
             reasons.append(
                 "Phase0 decoder-row-range diagnostics missing from active-row evidence"
@@ -808,9 +869,9 @@ def _active_row_mechanism_gate(
         range_count = range_diagnostics.get("range_request_count")
         range_unique_rows = range_diagnostics.get("unique_row_count")
         if (
-            not isinstance(range_count, int)
+            not is_int(range_count)
             or range_count <= 0
-            or not isinstance(range_unique_rows, int)
+            or not is_int(range_unique_rows)
             or range_unique_rows <= 0
             or range_count * 2 > range_unique_rows
         ):
@@ -821,9 +882,9 @@ def _active_row_mechanism_gate(
         logical_bytes = range_diagnostics.get("logical_materialized_bytes")
         baseline_page_bytes = range_diagnostics.get("baseline_full_page_bytes")
         if (
-            not isinstance(logical_bytes, int)
+            not is_int(logical_bytes)
             or logical_bytes <= 0
-            or not isinstance(baseline_page_bytes, int)
+            or not is_int(baseline_page_bytes)
             or baseline_page_bytes <= 0
             or logical_bytes >= baseline_page_bytes
         ):

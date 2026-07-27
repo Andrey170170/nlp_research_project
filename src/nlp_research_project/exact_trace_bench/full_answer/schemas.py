@@ -5,6 +5,7 @@ from typing import Any, Mapping, TypedDict, cast
 
 from ..config import base_trace_defaults
 from ..io_utils import iter_jsonl, read_json, write_json, write_jsonl
+from ..transcoder_config import resolve_transcoder_load_config
 
 SCHEMA_VERSION = 1
 TARGET_MODE = "frozen_target_only"
@@ -197,11 +198,44 @@ def validate_trace_spec(spec: Mapping[str, Any]) -> None:
     for key in (
         "reuse_phase0_window_state",
         "reuse_target_logits",
+        "decoder_active_row_residency",
         "phase0_decoder_row_ranges",
     ):
         value = spec["graph_knobs"].get(key)
         if value is not None and not isinstance(value, bool):
             raise ValueError(f"trace spec graph_knobs.{key} must be a bool")
+    if spec["graph_knobs"].get("phase0_decoder_row_ranges"):
+        provider = resolve_transcoder_load_config(
+            spec["graph_knobs"], preserve_default_values=True
+        )
+        if provider.transcoder_architecture != "plt":
+            raise ValueError(
+                "trace spec graph_knobs.phase0_decoder_row_ranges requires "
+                "a PLT-compatible provider"
+            )
+        if spec["graph_knobs"].get("decoder_active_row_residency") is not True:
+            raise ValueError(
+                "trace spec graph_knobs.phase0_decoder_row_ranges requires "
+                "decoder_active_row_residency=true"
+            )
+        active_row_max_bytes = spec["graph_knobs"].get(
+            "decoder_active_row_max_bytes", 0
+        )
+        if (
+            isinstance(active_row_max_bytes, bool)
+            or not isinstance(active_row_max_bytes, int)
+            or active_row_max_bytes <= 0
+        ):
+            raise ValueError(
+                "trace spec graph_knobs.phase0_decoder_row_ranges requires "
+                "a positive decoder_active_row_max_bytes"
+            )
+        if spec["graph_knobs"].get("reuse_phase0_window_state"):
+            raise ValueError(
+                "trace spec graph_knobs.phase0_decoder_row_ranges is "
+                "incompatible with reuse_phase0_window_state until "
+                "forward-session policy is shared"
+            )
     phase0_window_scope = spec["graph_knobs"].get("phase0_window_scope")
     if (
         phase0_window_scope is not None

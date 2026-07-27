@@ -509,6 +509,26 @@ def _model_load_knobs(specs: list[TraceSpec]) -> dict[str, Any]:
             or active_row_max_bytes < 0
         ):
             raise ValueError("decoder_active_row_max_bytes must be a non-negative int")
+        if phase0_decoder_row_ranges:
+            if config["transcoder_architecture"] != "plt":
+                raise ValueError(
+                    "phase0_decoder_row_ranges requires a PLT-compatible provider"
+                )
+            if not active_row_residency:
+                raise ValueError(
+                    "phase0_decoder_row_ranges requires "
+                    "decoder_active_row_residency=true"
+                )
+            if active_row_max_bytes <= 0:
+                raise ValueError(
+                    "phase0_decoder_row_ranges requires a positive "
+                    "decoder_active_row_max_bytes"
+                )
+            if knobs.get("reuse_phase0_window_state", False):
+                raise ValueError(
+                    "phase0_decoder_row_ranges is incompatible with "
+                    "reuse_phase0_window_state until forward-session policy is shared"
+                )
         if resolved is not None and any(
             config[k] != resolved[k] for k in PUBLIC_TRANSCODER_KNOB_KEYS
         ):

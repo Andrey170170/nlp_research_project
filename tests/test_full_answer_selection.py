@@ -10,6 +10,7 @@ from nlp_research_project.exact_trace_bench.full_answer.schemas import (
     load_trace_selection,
     load_trace_specs,
     load_trajectory,
+    validate_trace_spec,
     write_trace_selection,
     write_trace_specs,
 )
@@ -163,3 +164,60 @@ def test_trace_spec_generation_rejects_mismatched_selection() -> None:
 
     with pytest.raises(ValueError, match="trajectory_id"):
         build_trace_specs(tiny_trajectory(), selection)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        (
+            {
+                "phase0_decoder_row_ranges": True,
+                "decoder_active_row_residency": True,
+                "decoder_active_row_max_bytes": 1024,
+            },
+            "PLT-compatible provider",
+        ),
+        (
+            {
+                "transcoder_architecture": "plt",
+                "transcoder_provider_family": "gemmascope2-plt-1b-big-affine",
+                "phase0_decoder_row_ranges": True,
+                "decoder_active_row_max_bytes": 1024,
+            },
+            "decoder_active_row_residency=true",
+        ),
+        (
+            {
+                "transcoder_architecture": "plt",
+                "transcoder_provider_family": "gemmascope2-plt-1b-big-affine",
+                "phase0_decoder_row_ranges": True,
+                "decoder_active_row_residency": True,
+            },
+            "positive decoder_active_row_max_bytes",
+        ),
+        (
+            {
+                "transcoder_architecture": "plt",
+                "transcoder_provider_family": "gemmascope2-plt-1b-big-affine",
+                "phase0_decoder_row_ranges": True,
+                "decoder_active_row_residency": True,
+                "decoder_active_row_max_bytes": 1024,
+                "reuse_phase0_window_state": True,
+            },
+            "incompatible with reuse_phase0_window_state",
+        ),
+    ],
+)
+def test_trace_spec_rejects_invalid_phase0_range_dependencies(
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    selection = select_tokens(tiny_trajectory(), explicit_indices=[3])
+    spec = build_trace_specs(
+        tiny_trajectory(),
+        selection,
+        graph_knob_overrides=overrides,
+    )[0]
+
+    with pytest.raises(ValueError, match=message):
+        validate_trace_spec(spec)

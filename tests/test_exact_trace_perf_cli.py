@@ -650,6 +650,10 @@ def _active_row_diagnostics(
         },
     }
     if phase0_ranges:
+        if phase0_ranges_effective:
+            diagnostics["seed"]["shared_traversal_bytes"] = 100_000_000
+            diagnostics["seed"]["shared_decoder_page_load_count"] = 0
+            diagnostics["seed"]["shared_decoder_load_bytes"] = 0
         diagnostics["phase0_decoder_row_ranges"] = {
             "requested": True,
             "effective": phase0_ranges_effective,
@@ -806,16 +810,22 @@ def test_phase0_coalesced_row_report_rejects_explicit_exact_fallback(
     ("field", "value", "reason"),
     [
         ("range_request_count", 30_000, "at most half"),
+        ("range_request_count", True, "at most half"),
         (
             "logical_materialized_bytes",
             15_665_725_440,
+            "below baseline full-page bytes",
+        ),
+        (
+            "logical_materialized_bytes",
+            True,
             "below baseline full-page bytes",
         ),
     ],
 )
 def test_phase0_coalesced_row_gate_rejects_ineffective_evidence(
     field: str,
-    value: int,
+    value: int | bool,
     reason: str,
 ) -> None:
     diagnostics = _active_row_diagnostics(phase0_ranges=True)
@@ -830,6 +840,75 @@ def test_phase0_coalesced_row_gate_rejects_ineffective_evidence(
 
     assert passed is False
     assert reason in " ".join(reasons)
+
+
+def test_phase0_coalesced_row_gate_rejects_boolean_legacy_counters() -> None:
+    diagnostics = _active_row_diagnostics(phase0_ranges=True)
+    diagnostics["seed"]["shared_decoder_page_load_count"] = False
+
+    passed, reasons = perf_cli._active_row_mechanism_gate(
+        True,
+        diagnostics,
+        1024**3,
+        phase0_ranges_requested=True,
+    )
+
+    assert passed is False
+    assert "zero legacy decoder page loads" in " ".join(reasons)
+
+
+@pytest.mark.parametrize(
+    ("active_rows", "max_bytes", "reason"),
+    [
+        (False, 1024**3, "decoder_active_row_residency=true"),
+        (True, 0, "positive decoder_active_row_max_bytes"),
+    ],
+)
+def test_phase0_coalesced_row_report_rejects_invalid_scenario_dependencies(
+    tmp_path: Path,
+    active_rows: bool,
+    max_bytes: int,
+    reason: str,
+) -> None:
+    case = perf_cli.Case("gemma3_1b_plt", "361_base")
+    scenario_root = tmp_path / "perf_gemma3_1b_plt_361_base"
+    scenario_root.mkdir()
+    (scenario_root / "scenario.json").write_text(
+        json.dumps(
+            {
+                "decoder_active_row_residency": active_rows,
+                "decoder_active_row_max_bytes": max_bytes,
+                "phase0_decoder_row_ranges": True,
+            }
+        )
+    )
+    (scenario_root / "result.json").write_text(
+        json.dumps(
+            {
+                "duration_seconds": 75.0,
+                "status": "success",
+                "baseline_check": {"passed": True, "failure_reasons": []},
+                "artifact_summary": {},
+            }
+        )
+    )
+    (tmp_path / "resource_summary.json").write_text(
+        json.dumps(
+            {
+                "resource_validation_passed": True,
+                "gpu_framebuffer_peak_mib": 26_113.0,
+            }
+        )
+    )
+
+    report = perf_cli._result_report(
+        case,
+        candidate_root=tmp_path,
+        baseline_entry={"duration_seconds": 307.34},
+    )
+
+    assert report["mechanism_validation_passed"] is False
+    assert reason in " ".join(report["mechanism_failure_reasons"])
 
 
 @pytest.mark.parametrize(
