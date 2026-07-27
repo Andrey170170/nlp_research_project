@@ -1,7 +1,7 @@
 # Experiments inventory
 
 Status: Current compact index and interpretation summary
-Last updated: 2026-07-26
+Last updated: 2026-07-27
 
 This file is the readable front page for experiment provenance. It should stay
 small enough to edit by hand.
@@ -63,6 +63,23 @@ Baseline preservation notes:
   understood and repeated.
 
 ## Current interpretation
+
+The 4B/12B mapped-row campaign ran the remaining optimization lanes in
+`reports/2026-07-27_large_model_optimization_results.md`; formal diagnostic
+Gates B/C remain unresolved. Provider-owned mapped decoder rows are the
+accepted transferable physical mechanism: the 4B compact-strict gate passed
+twice with exact signed evidence, while 12B raw decoder-row materialization
+accounting fell from 95.316 GB to 0.910 GB with zero post-Phase-0 decoder
+loads. The 12B lazy b64/c4096 reference repeated in 586.30s and 563.27s and
+passed an exact permutation-insensitive signed compact-graph comparison.
+
+Active-CPU encoder residency repeated at 509.80s and 508.67s with Phase 4 near
+359.6s, but its two compact artifacts were only bounded-aligned
+(`0.999024/0.988961/1.0/0.989621` feature/all-edge/Top-256/weighted Jaccard).
+Keep lazy mapped b64 as the reproducible reference and active CPU only as an
+explicitly bounded, placement-frozen candidate. Pinned CPU, b128, b256, and
+16,384/65,536 FP32 contraction tiles were slower or failed the Pareto margin.
+No default, governor bundle, fidelity scope, or baseline registry changed.
 
 Governor Wave A completed on Granite H200 and was analyzed on 2026-07-19. The
 provider-local CLT/PLT references match the original corrected-hook Granite

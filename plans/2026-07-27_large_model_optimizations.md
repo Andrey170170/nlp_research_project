@@ -1,6 +1,7 @@
 # Exact-trace large-model optimization plan
 
-Status: proposed; no GPU work launched by this plan
+Status: engineering execution complete; formal Gates B/C unresolved; no
+launch-default or scientific-baseline promotion
 
 Date: 2026-07-27
 
@@ -8,6 +9,18 @@ Branch: `perf/exact-trace-loop` in both project and sibling worktrees
 
 Scope: Gemma 3 4B/12B PLT as the development and stress cases, with mechanisms
 implemented against provider capabilities rather than model names
+
+Execution report: `reports/2026-07-27_large_model_optimization_results.md`
+
+The campaign executed the 4B compact-strict mapped-row gate, two 12B mapped
+b64/c4096 references, the encoder-placement ladder, b128/b256 physical
+execution envelopes, and the admitted contraction-tile ladder. Formal Gate B
+telemetry-overhead attribution and Gate C matched cold three-batch evidence
+remain unavailable, so the later ladders are engineering characterization
+rather than a formally completed promotion path. The mapped selective-row
+source is accepted as the transferable exact physical mechanism. Lazy mapped
+b64 is the reproducible 12B reference; active CPU is faster but bounded-only.
+No later candidate earned promotion.
 
 This succeeds `plans/2026-07-26_optimizations.md`. The 1B path is frozen as a
 regression gate; it is no longer an optimization target. The aim is to use 4B
