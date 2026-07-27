@@ -22,7 +22,7 @@ def test_default_transcoder_config_is_current_clt() -> None:
     assert payload["decoder_chunk_size"] == 256
     assert payload["cross_batch_decoder_cache_bytes"] == 8589934592
     assert payload["checkpoint_asset_scope"] == "shared"
-    assert payload["checkpoint_prefault_budget_bytes"] is None
+    assert payload["checkpoint_prefault_budget_bytes"] == 0
 
 
 def test_checkpoint_residency_controls_are_explicit_and_validated() -> None:
@@ -34,6 +34,12 @@ def test_checkpoint_residency_controls_are_explicit_and_validated() -> None:
     )
     assert config.checkpoint_asset_scope == "job_private"
     assert config.checkpoint_prefault_budget_bytes == 4096
+    assert (
+        resolve_transcoder_load_config(
+            {"checkpoint_prefault_budget_bytes": None}
+        ).checkpoint_prefault_budget_bytes
+        == 0
+    )
 
     for invalid in ("private", "auto"):
         try:

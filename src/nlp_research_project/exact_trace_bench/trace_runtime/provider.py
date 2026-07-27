@@ -38,7 +38,7 @@ class ProviderLoadPolicy:
     decoder_chunk_size: int
     cross_batch_decoder_cache_bytes: int | None
     checkpoint_asset_scope: str
-    checkpoint_prefault_budget_bytes: int | None
+    checkpoint_prefault_budget_bytes: int
 
     @classmethod
     def from_scenario(cls, scenario: Mapping[str, Any]) -> ProviderLoadPolicy:
@@ -185,7 +185,7 @@ def load_gemma_scope_2_clt_native(
     decoder_chunk_size: int = 256,
     cross_batch_decoder_cache_bytes: int | None = None,
     checkpoint_asset_scope: str = "shared",
-    checkpoint_prefault_budget_bytes: int | None = None,
+    checkpoint_prefault_budget_bytes: int = 0,
 ):
     """Load GemmaScope-2 CLTs via the fork-native loader."""
     from circuit_tracer.transcoder.cross_layer_transcoder import load_gemma_scope_2_clt
@@ -232,7 +232,7 @@ def load_model(
     exact_chunked_decoder: bool = True,
     cross_batch_decoder_cache_bytes: int | None = None,
     checkpoint_asset_scope: str = "shared",
-    checkpoint_prefault_budget_bytes: int | None = None,
+    checkpoint_prefault_budget_bytes: int = 0,
 ) -> ReplacementModel:
     config = resolve_transcoder_load_config(
         model_name=model_name,
