@@ -25,7 +25,7 @@ DEFAULT_BASELINE_REGISTRY = (
     REPO_ROOT
     / "experiments"
     / "baselines"
-    / "exact_trace_performance_granite_20260709.json"
+    / "exact_trace_performance_granite_20260726.json"
 )
 RUNNER = REPO_ROOT / "experiments" / "run_sparsification_experiment.py"
 SIBLING_ROOT = REPO_ROOT.parent / "circuit-tracer_chunked"
@@ -64,13 +64,13 @@ PERFORMANCE_TARGET_SECONDS = {
 }
 PERFORMANCE_STRETCH_TARGET_SECONDS = {
     "performance/gemma3_1b_plt/361_base": 300.0,
+    "performance/gemma3_4b_plt/361_base": 600.0,
+    "performance/gemma3_12b_plt/361_base": 3600.0,
 }
 ACTIVE_ROW_INITIAL_PREDICTED_DURATION_SECONDS = (65.0, 90.0)
 ACTIVE_ROW_FUSED_TARGET_SECONDS = 245.0
 ACTIVE_ROW_EXPECTED_BYTES = 66_158 * 1152 * 2
-ACTIVE_ROW_EXPECTED_MIB_ALLOWANCE = (
-    ACTIVE_ROW_EXPECTED_BYTES + 1024**2 - 1
-) // 1024**2
+ACTIVE_ROW_EXPECTED_MIB_ALLOWANCE = (ACTIVE_ROW_EXPECTED_BYTES + 1024**2 - 1) // 1024**2
 ACTIVE_ROW_FRAMEBUFFER_REFERENCE = {
     "run_id": "perf-plt-streaming-baseline-c65536-20260724-03",
     "resource_summary_path": (
@@ -81,6 +81,11 @@ ACTIVE_ROW_FRAMEBUFFER_REFERENCE = {
     ),
     "gpu_framebuffer_peak_mib": 26113.0,
 }
+LARGE_MODEL_ACTIVE_ROW_CAP_BYTES = {
+    "gemma3_4b_plt": 4 * 1024**3,
+    "gemma3_12b_plt": 8 * 1024**3,
+}
+LARGE_MODEL_HBM_PEAK_FRACTION_LIMIT = 0.90
 _PLT_BOUNDED_TAPE_V1 = {
     "decoder_chunk_size": 65536,
     "nnsight_session_capacity": 256,
@@ -208,6 +213,147 @@ CANDIDATE_PROFILES: dict[str, dict[str, Any]] = {
         "decoder_active_row_residency": True,
         "decoder_active_row_max_bytes": 1024**3,
     },
+    "plt-active-rows-4b-c4096-v1": {
+        "decoder_chunk_size": 4096,
+        "cross_batch_decoder_cache_bytes": 0,
+        "nnsight_session_capacity": 128,
+        "phase1_trace_batch_policy": "cap_effective_batches",
+        "phase1_trace_batch_size_max": 128,
+        "phase3_compute_microbatch_max_rows": 128,
+        "phase4_execution_batch_max_rows": 128,
+        "feature_vjp_tape_batch_window": 1,
+        "decoder_page_prefetch_depth": 0,
+        "decoder_active_row_residency": True,
+        "decoder_active_row_max_bytes": 4 * 1024**3,
+    },
+    "plt-active-rows-4b-c65536-v1": {
+        "decoder_chunk_size": 65536,
+        "cross_batch_decoder_cache_bytes": 0,
+        "nnsight_session_capacity": 128,
+        "phase1_trace_batch_policy": "cap_effective_batches",
+        "phase1_trace_batch_size_max": 128,
+        "phase3_compute_microbatch_max_rows": 128,
+        "phase4_execution_batch_max_rows": 128,
+        "feature_vjp_tape_batch_window": 1,
+        "decoder_page_prefetch_depth": 0,
+        "decoder_active_row_residency": True,
+        "decoder_active_row_max_bytes": 4 * 1024**3,
+    },
+    "plt-active-rows-4b-b512-c4096-v1": {
+        "decoder_chunk_size": 4096,
+        "cross_batch_decoder_cache_bytes": 0,
+        "nnsight_session_capacity": 512,
+        "phase1_trace_batch_policy": "cap_effective_batches",
+        "phase1_trace_batch_size_max": 128,
+        "phase3_compute_microbatch_max_rows": 128,
+        "phase4_execution_batch_max_rows": 512,
+        "feature_vjp_tape_batch_window": 1,
+        "decoder_page_prefetch_depth": 0,
+        "decoder_active_row_residency": True,
+        "decoder_active_row_max_bytes": 4 * 1024**3,
+    },
+    "plt-active-rows-4b-b512-c65536-v1": {
+        "decoder_chunk_size": 65536,
+        "cross_batch_decoder_cache_bytes": 0,
+        "nnsight_session_capacity": 512,
+        "phase1_trace_batch_policy": "cap_effective_batches",
+        "phase1_trace_batch_size_max": 128,
+        "phase3_compute_microbatch_max_rows": 128,
+        "phase4_execution_batch_max_rows": 512,
+        "feature_vjp_tape_batch_window": 1,
+        "decoder_page_prefetch_depth": 0,
+        "decoder_active_row_residency": True,
+        "decoder_active_row_max_bytes": 4 * 1024**3,
+    },
+    "plt-active-rows-12b-c4096-v1": {
+        "decoder_chunk_size": 4096,
+        "cross_batch_decoder_cache_bytes": 0,
+        "nnsight_session_capacity": 64,
+        "phase1_trace_batch_policy": "cap_effective_batches",
+        "phase1_trace_batch_size_max": 64,
+        "phase3_compute_microbatch_max_rows": 64,
+        "phase4_execution_batch_max_rows": 64,
+        "feature_vjp_tape_batch_window": 1,
+        "decoder_page_prefetch_depth": 0,
+        "decoder_active_row_residency": True,
+        "decoder_active_row_max_bytes": 8 * 1024**3,
+    },
+    "plt-active-rows-12b-c32768-v1": {
+        "decoder_chunk_size": 32768,
+        "cross_batch_decoder_cache_bytes": 0,
+        "nnsight_session_capacity": 64,
+        "phase1_trace_batch_policy": "cap_effective_batches",
+        "phase1_trace_batch_size_max": 64,
+        "phase3_compute_microbatch_max_rows": 64,
+        "phase4_execution_batch_max_rows": 64,
+        "feature_vjp_tape_batch_window": 1,
+        "decoder_page_prefetch_depth": 0,
+        "decoder_active_row_residency": True,
+        "decoder_active_row_max_bytes": 8 * 1024**3,
+    },
+    "plt-active-rows-12b-c65536-v1": {
+        "decoder_chunk_size": 65536,
+        "cross_batch_decoder_cache_bytes": 0,
+        "nnsight_session_capacity": 64,
+        "phase1_trace_batch_policy": "cap_effective_batches",
+        "phase1_trace_batch_size_max": 64,
+        "phase3_compute_microbatch_max_rows": 64,
+        "phase4_execution_batch_max_rows": 64,
+        "feature_vjp_tape_batch_window": 1,
+        "decoder_page_prefetch_depth": 0,
+        "decoder_active_row_residency": True,
+        "decoder_active_row_max_bytes": 8 * 1024**3,
+    },
+    "plt-active-rows-12b-b256-c4096-v1": {
+        "decoder_chunk_size": 4096,
+        "cross_batch_decoder_cache_bytes": 0,
+        "nnsight_session_capacity": 256,
+        "phase1_trace_batch_policy": "cap_effective_batches",
+        "phase1_trace_batch_size_max": 64,
+        "phase3_compute_microbatch_max_rows": 64,
+        "phase4_execution_batch_max_rows": 256,
+        "feature_vjp_tape_batch_window": 1,
+        "decoder_page_prefetch_depth": 0,
+        "decoder_active_row_residency": True,
+        "decoder_active_row_max_bytes": 8 * 1024**3,
+    },
+    "plt-active-rows-12b-b256-c65536-v1": {
+        "decoder_chunk_size": 65536,
+        "cross_batch_decoder_cache_bytes": 0,
+        "nnsight_session_capacity": 256,
+        "phase1_trace_batch_policy": "cap_effective_batches",
+        "phase1_trace_batch_size_max": 64,
+        "phase3_compute_microbatch_max_rows": 64,
+        "phase4_execution_batch_max_rows": 256,
+        "feature_vjp_tape_batch_window": 1,
+        "decoder_page_prefetch_depth": 0,
+        "decoder_active_row_residency": True,
+        "decoder_active_row_max_bytes": 8 * 1024**3,
+    },
+}
+PLT_1B_VARIANT = frozenset({"gemma3_1b_plt"})
+CANDIDATE_PROFILE_ALLOWED_VARIANTS: dict[str, frozenset[str]] = {
+    "canonical": frozenset(),
+    **{
+        name: frozenset({"gemma3_1b_clt"})
+        for name in CANDIDATE_PROFILES
+        if name.startswith("clt-phase1-cap")
+    },
+    **{
+        name: PLT_1B_VARIANT
+        for name in CANDIDATE_PROFILES
+        if name.startswith("plt-") and "-4b-" not in name and "-12b-" not in name
+    },
+    **{
+        name: frozenset({"gemma3_4b_plt"})
+        for name in CANDIDATE_PROFILES
+        if "-4b-" in name
+    },
+    **{
+        name: frozenset({"gemma3_12b_plt"})
+        for name in CANDIDATE_PROFILES
+        if "-12b-" in name
+    },
 }
 BOUNDED_ONLY_CANDIDATE_PROFILES = frozenset(
     {
@@ -217,6 +363,14 @@ BOUNDED_ONLY_CANDIDATE_PROFILES = frozenset(
         "plt-bounded-tape-v1",
         "plt-bounded-tape-prefetch-v1",
         "plt-bounded-frontier-v1",
+        "plt-active-rows-c65536-v1",
+        "plt-active-rows-4b-c65536-v1",
+        "plt-active-rows-4b-b512-c4096-v1",
+        "plt-active-rows-4b-b512-c65536-v1",
+        "plt-active-rows-12b-c32768-v1",
+        "plt-active-rows-12b-c65536-v1",
+        "plt-active-rows-12b-b256-c4096-v1",
+        "plt-active-rows-12b-b256-c65536-v1",
     }
 )
 GPU_SAMPLE_COMMAND = (
@@ -247,6 +401,12 @@ SUITES: dict[str, tuple[Case, ...]] = {
         Case("gemma3_1b_clt", "361_base"),
     ),
     "plt-hard": (Case("gemma3_1b_plt", "361_base"),),
+    "plt-4b": (Case("gemma3_4b_plt", "361_base"),),
+    "plt-12b": (Case("gemma3_12b_plt", "361_base"),),
+    "plt-large": (
+        Case("gemma3_4b_plt", "361_base"),
+        Case("gemma3_12b_plt", "361_base"),
+    ),
     "all": (
         Case("gemma3_1b_clt", "828_base"),
         Case("gemma3_1b_clt", "361_base"),
@@ -399,13 +559,8 @@ def execution_evidence(
 
 
 def _candidate_overrides(case: Case, candidate_profile: str) -> dict[str, Any]:
-    if candidate_profile.startswith("clt-phase1-cap"):
-        return (
-            dict(CANDIDATE_PROFILES[candidate_profile])
-            if case.variant == "gemma3_1b_clt"
-            else {}
-        )
-    if case.variant != "gemma3_1b_plt":
+    allowed_variants = CANDIDATE_PROFILE_ALLOWED_VARIANTS[candidate_profile]
+    if not allowed_variants or case.variant not in allowed_variants:
         return {}
     return dict(CANDIDATE_PROFILES[candidate_profile])
 
@@ -502,6 +657,119 @@ def _gpu_resource_summary(samples_path: Path) -> dict[str, Any]:
     }
 
 
+class HostMemoryGuardTriggered(RuntimeError):
+    pass
+
+
+def _slurm_job_memory_cgroup_v1(
+    *,
+    proc_cgroup_path: Path = Path("/proc/self/cgroup"),
+    cgroup_root: Path = Path("/sys/fs/cgroup/memory"),
+) -> Path:
+    for line in proc_cgroup_path.read_text(encoding="utf-8").splitlines():
+        fields = line.split(":", maxsplit=2)
+        if len(fields) != 3 or "memory" not in fields[1].split(","):
+            continue
+        relative_parts = Path(fields[2]).parts
+        job_index = next(
+            (
+                index
+                for index, part in enumerate(relative_parts)
+                if part.startswith("job_")
+            ),
+            None,
+        )
+        if job_index is None:
+            break
+        job_relative = Path(*relative_parts[: job_index + 1])
+        path = cgroup_root / job_relative.relative_to("/")
+        required = (
+            path / "memory.stat",
+            path / "memory.usage_in_bytes",
+            path / "memory.limit_in_bytes",
+            path / "memory.failcnt",
+        )
+        if all(item.is_file() for item in required):
+            return path
+        break
+    raise RuntimeError(
+        "Slurm cgroup-v1 job memory counters are unavailable; "
+        "refusing to run with --host-memory-stop-gib"
+    )
+
+
+def _read_host_memory_sample(cgroup_path: Path) -> dict[str, int]:
+    stats: dict[str, int] = {}
+    for line in (cgroup_path / "memory.stat").read_text(encoding="utf-8").splitlines():
+        fields = line.split()
+        if len(fields) == 2 and fields[0] in {
+            "total_rss",
+            "total_cache",
+            "total_unevictable",
+        }:
+            stats[fields[0]] = int(fields[1])
+    missing = {
+        "total_rss",
+        "total_cache",
+        "total_unevictable",
+    } - stats.keys()
+    if missing:
+        raise RuntimeError(
+            "Slurm cgroup-v1 memory.stat lacks required counters: "
+            + ", ".join(sorted(missing))
+        )
+    return {
+        "monotonic_seconds": time.monotonic(),
+        "usage_bytes": int(
+            (cgroup_path / "memory.usage_in_bytes").read_text(encoding="utf-8")
+        ),
+        "limit_bytes": int(
+            (cgroup_path / "memory.limit_in_bytes").read_text(encoding="utf-8")
+        ),
+        "failcnt": int((cgroup_path / "memory.failcnt").read_text(encoding="utf-8")),
+        **stats,
+        "breakdown_total_bytes": (
+            stats["total_rss"] + stats["total_cache"] + stats["total_unevictable"]
+        ),
+    }
+
+
+def _host_memory_summary(
+    samples: Sequence[dict[str, int]],
+    *,
+    cgroup_path: Path | None,
+    stop_bytes: int | None,
+    triggered: bool,
+) -> dict[str, Any]:
+    return {
+        "host_memory_guard_enabled": stop_bytes is not None,
+        "host_memory_guard_triggered": triggered,
+        "host_memory_guard_stop_bytes": stop_bytes,
+        "host_memory_cgroup_path": str(cgroup_path)
+        if cgroup_path is not None
+        else None,
+        "host_memory_sample_count": len(samples),
+        "host_memory_peak_usage_bytes": max(
+            (sample["usage_bytes"] for sample in samples), default=None
+        ),
+        "host_memory_peak_rss_bytes": max(
+            (sample["total_rss"] for sample in samples), default=None
+        ),
+        "host_memory_peak_cache_bytes": max(
+            (sample["total_cache"] for sample in samples), default=None
+        ),
+        "host_memory_peak_unevictable_bytes": max(
+            (sample["total_unevictable"] for sample in samples), default=None
+        ),
+        "host_memory_peak_breakdown_total_bytes": max(
+            (sample["breakdown_total_bytes"] for sample in samples), default=None
+        ),
+        "host_memory_limit_bytes": (samples[-1]["limit_bytes"] if samples else None),
+        "host_memory_failcnt_initial": samples[0]["failcnt"] if samples else None,
+        "host_memory_failcnt_final": samples[-1]["failcnt"] if samples else None,
+    }
+
+
 def _stop_process(
     process: subprocess.Popen[Any] | None,
     *,
@@ -539,7 +807,12 @@ def _stop_process(
                 pass
 
 
-def _stream_runner(command: Sequence[str], *, output_root: Path) -> int:
+def _stream_runner(
+    command: Sequence[str],
+    *,
+    output_root: Path,
+    host_memory_stop_gib: float | None = None,
+) -> int:
     env = os.environ.copy()
     env.setdefault("PYTHONUNBUFFERED", "1")
     output_root.mkdir(parents=True, exist_ok=True)
@@ -552,6 +825,16 @@ def _stream_runner(command: Sequence[str], *, output_root: Path) -> int:
     runner_completed = False
     sampler_was_running = False
     offsets: dict[Path, int] = {}
+    host_memory_stop_bytes = (
+        int(host_memory_stop_gib * 1024**3)
+        if host_memory_stop_gib is not None
+        else None
+    )
+    host_memory_cgroup = (
+        _slurm_job_memory_cgroup_v1() if host_memory_stop_bytes is not None else None
+    )
+    host_memory_samples: list[dict[str, int]] = []
+    host_memory_guard_triggered = False
     try:
         sampler = subprocess.Popen(
             GPU_SAMPLE_COMMAND,
@@ -568,6 +851,13 @@ def _stream_runner(command: Sequence[str], *, output_root: Path) -> int:
             start_new_session=True,
         )
         while process.poll() is None:
+            if host_memory_cgroup is not None:
+                sample = _read_host_memory_sample(host_memory_cgroup)
+                host_memory_samples.append(sample)
+                if sample["usage_bytes"] >= int(host_memory_stop_bytes or 0):
+                    host_memory_guard_triggered = True
+                    _stop_process(process, process_group=True)
+                    break
             _tail_logs(output_root, offsets)
             time.sleep(1)
         _tail_logs(output_root, offsets)
@@ -608,6 +898,12 @@ def _stream_runner(command: Sequence[str], *, output_root: Path) -> int:
             sampling_failure_reason = None
         resource_summary = {
             **gpu_summary,
+            **_host_memory_summary(
+                host_memory_samples,
+                cgroup_path=host_memory_cgroup,
+                stop_bytes=host_memory_stop_bytes,
+                triggered=host_memory_guard_triggered,
+            ),
             "sample_file": str(samples_path),
             "gpu_sampling_status": sampling_status,
             "gpu_sampling_failure_reason": sampling_failure_reason,
@@ -627,9 +923,16 @@ def _stream_runner(command: Sequence[str], *, output_root: Path) -> int:
                 else None
             ),
         }
+        write_json(output_root / "host_memory_samples.json", host_memory_samples)
         write_json(output_root / "resource_summary.json", resource_summary)
     if process is None:
         raise RuntimeError("Trace runner did not start")
+    if host_memory_guard_triggered:
+        raise HostMemoryGuardTriggered(
+            "host memory guard terminated the runner process group at "
+            f"{host_memory_samples[-1]['usage_bytes'] / 1024**3:.2f} GiB "
+            f"(stop threshold {host_memory_stop_gib:.2f} GiB)"
+        )
     return int(process.returncode or 0)
 
 
@@ -659,6 +962,7 @@ def _active_row_mechanism_gate(
     max_bytes: int,
     *,
     phase0_ranges_requested: bool = False,
+    expected_bytes: int | None = ACTIVE_ROW_EXPECTED_BYTES,
 ) -> tuple[bool | None, list[str]]:
     def is_int(value: Any) -> bool:
         return isinstance(value, int) and not isinstance(value, bool)
@@ -673,9 +977,7 @@ def _active_row_mechanism_gate(
                 ],
             )
         return None, []
-    if phase0_ranges_requested and (
-        not is_int(max_bytes) or max_bytes <= 0
-    ):
+    if phase0_ranges_requested and (not is_int(max_bytes) or max_bytes <= 0):
         return (
             False,
             [
@@ -734,10 +1036,10 @@ def _active_row_mechanism_gate(
         reasons.append(
             "active-row resident bytes exceed or lack the configured byte cap"
         )
-    if is_int(resident_bytes) and not (
-        ACTIVE_ROW_EXPECTED_BYTES / 10
-        <= resident_bytes
-        <= ACTIVE_ROW_EXPECTED_BYTES * 10
+    if (
+        expected_bytes is not None
+        and is_int(resident_bytes)
+        and not (expected_bytes / 10 <= resident_bytes <= expected_bytes * 10)
     ):
         reasons.append(
             "active-row resident bytes are outside the predicted order of magnitude"
@@ -752,12 +1054,7 @@ def _active_row_mechanism_gate(
         reasons.append("active-row build source must equal phase0_fused_seed")
     traversal = build.get("traversal_bytes")
     loaded = build.get("decoder_load_bytes")
-    if (
-        not is_int(traversal)
-        or traversal != 0
-        or not is_int(loaded)
-        or loaded != 0
-    ):
+    if not is_int(traversal) or traversal != 0 or not is_int(loaded) or loaded != 0:
         reasons.append(
             "fused active-row materialization must add zero traversal/load bytes"
         )
@@ -765,7 +1062,9 @@ def _active_row_mechanism_gate(
         not is_int(build.get("decoder_page_load_count"))
         or build["decoder_page_load_count"] != 0
     ):
-        reasons.append("fused active-row materialization must add zero decoder page loads")
+        reasons.append(
+            "fused active-row materialization must add zero decoder page loads"
+        )
     shared_traversal = seed.get("shared_traversal_bytes")
     shared_loaded = seed.get("shared_decoder_load_bytes")
     effective_phase0_ranges = (
@@ -773,9 +1072,7 @@ def _active_row_mechanism_gate(
         and range_diagnostics.get("effective") is True
     )
     if effective_phase0_ranges:
-        logical_materialized_bytes = range_diagnostics.get(
-            "logical_materialized_bytes"
-        )
+        logical_materialized_bytes = range_diagnostics.get("logical_materialized_bytes")
         if (
             not is_int(shared_traversal)
             or shared_traversal <= 0
@@ -821,7 +1118,9 @@ def _active_row_mechanism_gate(
         or not is_int(resident_bytes)
         or seed_bytes > resident_bytes
     ):
-        reasons.append("active-row seed bytes must be positive and no larger than resident bytes")
+        reasons.append(
+            "active-row seed bytes must be positive and no larger than resident bytes"
+        )
     unique_row_count = seed.get("unique_row_count")
     resident_row_count = resident.get("row_count")
     if (
@@ -909,12 +1208,50 @@ def _active_row_mechanism_gate(
 
 
 def _active_row_framebuffer_gate(
+    case: Case,
     requested: bool,
     resource_summary: dict[str, Any],
 ) -> tuple[bool | None, dict[str, Any], list[str]]:
-    reference = dict(ACTIVE_ROW_FRAMEBUFFER_REFERENCE)
     if not requested:
-        return None, {"status": "not_applicable", "reference": reference}, []
+        return None, {"status": "not_applicable"}, []
+    if case.variant in LARGE_MODEL_ACTIVE_ROW_CAP_BYTES:
+        candidate = resource_summary.get("gpu_framebuffer_peak_mib")
+        total = resource_summary.get("gpu_framebuffer_total_mib")
+        comparison = {
+            "status": "unavailable",
+            "candidate_peak_mib": candidate,
+            "sampled_total_mib": total,
+            "peak_fraction_limit": LARGE_MODEL_HBM_PEAK_FRACTION_LIMIT,
+        }
+        if (
+            not isinstance(candidate, (int, float))
+            or not isinstance(total, (int, float))
+            or float(total) <= 0
+        ):
+            return (
+                False,
+                comparison,
+                [
+                    "large-model active-row HBM comparison unavailable: "
+                    "sampled peak or total is missing"
+                ],
+            )
+        peak_fraction = float(candidate) / float(total)
+        comparison["candidate_peak_fraction"] = peak_fraction
+        passed = peak_fraction <= LARGE_MODEL_HBM_PEAK_FRACTION_LIMIT
+        comparison["status"] = "passed" if passed else "exceeded_fraction_limit"
+        return (
+            passed,
+            comparison,
+            []
+            if passed
+            else [
+                f"candidate peak framebuffer fraction {peak_fraction:.4f} exceeds "
+                f"{LARGE_MODEL_HBM_PEAK_FRACTION_LIMIT:.2f} of sampled H200 total"
+            ],
+        )
+
+    reference = dict(ACTIVE_ROW_FRAMEBUFFER_REFERENCE)
     candidate = resource_summary.get("gpu_framebuffer_peak_mib")
     reference_peak_mib = reference["gpu_framebuffer_peak_mib"]
     limit = reference_peak_mib + ACTIVE_ROW_EXPECTED_MIB_ALLOWANCE
@@ -984,12 +1321,13 @@ def _result_report(
     parity_failure_reasons = result.get("baseline_check", {}).get("failure_reasons", [])
     performance_failure_reasons: list[str] = []
     reconciliation_required = False
-    if active_rows_requested:
+    large_model = case.variant in LARGE_MODEL_ACTIVE_ROW_CAP_BYTES
+    if active_rows_requested and not large_model:
         performance_target = ACTIVE_ROW_FUSED_TARGET_SECONDS
         stretch_target = None
+        performance_requirement = "active_row_1b_fused_target"
         performance_passed = bool(
-            candidate_duration is not None
-            and candidate_duration <= performance_target
+            candidate_duration is not None and candidate_duration <= performance_target
         )
         stretch_passed = None
         reconciliation_required = not performance_passed
@@ -1003,9 +1341,34 @@ def _result_report(
                 f"fused engineering target {performance_target:.2f}s; "
                 "reconciliation is required"
             )
+    elif large_model:
+        performance_target = baseline_duration
+        stretch_target = PERFORMANCE_STRETCH_TARGET_SECONDS[case.key]
+        performance_requirement = "strict_improvement_vs_frozen_baseline"
+        performance_passed = bool(
+            candidate_duration is not None and candidate_duration < baseline_duration
+        )
+        stretch_passed = (
+            candidate_duration <= stretch_target
+            if candidate_duration is not None
+            else False
+        )
+        if candidate_duration is None:
+            performance_failure_reasons.append(
+                "candidate duration is missing; improvement versus the frozen "
+                "large-model baseline cannot be evaluated"
+            )
+        elif not performance_passed:
+            performance_failure_reasons.append(
+                f"candidate duration {candidate_duration:.2f}s does not improve "
+                f"the frozen baseline {baseline_duration:.2f}s"
+            )
     else:
         performance_target = PERFORMANCE_TARGET_SECONDS.get(case.key)
         stretch_target = PERFORMANCE_STRETCH_TARGET_SECONDS.get(case.key)
+        performance_requirement = (
+            "fixed_target" if performance_target is not None else "none"
+        )
         performance_passed = (
             candidate_duration <= performance_target
             if performance_target is not None and candidate_duration is not None
@@ -1057,9 +1420,10 @@ def _result_report(
         diagnostics,
         active_rows_max_bytes,
         phase0_ranges_requested=phase0_ranges_requested,
+        expected_bytes=None if large_model else ACTIVE_ROW_EXPECTED_BYTES,
     )
     framebuffer_passed, framebuffer_comparison, framebuffer_failure_reasons = (
-        _active_row_framebuffer_gate(active_rows_requested, resource_summary)
+        _active_row_framebuffer_gate(case, active_rows_requested, resource_summary)
     )
     resource_failure_reasons.extend(framebuffer_failure_reasons)
     resource_gate_passed = resource_validation_passed and (
@@ -1089,14 +1453,17 @@ def _result_report(
         "profiling_summary": result.get("profiling_summary") or {},
         "resource_summary": resource_summary,
         "performance_target_seconds": performance_target,
+        "performance_requirement": performance_requirement,
         "performance_stretch_target_seconds": stretch_target,
         "active_row_initial_predicted_duration_seconds": (
             list(ACTIVE_ROW_INITIAL_PREDICTED_DURATION_SECONDS)
-            if active_rows_requested
+            if active_rows_requested and not large_model
             else None
         ),
         "active_row_fused_target_seconds": (
-            ACTIVE_ROW_FUSED_TARGET_SECONDS if active_rows_requested else None
+            ACTIVE_ROW_FUSED_TARGET_SECONDS
+            if active_rows_requested and not large_model
+            else None
         ),
         "reconciliation_required": reconciliation_required,
         "decoder_active_row_residency": diagnostics,
@@ -1226,6 +1593,13 @@ def _gate_summary(reports: Sequence[dict[str, Any]]) -> dict[str, bool | None]:
 
 def _run(args: argparse.Namespace) -> int:
     cases = SUITES[args.suite]
+    allowed_variants = CANDIDATE_PROFILE_ALLOWED_VARIANTS[args.candidate_profile]
+    if allowed_variants and not any(case.variant in allowed_variants for case in cases):
+        raise ValueError(
+            f"candidate profile {args.candidate_profile!r} is not applicable "
+            f"to suite {args.suite!r}; allowed variants: "
+            + ", ".join(sorted(allowed_variants))
+        )
     if (
         args.fidelity == "exact"
         and args.candidate_profile in BOUNDED_ONLY_CANDIDATE_PROFILES
@@ -1265,6 +1639,9 @@ def _run(args: argparse.Namespace) -> int:
         "run_id": run_id,
         "run_goal": args.run_goal,
         "candidate_profile": args.candidate_profile,
+        "candidate_profile_allowed_variants": sorted(
+            CANDIDATE_PROFILE_ALLOWED_VARIANTS[args.candidate_profile]
+        ),
         "candidate_overrides_by_case": {
             case.key: _candidate_overrides(case, args.candidate_profile)
             for case in cases
@@ -1285,6 +1662,7 @@ def _run(args: argparse.Namespace) -> int:
         "execution_provenance": provenance,
         "execution_evidence": evidence,
         "governor_state_policy": "read_only_no_promotion_or_default_mutation",
+        "host_memory_stop_gib": args.host_memory_stop_gib,
         "cases": [case.key for case in cases],
     }
     write_json(run_root / "run_manifest.json", manifest)
@@ -1321,7 +1699,11 @@ def _run(args: argparse.Namespace) -> int:
                 run_goal=args.run_goal,
             )
             print(f"Running {case.key}: {shlex.join(command)}", flush=True)
-            returncode = _stream_runner(command, output_root=candidate_root)
+            returncode = _stream_runner(
+                command,
+                output_root=candidate_root,
+                host_memory_stop_gib=args.host_memory_stop_gib,
+            )
             after_case = capture_source_state()
             if after_case != source_state:
                 raise RuntimeError(
@@ -1411,6 +1793,14 @@ def build_parser() -> argparse.ArgumentParser:
         choices=tuple(CANDIDATE_PROFILES),
         default="canonical",
     )
+    run.add_argument(
+        "--host-memory-stop-gib",
+        type=float,
+        help=(
+            "Terminate the runner process group when Slurm cgroup-v1 job memory "
+            "usage reaches this threshold; disabled by default."
+        ),
+    )
     run.add_argument("--dry-run", action="store_true")
     run.add_argument(
         "--allow-non-h200-test-only",
@@ -1424,6 +1814,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "list":
         return _list_suites()
+    if args.host_memory_stop_gib is not None and args.host_memory_stop_gib <= 0:
+        raise ValueError("--host-memory-stop-gib must be positive")
     return _run(args)
 
 

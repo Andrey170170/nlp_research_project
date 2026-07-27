@@ -61,6 +61,12 @@ def test_suites_have_fixed_requested_cases() -> None:
         *perf_cli.SUITES["clt-pair"],
         *perf_cli.SUITES["plt-hard"],
     )
+    assert perf_cli.SUITES["plt-4b"] == (perf_cli.Case("gemma3_4b_plt", "361_base"),)
+    assert perf_cli.SUITES["plt-12b"] == (perf_cli.Case("gemma3_12b_plt", "361_base"),)
+    assert perf_cli.SUITES["plt-large"] == (
+        *perf_cli.SUITES["plt-4b"],
+        *perf_cli.SUITES["plt-12b"],
+    )
 
 
 def test_fidelity_thresholds_are_explicit() -> None:
@@ -146,6 +152,113 @@ def test_gpu_resource_summary_marks_empty_samples_explicitly(
     samples_path.write_text("")
 
     assert perf_cli._gpu_resource_summary(samples_path) == {"gpu_sample_count": 0}
+
+
+def test_slurm_job_memory_cgroup_v1_reads_job_scope_and_breakdown(
+    tmp_path: Path,
+) -> None:
+    proc = tmp_path / "proc_cgroup"
+    proc.write_text("3:memory:/slurm/uid_42/job_123/step_1/task_0\n")
+    cgroup = tmp_path / "cgroup" / "slurm" / "uid_42" / "job_123"
+    cgroup.mkdir(parents=True)
+    (cgroup / "memory.stat").write_text(
+        "total_rss 100\ntotal_cache 20\ntotal_unevictable 3\n"
+    )
+    (cgroup / "memory.usage_in_bytes").write_text("150\n")
+    (cgroup / "memory.limit_in_bytes").write_text("1000\n")
+    (cgroup / "memory.failcnt").write_text("2\n")
+
+    resolved = perf_cli._slurm_job_memory_cgroup_v1(
+        proc_cgroup_path=proc,
+        cgroup_root=tmp_path / "cgroup",
+    )
+    sample = perf_cli._read_host_memory_sample(resolved)
+
+    assert resolved == cgroup
+    assert sample["usage_bytes"] == 150
+    assert sample["limit_bytes"] == 1000
+    assert sample["failcnt"] == 2
+    assert sample["total_rss"] == 100
+    assert sample["total_cache"] == 20
+    assert sample["total_unevictable"] == 3
+    assert sample["breakdown_total_bytes"] == 123
+
+
+def test_host_memory_guard_fails_closed_when_counters_unavailable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        perf_cli,
+        "_slurm_job_memory_cgroup_v1",
+        lambda: (_ for _ in ()).throw(RuntimeError("counters unavailable")),
+    )
+    monkeypatch.setattr(
+        perf_cli.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: pytest.fail("runner must not start"),
+    )
+
+    with pytest.raises(RuntimeError, match="counters unavailable"):
+        perf_cli._stream_runner(
+            ["runner"],
+            output_root=tmp_path,
+            host_memory_stop_gib=1.0,
+        )
+
+
+def test_host_memory_guard_terminates_runner_group_and_records_summary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sampler = _FakeProcess()
+    runner = _FakeProcess()
+    processes = iter((sampler, runner))
+    monkeypatch.setattr(
+        perf_cli.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: next(processes),
+    )
+    monkeypatch.setattr(
+        perf_cli,
+        "_slurm_job_memory_cgroup_v1",
+        lambda: tmp_path / "cgroup",
+    )
+    monkeypatch.setattr(
+        perf_cli,
+        "_read_host_memory_sample",
+        lambda _path: {
+            "monotonic_seconds": 1,
+            "usage_bytes": 2 * 1024**3,
+            "limit_bytes": 4 * 1024**3,
+            "failcnt": 0,
+            "total_rss": 1_500_000_000,
+            "total_cache": 100_000_000,
+            "total_unevictable": 0,
+            "breakdown_total_bytes": 1_600_000_000,
+        },
+    )
+
+    def fake_killpg(pid: int, sig: int) -> None:
+        assert pid == runner.pid
+        if sig == perf_cli.signal.SIGTERM:
+            runner.returncode = -sig
+
+    monkeypatch.setattr(perf_cli.os, "killpg", fake_killpg)
+
+    with pytest.raises(perf_cli.HostMemoryGuardTriggered, match="2.00 GiB"):
+        perf_cli._stream_runner(
+            ["runner"],
+            output_root=tmp_path,
+            host_memory_stop_gib=1.0,
+        )
+
+    summary = json.loads((tmp_path / "resource_summary.json").read_text())
+    assert summary["host_memory_guard_triggered"] is True
+    assert summary["host_memory_peak_usage_bytes"] == 2 * 1024**3
+    assert summary["host_memory_peak_rss_bytes"] == 1_500_000_000
+    assert summary["host_memory_peak_cache_bytes"] == 100_000_000
+    assert runner.waited is True
 
 
 def test_stream_runner_cleans_up_sampler_when_runner_start_fails(
@@ -263,6 +376,21 @@ def test_case_scenario_reuses_canonical_builder_and_adds_gate() -> None:
     }
 
 
+def test_merged_performance_registry_maps_all_suite_case_keys() -> None:
+    registry = json.loads(perf_cli.DEFAULT_BASELINE_REGISTRY.read_text())
+    entries = registry["entries"]
+    expected = {case.key for suite in perf_cli.SUITES.values() for case in suite}
+
+    assert registry["registry_id"] == "exact-trace-performance-granite-20260726"
+    assert expected <= entries.keys()
+    assert entries["performance/gemma3_4b_plt/361_base"]["duration_seconds"] == 5471.7
+    assert (
+        entries["performance/gemma3_12b_plt/361_base"]["duration_seconds"] == 23051.72
+    )
+    for key in expected:
+        assert len(entries[key]["artifact_sha256"]) == 3
+
+
 @pytest.mark.parametrize(
     (
         "profile",
@@ -349,6 +477,7 @@ def test_bounded_fast_profile_changes_only_plt_physical_controls(
         "plt-bounded-tape-v1",
         "plt-bounded-tape-prefetch-v1",
         "plt-bounded-frontier-v1",
+        "plt-active-rows-c65536-v1",
     ],
 )
 def test_bounded_fast_profile_rejects_exact_fidelity(
@@ -412,7 +541,9 @@ def test_active_rows_profiles_match_exact_baseline_and_are_exact_eligible(
     )
 
 
-def test_large_chunk_active_rows_profile_is_exact_eligible_and_single_knob_variant() -> None:
+def test_large_chunk_active_rows_profile_is_bounded_only_and_single_knob_variant() -> (
+    None
+):
     plt_case = perf_cli.Case("gemma3_1b_plt", "361_base")
     clt_case = perf_cli.Case("gemma3_1b_clt", "361_base")
     incumbent = perf_cli._candidate_overrides(plt_case, "plt-active-rows-v1")
@@ -428,33 +559,182 @@ def test_large_chunk_active_rows_profile_is_exact_eligible_and_single_knob_varia
     assert "feature_vjp_tape_max_bytes" not in candidate
     assert candidate["feature_vjp_tape_batch_window"] == 1
     assert perf_cli._candidate_overrides(clt_case, "plt-active-rows-c65536-v1") == {}
-    assert "plt-active-rows-c65536-v1" not in perf_cli.BOUNDED_ONLY_CANDIDATE_PROFILES
+    assert "plt-active-rows-c65536-v1" in perf_cli.BOUNDED_ONLY_CANDIDATE_PROFILES
 
     scenario = perf_cli._case_scenario(
-        plt_case, "exact", "plt-active-rows-c65536-v1"
+        plt_case, "bounded", "plt-active-rows-c65536-v1"
     )["scenarios"][0]
     assert scenario["decoder_chunk_size"] == 65536
-    assert scenario["baseline_check"]["thresholds"] == perf_cli.FIDELITY_THRESHOLDS["exact"]
+    assert (
+        scenario["baseline_check"]["thresholds"]
+        == perf_cli.FIDELITY_THRESHOLDS["bounded"]
+    )
+
+
+@pytest.mark.parametrize(
+    (
+        "variant",
+        "profile",
+        "batch",
+        "execution_batch",
+        "chunk",
+        "cap_gib",
+        "bounded_only",
+    ),
+    [
+        ("gemma3_4b_plt", "plt-active-rows-4b-c4096-v1", 128, 128, 4096, 4, False),
+        (
+            "gemma3_4b_plt",
+            "plt-active-rows-4b-b512-c4096-v1",
+            128,
+            512,
+            4096,
+            4,
+            True,
+        ),
+        (
+            "gemma3_4b_plt",
+            "plt-active-rows-4b-c65536-v1",
+            128,
+            128,
+            65536,
+            4,
+            True,
+        ),
+        ("gemma3_12b_plt", "plt-active-rows-12b-c4096-v1", 64, 64, 4096, 8, False),
+        (
+            "gemma3_12b_plt",
+            "plt-active-rows-12b-b256-c4096-v1",
+            64,
+            256,
+            4096,
+            8,
+            True,
+        ),
+        (
+            "gemma3_12b_plt",
+            "plt-active-rows-12b-c32768-v1",
+            64,
+            64,
+            32768,
+            8,
+            True,
+        ),
+        (
+            "gemma3_12b_plt",
+            "plt-active-rows-12b-b256-c65536-v1",
+            64,
+            256,
+            65536,
+            8,
+            True,
+        ),
+    ],
+)
+def test_large_model_active_row_profiles_are_explicitly_scoped(
+    variant: str,
+    profile: str,
+    batch: int,
+    execution_batch: int,
+    chunk: int,
+    cap_gib: int,
+    bounded_only: bool,
+) -> None:
+    case = perf_cli.Case(variant, "361_base")
+    overrides = perf_cli._candidate_overrides(case, profile)
+
+    assert perf_cli.CANDIDATE_PROFILE_ALLOWED_VARIANTS[profile] == {variant}
+    assert overrides["decoder_chunk_size"] == chunk
+    assert overrides["phase1_trace_batch_size_max"] == batch
+    assert overrides["phase3_compute_microbatch_max_rows"] == batch
+    assert overrides["phase4_execution_batch_max_rows"] == execution_batch
+    assert overrides["decoder_active_row_max_bytes"] == cap_gib * 1024**3
+    assert (profile in perf_cli.BOUNDED_ONLY_CANDIDATE_PROFILES) is bounded_only
+    assert (
+        perf_cli._candidate_overrides(
+            perf_cli.Case("gemma3_1b_clt", "361_base"), profile
+        )
+        == {}
+    )
+
+
+@pytest.mark.parametrize(
+    "profile",
+    [
+        "plt-active-rows-4b-c65536-v1",
+        "plt-active-rows-4b-b512-c4096-v1",
+        "plt-active-rows-4b-b512-c65536-v1",
+        "plt-active-rows-12b-c32768-v1",
+        "plt-active-rows-12b-c65536-v1",
+        "plt-active-rows-12b-b256-c4096-v1",
+        "plt-active-rows-12b-b256-c65536-v1",
+    ],
+)
+def test_large_model_bounded_profiles_reject_exact(
+    tmp_path: Path,
+    profile: str,
+) -> None:
+    suite = "plt-4b" if "-4b-" in profile else "plt-12b"
+    with pytest.raises(ValueError, match="bounded-only"):
+        perf_cli.main(
+            [
+                "run",
+                suite,
+                "--fidelity",
+                "exact",
+                "--candidate-profile",
+                profile,
+                "--dry-run",
+                "--output-root",
+                str(tmp_path),
+            ]
+        )
+
+
+def test_noncanonical_profile_rejects_suite_with_no_applicable_case(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="not applicable"):
+        perf_cli.main(
+            [
+                "run",
+                "plt-4b",
+                "--candidate-profile",
+                "plt-active-rows-12b-c4096-v1",
+                "--dry-run",
+                "--output-root",
+                str(tmp_path),
+            ]
+        )
+
+    assert (
+        perf_cli.main(
+            [
+                "run",
+                "all",
+                "--candidate-profile",
+                "plt-active-rows-v1",
+                "--dry-run",
+                "--output-root",
+                str(tmp_path),
+            ]
+        )
+        == 0
+    )
 
 
 def test_phase0_coalesced_rows_profile_is_exact_eligible_and_provider_scoped() -> None:
     plt_case = perf_cli.Case("gemma3_1b_plt", "361_base")
     clt_case = perf_cli.Case("gemma3_1b_clt", "361_base")
-    expected = perf_cli._candidate_overrides(
-        plt_case, "plt-phase0-coalesced-rows-v1"
-    )
+    expected = perf_cli._candidate_overrides(plt_case, "plt-phase0-coalesced-rows-v1")
 
     assert expected == {
         **perf_cli._candidate_overrides(plt_case, "plt-active-rows-v1"),
         "phase0_decoder_row_ranges": True,
     }
+    assert perf_cli._candidate_overrides(clt_case, "plt-phase0-coalesced-rows-v1") == {}
     assert (
-        perf_cli._candidate_overrides(clt_case, "plt-phase0-coalesced-rows-v1")
-        == {}
-    )
-    assert (
-        "plt-phase0-coalesced-rows-v1"
-        not in perf_cli.BOUNDED_ONLY_CANDIDATE_PROFILES
+        "plt-phase0-coalesced-rows-v1" not in perf_cli.BOUNDED_ONLY_CANDIDATE_PROFILES
     )
     scenario = perf_cli._case_scenario(
         plt_case, "exact", "plt-phase0-coalesced-rows-v1"
@@ -499,7 +779,10 @@ def test_clt_phase1_cap_profile_is_exact_eligible_and_provider_scoped(
     assert scenario["attribution_batch_size"] == 1000
     assert scenario["feature_batch_size"] == 1000
     assert scenario["logit_batch_size"] == 1000
-    assert scenario["baseline_check"]["thresholds"] == perf_cli.FIDELITY_THRESHOLDS["exact"]
+    assert (
+        scenario["baseline_check"]["thresholds"]
+        == perf_cli.FIDELITY_THRESHOLDS["exact"]
+    )
 
 
 def test_h200_guard_requires_slurm_and_h200() -> None:
@@ -748,6 +1031,71 @@ def _active_row_report(
     )
 
 
+@pytest.mark.parametrize(
+    ("variant", "baseline", "duration", "stretch", "cap_gib"),
+    [
+        ("gemma3_4b_plt", 5471.7, 3040.99, 600.0, 4),
+        ("gemma3_12b_plt", 23051.72, 10551.32, 3600.0, 8),
+    ],
+)
+def test_large_model_active_row_report_requires_baseline_improvement_not_1b_target(
+    tmp_path: Path,
+    variant: str,
+    baseline: float,
+    duration: float,
+    stretch: float,
+    cap_gib: int,
+) -> None:
+    case = perf_cli.Case(variant, "361_base")
+    scenario_root = tmp_path / f"perf_{variant}_361_base"
+    scenario_root.mkdir()
+    (scenario_root / "scenario.json").write_text(
+        json.dumps(
+            {
+                "decoder_active_row_residency": True,
+                "decoder_active_row_max_bytes": cap_gib * 1024**3,
+            }
+        )
+    )
+    (scenario_root / "result.json").write_text(
+        json.dumps(
+            {
+                "duration_seconds": duration,
+                "status": "success",
+                "baseline_check": {"passed": True, "failure_reasons": []},
+                "artifact_summary": {
+                    "decoder_active_row_residency": _active_row_diagnostics()
+                },
+            }
+        )
+    )
+    (tmp_path / "resource_summary.json").write_text(
+        json.dumps(
+            {
+                "resource_validation_passed": True,
+                "gpu_framebuffer_peak_mib": 100_000.0,
+                "gpu_framebuffer_total_mib": 143_771.0,
+            }
+        )
+    )
+
+    report = perf_cli._result_report(
+        case,
+        candidate_root=tmp_path,
+        baseline_entry={"duration_seconds": baseline},
+    )
+
+    assert report["passed"] is True
+    assert report["performance_requirement"] == (
+        "strict_improvement_vs_frozen_baseline"
+    )
+    assert report["performance_target_seconds"] == baseline
+    assert report["performance_stretch_target_seconds"] == stretch
+    assert report["performance_stretch_passed"] is False
+    assert report["active_row_fused_target_seconds"] is None
+    assert report["framebuffer_comparison"]["peak_fraction_limit"] == 0.9
+
+
 @pytest.mark.parametrize("duration_seconds", [65.0, 230.0, 245.0])
 def test_active_row_report_passes_reconciled_fused_target(
     tmp_path: Path,
@@ -805,9 +1153,9 @@ def test_phase0_coalesced_row_report_passes_structured_mechanism_gate(
     assert report["passed"] is True
     assert report["mechanism_validation_passed"] is True
     assert report["phase0_decoder_row_ranges_requested"] is True
-    assert report["phase0_decoder_row_ranges"] == diagnostics[
-        "phase0_decoder_row_ranges"
-    ]
+    assert (
+        report["phase0_decoder_row_ranges"] == diagnostics["phase0_decoder_row_ranges"]
+    )
 
 
 def test_phase0_coalesced_row_report_rejects_explicit_exact_fallback(
@@ -1002,6 +1350,28 @@ def test_active_row_framebuffer_gate_uses_audited_resident_allowance(
     assert comparison["limit_mib"] == 26_259.0
 
 
+@pytest.mark.parametrize(
+    ("peak_mib", "passed"),
+    [(129_393.9, True), (129_394.0, False)],
+)
+def test_large_model_active_row_framebuffer_gate_uses_sampled_h200_total(
+    peak_mib: float,
+    passed: bool,
+) -> None:
+    gate, comparison, reasons = perf_cli._active_row_framebuffer_gate(
+        perf_cli.Case("gemma3_4b_plt", "361_base"),
+        True,
+        {
+            "gpu_framebuffer_peak_mib": peak_mib,
+            "gpu_framebuffer_total_mib": 143_771.0,
+        },
+    )
+
+    assert gate is passed
+    assert comparison["peak_fraction_limit"] == 0.9
+    assert bool(reasons) is (not passed)
+
+
 def test_artifact_summary_keeps_active_row_structured_diagnostics(
     tmp_path: Path,
 ) -> None:
@@ -1157,8 +1527,13 @@ def test_run_goal_reaches_runner_command_and_manifest(
         lambda: {case.key: {"duration_seconds": 1.0}},
     )
 
-    def capture_runner(command: list[str], *, output_root: Path) -> int:
-        del output_root
+    def capture_runner(
+        command: list[str],
+        *,
+        output_root: Path,
+        host_memory_stop_gib: float | None = None,
+    ) -> int:
+        del output_root, host_memory_stop_gib
         captured_command.extend(command)
         raise RuntimeError("stop after command capture")
 
