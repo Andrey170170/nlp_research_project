@@ -134,6 +134,20 @@ The first active-row larger-model transfer on Granite H200 established:
   reclaim. The step was stopped before completion, so there is no 12B compact
   parity result.
 
+Paired warm 4B follow-ups separated chunk size from execution batching:
+
+- At c4096, b512 and b128 had identical compact metrics, but the matched b512
+  run took `327.32s` / Phase 4 `192.72s` / 82,111 MiB versus b128 `255.72s` /
+  `139.58s` / 27,685 MiB. Larger execution batches add no detectable compact
+  drift here, but are slower and use roughly 3x framebuffer.
+- At b128, c65536 and c4096 were run in both orders. c65536 won both pairs
+  (`234.99s` versus `255.72s`, then `221.87s` versus `223.00s`), averaging
+  `228.43s` versus `239.36s`, a `4.6%` gain. Its compact metrics were identical
+  with and without b512, attributing the measured drift to chunk partitioning.
+  Retain c65536 as an explicit dataset-frozen bounded regime, but do not promote
+  it: the average gain misses 5% and all-edge Jaccard `0.983143` / L1 `0.015087`
+  sit close to the preregistered floors.
+
 In both model sizes the 250 GiB cgroup reached its hard limit almost entirely
 through clean file cache while rigid RSS remained small and `memory.failcnt`
 stayed zero. This validates the capacity hypothesis, but the 12B result shows

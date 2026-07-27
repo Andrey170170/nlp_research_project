@@ -125,6 +125,20 @@ Named profiles make the tested physical controls auditable:
 | `plt-active-rows-12b-c32768-v1` / `c65536-v1` | 12B b64 with a larger decoder chunk | bounded only |
 | `plt-active-rows-12b-b256-c4096-v1` / `c65536-v1` | 12B execution cap 256, optionally with c65536 | bounded only |
 
+The 4B transfer calibration separated the two physical knobs. At c4096, the
+matched b512 run was slower than b128 (`327.32s` versus `255.72s`), with Phase 4
+`192.72s` versus `139.58s` and framebuffer 82,111 versus 27,685 MiB. Compact
+metrics were identical, so b512 adds no detected compact drift but is rejected
+for speed and memory.
+
+At b128, warm c4096/c65536 pairs were run in both orders. c65536 won by `8.1%`
+and `0.5%`; the two-run means were `228.43s` and `239.36s`, respectively.
+c65536 reduced Phase-0 requests from 2,143 to 136 and won Phase 0 in both pairs,
+but its average end-to-end gain was only `4.6%`. It remains an explicit bounded
+regime rather than a promoted profile because all-edge Jaccard `0.983143` and
+normalized L1 `0.015087` are close to the bounded floors. Pin chunk size for an
+entire comparable dataset.
+
 The 16 GiB cache in v3 is sized to retain the reusable 1B PLT decoder, which is
 about 14.6 GiB in bf16. It is not an instruction to fill HBM. The cache remains
 a physical candidate, not a promoted default:

@@ -1022,8 +1022,23 @@ regressed by `106.91s` and framebuffer tripled. Its feature/all-edge/Top-256/
 weighted Jaccard are `0.992460/0.983143/0.992218/0.985026`, normalized L1 is
 `0.015087`, and the target token matches. It passes the preregistered bounded
 gate but is slower and much closer to the fidelity floor, so do not retain the
-combined profile as the 4B incumbent. Test c65536 with b128 separately if the
-Phase-0 gain is pursued.
+combined profile as the 4B incumbent.
+
+The subsequent isolated and paired runs refined that interpretation:
+
+| Warm pair | Candidate | Control | Candidate Phase 0 / Phase 4 | Control Phase 0 / Phase 4 | Result |
+|---|---:|---:|---:|---:|---|
+| c4096 execution envelope | b512 `327.32s` | b128 `255.72s` | `65.68s` / `192.72s` | `61.55s` / `139.58s` | b512 28.0% slower and roughly 3x framebuffer |
+| chunk order 1 | c65536 `234.99s` | c4096 `255.72s` | `55.07s` / `129.18s` | `61.55s` / `139.58s` | c65536 8.1% faster |
+| chunk order 2 | c65536 `221.87s` | c4096 `223.00s` | `47.02s` / `125.59s` | `51.07s` / `123.72s` | c65536 0.5% faster |
+
+b512/c4096 reproduced the b128/c4096 compact metrics, while both c65536 batch
+shapes reproduced the same c65536 metrics. Thus no execution-batch-specific
+compact drift was detected; the visible drift follows chunk partitioning.
+b512 is rejected for speed and memory. c65536 at b128 wins both warm orders and
+averages `228.43s` versus `239.36s` (`4.6%` faster), but misses a 5% promotion
+margin and remains close to the bounded floors. Retain it as an explicit
+dataset-frozen bounded regime, not the general incumbent or a default.
 
 The 250 GiB envelope was capacity-viable for both model loads. During 4B and
 12B Phase 0, the job sat at the cgroup limit with roughly 245 GiB clean file
@@ -1046,8 +1061,9 @@ terminated. The allocation remained healthy and `memory.failcnt` stayed zero.
 
 1. Keep 4B b128/c4096 active rows as a **bounded engineering incumbent**, not an
    exact/default promotion.
-2. Isolate c65536 at b128 on 4B; do not combine it with b512. Larger chunks
-   remain an independent floating-point regime.
+2. Retain the now-isolated 4B b128/c65536 profile as a bounded, dataset-frozen
+   option only. It wins both warm pair orders but averages a sub-promotion
+   `4.6%` gain and remains an independent floating-point regime.
 3. Use the landed cache-aware host guard: preflight the cgroup, guard
    anonymous/RSS growth with `--host-rss-stop-gib`, and treat clean file cache
    at the hard limit as expected.
