@@ -1,7 +1,8 @@
 # Exact-trace optimization plan: active-row residency and Phase-0 selective I/O
 
-Status: executed through the 1B exact H200 decision gates; active-row residency
-remains the incumbent, and no Phase-0 or CLT-cap candidate was promoted
+Status: closed through the 1B exact and first 4B/12B bounded transfer gates;
+active-row residency remains the incumbent, and the successor work is
+`plans/2026-07-27_large_model_optimizations.md`
 Date: 2026-07-26
 Branch: `perf/exact-trace-loop` (both project and sibling worktrees)
 Scope: sibling `../circuit-tracer_chunked` chunked attribution path + project
@@ -30,6 +31,8 @@ plan. I remains the prerequisite for a second model family.
 
 Companion documents:
 
+- `plans/2026-07-27_large_model_optimizations.md` — the active 4B/12B
+  model-general continuation; 1B is regression-only there.
 - `docs/performance_optimization_loop.md` — the measurement loop, gates, frozen
   baseline registry, and the results of the five candidates already tested.
 - `AGENTS.md` — durable operating policy. Login-node safety and SLURM-only rules

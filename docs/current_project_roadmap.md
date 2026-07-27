@@ -1,7 +1,7 @@
 # Current Project Roadmap
 
 Status: Current scratch roadmap
-Last updated: 2026-07-21
+Last updated: 2026-07-27
 
 ## Active Priority
 
@@ -9,6 +9,14 @@ The active work is Phase E calibration-model integration and then Phase F
 harness consolidation, targeting the contract in
 `docs/memory_governor_rearchitecture_spec.md`. The original execution checklist
 in `plans/2026-07-03_governor_rearch.md` is retained as implementation history.
+
+The isolated exact-trace performance worktree has a parallel 4B/12B engineering
+workstream in `plans/2026-07-27_large_model_optimizations.md`. It freezes 1B as
+a regression gate and orders reusable work as typed evidence contracts,
+phase-scoped page/I/O attribution, checkpoint working-set lifecycle, selective
+decoder-row access, completed 12B control, encoder placement, and physical
+execution-envelope calibration. These observations do not promote governor
+bundles or defaults without the separate Phase-E review.
 
 Phase A is closed for implementation purposes:
 
