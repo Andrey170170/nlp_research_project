@@ -55,6 +55,36 @@ def test_backfill_is_explicit_idempotent_and_reports_unsupported(
     assert not (nested / "calibration_observation.json").exists()
 
 
+def test_backfill_and_finalizer_exclude_diagnostic_probes(tmp_path: Path) -> None:
+    backfill_root = tmp_path / "backfill"
+    _write_root(backfill_root)
+    (backfill_root / "result.json").write_text(
+        json.dumps({"status": "probe_completed", "duration_seconds": 2})
+    )
+
+    backfill = backfill_observations([backfill_root])
+    assert backfill["written"] == []
+    assert backfill["unsupported"] == [
+        {"root": str(backfill_root), "reason": "diagnostic_probe"}
+    ]
+    assert not (backfill_root / "calibration_observation.json").exists()
+
+    finalizer_root = tmp_path / "finalizer"
+    _write_root(finalizer_root)
+    (finalizer_root / "result.json").write_text(
+        json.dumps({"status": "probe_completed", "duration_seconds": 2})
+    )
+    sacct = "123|123|COMPLETED|0:0|10||||||||\n"
+    finalized = finalize_observations(
+        [finalizer_root], job_id="123", sacct_runner=lambda _: sacct
+    )
+    assert finalized["finalized"] == []
+    assert finalized["unsupported"] == [
+        {"root": str(finalizer_root), "reason": "diagnostic_probe"}
+    ]
+    assert not (finalizer_root / "calibration_observation.json").exists()
+
+
 def test_backfill_upgrades_legacy_wave_b_and_reserves_heldout(tmp_path: Path) -> None:
     root = tmp_path / "legacy"
     root.mkdir()

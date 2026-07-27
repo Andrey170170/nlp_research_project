@@ -24,6 +24,9 @@ from nlp_research_project.exact_trace_bench.trace_runtime.generation import (  #
 from nlp_research_project.exact_trace_bench.trace_runtime.request import (  # noqa: E402
     trace_policy_from_scenario,
 )
+from nlp_research_project.exact_trace_bench.trace_runtime.tracing import (  # noqa: E402
+    DiagnosticTraceCompletion,
+)
 
 
 class FakeModel:
@@ -96,6 +99,24 @@ def test_physical_frontier_knobs_change_only_execution_fingerprint() -> None:
     )
     assert changed[0] == baseline[0]
     assert changed[1] != baseline[1]
+
+
+def test_diagnostic_stop_scenario_maps_to_typed_execution_policy() -> None:
+    phase0 = trace_policy_from_scenario(
+        {"method": "exact", "diagnostic_stop_mode": "phase0_probe"}
+    )
+    assert phase0.execution.diagnostic_stop.mode == "phase0_probe"
+    assert phase0.execution.diagnostic_stop.phase4_batches is None
+
+    transition = trace_policy_from_scenario(
+        {
+            "method": "exact",
+            "diagnostic_stop_mode": "transition_probe",
+            "diagnostic_stop_phase4_batches": 3,
+        }
+    )
+    assert transition.execution.diagnostic_stop.mode == "transition_probe"
+    assert transition.execution.diagnostic_stop.phase4_batches == 3
 
 
 def test_phase0_decoder_row_ranges_requires_a_bool() -> None:
@@ -407,3 +428,75 @@ def test_completion_preserves_decoder_prefetch_diagnostics(
         (tmp_path / "prompt_000" / "completion_000" / "completion.json").read_text()
     )
     assert persisted["steps"][0]["transcoder_diagnostics"] == diagnostics
+
+
+def test_diagnostic_completion_persists_telemetry_without_graph_packaging(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from nlp_research_project.exact_trace_bench.trace_runtime import generation
+
+    monkeypatch.setattr(
+        generation,
+        "extract_compact_chunked_attribution",
+        lambda *_args, **_kwargs: DiagnosticTraceCompletion(
+            semantic_fingerprint="semantic-probe",
+            execution_fingerprint="execution-probe",
+            telemetry_summary={
+                "diagnostic_stop_mode": "transition_probe",
+                "phase4_batches_completed": 2,
+            },
+            telemetry_events=(
+                {
+                    "scope": "run",
+                    "name": "attribute.probe_completed",
+                    "attrs": {"status": "probe_completed"},
+                },
+            ),
+        ),
+    )
+
+    class Tokenizer:
+        eos_token_id = 9
+        pad_token_id = 0
+        unk_token_id = -1
+
+        def convert_tokens_to_ids(self, _token: str) -> int:
+            return -1
+
+        def decode(self, _values, **_kwargs) -> str:
+            return ""
+
+    class Model(FakeModel):
+        tokenizer = Tokenizer()
+        transcoders = None
+
+        def ensure_tokenized(self, _prompt: str) -> torch.Tensor:
+            return torch.tensor([1, 2], dtype=torch.int64)
+
+        def generate(self, *_args, **_kwargs):
+            raise AssertionError("diagnostic probes must not generate a token")
+
+    manifest = trace_completion_compact_chunked(
+        Model(),
+        "prompt",
+        output_dir=tmp_path,
+        prompt_idx=0,
+        completion_idx=0,
+        completion=CompletionPlan(max_steps=2),
+        trace_policy=trace_policy_from_scenario(
+            {
+                "method": "exact",
+                "diagnostic_stop_mode": "transition_probe",
+                "diagnostic_stop_phase4_batches": 2,
+            }
+        ),
+    )
+
+    root = tmp_path / "prompt_000" / "completion_000"
+    assert manifest["status"] == "probe_completed"
+    assert manifest["diagnostic_stop_mode"] == "transition_probe"
+    assert manifest["phase4_batches_completed"] == 2
+    assert manifest["graph_packaging_mode"] == "diagnostic_no_graph"
+    assert manifest["n_steps_traced"] == 0
+    assert not list(root.glob("step_*.npz"))
+    assert (root / "telemetry.jsonl").is_file()

@@ -114,6 +114,11 @@ def backfill_observations(
                 continue
             scenario = read_json(root / "scenario.json")
             result = read_json(result_path)
+            if result.get("status") == "probe_completed":
+                unsupported.append(
+                    {"root": str(root), "reason": "diagnostic_probe"}
+                )
+                continue
             stage = str(scenario.get("calibration_stage") or "")
             if not stage.startswith(("wave_a_", "wave_b_")):
                 unsupported.append(

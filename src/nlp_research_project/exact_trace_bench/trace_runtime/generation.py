@@ -19,7 +19,8 @@ from .support import (
     capture_resource_snapshot,
     generate_next_token,
 )
-from .tracing import extract_compact_chunked_attribution
+from .telemetry import normalize_telemetry_events
+from .tracing import DiagnosticTraceCompletion, extract_compact_chunked_attribution
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,12 @@ class TraceStepResult:
     stop: bool
 
 
+@dataclass(frozen=True)
+class DiagnosticStepResult:
+    diagnostic: DiagnosticTraceCompletion
+    attribution_seconds: float
+
+
 def run_trace_step(
     *,
     model: Any,
@@ -82,7 +89,7 @@ def run_trace_step(
     workspace: CompletionWorkspace,
     step_index: int,
     incremental_telemetry: bool,
-) -> TraceStepResult:
+) -> TraceStepResult | DiagnosticStepResult:
     """Run canonical attribution and sample the next token for one prefix."""
 
     attribution_started = time.perf_counter()
@@ -105,6 +112,11 @@ def run_trace_step(
         ),
     )
     attribution_seconds = time.perf_counter() - attribution_started
+    if isinstance(compact_result, DiagnosticTraceCompletion):
+        return DiagnosticStepResult(
+            diagnostic=compact_result,
+            attribution_seconds=attribution_seconds,
+        )
     generation_started = time.perf_counter()
     token_result = token_policy.generate(model, input_ids)
     generation_seconds = time.perf_counter() - generation_started
@@ -171,6 +183,62 @@ def trace_completion_compact_chunked(
             step_index=step_index,
             incremental_telemetry=completion.incremental_telemetry_jsonl,
         )
+        if isinstance(step, DiagnosticStepResult):
+            telemetry_records = [
+                {
+                    "prompt_id": workspace.prompt_id,
+                    "completion_id": workspace.completion_id,
+                    "trace_step_index": step_index,
+                    "event_index": event_index,
+                    **event,
+                }
+                for event_index, event in enumerate(
+                    normalize_telemetry_events(
+                        list(step.diagnostic.telemetry_events)
+                    )
+                )
+            ]
+            workspace.append_jsonl(workspace.telemetry_path, telemetry_records)
+            manifest = {
+                "status": "probe_completed",
+                "prompt_id": workspace.prompt_id,
+                "completion_id": workspace.completion_id,
+                "prompt": prompt,
+                "prompt_source": completion.prompt_source,
+                "fixture_name": completion.fixture_name,
+                "fixture_kind": completion.fixture_kind,
+                "completion_text": "",
+                "duration_seconds": round(time.time() - started_wall, 2),
+                "prompt_token_count": prompt_token_count,
+                "initial_input_token_count": initial_input_token_count,
+                "generated_token_count": 0,
+                "n_steps_traced": 0,
+                "temperature": completion.temperature,
+                "max_edges": completion.max_edges,
+                "semantic_fingerprint": step.diagnostic.semantic_fingerprint,
+                "execution_fingerprint": step.diagnostic.execution_fingerprint,
+                "graph_packaging_mode": "diagnostic_no_graph",
+                "diagnostic_stop_mode": step.diagnostic.diagnostic_stop_mode,
+                "phase4_batches_completed": (
+                    step.diagnostic.phase4_batches_completed
+                ),
+                "telemetry_summary": dict(step.diagnostic.telemetry_summary),
+                "telemetry_event_count": len(telemetry_records),
+                "admission_report": step.diagnostic.admission_report,
+                "resource_snapshot": capture_resource_snapshot(),
+                "timing_summary": build_completion_timing_summary(
+                    completion_end_to_end_seconds=time.perf_counter() - started_perf,
+                    step_records=[],
+                ),
+                "steps": [],
+            }
+            manifest_path = workspace.write_json("completion.json", manifest)
+            print(
+                "    Diagnostic probe completed "
+                f"({step.diagnostic.diagnostic_stop_mode}); "
+                f"saved manifest: {manifest_path}"
+            )
+            return manifest
         generated_token_ids.append(int(step.token_result["token_id"]))
         record = writer.write(
             step_index=step_index,
@@ -198,6 +266,7 @@ def trace_completion_compact_chunked(
     completion_text = tokenizer.decode(generated_token_ids, skip_special_tokens=True)
     summary = observations.final_summary()
     manifest = {
+        "status": "success",
         "prompt_id": workspace.prompt_id,
         "completion_id": workspace.completion_id,
         "prompt": prompt,

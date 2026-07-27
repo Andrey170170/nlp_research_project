@@ -214,6 +214,11 @@ def finalize_observations(
             if result_path.is_file()
             else _synthetic_result(root, fallback)
         )
+        if result.get("status") == "probe_completed":
+            unsupported.append(
+                {"root": str(root), "reason": "diagnostic_probe"}
+            )
+            continue
         if not result_path.is_file():
             write_json(result_path, result)
         finalization = {

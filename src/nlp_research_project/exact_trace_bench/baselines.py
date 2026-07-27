@@ -89,6 +89,8 @@ SCENARIO_KNOB_KEYS = (
     # Historical scenario JSON used this name before static coalescing.
     "phase4_compute_microbatch_max_rows",
     "phase0_decoder_row_ranges",
+    "diagnostic_stop_mode",
+    "diagnostic_stop_phase4_batches",
     "full_retention_backend",
     "feature_row_column_tile_size",
     "influence_row_tile_size",

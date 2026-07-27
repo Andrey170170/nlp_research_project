@@ -22,6 +22,8 @@ from nlp_research_project.exact_trace_bench.config import (  # noqa: E402
 )
 from nlp_research_project.exact_trace_bench.extract import (  # noqa: E402
     build_benchmark_index_row,
+    merge_benchmark_tables,
+    parse_run_log_summary,
 )
 from nlp_research_project.exact_trace_bench.scenarios import (  # noqa: E402
     ADVANCED_PUBLIC_TUNING_KEYS,
@@ -145,6 +147,34 @@ def test_phase_d_fields_are_extracted_for_comparison(tmp_path: Path) -> None:
         assert row[key] == value
     assert row["validation_baseline_key"] == "phase_d/reference/A"
     assert row["validation_mechanism"] == "D_reduced_session_column_tiled_v1"
+
+
+def test_probe_extracts_as_diagnostic_not_failure(tmp_path: Path) -> None:
+    scenario_root = tmp_path / "probe"
+    artifacts = scenario_root / "artifacts"
+    artifacts.mkdir(parents=True)
+    (scenario_root / "scenario.json").write_text(
+        json.dumps({"name": "transition_probe"})
+    )
+    (scenario_root / "result.json").write_text(
+        json.dumps({"status": "probe_completed", "output_dir": str(artifacts)})
+    )
+
+    row = build_benchmark_index_row(scenario_root / "result.json")
+    assert row["outcome_class"] == "diagnostic"
+    merged = merge_benchmark_tables([row], [], [])
+    assert merged[0]["failure_family_final"] == "diagnostic"
+    log_path = scenario_root / "run.log"
+    log_path.write_text("")
+    summary = parse_run_log_summary(
+        scenario_root=scenario_root,
+        scenario_name="transition_probe",
+        stage="diagnostic",
+        cluster="granite",
+        result_status="probe_completed",
+        log_path=log_path,
+    )
+    assert summary["failure_stage_guess"] is None
 
 
 def test_extractor_uses_legacy_phase4_rows_when_canonical_default_is_none(

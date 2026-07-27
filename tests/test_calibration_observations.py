@@ -266,6 +266,19 @@ def test_timeout_is_runtime_lower_bound_observation(tmp_path: Path) -> None:
     assert observation["uncertainty"]["censoring"] == "runtime_lower_bound"
 
 
+def test_diagnostic_probe_is_excluded_from_calibration_observations(
+    tmp_path: Path,
+) -> None:
+    observation = build_calibration_observation(
+        scenario_root=tmp_path,
+        scenario={"calibration_campaign": _campaign()},
+        result={"status": "probe_completed", "duration_seconds": 3.0},
+        baseline_entry=None,
+    )
+
+    assert observation is None
+
+
 def test_run_scenario_emits_observation_before_execution_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

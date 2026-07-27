@@ -312,9 +312,20 @@ def _summarize_artifacts(run_output_dir: Path) -> dict[str, Any]:
                     )
 
     first_prompt_meta = prompt_metas[0] if prompt_metas else {}
+    completion_statuses = sorted(
+        {
+            str(manifest.get("status", "success"))
+            for manifest in completion_manifests
+        }
+    )
     return {
         "prompt_count": len(prompt_metas),
         "completion_count": len(completion_manifests),
+        "completion_statuses": completion_statuses,
+        "diagnostic_stop_mode": first_completion.get("diagnostic_stop_mode"),
+        "phase4_batches_completed": first_completion.get(
+            "phase4_batches_completed"
+        ),
         "prompt_source": first_prompt_meta.get("prompt_source"),
         "fixture_name": first_prompt_meta.get("fixture_name"),
         "fixture_kind": first_prompt_meta.get("fixture_kind"),
@@ -454,26 +465,38 @@ def run_scenario(
 
     baseline_check = {}
     baseline_entry = None
-    try:
+    diagnostic_requested = (
+        effective_scenario.get("diagnostic_stop_mode", "none") != "none"
+    )
+    if diagnostic_requested:
         baseline_check = normalize_baseline_check(effective_scenario)
-        baseline_check, baseline_entry = resolve_baseline_entry(
-            baseline_check,
-            registry=baseline_registry,
-            registry_path=baseline_registry_path,
-        )
-        if baseline_entry is not None:
-            baseline_check = validate_baseline_entry(
-                baseline_entry,
-                status=baseline_check,
+        if baseline_check.get("enabled"):
+            baseline_check.update(
+                status="skipped_diagnostic_probe",
+                passed=None,
+                failure_reasons=[],
             )
-    except Exception as exc:  # noqa: BLE001 - keep failure in scenario artifacts
-        baseline_check = {
-            **BASELINE_DISABLED,
-            "enabled": True,
-            "status": "baseline_invalid",
-            "passed": False,
-            "failure_reasons": [str(exc)],
-        }
+    else:
+        try:
+            baseline_check = normalize_baseline_check(effective_scenario)
+            baseline_check, baseline_entry = resolve_baseline_entry(
+                baseline_check,
+                registry=baseline_registry,
+                registry_path=baseline_registry_path,
+            )
+            if baseline_entry is not None:
+                baseline_check = validate_baseline_entry(
+                    baseline_entry,
+                    status=baseline_check,
+                )
+        except Exception as exc:  # noqa: BLE001 - keep failure in scenario artifacts
+            baseline_check = {
+                **BASELINE_DISABLED,
+                "enabled": True,
+                "status": "baseline_invalid",
+                "passed": False,
+                "failure_reasons": [str(exc)],
+            }
 
     if (
         baseline_check.get("enabled")
@@ -554,13 +577,16 @@ def run_scenario(
 
     result["duration_seconds"] = round(time.time() - start, 2)
     result["log_path"] = str(log_path)
-    if result["status"] == "unknown":
-        result["status"] = _classify_status(
-            log_path,
-            returncode=result.get("returncode"),
-        )
-    profiling_summary = _extract_benchmark_metrics(log_path)
     artifact_summary = _summarize_artifacts(run_output_dir)
+    if result["status"] == "unknown":
+        if artifact_summary.get("completion_statuses") == ["probe_completed"]:
+            result["status"] = "probe_completed"
+        else:
+            result["status"] = _classify_status(
+                log_path,
+                returncode=result.get("returncode"),
+            )
+    profiling_summary = _extract_benchmark_metrics(log_path)
     timing_summary = artifact_summary.get("timing_summary")
     if isinstance(timing_summary, dict):
         completion_end_to_end_seconds = timing_summary.get(
@@ -581,7 +607,11 @@ def run_scenario(
 
     comparison_metrics: dict[str, Any] = {}
     if baseline_check.get("enabled"):
-        if result["status"] != "success":
+        if result["status"] == "probe_completed":
+            baseline_check["status"] = "skipped_diagnostic_probe"
+            baseline_check["passed"] = None
+            baseline_check["failure_reasons"] = []
+        elif result["status"] != "success":
             baseline_check["status"] = "skipped_trace_failed"
             baseline_check["passed"] = False
             failure_reasons = baseline_check.setdefault("failure_reasons", [])
@@ -876,7 +906,11 @@ def main() -> None:
     ):
         write_csv(output_root / "summary.csv", scenario_metric_rows)
     print(f"\nSummary written to {summary_path}")
-    failed_results = [result for result in results if result["status"] != "success"]
+    failed_results = [
+        result
+        for result in results
+        if result["status"] not in {"success", "probe_completed"}
+    ]
     if failed_results:
         failed = ", ".join(
             f"{result['name']} ({result['status']})" for result in failed_results

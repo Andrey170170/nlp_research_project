@@ -3,13 +3,35 @@
 from __future__ import annotations
 
 import gc
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import torch
 from circuit_tracer import trace_one
 
 from .request import TracePolicy
+
+
+@dataclass(frozen=True)
+class DiagnosticTraceCompletion:
+    """Project-owned terminal diagnostic; intentionally contains no graph."""
+
+    semantic_fingerprint: str
+    execution_fingerprint: str
+    telemetry_summary: Mapping[str, Any]
+    telemetry_events: tuple[Mapping[str, Any], ...]
+    admission_report: Mapping[str, Any] | None = None
+
+    @property
+    def diagnostic_stop_mode(self) -> str | None:
+        value = self.telemetry_summary.get("diagnostic_stop_mode")
+        return value if isinstance(value, str) else None
+
+    @property
+    def phase4_batches_completed(self) -> int:
+        value = self.telemetry_summary.get("phase4_batches_completed", 0)
+        return int(value) if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
 def extract_compact_chunked_attribution(
@@ -19,7 +41,7 @@ def extract_compact_chunked_attribution(
     policy: TracePolicy,
     telemetry_jsonl_path: str | Path | None = None,
     telemetry_context: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+) -> dict[str, Any] | DiagnosticTraceCompletion:
     """Execute one canonical typed trace and return its compact graph payload."""
 
     gc.collect()
@@ -40,6 +62,18 @@ def extract_compact_chunked_attribution(
         reasons = () if report is None else report.refusals
         detail = "; ".join(reasons) if reasons else "no refusal reason was recorded"
         raise RuntimeError(f"trace refused by memory governor: {detail}")
+    if getattr(result.status, "value", result.status) == "probe_completed":
+        return DiagnosticTraceCompletion(
+            semantic_fingerprint=result.semantic_fingerprint,
+            execution_fingerprint=result.execution_fingerprint,
+            telemetry_summary=dict(result.telemetry_summary),
+            telemetry_events=tuple(result.telemetry_events),
+            admission_report=(
+                None
+                if result.admission_report is None
+                else asdict(result.admission_report)
+            ),
+        )
     if not isinstance(result.output, dict):
         raise TypeError(
             "compact exact tracing must return a dictionary payload; "
@@ -51,7 +85,5 @@ def extract_compact_chunked_attribution(
     output.setdefault("telemetry_summary", dict(result.telemetry_summary))
     output.setdefault("telemetry_events", list(result.telemetry_events))
     if result.admission_report is not None:
-        from dataclasses import asdict
-
         output.setdefault("admission_report", asdict(result.admission_report))
     return output

@@ -231,6 +231,8 @@ ADVANCED_PUBLIC_TUNING_KEYS = (
     "decoder_active_row_residency",
     "decoder_active_row_max_bytes",
     "phase0_decoder_row_ranges",
+    "diagnostic_stop_mode",
+    "diagnostic_stop_phase4_batches",
     "full_retention_backend",
     "feature_row_column_tile_size",
     "influence_row_tile_size",

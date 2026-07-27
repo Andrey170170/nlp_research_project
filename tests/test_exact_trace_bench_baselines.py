@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import inspect
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,7 @@ from nlp_research_project.exact_trace_bench.jobs import (  # noqa: E402
     render_fixture_prep_plan,
     render_launch_plan,
 )
+from experiments import run_sparsification_experiment as experiment_runner  # noqa: E402
 from experiments.run_sparsification_experiment import main, run_scenario  # noqa: E402
 
 
@@ -194,6 +196,72 @@ def test_run_scenario_skips_required_missing_baseline(tmp_path: Path) -> None:
     assert (scenario_root / "result.json").exists()
     assert (scenario_root / "scenario_metrics.csv").exists()
     assert not (scenario_root / "run.log").exists()
+
+
+def test_run_scenario_preserves_probe_and_explicitly_skips_baseline(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    scenario = {
+        **base_trace_defaults(),
+        "name": "transition_probe",
+        "stage": "diagnostic",
+        "method": "exact",
+        "baseline_check": {"enabled": True, "mode": "metrics"},
+        "diagnostic_stop_mode": "transition_probe",
+        "diagnostic_stop_phase4_batches": 2,
+    }
+
+    monkeypatch.setattr(
+        experiment_runner,
+        "resolve_baseline_entry",
+        lambda status, **_kwargs: (status, {"registry_key": "unused"}),
+    )
+    monkeypatch.setattr(
+        experiment_runner,
+        "validate_baseline_entry",
+        lambda _entry, *, status: status,
+    )
+    monkeypatch.setattr(
+        experiment_runner,
+        "run_baseline_comparison",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("diagnostic probes must not enter baseline comparison")
+        ),
+    )
+
+    def fake_run(cmd, **_kwargs):
+        artifacts = Path(cmd[-1])
+        completion = artifacts / "prompt_000" / "completion_000"
+        completion.mkdir(parents=True)
+        (completion / "completion.json").write_text(
+            json.dumps(
+                {
+                    "status": "probe_completed",
+                    "diagnostic_stop_mode": "transition_probe",
+                    "phase4_batches_completed": 2,
+                    "steps": [],
+                }
+            )
+        )
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(experiment_runner.subprocess, "run", fake_run)
+    result = run_scenario(
+        tmp_path,
+        scenario,
+        env={},
+        run_metadata={
+            "run_id": "probe-run",
+            "run_name": None,
+            "run_description": None,
+            "run_goal": None,
+        },
+    )
+
+    assert result["status"] == "probe_completed"
+    assert result["artifact_summary"]["completion_statuses"] == ["probe_completed"]
+    assert result["baseline_check"]["status"] == "skipped_diagnostic_probe"
+    assert result["baseline_check"]["passed"] is None
 
 
 def test_runner_honors_metadata_failure_policy(

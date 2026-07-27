@@ -17,6 +17,10 @@ from ..transcoder_config import (
 from .schemas import TraceSpec, load_shards, load_trace_specs, load_trajectory
 
 
+class _DiagnosticProbeCompleted(Exception):
+    """Internal non-error control flow after a terminal diagnostic trace."""
+
+
 def _shard_dir(output_root: Path, shard_id: int) -> Path:
     return output_root / "shards" / f"shard_{shard_id:03d}"
 
@@ -560,6 +564,7 @@ def _trace_request(
     from circuit_tracer import (
         AttributionProblem,
         DecoderCachePolicy,
+        DiagnosticStopPolicy,
         ExecutionConstraints,
         FrontierExpansionPlan,
         FrontierSemantics,
@@ -750,6 +755,10 @@ def _trace_request(
                 knobs.get("semantic_descriptor_top_k", 2048)
             ),
             semantic_descriptor_dim=int(knobs.get("semantic_descriptor_dim", 64)),
+        ),
+        diagnostic_stop=DiagnosticStopPolicy(
+            mode=str(knobs.get("diagnostic_stop_mode", "none")),
+            phase4_batches=knobs.get("diagnostic_stop_phase4_batches"),
         ),
         offload="cpu",
         compact_output=not bool(knobs.get("save_raw_graph", False)),
@@ -1128,6 +1137,56 @@ def run_real_shard(
                         request.execution.session.decoder_cache.enabled
                         and window_session is not None
                     )
+                    trace_status = getattr(
+                        trace_result.status, "value", trace_result.status
+                    ) if hasattr(trace_result, "status") else "succeeded"
+                    if trace_status == "probe_completed":
+                        diagnostic_payload = {
+                            "telemetry_summary": dict(
+                                trace_result.telemetry_summary
+                            ),
+                            "telemetry_events": list(trace_result.telemetry_events),
+                        }
+                        trace.update(
+                            {
+                                "status": "probe_completed",
+                                "error": None,
+                                "graph_path": None,
+                                "graph_summary": None,
+                                "diagnostic_stop_mode": (
+                                    trace_result.telemetry_summary.get(
+                                        "diagnostic_stop_mode"
+                                    )
+                                ),
+                                "phase4_batches_completed": (
+                                    trace_result.telemetry_summary.get(
+                                        "phase4_batches_completed", 0
+                                    )
+                                ),
+                                "semantic_fingerprint": (
+                                    trace_result.semantic_fingerprint
+                                ),
+                                "execution_fingerprint": (
+                                    trace_result.execution_fingerprint
+                                ),
+                                "telemetry_summary": _json_ready(
+                                    trace_result.telemetry_summary
+                                ),
+                                "timings": {
+                                    "trace_seconds": (
+                                        time.perf_counter() - started
+                                    ),
+                                },
+                            }
+                        )
+                        trace.update(
+                            _persist_compact_telemetry_events(
+                                token_dir=token_dir,
+                                compact_result=diagnostic_payload,
+                                trace=trace,
+                            )
+                        )
+                        raise _DiagnosticProbeCompleted
                     graph_result = trace_result.output
                     if trace_result.telemetry_summary:
                         trace["telemetry_summary"] = _json_ready(
@@ -1239,6 +1298,8 @@ def run_real_shard(
                         trace["phase4_frontier_buffer_metadata"] = _json_ready(
                             compact_result.get("phase4_frontier_buffer_metadata")
                         )
+                except _DiagnosticProbeCompleted:
+                    pass
                 except (
                     Exception
                 ) as exc:  # pragma: no cover - exercised only in SLURM real mode
@@ -1275,18 +1336,35 @@ def run_real_shard(
         finally:
             if window_session is not None:
                 window_session.close()
-    final_status = "complete" if all(r["status"] == "ok" for r in rows) else "error"
+    row_statuses = {str(row.get("status")) for row in rows}
+    if row_statuses == {"probe_completed"}:
+        final_status = "probe_completed"
+    elif row_statuses == {"ok"}:
+        final_status = "complete"
+    elif row_statuses.issubset({"ok", "probe_completed"}):
+        final_status = "complete_with_diagnostics"
+    else:
+        final_status = "error"
     token_seconds = [
         float(r.get("timings", {}).get("trace_seconds", 0.0)) for r in rows
     ]
     health = {
         "actual_total_seconds": sum(token_seconds),
         "max_token_seconds": max(token_seconds) if token_seconds else 0.0,
-        "failed_token_count": sum(1 for r in rows if r.get("status") != "ok"),
+        "failed_token_count": sum(
+            1
+            for r in rows
+            if r.get("status") not in {"ok", "probe_completed"}
+        ),
+        "diagnostic_token_count": sum(
+            1 for r in rows if r.get("status") == "probe_completed"
+        ),
         "predicted_cost_sum": int(
             shard.get("estimated_cost_sum", sum(s["estimated_cost"] for s in specs))
         ),
-        "retry_recommended": any(r.get("status") != "ok" for r in rows),
+        "retry_recommended": any(
+            r.get("status") not in {"ok", "probe_completed"} for r in rows
+        ),
     }
     write_json(
         root / "shard.json",

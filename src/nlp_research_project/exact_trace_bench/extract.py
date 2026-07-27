@@ -2561,6 +2561,7 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
         scenario.get("cross_batch_decoder_cache_bytes"),
     )
 
+    result_status = result.get("status")
     return {
         "scenario_root": str(scenario_root),
         "scenario_name": result.get("name")
@@ -2569,7 +2570,14 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
         "stage": result.get("stage") or scenario.get("stage"),
         "cluster": _infer_cluster(scenario_root, scenario),
         "method": result.get("method") or scenario.get("method"),
-        "status": result.get("status"),
+        "status": result_status,
+        "outcome_class": (
+            "diagnostic"
+            if result_status == "probe_completed"
+            else "success"
+            if result_status == "success"
+            else "failure"
+        ),
         "returncode": result.get("returncode"),
         "duration_seconds": result.get("duration_seconds"),
         "timeout_minutes": result.get("timeout_minutes"),
@@ -2913,7 +2921,7 @@ def extract_benchmark_index(input_root: Path) -> list[dict[str, Any]]:
 def _guess_failure_stage(
     summary: dict[str, Any], result_status: str | None
 ) -> str | None:
-    if result_status == "success":
+    if result_status in {"success", "probe_completed"}:
         return None
     if summary.get("cuda_oom_requested_gib") is not None:
         if summary.get("phase0_encode_total_active_features") is None:
@@ -3324,7 +3332,9 @@ def merge_benchmark_tables(
         slurm_any_ram_oom = _to_bool(merged.get("slurm_any_ram_oom"))
         slurm_any_timeout = _to_bool(merged.get("slurm_any_timeout"))
         cuda_oom_seen = _to_float(merged.get("cuda_oom_requested_gib")) is not None
-        if status == "success":
+        if status == "probe_completed":
+            failure_family = "diagnostic"
+        elif status == "success":
             failure_family = "success"
         elif slurm_any_ram_oom:
             failure_family = "ram_oom"

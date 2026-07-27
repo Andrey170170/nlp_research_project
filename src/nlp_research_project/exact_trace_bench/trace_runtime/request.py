@@ -12,6 +12,7 @@ from circuit_tracer import (
     AdmissionMode,
     AttributionProblem,
     DecoderCachePolicy,
+    DiagnosticStopPolicy,
     ExecutionConstraints,
     FidelityMode,
     FrontierExpansionPlan,
@@ -338,6 +339,12 @@ def trace_policy_from_scenario(
                 scenario.get("semantic_descriptor_top_k", 2048)
             ),
             semantic_descriptor_dim=int(scenario.get("semantic_descriptor_dim", 64)),
+        ),
+        diagnostic_stop=DiagnosticStopPolicy(
+            mode=_choice(scenario, "diagnostic_stop_mode", "none"),
+            phase4_batches=_optional_int(
+                scenario.get("diagnostic_stop_phase4_batches")
+            ),
         ),
         offload=None if scenario.get("no_offload", False) else "cpu",
         compact_output=not bool(scenario.get("save_raw", False)),

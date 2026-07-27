@@ -77,6 +77,8 @@ def base_trace_defaults() -> dict[str, Any]:
         "decoder_active_row_residency": False,
         "decoder_active_row_max_bytes": 0,
         "phase0_decoder_row_ranges": False,
+        "diagnostic_stop_mode": "none",
+        "diagnostic_stop_phase4_batches": None,
         "full_retention_backend": "full_file",
         "feature_row_column_tile_size": 2048,
         "influence_row_tile_size": 4096,

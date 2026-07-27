@@ -221,6 +221,8 @@ def test_trace_request_builds_canonical_domain_policies() -> None:
             "full_retention_backend": "column_tiled_v1",
             "nnsight_session_capacity": 64,
             "telemetry_max_events": 500,
+            "diagnostic_stop_mode": "transition_probe",
+            "diagnostic_stop_phase4_batches": 2,
             },
         },
     )
@@ -255,6 +257,8 @@ def test_trace_request_builds_canonical_domain_policies() -> None:
     assert request.execution.session.decoder_cache.enabled is True
     assert request.execution.session.decoder_cache.max_bytes == 8589934592
     assert request.execution.observability.telemetry_max_events == 500
+    assert request.execution.diagnostic_stop.mode == "transition_probe"
+    assert request.execution.diagnostic_stop.phase4_batches == 2
     assert request.evidence.metadata["prefix_view_metadata"] == {}
 
 
@@ -602,6 +606,78 @@ def test_real_shard_persists_exception_attached_telemetry(
     assert telemetry_rows[0]["trace_id"] == "traj_runner_tok000001"
     assert telemetry_rows[0]["event"]["name"] == "phase1.forward"
     assert telemetry_rows[0]["event"]["attrs"] == {"active_features": 227051}
+
+
+def test_real_shard_persists_probe_without_graph_packaging(
+    tmp_path: Path, monkeypatch
+) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    rows = [json.loads(line) for line in specs_path.read_text().splitlines()]
+    rows[1]["graph_knobs"].update(
+        {
+            "diagnostic_stop_mode": "transition_probe",
+            "diagnostic_stop_phase4_batches": 2,
+        }
+    )
+    specs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+
+    def fake_trace_one(_request):
+        return types.SimpleNamespace(
+            output=None,
+            status="probe_completed",
+            semantic_fingerprint="semantic-probe",
+            execution_fingerprint="execution-probe",
+            telemetry_summary={
+                "diagnostic_stop_mode": "transition_probe",
+                "phase4_batches_completed": 2,
+            },
+            telemetry_events=(
+                {
+                    "scope": "run",
+                    "name": "attribute.probe_completed",
+                    "attrs": {"status": "probe_completed"},
+                },
+            ),
+        )
+
+    monkeypatch.setenv("SLURM_JOB_ID", "test-job")
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        types.SimpleNamespace(
+            tensor=lambda data, dtype=None: data,
+            long=object(),
+            Tensor=type("FakeTensor", (), {}),
+        ),
+    )
+    monkeypatch.setattr(provider, "load_model", lambda **_kwargs: object())
+    import circuit_tracer
+
+    monkeypatch.setattr(circuit_tracer, "trace_one", fake_trace_one)
+
+    result = run_real_shard(
+        trajectory_path=trajectory_path,
+        trace_specs_path=specs_path,
+        shards_path=shards_path,
+        shard_id=0,
+        output_root=tmp_path / "run",
+    )
+
+    assert result["status"] == "probe_completed"
+    token_dir = tmp_path / "run" / "shards" / "shard_000" / "token_000001"
+    trace = json.loads((token_dir / "trace.json").read_text())
+    assert trace["status"] == "probe_completed"
+    assert trace["graph_path"] is None
+    assert trace["diagnostic_stop_mode"] == "transition_probe"
+    assert trace["phase4_batches_completed"] == 2
+    assert not (token_dir / "graph.npz").exists()
+    shard = json.loads(
+        (tmp_path / "run" / "shards" / "shard_000" / "shard.json").read_text()
+    )
+    assert shard["status"] == "probe_completed"
+    assert shard["shard_health"]["failed_token_count"] == 0
+    assert shard["shard_health"]["diagnostic_token_count"] == 1
+    assert shard["shard_health"]["retry_recommended"] is False
 
 
 def test_real_shard_forwards_full_sequence_prompt_and_output_position(

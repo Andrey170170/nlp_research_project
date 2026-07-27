@@ -242,6 +242,8 @@ def build_calibration_observation(
 ) -> dict[str, Any] | None:
     """Join one persisted scenario into a stable calibration observation."""
 
+    if result.get("status") == "probe_completed":
+        return None
     campaign = normalize_calibration_campaign(scenario)
     if campaign is None:
         return None
