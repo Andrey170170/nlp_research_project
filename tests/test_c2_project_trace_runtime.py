@@ -73,6 +73,7 @@ def test_physical_frontier_knobs_change_only_execution_fingerprint() -> None:
         ("decoder_page_prefetch_depth", 1),
         ("decoder_active_row_residency", True),
         ("decoder_active_row_max_bytes", 1024),
+        ("phase0_decoder_row_ranges", True),
     ):
         changed = _fingerprints({key: value})
         assert changed[0] == baseline[0], key
@@ -85,6 +86,19 @@ def test_physical_frontier_knobs_change_only_execution_fingerprint() -> None:
     )
     assert changed[0] == baseline[0]
     assert changed[1] != baseline[1]
+
+
+def test_phase0_decoder_row_ranges_requires_a_bool() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="phase0_decoder_row_ranges must be a bool"):
+        trace_policy_from_scenario(
+            {
+                "name": "invalid-phase0-ranges",
+                "method": "exact",
+                "phase0_decoder_row_ranges": 1,
+            }
+        )
 
 
 def test_exact_child_boundary_is_scenario_file_not_flat_flags(tmp_path: Path) -> None:

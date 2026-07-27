@@ -412,6 +412,36 @@ def test_active_rows_profiles_match_exact_baseline_and_are_exact_eligible(
     )
 
 
+def test_phase0_coalesced_rows_profile_is_exact_eligible_and_provider_scoped() -> None:
+    plt_case = perf_cli.Case("gemma3_1b_plt", "361_base")
+    clt_case = perf_cli.Case("gemma3_1b_clt", "361_base")
+    expected = perf_cli._candidate_overrides(
+        plt_case, "plt-phase0-coalesced-rows-v1"
+    )
+
+    assert expected == {
+        **perf_cli._candidate_overrides(plt_case, "plt-active-rows-v1"),
+        "phase0_decoder_row_ranges": True,
+    }
+    assert (
+        perf_cli._candidate_overrides(clt_case, "plt-phase0-coalesced-rows-v1")
+        == {}
+    )
+    assert (
+        "plt-phase0-coalesced-rows-v1"
+        not in perf_cli.BOUNDED_ONLY_CANDIDATE_PROFILES
+    )
+    scenario = perf_cli._case_scenario(
+        plt_case, "exact", "plt-phase0-coalesced-rows-v1"
+    )["scenarios"][0]
+    assert scenario["phase0_decoder_row_ranges"] is True
+    assert scenario["decoder_active_row_residency"] is True
+    assert (
+        scenario["baseline_check"]["thresholds"]
+        == perf_cli.FIDELITY_THRESHOLDS["exact"]
+    )
+
+
 @pytest.mark.parametrize(
     ("profile", "capacity"),
     [
@@ -575,9 +605,14 @@ def test_clt_report_has_no_hard_duration_target(tmp_path: Path) -> None:
     assert report["passed"] is True
 
 
-def _active_row_diagnostics(*, effective: bool = True) -> dict[str, object]:
+def _active_row_diagnostics(
+    *,
+    effective: bool = True,
+    phase0_ranges: bool = False,
+    phase0_ranges_effective: bool = True,
+) -> dict[str, object]:
     resident_bytes = perf_cli.ACTIVE_ROW_EXPECTED_BYTES
-    return {
+    diagnostics = {
         "requested": True,
         "effective": effective,
         "fallback_reason": None if effective else "estimated_bytes_exceed_max",
@@ -614,6 +649,23 @@ def _active_row_diagnostics(*, effective: bool = True) -> dict[str, object]:
             "decoder_load_bytes_delta": 0,
         },
     }
+    if phase0_ranges:
+        diagnostics["phase0_decoder_row_ranges"] = {
+            "requested": True,
+            "effective": phase0_ranges_effective,
+            "fallback_reason": (
+                None
+                if phase0_ranges_effective
+                else "singleton_range_fraction_exceeds_max"
+            ),
+            "unique_row_count": 42_000,
+            "range_request_count": 2_048 if phase0_ranges_effective else 0,
+            "logical_materialized_bytes": (
+                100_000_000 if phase0_ranges_effective else 15_665_725_440
+            ),
+            "baseline_full_page_bytes": 15_665_725_440,
+        }
+    return diagnostics
 
 
 def _active_row_report(
@@ -622,6 +674,7 @@ def _active_row_report(
     duration_seconds: float,
     framebuffer_peak_mib: float = 26_113.0,
     diagnostics: dict[str, object] | None = None,
+    phase0_ranges_requested: bool = False,
 ) -> dict[str, object]:
     case = perf_cli.Case("gemma3_1b_plt", "361_base")
     scenario_root = tmp_path / "perf_gemma3_1b_plt_361_base"
@@ -631,6 +684,7 @@ def _active_row_report(
             {
                 "decoder_active_row_residency": True,
                 "decoder_active_row_max_bytes": 1024**3,
+                "phase0_decoder_row_ranges": phase0_ranges_requested,
             }
         )
     )
@@ -706,6 +760,76 @@ def test_active_row_report_fails_explicit_fallback(tmp_path: Path) -> None:
     assert report["passed"] is False
     assert report["mechanism_validation_passed"] is False
     assert "estimated_bytes_exceed_max" in " ".join(report["failure_reasons"])
+
+
+def test_phase0_coalesced_row_report_passes_structured_mechanism_gate(
+    tmp_path: Path,
+) -> None:
+    diagnostics = _active_row_diagnostics(phase0_ranges=True)
+    report = _active_row_report(
+        tmp_path,
+        duration_seconds=75.0,
+        diagnostics=diagnostics,
+        phase0_ranges_requested=True,
+    )
+
+    assert report["passed"] is True
+    assert report["mechanism_validation_passed"] is True
+    assert report["phase0_decoder_row_ranges_requested"] is True
+    assert report["phase0_decoder_row_ranges"] == diagnostics[
+        "phase0_decoder_row_ranges"
+    ]
+
+
+def test_phase0_coalesced_row_report_rejects_explicit_exact_fallback(
+    tmp_path: Path,
+) -> None:
+    report = _active_row_report(
+        tmp_path,
+        duration_seconds=75.0,
+        diagnostics=_active_row_diagnostics(
+            phase0_ranges=True,
+            phase0_ranges_effective=False,
+        ),
+        phase0_ranges_requested=True,
+    )
+
+    assert report["passed"] is False
+    assert report["parity_passed"] is True
+    assert report["mechanism_validation_passed"] is False
+    assert "fell back to exact full-page reads" in " ".join(
+        report["mechanism_failure_reasons"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "reason"),
+    [
+        ("range_request_count", 30_000, "at most half"),
+        (
+            "logical_materialized_bytes",
+            15_665_725_440,
+            "below baseline full-page bytes",
+        ),
+    ],
+)
+def test_phase0_coalesced_row_gate_rejects_ineffective_evidence(
+    field: str,
+    value: int,
+    reason: str,
+) -> None:
+    diagnostics = _active_row_diagnostics(phase0_ranges=True)
+    diagnostics["phase0_decoder_row_ranges"][field] = value
+
+    passed, reasons = perf_cli._active_row_mechanism_gate(
+        True,
+        diagnostics,
+        1024**3,
+        phase0_ranges_requested=True,
+    )
+
+    assert passed is False
+    assert reason in " ".join(reasons)
 
 
 @pytest.mark.parametrize(

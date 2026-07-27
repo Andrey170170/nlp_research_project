@@ -230,6 +230,7 @@ ADVANCED_PUBLIC_TUNING_KEYS = (
     "decoder_page_prefetch_depth",
     "decoder_active_row_residency",
     "decoder_active_row_max_bytes",
+    "phase0_decoder_row_ranges",
     "full_retention_backend",
     "feature_row_column_tile_size",
     "influence_row_tile_size",

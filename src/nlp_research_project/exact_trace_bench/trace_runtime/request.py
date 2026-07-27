@@ -111,6 +111,9 @@ def trace_policy_from_scenario(
 ) -> TracePolicy:
     """Resolve one scenario into the canonical sibling-owned policy types."""
 
+    phase0_decoder_row_ranges = _bool_knob(
+        scenario, "phase0_decoder_row_ranges", False
+    )
     resources, provider_profile = _governor_policy_from_scenario(scenario)
     governor_fidelity = _governor_fidelity_from_scenario(scenario)
     governor_admission_mode = AdmissionMode(
@@ -272,6 +275,7 @@ def trace_policy_from_scenario(
             decoder_active_row_max_bytes=int(
                 scenario.get("decoder_active_row_max_bytes", 0)
             ),
+            phase0_decoder_row_ranges=phase0_decoder_row_ranges,
         ),
         observability=ObservabilityPolicy(
             verbose=bool(scenario.get("verbose_attribution", False)),
@@ -500,6 +504,13 @@ def _physical_requirements_from_scenario(
 
 def _optional_int(value: Any) -> int | None:
     return None if value is None else int(value)
+
+
+def _bool_knob(scenario: Mapping[str, Any], key: str, default: bool) -> bool:
+    value = scenario.get(key, default)
+    if not isinstance(value, bool):
+        raise ValueError(f"{key} must be a bool")
+    return value
 
 
 def _phase4_execution_batch_max_rows(scenario: Mapping[str, Any]) -> Any:

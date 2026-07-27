@@ -184,6 +184,7 @@ def test_trace_request_builds_canonical_domain_policies() -> None:
             "decoder_page_prefetch_depth": 1,
             "decoder_active_row_residency": True,
             "decoder_active_row_max_bytes": 8192,
+            "phase0_decoder_row_ranges": True,
             "phase4_scheduler_mode": "planner_v1",
             "phase4_scheduler_telemetry_detail": "debug",
             "phase4_refresh_optimization": "v1",
@@ -247,6 +248,7 @@ def test_trace_request_builds_canonical_domain_policies() -> None:
     assert request.execution.frontier.decoder_page_prefetch_depth == 1
     assert request.execution.frontier.decoder_active_row_residency is True
     assert request.execution.frontier.decoder_active_row_max_bytes == 8192
+    assert request.execution.frontier.phase0_decoder_row_ranges is True
     assert request.semantics.frontier.scheduler == "planner_v1"
     assert request.execution.session.decoder_cache.enabled is True
     assert request.execution.session.decoder_cache.max_bytes == 8589934592
@@ -271,6 +273,11 @@ def test_trace_request_builds_canonical_domain_policies() -> None:
             "decoder_active_row_max_bytes",
             True,
             "decoder_active_row_max_bytes must be a non-negative int",
+        ),
+        (
+            "phase0_decoder_row_ranges",
+            1,
+            "phase0_decoder_row_ranges must be a bool",
         ),
     ],
 )

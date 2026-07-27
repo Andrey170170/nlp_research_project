@@ -499,6 +499,9 @@ def _model_load_knobs(specs: list[TraceSpec]) -> dict[str, Any]:
         active_row_residency = knobs.get("decoder_active_row_residency", False)
         if not isinstance(active_row_residency, bool):
             raise ValueError("decoder_active_row_residency must be a bool")
+        phase0_decoder_row_ranges = knobs.get("phase0_decoder_row_ranges", False)
+        if not isinstance(phase0_decoder_row_ranges, bool):
+            raise ValueError("phase0_decoder_row_ranges must be a bool")
         active_row_max_bytes = knobs.get("decoder_active_row_max_bytes", 0)
         if (
             isinstance(active_row_max_bytes, bool)
@@ -696,6 +699,9 @@ def _trace_request(
             ),
             decoder_active_row_max_bytes=int(
                 knobs.get("decoder_active_row_max_bytes", 0)
+            ),
+            phase0_decoder_row_ranges=bool(
+                knobs.get("phase0_decoder_row_ranges", False)
             ),
         ),
         observability=ObservabilityPolicy(

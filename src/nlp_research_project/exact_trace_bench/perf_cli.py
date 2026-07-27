@@ -167,6 +167,20 @@ CANDIDATE_PROFILES: dict[str, dict[str, Any]] = {
         "decoder_active_row_residency": True,
         "decoder_active_row_max_bytes": 1024**3,
     },
+    "plt-phase0-coalesced-rows-v1": {
+        "decoder_chunk_size": 4096,
+        "cross_batch_decoder_cache_bytes": 0,
+        "nnsight_session_capacity": 256,
+        "phase1_trace_batch_policy": "cap_effective_batches",
+        "phase1_trace_batch_size_max": 128,
+        "phase3_compute_microbatch_max_rows": 128,
+        "phase4_execution_batch_max_rows": 256,
+        "feature_vjp_tape_batch_window": 1,
+        "decoder_page_prefetch_depth": 0,
+        "decoder_active_row_residency": True,
+        "decoder_active_row_max_bytes": 1024**3,
+        "phase0_decoder_row_ranges": True,
+    },
     "plt-active-rows-tape-v1": {
         "decoder_chunk_size": 4096,
         "cross_batch_decoder_cache_bytes": 0,
@@ -630,6 +644,8 @@ def _active_row_mechanism_gate(
     requested: bool,
     diagnostics: Any,
     max_bytes: int,
+    *,
+    phase0_ranges_requested: bool = False,
 ) -> tuple[bool | None, list[str]]:
     if not requested:
         return None, []
@@ -762,6 +778,59 @@ def _active_row_mechanism_gate(
         reasons.append(
             "Phase4 decoder page-load and load-byte deltas must both equal zero"
         )
+    if phase0_ranges_requested:
+        range_diagnostics = diagnostics.get("phase0_decoder_row_ranges")
+        if not isinstance(range_diagnostics, dict):
+            reasons.append(
+                "Phase0 decoder-row-range diagnostics missing from active-row evidence"
+            )
+            return False, reasons
+        if range_diagnostics.get("requested") is not True:
+            reasons.append(
+                "Phase0 decoder-row-range runtime did not record requested=true"
+            )
+        range_effective = range_diagnostics.get("effective") is True
+        fallback_reason = range_diagnostics.get("fallback_reason")
+        if not range_effective:
+            reasons.append(
+                "Phase0 decoder-row ranges fell back to exact full-page reads"
+                + (
+                    f": {fallback_reason}"
+                    if isinstance(fallback_reason, str) and fallback_reason
+                    else " without a structured fallback reason"
+                )
+            )
+            return False, reasons
+        if fallback_reason is not None:
+            reasons.append(
+                f"effective Phase0 decoder-row ranges recorded fallback: {fallback_reason}"
+            )
+        range_count = range_diagnostics.get("range_request_count")
+        range_unique_rows = range_diagnostics.get("unique_row_count")
+        if (
+            not isinstance(range_count, int)
+            or range_count <= 0
+            or not isinstance(range_unique_rows, int)
+            or range_unique_rows <= 0
+            or range_count * 2 > range_unique_rows
+        ):
+            reasons.append(
+                "Phase0 decoder range count must be positive and at most half "
+                "the unique-row count"
+            )
+        logical_bytes = range_diagnostics.get("logical_materialized_bytes")
+        baseline_page_bytes = range_diagnostics.get("baseline_full_page_bytes")
+        if (
+            not isinstance(logical_bytes, int)
+            or logical_bytes <= 0
+            or not isinstance(baseline_page_bytes, int)
+            or baseline_page_bytes <= 0
+            or logical_bytes >= baseline_page_bytes
+        ):
+            reasons.append(
+                "Phase0 logical materialized bytes must be positive and below "
+                "baseline full-page bytes"
+            )
     return not reasons, reasons
 
 
@@ -818,6 +887,7 @@ def _result_report(
     scenario_path = scenario_root / "scenario.json"
     scenario = read_json(scenario_path) if scenario_path.is_file() else {}
     active_rows_requested = scenario.get("decoder_active_row_residency") is True
+    phase0_ranges_requested = scenario.get("phase0_decoder_row_ranges") is True
     active_rows_max_bytes_raw = scenario.get("decoder_active_row_max_bytes", 0)
     active_rows_max_bytes = (
         int(active_rows_max_bytes_raw)
@@ -912,6 +982,7 @@ def _result_report(
         active_rows_requested,
         diagnostics,
         active_rows_max_bytes,
+        phase0_ranges_requested=phase0_ranges_requested,
     )
     framebuffer_passed, framebuffer_comparison, framebuffer_failure_reasons = (
         _active_row_framebuffer_gate(active_rows_requested, resource_summary)
@@ -955,6 +1026,12 @@ def _result_report(
         ),
         "reconciliation_required": reconciliation_required,
         "decoder_active_row_residency": diagnostics,
+        "phase0_decoder_row_ranges_requested": phase0_ranges_requested,
+        "phase0_decoder_row_ranges": (
+            diagnostics.get("phase0_decoder_row_ranges")
+            if isinstance(diagnostics, dict)
+            else None
+        ),
         "mechanism_validation_passed": mechanism_passed,
         "mechanism_validation_status": "not_applicable"
         if mechanism_passed is None

@@ -194,7 +194,11 @@ def validate_trace_spec(spec: Mapping[str, Any]) -> None:
             "trace spec graph_knobs.trajectory_session_mode must be one of "
             f"{sorted(TRAJECTORY_SESSION_MODES)!r}"
         )
-    for key in ("reuse_phase0_window_state", "reuse_target_logits"):
+    for key in (
+        "reuse_phase0_window_state",
+        "reuse_target_logits",
+        "phase0_decoder_row_ranges",
+    ):
         value = spec["graph_knobs"].get(key)
         if value is not None and not isinstance(value, bool):
             raise ValueError(f"trace spec graph_knobs.{key} must be a bool")
