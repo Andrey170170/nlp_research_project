@@ -1244,6 +1244,26 @@ def test_mapped_encoder_profiles_are_capability_scoped(
     }
 
 
+@pytest.mark.parametrize("execution_rows", [128, 256])
+def test_mapped_12b_execution_profiles_widen_only_physical_batches(
+    execution_rows: int,
+) -> None:
+    profile_name = f"plt-selective-mapped-rows-12b-b{execution_rows}-v1"
+    profile = perf_cli.CANDIDATE_PROFILES[profile_name]
+    case_4b = perf_cli.Case("gemma3_4b_plt", "361_base")
+    case_12b = perf_cli.Case("gemma3_12b_plt", "361_base")
+
+    assert profile.variant_for(case_4b.provider_capabilities()) is None
+    assert profile.variant_for(case_12b.provider_capabilities()) is not None
+    assert perf_cli._candidate_overrides(case_12b, profile_name) == {
+        **perf_cli._candidate_overrides(
+            case_12b, "plt-selective-mapped-rows-large-v1"
+        ),
+        "nnsight_session_capacity": execution_rows,
+        "phase4_execution_batch_max_rows": execution_rows,
+    }
+
+
 def test_phase0_coalesced_rows_profile_is_exact_eligible_and_provider_scoped() -> None:
     plt_case = perf_cli.Case("gemma3_1b_plt", "361_base")
     clt_case = perf_cli.Case("gemma3_1b_clt", "361_base")

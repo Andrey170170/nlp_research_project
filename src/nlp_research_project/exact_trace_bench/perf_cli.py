@@ -741,6 +741,31 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
             ),
             evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
         )
+    for execution_rows in (128, 256):
+        profile_name = f"plt-selective-mapped-rows-12b-b{execution_rows}-v1"
+        contracts[profile_name] = CandidateProfile(
+            name=profile_name,
+            variants=(
+                _candidate_variant(
+                    {
+                        **_LEGACY_CANDIDATE_OVERRIDES[
+                            "plt-active-rows-12b-c4096-v1"
+                        ],
+                        "nnsight_session_capacity": execution_rows,
+                        "phase4_execution_batch_max_rows": execution_rows,
+                        "phase0_decoder_row_ranges": True,
+                        "checkpoint_asset_scope": "job_private",
+                    },
+                    CapabilityRequirements(
+                        **{
+                            **_PLT_MAPPED_DECODER_ROWS.__dict__,
+                            "minimum_layer_count": 35,
+                        }
+                    ),
+                ),
+            ),
+            evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
+        )
     return contracts
 
 
