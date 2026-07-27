@@ -70,6 +70,9 @@ PERFORMANCE_TARGET_SECONDS = {
     "performance/gemma3_1b_plt/361_base": 600.0,
     "performance/gemma3_4b_plt/361_base": 600.0,
 }
+MEASUREMENT_ONLY_PERFORMANCE_CASES = frozenset(
+    {"performance/gemma3_12b_plt/361_base"}
+)
 PERFORMANCE_STRETCH_TARGET_SECONDS = {
     "performance/gemma3_1b_plt/361_base": 300.0,
     "performance/gemma3_4b_plt/361_base": 600.0,
@@ -1807,9 +1810,19 @@ def _result_report(
     resource_gate_passed = resource_validation_passed and (
         framebuffer_passed is not False
     )
+    promotion_eligible = case.key not in MEASUREMENT_ONLY_PERFORMANCE_CASES
+    acceptance_failure_reasons = (
+        []
+        if promotion_eligible
+        else [
+            "measurement-only case has no fitted same-envelope control or "
+            "reviewed hard runtime target; optimization acceptance is ineligible"
+        ]
+    )
     passed = (
         parity_passed
         and performance_passed is not False
+        and promotion_eligible
         and resource_gate_passed
         and mechanism_passed is not False
         and not reconciliation_required
@@ -1860,16 +1873,22 @@ def _result_report(
         "parity_passed": parity_passed,
         "performance_passed": performance_passed,
         "performance_stretch_passed": stretch_passed,
+        "promotion_eligible": promotion_eligible,
+        "acceptance_status": (
+            "eligible" if promotion_eligible else "measurement_only_not_accepted"
+        ),
         "resource_validation_passed": resource_validation_passed,
         "resource_gate_passed": resource_gate_passed,
         "passed": passed,
         "parity_failure_reasons": parity_failure_reasons,
         "performance_failure_reasons": performance_failure_reasons,
+        "acceptance_failure_reasons": acceptance_failure_reasons,
         "mechanism_failure_reasons": mechanism_failure_reasons,
         "resource_failure_reasons": resource_failure_reasons,
         "failure_reasons": [
             *parity_failure_reasons,
             *performance_failure_reasons,
+            *acceptance_failure_reasons,
             *mechanism_failure_reasons,
             *resource_failure_reasons,
         ],
@@ -1906,6 +1925,11 @@ def _print_report(report: dict[str, Any]) -> None:
     reconciliation_status = (
         "REQUIRED" if report.get("reconciliation_required") else "OK"
     )
+    acceptance_status = (
+        "ELIGIBLE"
+        if report.get("promotion_eligible", True)
+        else "MEASUREMENT_ONLY"
+    )
     print(
         f"{report['case']}: "
         f"candidate={render(report.get('candidate_duration_seconds'), 2)}s "
@@ -1925,6 +1949,7 @@ def _print_report(report: dict[str, Any]) -> None:
         f"stretch={'PASS' if report.get('performance_stretch_passed') else 'MISS'} "
         f"resource={resource_status} "
         f"mechanism={mechanism_status} "
+        f"acceptance={acceptance_status} "
         f"reconciliation={reconciliation_status} "
         f"gate={'PASS' if report['passed'] else 'FAIL'}"
     )
@@ -1950,10 +1975,14 @@ def _gate_summary(reports: Sequence[dict[str, Any]]) -> dict[str, bool | None]:
     reconciliation_required = any(
         report.get("reconciliation_required") is True for report in reports
     )
+    promotion_eligible = bool(reports) and all(
+        report.get("promotion_eligible", True) is True for report in reports
+    )
     passed = (
         bool(reports)
         and parity_passed
         and performance_passed is not False
+        and promotion_eligible
         and resource_gate_passed
         and mechanism_validation_passed is not False
         and not reconciliation_required
@@ -1964,6 +1993,7 @@ def _gate_summary(reports: Sequence[dict[str, Any]]) -> dict[str, bool | None]:
         "performance_passed": performance_passed,
         "resource_gate_passed": resource_gate_passed,
         "mechanism_validation_passed": mechanism_validation_passed,
+        "promotion_eligible": promotion_eligible,
         "reconciliation_required": reconciliation_required,
         "passed": passed,
     }

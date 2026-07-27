@@ -1349,12 +1349,21 @@ def test_large_model_runtime_gates_are_explicit_and_fail_closed(
         baseline_entry={"duration_seconds": baseline},
     )
 
-    assert report["passed"] is (performance_passed is not False)
+    expected_accepted = performance_passed is not False and variant != "gemma3_12b_plt"
+    assert report["passed"] is expected_accepted
     assert report["performance_requirement"] == (
         "fixed_target" if hard_target is not None else "none"
     )
     assert report["performance_target_seconds"] == hard_target
     assert report["performance_passed"] is performance_passed
+    assert report["promotion_eligible"] is (variant != "gemma3_12b_plt")
+    assert report["acceptance_status"] == (
+        "eligible"
+        if variant != "gemma3_12b_plt"
+        else "measurement_only_not_accepted"
+    )
+    if variant == "gemma3_12b_plt":
+        assert "measurement-only" in " ".join(report["failure_reasons"])
     assert report["active_row_fused_target_seconds"] is None
     assert report["framebuffer_comparison"]["peak_fraction_limit"] == 0.9
 
@@ -1913,7 +1922,7 @@ def test_print_report_includes_compact_phase_timings(
     assert "batches=4/30" in output
     assert (
         "parity=PASS performance=PASS stretch=MISS resource=PASS "
-        "mechanism=n/a reconciliation=OK gate=PASS" in output
+        "mechanism=n/a acceptance=ELIGIBLE reconciliation=OK gate=PASS" in output
     )
 
 
@@ -1936,6 +1945,7 @@ def test_print_report_includes_compact_phase_timings(
                 "performance_passed": None,
                 "resource_gate_passed": True,
                 "mechanism_validation_passed": None,
+                "promotion_eligible": True,
                 "reconciliation_required": False,
                 "passed": True,
             },
@@ -1956,6 +1966,7 @@ def test_print_report_includes_compact_phase_timings(
                 "performance_passed": False,
                 "resource_gate_passed": True,
                 "mechanism_validation_passed": None,
+                "promotion_eligible": True,
                 "reconciliation_required": False,
                 "passed": False,
             },
@@ -1976,6 +1987,7 @@ def test_print_report_includes_compact_phase_timings(
                 "performance_passed": True,
                 "resource_gate_passed": True,
                 "mechanism_validation_passed": None,
+                "promotion_eligible": True,
                 "reconciliation_required": False,
                 "passed": False,
             },
@@ -2013,4 +2025,24 @@ def test_gate_summary_rejects_each_active_row_acceptance_failure(
 
     summary = perf_cli._gate_summary([report])
 
+    assert summary["passed"] is False
+
+
+def test_gate_summary_rejects_measurement_only_case_without_runtime_target() -> None:
+    summary = perf_cli._gate_summary(
+        [
+            {
+                "parity_passed": True,
+                "performance_passed": None,
+                "promotion_eligible": False,
+                "runner_returncode": 0,
+                "resource_gate_passed": True,
+                "mechanism_validation_passed": True,
+                "reconciliation_required": False,
+            }
+        ]
+    )
+
+    assert summary["performance_passed"] is None
+    assert summary["promotion_eligible"] is False
     assert summary["passed"] is False
