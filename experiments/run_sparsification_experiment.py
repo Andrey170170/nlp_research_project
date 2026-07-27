@@ -280,9 +280,38 @@ def _summarize_artifacts(run_output_dir: Path) -> dict[str, Any]:
         for step in manifest.get("steps", [])
         if isinstance(step.get("decoder_active_row_residency"), dict)
     ]
+    first_completion = completion_manifests[0] if completion_manifests else {}
+    timing_summary = first_completion.get("timing_summary")
+    if not isinstance(timing_summary, dict):
+        timing_summary = {}
+
+    telemetry_durations_seconds: dict[str, float] = {}
+    for manifest in completion_manifests:
+        for step in manifest.get("steps", []):
+            telemetry_summary = step.get("telemetry_summary")
+            if not isinstance(telemetry_summary, dict):
+                continue
+            durations_ms = telemetry_summary.get(
+                "wall_clock_elapsed_ms_by_name_top",
+                telemetry_summary.get("elapsed_ms_by_name_top"),
+            )
+            if not isinstance(durations_ms, dict):
+                continue
+            for output_name, event_name in (
+                ("attribution_duration_seconds", "attribute.done"),
+                ("phase0_duration_seconds", "phase0.precompute"),
+            ):
+                duration_ms = durations_ms.get(event_name)
+                if (
+                    isinstance(duration_ms, (int, float))
+                    and not isinstance(duration_ms, bool)
+                ):
+                    telemetry_durations_seconds[output_name] = round(
+                        float(duration_ms) / 1000.0,
+                        6,
+                    )
 
     first_prompt_meta = prompt_metas[0] if prompt_metas else {}
-    first_completion = completion_manifests[0] if completion_manifests else {}
     return {
         "prompt_count": len(prompt_metas),
         "completion_count": len(completion_manifests),
@@ -310,6 +339,8 @@ def _summarize_artifacts(run_output_dir: Path) -> dict[str, Any]:
         "decoder_active_row_residency": (
             active_row_diagnostics[-1] if active_row_diagnostics else None
         ),
+        "timing_summary": timing_summary,
+        "telemetry_durations_seconds": telemetry_durations_seconds,
         "feature_semantic_descriptor_status": (
             feature_semantic_descriptor_statuses[-1]
             if feature_semantic_descriptor_statuses
@@ -528,8 +559,25 @@ def run_scenario(
             log_path,
             returncode=result.get("returncode"),
         )
-    result["profiling_summary"] = _extract_benchmark_metrics(log_path)
-    result["artifact_summary"] = _summarize_artifacts(run_output_dir)
+    profiling_summary = _extract_benchmark_metrics(log_path)
+    artifact_summary = _summarize_artifacts(run_output_dir)
+    timing_summary = artifact_summary.get("timing_summary")
+    if isinstance(timing_summary, dict):
+        completion_end_to_end_seconds = timing_summary.get(
+            "completion_end_to_end_seconds"
+        )
+        if (
+            isinstance(completion_end_to_end_seconds, (int, float))
+            and not isinstance(completion_end_to_end_seconds, bool)
+        ):
+            profiling_summary["completion_end_to_end_seconds"] = float(
+                completion_end_to_end_seconds
+            )
+    telemetry_durations = artifact_summary.get("telemetry_durations_seconds")
+    if isinstance(telemetry_durations, dict):
+        profiling_summary.update(telemetry_durations)
+    result["profiling_summary"] = profiling_summary
+    result["artifact_summary"] = artifact_summary
 
     comparison_metrics: dict[str, Any] = {}
     if baseline_check.get("enabled"):

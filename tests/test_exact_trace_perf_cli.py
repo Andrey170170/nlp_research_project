@@ -740,9 +740,9 @@ def test_active_row_mechanism_gate_rejects_invalid_evidence(
 
 @pytest.mark.parametrize(
     ("peak_mib", "passed"),
-    [(26_113.0, True), (26_113.01, False)],
+    [(26_259.0, True), (26_259.01, False)],
 )
-def test_active_row_framebuffer_gate_uses_audited_reference(
+def test_active_row_framebuffer_gate_uses_audited_resident_allowance(
     tmp_path: Path,
     peak_mib: float,
     passed: bool,
@@ -756,6 +756,12 @@ def test_active_row_framebuffer_gate_uses_audited_reference(
     assert report["framebuffer_passed"] is passed
     assert report["resource_gate_passed"] is passed
     assert report["passed"] is passed
+    comparison = report["framebuffer_comparison"]
+    assert comparison["reference_peak_mib"] == 26_113.0
+    assert comparison["expected_resident_bytes"] == 152_428_032
+    assert comparison["allowance_mib"] == 146
+    assert comparison["allowance_rounding"] == "ceil_bytes_to_mib"
+    assert comparison["limit_mib"] == 26_259.0
 
 
 def test_artifact_summary_keeps_active_row_structured_diagnostics(
@@ -775,6 +781,47 @@ def test_artifact_summary_keeps_active_row_structured_diagnostics(
     summary = experiment_runner._summarize_artifacts(tmp_path)
 
     assert summary["decoder_active_row_residency"] == diagnostics
+
+
+def test_artifact_summary_surfaces_authoritative_completion_timings(
+    tmp_path: Path,
+) -> None:
+    prompt_root = tmp_path / "prompt_000"
+    completion_root = prompt_root / "completion_000"
+    completion_root.mkdir(parents=True)
+    (prompt_root / "prompt_meta.json").write_text(
+        json.dumps({"fixture_name": "361_base"})
+    )
+    timing_summary = {
+        "completion_end_to_end_seconds": 84.945389,
+        "totals": {"attribution_seconds": 83.363731},
+        "step_count": 1,
+    }
+    (completion_root / "completion.json").write_text(
+        json.dumps(
+            {
+                "timing_summary": timing_summary,
+                "steps": [
+                    {
+                        "telemetry_summary": {
+                            "wall_clock_elapsed_ms_by_name_top": {
+                                "attribute.done": 83_187.122009,
+                                "phase0.precompute": 15_287.529237,
+                            }
+                        }
+                    }
+                ],
+            }
+        )
+    )
+
+    summary = experiment_runner._summarize_artifacts(tmp_path)
+
+    assert summary["timing_summary"] == timing_summary
+    assert summary["telemetry_durations_seconds"] == {
+        "attribution_duration_seconds": 83.187122,
+        "phase0_duration_seconds": 15.287529,
+    }
 
 
 def test_dry_run_skips_allocation_guard(
@@ -960,6 +1007,9 @@ def test_print_report_includes_compact_phase_timings(
             "speedup": 2.0,
             "performance_target_seconds": 600.0,
             "profiling_summary": {
+                "completion_end_to_end_seconds": 18.75,
+                "attribution_duration_seconds": 17.5,
+                "phase0_duration_seconds": 1.25,
                 "phase3_duration_seconds": 2.5,
                 "phase4_duration_seconds": 15.25,
                 "phase4_avg_batch_seconds": 0.5,
@@ -975,6 +1025,9 @@ def test_print_report_includes_compact_phase_timings(
     )
 
     output = capsys.readouterr().out
+    assert "completion=18.75s" in output
+    assert "attribution=17.50s" in output
+    assert "phase0=1.25s" in output
     assert "phase3=2.50s" in output
     assert "phase4=15.25s" in output
     assert "phase4_batch=0.50s" in output

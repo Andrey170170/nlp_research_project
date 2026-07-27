@@ -68,6 +68,9 @@ PERFORMANCE_STRETCH_TARGET_SECONDS = {
 ACTIVE_ROW_INITIAL_PREDICTED_DURATION_SECONDS = (65.0, 90.0)
 ACTIVE_ROW_FUSED_TARGET_SECONDS = 245.0
 ACTIVE_ROW_EXPECTED_BYTES = 66_158 * 1152 * 2
+ACTIVE_ROW_EXPECTED_MIB_ALLOWANCE = (
+    ACTIVE_ROW_EXPECTED_BYTES + 1024**2 - 1
+) // 1024**2
 ACTIVE_ROW_FRAMEBUFFER_REFERENCE = {
     "run_id": "perf-plt-streaming-baseline-c65536-20260724-03",
     "resource_summary_path": (
@@ -756,11 +759,16 @@ def _active_row_framebuffer_gate(
     if not requested:
         return None, {"status": "not_applicable", "reference": reference}, []
     candidate = resource_summary.get("gpu_framebuffer_peak_mib")
-    limit = reference["gpu_framebuffer_peak_mib"]
+    reference_peak_mib = reference["gpu_framebuffer_peak_mib"]
+    limit = reference_peak_mib + ACTIVE_ROW_EXPECTED_MIB_ALLOWANCE
     comparison = {
         "status": "unavailable",
         "candidate_peak_mib": candidate,
-        "reference_peak_mib": limit,
+        "reference_peak_mib": reference_peak_mib,
+        "expected_resident_bytes": ACTIVE_ROW_EXPECTED_BYTES,
+        "allowance_mib": ACTIVE_ROW_EXPECTED_MIB_ALLOWANCE,
+        "allowance_rounding": "ceil_bytes_to_mib",
+        "limit_mib": limit,
         "reference": reference,
     }
     if not isinstance(candidate, (int, float)):
@@ -776,7 +784,9 @@ def _active_row_framebuffer_gate(
         if passed
         else [
             f"candidate peak framebuffer {float(candidate):.1f} MiB exceeds "
-            f"audited reference {float(limit):.1f} MiB"
+            f"audited limit {float(limit):.1f} MiB "
+            f"(reference {float(reference_peak_mib):.1f} MiB + "
+            f"{ACTIVE_ROW_EXPECTED_MIB_ALLOWANCE} MiB resident-row allowance)"
         ]
     )
     return passed, comparison, reasons
@@ -963,6 +973,9 @@ def _print_report(report: dict[str, Any]) -> None:
 
     profiling = report.get("profiling_summary") or {}
     phase_timings = (
+        f"completion={render(profiling.get('completion_end_to_end_seconds'), 2)}s "
+        f"attribution={render(profiling.get('attribution_duration_seconds'), 2)}s "
+        f"phase0={render(profiling.get('phase0_duration_seconds'), 2)}s "
         f"phase3={render(profiling.get('phase3_duration_seconds'), 2)}s "
         f"phase4={render(profiling.get('phase4_duration_seconds'), 2)}s "
         f"phase4_batch={render(profiling.get('phase4_avg_batch_seconds'), 2)}s "
