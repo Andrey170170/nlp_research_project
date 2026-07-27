@@ -11,6 +11,81 @@
     "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03",
     "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma3-12b-20260710-04"
   ],
+  "source_provenance": {
+    "performance/gemma3_1b": {
+      "cluster": "granite",
+      "gpu": "NVIDIA H200",
+      "workspace_mode": "live",
+      "project_branch": "chpc-granite-baseline-setup",
+      "project_base_commit": "6a91f1b81658e930491f2cb190e8f483354a96cd",
+      "project_dirty_files": [
+        "slurm/exact_trace_bench/trace_baseline_h200.granite.sbatch"
+      ],
+      "sibling_branch": "main",
+      "sibling_commit": "690fc042165da07912e95f0762408d0f9cf55163",
+      "sibling_dirty_files": [],
+      "immutable_snapshot_recorded": false,
+      "caveat": "The source run recorded these live-workspace repository states but no immutable snapshot. These digests freeze the result artifacts; they do not make the live source workspace immutable.",
+      "source_registry_id": "exact-trace-performance-granite-20260709"
+    },
+    "performance/gemma3_4b_plt/361_base": {
+      "source_run_id": "chpc-baseline-gemma-stack-20260709-03",
+      "source_run_metadata": {
+        "run_name": "CHPC Gemma baseline stack",
+        "run_goal": "Capture baseline timings, compact graphs, and diagnostic sidecars for analysis"
+      },
+      "execution_metadata": {
+        "cluster": "granite",
+        "gpu_class": "H200",
+        "slurm": {
+          "account": "rai",
+          "partition": "rai-gpu-grn",
+          "qos": "rai-gpu-grn",
+          "gres": "gpu:h200:1",
+          "mem": "400G",
+          "time": "02:00:00"
+        }
+      },
+      "project_source_state": "not recorded in the referenced result or summary artifact",
+      "sibling_source_state": "not recorded in the referenced result or summary artifact",
+      "workspace_snapshot": "not recorded in the referenced result or summary artifact",
+      "caveat": "Do not infer project or sibling commits from the shared run identifier; only the recorded run and H200 execution metadata are auditable."
+    },
+    "performance/gemma3_12b_plt/361_base": {
+      "source_run_id": "chpc-baseline-gemma3-12b-20260710-04",
+      "source_run_metadata": {
+        "run_name": "CHPC Gemma-3 12B PLT baseline rerun",
+        "run_goal": "Produce CHPC H200 timing and compact graph baselines for 828_base, 361_base, and 94_base with crash-surviving telemetry."
+      },
+      "execution_metadata": {
+        "cluster": "granite",
+        "gpu_class": "H200",
+        "slurm": {
+          "account": "rai",
+          "partition": "rai-gpu-grn",
+          "qos": "rai-gpu-grn",
+          "gres": "gpu:h200:1",
+          "mem": "600G",
+          "time": "08:30:00"
+        }
+      },
+      "workspace_snapshot": {
+        "manifest": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/workspace_snapshots/workspace_20260709_235933_chpc-12b-baseline-20260709-04/.exact_trace_bench_snapshot.json",
+        "read_only": true,
+        "project": {
+          "branch": "chpc-granite-baseline-setup",
+          "commit": "5cb554a75b32f170eff32ae53295f789ec047cf8",
+          "dirty_files": []
+        },
+        "sibling": {
+          "branch": "chpc-incremental-telemetry",
+          "commit": "3ad7fc95a19ff180c1e6d055ea403e0e25356e35",
+          "dirty_files": []
+        }
+      },
+      "caveat": "The immutable snapshot manifest establishes repository source state; the baseline result artifact itself does not repeat that state."
+    }
+  },
   "entries": {
     "performance/gemma3_1b_clt/828_base": {
       "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03/gemma3_1b_clt/granite_baseline_gemma3_1b_clt_828_base_b1000_c4096_cache8g/artifacts",

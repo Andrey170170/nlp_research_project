@@ -379,6 +379,7 @@ def test_case_scenario_reuses_canonical_builder_and_adds_gate() -> None:
 def test_merged_performance_registry_maps_all_suite_case_keys() -> None:
     registry = json.loads(perf_cli.DEFAULT_BASELINE_REGISTRY.read_text())
     entries = registry["entries"]
+    provenance = registry["source_provenance"]
     expected = {case.key for suite in perf_cli.SUITES.values() for case in suite}
 
     assert registry["registry_id"] == "exact-trace-performance-granite-20260726"
@@ -389,6 +390,16 @@ def test_merged_performance_registry_maps_all_suite_case_keys() -> None:
     )
     for key in expected:
         assert len(entries[key]["artifact_sha256"]) == 3
+    assert provenance["performance/gemma3_1b"]["project_base_commit"] == (
+        "6a91f1b81658e930491f2cb190e8f483354a96cd"
+    )
+    assert provenance["performance/gemma3_1b"]["immutable_snapshot_recorded"] is False
+    assert provenance["performance/gemma3_4b_plt/361_base"]["project_source_state"].startswith(
+        "not recorded"
+    )
+    assert provenance["performance/gemma3_12b_plt/361_base"]["workspace_snapshot"][
+        "project"
+    ]["commit"] == "5cb554a75b32f170eff32ae53295f789ec047cf8"
 
 
 @pytest.mark.parametrize(
@@ -1569,6 +1580,8 @@ def test_run_goal_reaches_runner_command_and_manifest(
         )
 
     manifest = json.loads((tmp_path / "goal-run" / "run_manifest.json").read_text())
+    registry = json.loads(perf_cli.DEFAULT_BASELINE_REGISTRY.read_text())
+    assert manifest["baseline_registry_provenance"] == registry["source_provenance"]
     assert manifest["run_goal"] == goal
     assert captured_command[captured_command.index("--run-goal") + 1] == goal
 

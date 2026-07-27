@@ -1640,6 +1640,7 @@ def _run(args: argparse.Namespace) -> int:
         provenance,
         allow_test_environment=args.allow_non_h200_test_only,
     )
+    baseline_registry = read_json(DEFAULT_BASELINE_REGISTRY)
     baseline_entries = _baseline_entries()
     run_root.mkdir(parents=True, exist_ok=False)
     (run_root / "configs").mkdir()
@@ -1660,7 +1661,8 @@ def _run(args: argparse.Namespace) -> int:
         "fidelity": args.fidelity,
         "thresholds": FIDELITY_THRESHOLDS[args.fidelity],
         "baseline_registry": str(DEFAULT_BASELINE_REGISTRY),
-        "baseline_registry_id": read_json(DEFAULT_BASELINE_REGISTRY).get("registry_id"),
+        "baseline_registry_id": baseline_registry.get("registry_id"),
+        "baseline_registry_provenance": baseline_registry.get("source_provenance"),
         "baseline_references": {case.key: baseline_entries[case.key] for case in cases},
         "workspace_mode": "live",
         "live_workspace_rationale": (
