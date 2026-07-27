@@ -412,16 +412,26 @@ def test_active_rows_profiles_match_exact_baseline_and_are_exact_eligible(
     )
 
 
-def test_clt_phase1_cap_profile_is_exact_eligible_and_provider_scoped() -> None:
+@pytest.mark.parametrize(
+    ("profile", "capacity"),
+    [
+        ("clt-phase1-cap128-v1", 128),
+        ("clt-phase1-cap256-v1", 256),
+        ("clt-phase1-cap512-v1", 512),
+    ],
+)
+def test_clt_phase1_cap_profile_is_exact_eligible_and_provider_scoped(
+    profile: str,
+    capacity: int,
+) -> None:
     clt_case = perf_cli.Case("gemma3_1b_clt", "361_base")
     plt_case = perf_cli.Case("gemma3_1b_plt", "361_base")
-    profile = "clt-phase1-cap128-v1"
     expected = {
         "phase1_trace_batch_policy": "cap_effective_batches",
-        "phase1_trace_batch_size_max": 128,
-        "nnsight_session_capacity": 128,
-        "phase3_compute_microbatch_max_rows": 128,
-        "phase4_execution_batch_max_rows": 128,
+        "phase1_trace_batch_size_max": capacity,
+        "nnsight_session_capacity": capacity,
+        "phase3_compute_microbatch_max_rows": capacity,
+        "phase4_execution_batch_max_rows": capacity,
     }
 
     assert perf_cli._candidate_overrides(clt_case, profile) == expected
