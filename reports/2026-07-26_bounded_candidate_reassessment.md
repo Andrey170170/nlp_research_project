@@ -109,18 +109,21 @@ but is slower than the reference and should remain rejected for performance.
 
 ## Disposition
 
-Retain for new active-row transfer tests:
+Final disposition after the paired 4B transfer:
 
 1. model-specific canonical execution at c4096 for exact mechanism transfer;
-2. 4B execution b512 and 12B execution b256 as bounded Phase-4 candidates;
-3. larger decoder chunks as independent bounded Phase-0 candidates;
-4. combined execution-envelope plus high-chunk profiles only after the
-   corresponding isolated mechanisms pass.
+2. 12B execution b256 as an untested bounded Phase-4 candidate only after the
+   12B cache-thrash bottleneck is addressed;
+3. 4B b128/c65536 as an explicit dataset-frozen bounded regime, not a promoted
+   incumbent;
+4. larger decoder chunks as independent bounded Phase-0 candidates.
 
 Do not revive:
 
 - decoder cache, tape, or prefetch after active-row residency;
 - 1B physical/logical batches of 512 or larger;
+- 4B execution b512 under active-row residency: the paired c4096 run was 28%
+  slower than b128 and used roughly three times the framebuffer;
 - semantic feature grouping that did not improve runtime;
 - Phase-0 contiguous range loading for the observed sparse active-row layout.
 
