@@ -412,6 +412,31 @@ def test_active_rows_profiles_match_exact_baseline_and_are_exact_eligible(
     )
 
 
+def test_large_chunk_active_rows_profile_is_exact_eligible_and_single_knob_variant() -> None:
+    plt_case = perf_cli.Case("gemma3_1b_plt", "361_base")
+    clt_case = perf_cli.Case("gemma3_1b_clt", "361_base")
+    incumbent = perf_cli._candidate_overrides(plt_case, "plt-active-rows-v1")
+    candidate = perf_cli._candidate_overrides(plt_case, "plt-active-rows-c65536-v1")
+
+    assert candidate == {**incumbent, "decoder_chunk_size": 65536}
+    assert {
+        key: (incumbent[key], candidate[key])
+        for key in incumbent | candidate
+        if incumbent.get(key) != candidate.get(key)
+    } == {"decoder_chunk_size": (4096, 65536)}
+    assert "phase0_decoder_row_ranges" not in candidate
+    assert "feature_vjp_tape_max_bytes" not in candidate
+    assert candidate["feature_vjp_tape_batch_window"] == 1
+    assert perf_cli._candidate_overrides(clt_case, "plt-active-rows-c65536-v1") == {}
+    assert "plt-active-rows-c65536-v1" not in perf_cli.BOUNDED_ONLY_CANDIDATE_PROFILES
+
+    scenario = perf_cli._case_scenario(
+        plt_case, "exact", "plt-active-rows-c65536-v1"
+    )["scenarios"][0]
+    assert scenario["decoder_chunk_size"] == 65536
+    assert scenario["baseline_check"]["thresholds"] == perf_cli.FIDELITY_THRESHOLDS["exact"]
+
+
 def test_phase0_coalesced_rows_profile_is_exact_eligible_and_provider_scoped() -> None:
     plt_case = perf_cli.Case("gemma3_1b_plt", "361_base")
     clt_case = perf_cli.Case("gemma3_1b_clt", "361_base")
