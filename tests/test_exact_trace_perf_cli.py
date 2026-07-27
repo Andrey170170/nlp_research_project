@@ -207,6 +207,76 @@ def test_host_memory_guard_fails_closed_when_counters_unavailable(
         )
 
 
+def test_host_memory_guard_refuses_to_start_at_existing_usage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        perf_cli,
+        "_slurm_job_memory_cgroup_v1",
+        lambda: tmp_path / "cgroup",
+    )
+    monkeypatch.setattr(
+        perf_cli,
+        "_read_host_memory_sample",
+        lambda _path: {
+            "monotonic_seconds": 1,
+            "usage_bytes": 2 * 1024**3,
+            "limit_bytes": 4 * 1024**3,
+            "failcnt": 0,
+            "total_rss": 1 * 1024**3,
+            "total_cache": 1 * 1024**3,
+            "total_unevictable": 0,
+            "breakdown_total_bytes": 2 * 1024**3,
+        },
+    )
+    monkeypatch.setattr(
+        perf_cli.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: pytest.fail("subprocesses must not start"),
+    )
+
+    with pytest.raises(perf_cli.HostMemoryGuardTriggered, match="refused to start"):
+        perf_cli._stream_runner(
+            ["runner"], output_root=tmp_path, host_memory_stop_gib=2.0
+        )
+
+
+def test_host_memory_guard_rejects_threshold_at_cgroup_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        perf_cli,
+        "_slurm_job_memory_cgroup_v1",
+        lambda: tmp_path / "cgroup",
+    )
+    monkeypatch.setattr(
+        perf_cli,
+        "_read_host_memory_sample",
+        lambda _path: {
+            "monotonic_seconds": 1,
+            "usage_bytes": 1 * 1024**3,
+            "limit_bytes": 2 * 1024**3,
+            "failcnt": 0,
+            "total_rss": 1 * 1024**3,
+            "total_cache": 0,
+            "total_unevictable": 0,
+            "breakdown_total_bytes": 1 * 1024**3,
+        },
+    )
+    monkeypatch.setattr(
+        perf_cli.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: pytest.fail("subprocesses must not start"),
+    )
+
+    with pytest.raises(ValueError, match="must be below"):
+        perf_cli._stream_runner(
+            ["runner"], output_root=tmp_path, host_memory_stop_gib=2.0
+        )
+
+
 def test_host_memory_guard_terminates_runner_group_and_records_summary(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -224,19 +294,32 @@ def test_host_memory_guard_terminates_runner_group_and_records_summary(
         "_slurm_job_memory_cgroup_v1",
         lambda: tmp_path / "cgroup",
     )
+    samples = iter(
+        (
+            {
+                "monotonic_seconds": 0,
+                "usage_bytes": 512 * 1024**2,
+                "limit_bytes": 4 * 1024**3,
+                "failcnt": 0,
+                "total_rss": 500_000_000,
+                "total_cache": 10_000_000,
+                "total_unevictable": 0,
+                "breakdown_total_bytes": 510_000_000,
+            },
+            {
+                "monotonic_seconds": 1,
+                "usage_bytes": 2 * 1024**3,
+                "limit_bytes": 4 * 1024**3,
+                "failcnt": 0,
+                "total_rss": 1_500_000_000,
+                "total_cache": 100_000_000,
+                "total_unevictable": 0,
+                "breakdown_total_bytes": 1_600_000_000,
+            },
+        )
+    )
     monkeypatch.setattr(
-        perf_cli,
-        "_read_host_memory_sample",
-        lambda _path: {
-            "monotonic_seconds": 1,
-            "usage_bytes": 2 * 1024**3,
-            "limit_bytes": 4 * 1024**3,
-            "failcnt": 0,
-            "total_rss": 1_500_000_000,
-            "total_cache": 100_000_000,
-            "total_unevictable": 0,
-            "breakdown_total_bytes": 1_600_000_000,
-        },
+        perf_cli, "_read_host_memory_sample", lambda _path: next(samples)
     )
 
     def fake_killpg(pid: int, sig: int) -> None:
@@ -259,6 +342,67 @@ def test_host_memory_guard_terminates_runner_group_and_records_summary(
     assert summary["host_memory_peak_rss_bytes"] == 1_500_000_000
     assert summary["host_memory_peak_cache_bytes"] == 100_000_000
     assert runner.waited is True
+
+
+def test_host_rss_guard_allows_cache_at_limit_and_records_rss_trigger(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sampler = _FakeProcess()
+    runner = _FakeProcess()
+    processes = iter((sampler, runner))
+    monkeypatch.setattr(
+        perf_cli.subprocess, "Popen", lambda *_args, **_kwargs: next(processes)
+    )
+    monkeypatch.setattr(
+        perf_cli,
+        "_slurm_job_memory_cgroup_v1",
+        lambda: tmp_path / "cgroup",
+    )
+    samples = iter(
+        (
+            {
+                "monotonic_seconds": 0,
+                "usage_bytes": 4 * 1024**3,
+                "limit_bytes": 4 * 1024**3,
+                "failcnt": 0,
+                "total_rss": 1 * 1024**3,
+                "total_cache": 3 * 1024**3,
+                "total_unevictable": 0,
+                "breakdown_total_bytes": 4 * 1024**3,
+            },
+            {
+                "monotonic_seconds": 1,
+                "usage_bytes": 4 * 1024**3,
+                "limit_bytes": 4 * 1024**3,
+                "failcnt": 0,
+                "total_rss": 2 * 1024**3,
+                "total_cache": 2 * 1024**3,
+                "total_unevictable": 0,
+                "breakdown_total_bytes": 4 * 1024**3,
+            },
+        )
+    )
+    monkeypatch.setattr(
+        perf_cli, "_read_host_memory_sample", lambda _path: next(samples)
+    )
+
+    def fake_killpg(pid: int, sig: int) -> None:
+        assert pid == runner.pid
+        if sig == perf_cli.signal.SIGTERM:
+            runner.returncode = -sig
+
+    monkeypatch.setattr(perf_cli.os, "killpg", fake_killpg)
+
+    with pytest.raises(perf_cli.HostMemoryGuardTriggered, match="cgroup_total_rss"):
+        perf_cli._stream_runner(["runner"], output_root=tmp_path, host_rss_stop_gib=2.0)
+
+    summary = json.loads((tmp_path / "resource_summary.json").read_text())
+    assert summary["host_memory_guard_stop_bytes"] is None
+    assert summary["host_memory_rss_guard_stop_bytes"] == 2 * 1024**3
+    assert summary["host_memory_peak_usage_bytes"] == 4 * 1024**3
+    assert summary["host_memory_peak_rss_bytes"] == 2 * 1024**3
+    assert summary["host_memory_guard_trigger"] == "cgroup_total_rss"
 
 
 def test_stream_runner_cleans_up_sampler_when_runner_start_fails(
@@ -394,12 +538,15 @@ def test_merged_performance_registry_maps_all_suite_case_keys() -> None:
         "6a91f1b81658e930491f2cb190e8f483354a96cd"
     )
     assert provenance["performance/gemma3_1b"]["immutable_snapshot_recorded"] is False
-    assert provenance["performance/gemma3_4b_plt/361_base"]["project_source_state"].startswith(
-        "not recorded"
+    assert provenance["performance/gemma3_4b_plt/361_base"][
+        "project_source_state"
+    ].startswith("not recorded")
+    assert (
+        provenance["performance/gemma3_12b_plt/361_base"]["workspace_snapshot"][
+            "project"
+        ]["commit"]
+        == "5cb554a75b32f170eff32ae53295f789ec047cf8"
     )
-    assert provenance["performance/gemma3_12b_plt/361_base"]["workspace_snapshot"][
-        "project"
-    ]["commit"] == "5cb554a75b32f170eff32ae53295f789ec047cf8"
 
 
 @pytest.mark.parametrize(
@@ -593,7 +740,9 @@ def test_large_chunk_active_rows_profile_is_bounded_only_and_single_knob_variant
         "bounded_only",
     ),
     [
-        ("gemma3_4b_plt", "plt-active-rows-4b-c4096-v1", 128, 128, 4096, 4, False),
+        # The c4096 active-row run missed exact parity against the frozen
+        # non-residency 4B reference, while satisfying bounded parity.
+        ("gemma3_4b_plt", "plt-active-rows-4b-c4096-v1", 128, 128, 4096, 4, True),
         (
             "gemma3_4b_plt",
             "plt-active-rows-4b-b512-c4096-v1",
@@ -672,6 +821,7 @@ def test_large_model_active_row_profiles_are_explicitly_scoped(
 @pytest.mark.parametrize(
     "profile",
     [
+        "plt-active-rows-4b-c4096-v1",
         "plt-active-rows-4b-c65536-v1",
         "plt-active-rows-4b-b512-c4096-v1",
         "plt-active-rows-4b-b512-c65536-v1",
@@ -1558,8 +1708,9 @@ def test_run_goal_reaches_runner_command_and_manifest(
         *,
         output_root: Path,
         host_memory_stop_gib: float | None = None,
+        host_rss_stop_gib: float | None = None,
     ) -> int:
-        del output_root, host_memory_stop_gib
+        del output_root, host_memory_stop_gib, host_rss_stop_gib
         captured_command.extend(command)
         raise RuntimeError("stop after command capture")
 
@@ -1580,9 +1731,9 @@ def test_run_goal_reaches_runner_command_and_manifest(
         )
 
     manifest = json.loads((tmp_path / "goal-run" / "run_manifest.json").read_text())
+    assert manifest["run_goal"] == goal
     registry = json.loads(perf_cli.DEFAULT_BASELINE_REGISTRY.read_text())
     assert manifest["baseline_registry_provenance"] == registry["source_provenance"]
-    assert manifest["run_goal"] == goal
     assert captured_command[captured_command.index("--run-goal") + 1] == goal
 
 

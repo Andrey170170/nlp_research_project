@@ -364,6 +364,7 @@ BOUNDED_ONLY_CANDIDATE_PROFILES = frozenset(
         "plt-bounded-tape-prefetch-v1",
         "plt-bounded-frontier-v1",
         "plt-active-rows-c65536-v1",
+        "plt-active-rows-4b-c4096-v1",
         "plt-active-rows-4b-c65536-v1",
         "plt-active-rows-4b-b512-c4096-v1",
         "plt-active-rows-4b-b512-c65536-v1",
@@ -739,12 +740,18 @@ def _host_memory_summary(
     *,
     cgroup_path: Path | None,
     stop_bytes: int | None,
+    rss_stop_bytes: int | None,
     triggered: bool,
+    trigger: str | None,
 ) -> dict[str, Any]:
     return {
-        "host_memory_guard_enabled": stop_bytes is not None,
+        "host_memory_guard_enabled": (
+            stop_bytes is not None or rss_stop_bytes is not None
+        ),
         "host_memory_guard_triggered": triggered,
         "host_memory_guard_stop_bytes": stop_bytes,
+        "host_memory_rss_guard_stop_bytes": rss_stop_bytes,
+        "host_memory_guard_trigger": trigger,
         "host_memory_cgroup_path": str(cgroup_path)
         if cgroup_path is not None
         else None,
@@ -812,6 +819,7 @@ def _stream_runner(
     *,
     output_root: Path,
     host_memory_stop_gib: float | None = None,
+    host_rss_stop_gib: float | None = None,
 ) -> int:
     env = os.environ.copy()
     env.setdefault("PYTHONUNBUFFERED", "1")
@@ -830,11 +838,49 @@ def _stream_runner(
         if host_memory_stop_gib is not None
         else None
     )
+    host_rss_stop_bytes = (
+        int(host_rss_stop_gib * 1024**3) if host_rss_stop_gib is not None else None
+    )
     host_memory_cgroup = (
-        _slurm_job_memory_cgroup_v1() if host_memory_stop_bytes is not None else None
+        _slurm_job_memory_cgroup_v1()
+        if host_memory_stop_bytes is not None or host_rss_stop_bytes is not None
+        else None
     )
     host_memory_samples: list[dict[str, int]] = []
     host_memory_guard_triggered = False
+    host_memory_guard_trigger: str | None = None
+
+    def guard_trigger(sample: dict[str, int]) -> str | None:
+        if (
+            host_memory_stop_bytes is not None
+            and sample["usage_bytes"] >= host_memory_stop_bytes
+        ):
+            return "cgroup_usage"
+        if (
+            host_rss_stop_bytes is not None
+            and sample["total_rss"] >= host_rss_stop_bytes
+        ):
+            return "cgroup_total_rss"
+        return None
+
+    if host_memory_cgroup is not None:
+        initial_sample = _read_host_memory_sample(host_memory_cgroup)
+        host_memory_samples.append(initial_sample)
+        if (
+            host_memory_stop_bytes is not None
+            and host_memory_stop_bytes >= initial_sample["limit_bytes"]
+        ):
+            raise ValueError(
+                "--host-memory-stop-gib must be below the Slurm cgroup memory "
+                f"limit ({initial_sample['limit_bytes'] / 1024**3:.2f} GiB)"
+            )
+        host_memory_guard_trigger = guard_trigger(initial_sample)
+        if host_memory_guard_trigger is not None:
+            host_memory_guard_triggered = True
+            raise HostMemoryGuardTriggered(
+                "host memory guard refused to start the runner: current "
+                f"{host_memory_guard_trigger} is already at its stop threshold"
+            )
     try:
         sampler = subprocess.Popen(
             GPU_SAMPLE_COMMAND,
@@ -854,7 +900,8 @@ def _stream_runner(
             if host_memory_cgroup is not None:
                 sample = _read_host_memory_sample(host_memory_cgroup)
                 host_memory_samples.append(sample)
-                if sample["usage_bytes"] >= int(host_memory_stop_bytes or 0):
+                host_memory_guard_trigger = guard_trigger(sample)
+                if host_memory_guard_trigger is not None:
                     host_memory_guard_triggered = True
                     _stop_process(process, process_group=True)
                     break
@@ -902,7 +949,9 @@ def _stream_runner(
                 host_memory_samples,
                 cgroup_path=host_memory_cgroup,
                 stop_bytes=host_memory_stop_bytes,
+                rss_stop_bytes=host_rss_stop_bytes,
                 triggered=host_memory_guard_triggered,
+                trigger=host_memory_guard_trigger,
             ),
             "sample_file": str(samples_path),
             "gpu_sampling_status": sampling_status,
@@ -928,10 +977,21 @@ def _stream_runner(
     if process is None:
         raise RuntimeError("Trace runner did not start")
     if host_memory_guard_triggered:
+        trigger_value = (
+            host_memory_samples[-1]["usage_bytes"]
+            if host_memory_guard_trigger == "cgroup_usage"
+            else host_memory_samples[-1]["total_rss"]
+        )
+        stop_gib = (
+            host_memory_stop_gib
+            if host_memory_guard_trigger == "cgroup_usage"
+            else host_rss_stop_gib
+        )
         raise HostMemoryGuardTriggered(
             "host memory guard terminated the runner process group at "
-            f"{host_memory_samples[-1]['usage_bytes'] / 1024**3:.2f} GiB "
-            f"(stop threshold {host_memory_stop_gib:.2f} GiB)"
+            f"{trigger_value / 1024**3:.2f} GiB "
+            f"(stop threshold {stop_gib:.2f} GiB; "
+            f"trigger={host_memory_guard_trigger})"
         )
     return int(process.returncode or 0)
 
@@ -1675,6 +1735,7 @@ def _run(args: argparse.Namespace) -> int:
         "execution_evidence": evidence,
         "governor_state_policy": "read_only_no_promotion_or_default_mutation",
         "host_memory_stop_gib": args.host_memory_stop_gib,
+        "host_rss_stop_gib": args.host_rss_stop_gib,
         "cases": [case.key for case in cases],
     }
     write_json(run_root / "run_manifest.json", manifest)
@@ -1715,6 +1776,7 @@ def _run(args: argparse.Namespace) -> int:
                 command,
                 output_root=candidate_root,
                 host_memory_stop_gib=args.host_memory_stop_gib,
+                host_rss_stop_gib=args.host_rss_stop_gib,
             )
             after_case = capture_source_state()
             if after_case != source_state:
@@ -1813,6 +1875,15 @@ def build_parser() -> argparse.ArgumentParser:
             "usage reaches this threshold; disabled by default."
         ),
     )
+    run.add_argument(
+        "--host-rss-stop-gib",
+        type=float,
+        help=(
+            "Terminate the runner process group when Slurm cgroup-v1 total_rss "
+            "reaches this threshold; file cache alone does not trigger it. "
+            "Disabled by default."
+        ),
+    )
     run.add_argument("--dry-run", action="store_true")
     run.add_argument(
         "--allow-non-h200-test-only",
@@ -1828,6 +1899,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _list_suites()
     if args.host_memory_stop_gib is not None and args.host_memory_stop_gib <= 0:
         raise ValueError("--host-memory-stop-gib must be positive")
+    if args.host_rss_stop_gib is not None and args.host_rss_stop_gib <= 0:
+        raise ValueError("--host-rss-stop-gib must be positive")
     return _run(args)
 
 
