@@ -37,6 +37,8 @@ class ProviderLoadPolicy:
     lazy_decoder: bool
     decoder_chunk_size: int
     cross_batch_decoder_cache_bytes: int | None
+    checkpoint_asset_scope: str
+    checkpoint_prefault_budget_bytes: int | None
 
     @classmethod
     def from_scenario(cls, scenario: Mapping[str, Any]) -> ProviderLoadPolicy:
@@ -73,6 +75,8 @@ class ProviderLoadPolicy:
             lazy_decoder=config.lazy_decoder,
             decoder_chunk_size=config.decoder_chunk_size,
             cross_batch_decoder_cache_bytes=config.cross_batch_decoder_cache_bytes,
+            checkpoint_asset_scope=config.checkpoint_asset_scope,
+            checkpoint_prefault_budget_bytes=config.checkpoint_prefault_budget_bytes,
         )
 
     def load(self) -> Any:
@@ -92,6 +96,8 @@ class ProviderLoadPolicy:
             lazy_decoder=self.lazy_decoder,
             decoder_chunk_size=self.decoder_chunk_size,
             cross_batch_decoder_cache_bytes=self.cross_batch_decoder_cache_bytes,
+            checkpoint_asset_scope=self.checkpoint_asset_scope,
+            checkpoint_prefault_budget_bytes=self.checkpoint_prefault_budget_bytes,
         )
 
 
@@ -178,6 +184,8 @@ def load_gemma_scope_2_clt_native(
     lazy_decoder: bool = True,
     decoder_chunk_size: int = 256,
     cross_batch_decoder_cache_bytes: int | None = None,
+    checkpoint_asset_scope: str = "shared",
+    checkpoint_prefault_budget_bytes: int | None = None,
 ):
     """Load GemmaScope-2 CLTs via the fork-native loader."""
     from circuit_tracer.transcoder.cross_layer_transcoder import load_gemma_scope_2_clt
@@ -196,6 +204,8 @@ def load_gemma_scope_2_clt_native(
         "lazy_decoder": lazy_decoder,
         # Fork-only kwarg; kept dynamic until local env is synced to the fork.
         "decoder_chunk_size": decoder_chunk_size,
+        "checkpoint_asset_scope": checkpoint_asset_scope,
+        "checkpoint_prefault_budget_bytes": checkpoint_prefault_budget_bytes,
     }
     if cross_batch_decoder_cache_bytes is not None:
         loader_kwargs["cross_batch_decoder_cache_bytes"] = (
@@ -221,6 +231,8 @@ def load_model(
     decoder_chunk_size: int = 256,
     exact_chunked_decoder: bool = True,
     cross_batch_decoder_cache_bytes: int | None = None,
+    checkpoint_asset_scope: str = "shared",
+    checkpoint_prefault_budget_bytes: int | None = None,
 ) -> ReplacementModel:
     config = resolve_transcoder_load_config(
         model_name=model_name,
@@ -238,6 +250,8 @@ def load_model(
         lazy_decoder=lazy_decoder,
         decoder_chunk_size=decoder_chunk_size,
         cross_batch_decoder_cache_bytes=cross_batch_decoder_cache_bytes,
+        checkpoint_asset_scope=checkpoint_asset_scope,
+        checkpoint_prefault_budget_bytes=checkpoint_prefault_budget_bytes,
     )
     print(f"Loading {config.model_name} with transcoders...")
     print(f"  Device: {DEVICE}, Dtype: {DTYPE}")
@@ -278,6 +292,8 @@ def load_model(
             lazy_decoder=config.lazy_decoder,
             decoder_chunk_size=config.decoder_chunk_size,
             cross_batch_decoder_cache_bytes=config.cross_batch_decoder_cache_bytes,
+            checkpoint_asset_scope=config.checkpoint_asset_scope,
+            checkpoint_prefault_budget_bytes=config.checkpoint_prefault_budget_bytes,
         )
     else:
         from circuit_tracer.transcoder.single_layer_transcoder import (
@@ -331,6 +347,8 @@ def load_model(
             lazy_decoder=config.lazy_decoder,
             decoder_chunk_size=config.decoder_chunk_size,
             cross_batch_decoder_cache_bytes=config.cross_batch_decoder_cache_bytes,
+            checkpoint_asset_scope=config.checkpoint_asset_scope,
+            checkpoint_prefault_budget_bytes=config.checkpoint_prefault_budget_bytes,
         )
     transcoders.exact_chunked_decoder = exact_chunked_decoder
 

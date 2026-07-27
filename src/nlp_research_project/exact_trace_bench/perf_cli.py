@@ -762,10 +762,53 @@ def source_content_sha256(root: Path) -> str:
 
 
 def capture_source_state() -> dict[str, Any]:
-    return {
-        "project": workspace_state(REPO_ROOT),
-        "sibling": workspace_state(SIBLING_ROOT),
-    }
+    try:
+        return {
+            "workspace_mode": "live",
+            "project": workspace_state(REPO_ROOT),
+            "sibling": workspace_state(SIBLING_ROOT),
+        }
+    except (OSError, subprocess.CalledProcessError):
+        manifest_path = REPO_ROOT.parent / ".exact_trace_bench_snapshot.json"
+        try:
+            manifest = read_json(manifest_path)
+        except (OSError, ValueError) as exc:
+            raise RuntimeError(
+                "exact-trace-perf provenance requires git repositories or a valid "
+                "immutable snapshot manifest"
+            ) from exc
+        if not isinstance(manifest, dict) or manifest.get("read_only") is not True:
+            raise RuntimeError("immutable snapshot manifest is missing or not read-only")
+        if Path(str(manifest.get("snapshot_root", ""))).resolve() != REPO_ROOT.resolve():
+            raise RuntimeError("snapshot manifest does not match the project workspace")
+        snapshots = manifest.get("uv_source_snapshots")
+        if not isinstance(snapshots, list):
+            raise RuntimeError("snapshot manifest lacks editable source provenance")
+        sibling_snapshot = next(
+            (
+                item
+                for item in snapshots
+                if isinstance(item, dict)
+                and Path(str(item.get("snapshot_path", ""))).resolve()
+                == SIBLING_ROOT.resolve()
+            ),
+            None,
+        )
+        project_state = manifest.get("repo_state")
+        sibling_state = (
+            sibling_snapshot.get("repo_state")
+            if isinstance(sibling_snapshot, dict)
+            else None
+        )
+        if not isinstance(project_state, dict) or not isinstance(sibling_state, dict):
+            raise RuntimeError("snapshot manifest lacks recorded project/sibling states")
+        return {
+            "workspace_mode": "immutable",
+            "snapshot_manifest_path": str(manifest_path.resolve()),
+            "snapshot_manifest": manifest,
+            "project": project_state,
+            "sibling": sibling_state,
+        }
 
 
 def gpu_provenance(environ: dict[str, str] | None = None) -> dict[str, Any]:
@@ -1099,7 +1142,17 @@ def _case_scenario(
     candidate_profile: str = "canonical",
     *,
     baseline_scope: BaselineScope | None = None,
+    diagnostic_stop_mode: str = "none",
+    diagnostic_stop_phase4_batches: int | None = None,
 ) -> dict[str, Any]:
+    if diagnostic_stop_mode not in {"none", "phase0_probe", "transition_probe"}:
+        raise ValueError("invalid diagnostic stop mode")
+    if diagnostic_stop_phase4_batches is not None and diagnostic_stop_phase4_batches <= 0:
+        raise ValueError("diagnostic stop phase4 batches must be positive")
+    if diagnostic_stop_mode != "transition_probe" and diagnostic_stop_phase4_batches is not None:
+        raise ValueError(
+            "diagnostic stop phase4 batches require transition_probe mode"
+        )
     payload = build_chpc_baseline_config(variant=case.variant, cluster="granite")
     scenario = next(
         row for row in payload["scenarios"] if row["fixture_name"] == case.fixture
@@ -1109,17 +1162,20 @@ def _case_scenario(
     scenario["stage"] = "exact_trace_performance_optimization"
     scenario["tier"] = "sweep"
     scenario["resource_profile"] = "performance_optimization_h200"
+    scenario["diagnostic_stop_mode"] = diagnostic_stop_mode
+    scenario["diagnostic_stop_phase4_batches"] = diagnostic_stop_phase4_batches
     scenario.update(_candidate_overrides(case, candidate_profile))
     selected_variant = CANDIDATE_PROFILES[candidate_profile].variant_for(
         case.provider_capabilities()
     )
     if selected_variant is not None:
         _assert_generated_scenario_pins(scenario, selected_variant.baseline_pins)
+    diagnostic = diagnostic_stop_mode != "none"
     scenario["baseline_check"] = {
-        "enabled": True,
-        "mode": "gate",
+        "enabled": not diagnostic,
+        "mode": "diagnostic" if diagnostic else "gate",
         "registry_key": case.key,
-        "baseline_required": True,
+        "baseline_required": not diagnostic,
         "scope": (
             baseline_scope
             or _baseline_scope(candidate_profile, fidelity)
@@ -1927,6 +1983,31 @@ def _result_report(
         if isinstance(candidate_duration_raw, (int, float))
         else None
     )
+    diagnostic_stop_mode = str(scenario.get("diagnostic_stop_mode", "none"))
+    if diagnostic_stop_mode != "none":
+        return {
+            "case": case.key,
+            "status": result.get("status"),
+            "runner_returncode": runner_returncode,
+            "diagnostic_stop_mode": diagnostic_stop_mode,
+            "diagnostic_stop_phase4_batches": scenario.get(
+                "diagnostic_stop_phase4_batches"
+            ),
+            "diagnostic_report": result.get("artifact_summary") or {},
+            "profiling_summary": result.get("profiling_summary") or {},
+            "candidate_duration_seconds": candidate_duration,
+            "baseline_duration_seconds": None,
+            "speedup": None,
+            "parity_passed": None,
+            "performance_passed": None,
+            "resource_gate_passed": None,
+            "mechanism_validation_passed": None,
+            "promotion_eligible": False,
+            "reconciliation_required": False,
+            "scientific_acceptance_attempted": False,
+            "acceptance_status": "diagnostic_not_scientific",
+            "passed": False,
+        }
     baseline_duration = float(baseline_entry["duration_seconds"])
     metrics = {
         label: comparison.get(metric_key) for label, metric_key in METRIC_KEYS.items()
@@ -2139,7 +2220,10 @@ def _print_report(report: dict[str, Any]) -> None:
     performance_status = (
         "n/a" if performance_gate is None else ("PASS" if performance_gate else "FAIL")
     )
-    resource_status = "PASS" if report.get("resource_gate_passed") else "FAIL"
+    resource_gate = report.get("resource_gate_passed")
+    resource_status = (
+        "n/a" if resource_gate is None else ("PASS" if resource_gate else "FAIL")
+    )
     mechanism_gate = report.get("mechanism_validation_passed")
     mechanism_status = (
         "n/a" if mechanism_gate is None else ("PASS" if mechanism_gate else "FAIL")
@@ -2168,9 +2252,9 @@ def _print_report(report: dict[str, Any]) -> None:
         f"edge_sign={render(report.get('edge_sign_agreement'), 6)} "
         f"edge_signed_l1={render(report.get('edge_signed_l1_deviation'), 6)} "
         f"token={render(report.get('target_token_match'), 0)} "
-        f"parity={'PASS' if report.get('parity_passed') else 'FAIL'} "
+        f"parity={'n/a' if report.get('parity_passed') is None else ('PASS' if report.get('parity_passed') else 'FAIL')} "
         f"performance={performance_status} "
-        f"stretch={'PASS' if report.get('performance_stretch_passed') else 'MISS'} "
+        f"stretch={'n/a' if report.get('scientific_acceptance_attempted') is False else ('PASS' if report.get('performance_stretch_passed') else 'MISS')} "
         f"resource={resource_status} "
         f"mechanism={mechanism_status} "
         f"acceptance={acceptance_status} "
@@ -2180,6 +2264,20 @@ def _print_report(report: dict[str, Any]) -> None:
 
 
 def _gate_summary(reports: Sequence[dict[str, Any]]) -> dict[str, bool | None]:
+    if reports and all(report.get("scientific_acceptance_attempted") is False for report in reports):
+        return {
+            "parity_passed": None,
+            "performance_passed": None,
+            "resource_gate_passed": None,
+            "mechanism_validation_passed": None,
+            "promotion_eligible": False,
+            "reconciliation_required": False,
+            "scientific_acceptance_attempted": False,
+            "diagnostic_execution_passed": all(
+                report["runner_returncode"] == 0 for report in reports
+            ),
+            "passed": False,
+        }
     parity_passed = all(report["parity_passed"] for report in reports)
     performance_results = [
         report["performance_passed"]
@@ -2225,6 +2323,7 @@ def _gate_summary(reports: Sequence[dict[str, Any]]) -> dict[str, bool | None]:
 
 def _run(args: argparse.Namespace) -> int:
     cases = SUITES[args.suite]
+    diagnostic = args.diagnostic_stop_mode != "none"
     profile_variants = {
         case.key: _profile_variant(case, args.candidate_profile) for case in cases
     }
@@ -2239,14 +2338,17 @@ def _run(args: argparse.Namespace) -> int:
         if baseline_registry_path == DEFAULT_BASELINE_REGISTRY
         else _baseline_entries(baseline_registry_path)
     )
-    missing_baselines = [case.key for case in cases if case.key not in baseline_entries]
-    if missing_baselines:
-        raise ValueError(
-            f"{scope.value} baseline is not registered for: "
-            + ", ".join(missing_baselines)
-        )
+    if not diagnostic:
+        missing_baselines = [
+            case.key for case in cases if case.key not in baseline_entries
+        ]
+        if missing_baselines:
+            raise ValueError(
+                f"{scope.value} baseline is not registered for: "
+                + ", ".join(missing_baselines)
+            )
     verified_baseline_pins: dict[str, dict[str, Any]] = {}
-    if args.fidelity == "exact":
+    if args.fidelity == "exact" and not diagnostic:
         for case in cases:
             verified_baseline_pins[case.key] = _validate_exact_baseline_pins(
                 case=case,
@@ -2310,13 +2412,17 @@ def _run(args: argparse.Namespace) -> int:
         "baseline_registry": str(baseline_registry_path),
         "baseline_registry_id": baseline_registry.get("registry_id"),
         "baseline_registry_provenance": baseline_registry.get("source_provenance"),
-        "baseline_references": {case.key: baseline_entries[case.key] for case in cases},
+        "baseline_references": {
+            case.key: baseline_entries.get(case.key) for case in cases
+        },
         "verified_baseline_pins": verified_baseline_pins,
-        "workspace_mode": "live",
+        "workspace_mode": source_state.get("workspace_mode", "live"),
         "live_workspace_rationale": (
             "The isolated optimization worktree is the candidate under test; "
             "the CLI freezes and verifies both repository states for each case."
-        ),
+        )
+        if source_state.get("workspace_mode", "live") == "live"
+        else None,
         "no_edits_during_run_enforced": True,
         "source_state_before": source_state,
         "execution_provenance": provenance,
@@ -2324,6 +2430,9 @@ def _run(args: argparse.Namespace) -> int:
         "governor_state_policy": "read_only_no_promotion_or_default_mutation",
         "host_memory_stop_gib": args.host_memory_stop_gib,
         "host_rss_stop_gib": args.host_rss_stop_gib,
+        "diagnostic_stop_mode": args.diagnostic_stop_mode,
+        "diagnostic_stop_phase4_batches": args.diagnostic_stop_phase4_batches,
+        "scientific_acceptance_attempted": not diagnostic,
         "cases": [case.key for case in cases],
     }
     write_json(run_root / "run_manifest.json", manifest)
@@ -2355,6 +2464,8 @@ def _run(args: argparse.Namespace) -> int:
                     args.fidelity,
                     args.candidate_profile,
                     baseline_scope=scope,
+                    diagnostic_stop_mode=args.diagnostic_stop_mode,
+                    diagnostic_stop_phase4_batches=args.diagnostic_stop_phase4_batches,
                 ),
             )
             candidate_root = run_root / "candidates" / f"{case.variant}_{case.fixture}"
@@ -2387,7 +2498,7 @@ def _run(args: argparse.Namespace) -> int:
             report = _result_report(
                 case,
                 candidate_root=candidate_root,
-                baseline_entry=baseline_entries[case.key],
+                baseline_entry=baseline_entries.get(case.key, {}),
                 runner_returncode=returncode,
             )
             reports.append(report)
@@ -2401,7 +2512,7 @@ def _run(args: argparse.Namespace) -> int:
                     "reports": reports,
                 },
             )
-            if returncode != 0 and report["parity_passed"]:
+            if returncode != 0 and report["parity_passed"] is True:
                 raise RuntimeError(
                     f"Existing sparsification runner exited {returncode} after a "
                     f"passing comparison for {case.key}"
@@ -2430,6 +2541,8 @@ def _run(args: argparse.Namespace) -> int:
     }
     write_json(run_root / "performance_report.json", summary)
     print(f"Report: {run_root / 'performance_report.json'}")
+    if diagnostic:
+        return 0 if summary.get("diagnostic_execution_passed") is True else 1
     return 0 if summary["passed"] else 1
 
 
@@ -2478,6 +2591,12 @@ def build_parser() -> argparse.ArgumentParser:
             "Disabled by default."
         ),
     )
+    run.add_argument(
+        "--diagnostic-stop-mode",
+        choices=("none", "phase0_probe", "transition_probe"),
+        default="none",
+    )
+    run.add_argument("--diagnostic-stop-phase4-batches", type=int)
     run.add_argument("--dry-run", action="store_true")
     run.add_argument(
         "--allow-non-h200-test-only",
@@ -2495,6 +2614,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise ValueError("--host-memory-stop-gib must be positive")
     if args.host_rss_stop_gib is not None and args.host_rss_stop_gib <= 0:
         raise ValueError("--host-rss-stop-gib must be positive")
+    if (
+        args.diagnostic_stop_phase4_batches is not None
+        and args.diagnostic_stop_phase4_batches <= 0
+    ):
+        raise ValueError("--diagnostic-stop-phase4-batches must be positive")
+    if (
+        args.diagnostic_stop_mode != "transition_probe"
+        and args.diagnostic_stop_phase4_batches is not None
+    ):
+        raise ValueError(
+            "--diagnostic-stop-phase4-batches requires --diagnostic-stop-mode transition_probe"
+        )
     return _run(args)
 
 

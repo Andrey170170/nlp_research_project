@@ -8,6 +8,9 @@ from types import ModuleType
 
 def test_plt_loader_dispatches_to_transcoder_set(monkeypatch, tmp_path) -> None:
     calls: dict[str, object] = {}
+    module_name = "nlp_research_project.exact_trace_bench.trace_runtime.provider"
+    provider = importlib.import_module(module_name)
+    provider = importlib.reload(provider)
 
     def fake_snapshot_download(*args, **kwargs):
         if args:
@@ -83,9 +86,7 @@ def test_plt_loader_dispatches_to_transcoder_set(monkeypatch, tmp_path) -> None:
         "circuit_tracer.transcoder.provider",
         fake_provider,
     )
-    module_name = "nlp_research_project.exact_trace_bench.trace_runtime.provider"
-    monkeypatch.delitem(sys.modules, module_name, raising=False)
-    provider = importlib.import_module(module_name)
+    provider = importlib.reload(provider)
 
     model = provider.load_model(
         transcoder_provider_family="gemmascope2-plt-4b-small-affine",
@@ -110,6 +111,8 @@ def test_plt_loader_dispatches_to_transcoder_set(monkeypatch, tmp_path) -> None:
     assert load_kwargs["lazy_decoder"] is True
     assert load_kwargs["decoder_chunk_size"] == 128
     assert load_kwargs["cross_batch_decoder_cache_bytes"] == 0
+    assert load_kwargs["checkpoint_asset_scope"] == "shared"
+    assert load_kwargs["checkpoint_prefault_budget_bytes"] is None
     assert load_kwargs["feature_input_hook"] == "mlp.hook_in"
     assert load_kwargs["feature_output_hook"] == "hook_mlp_out"
     assert sorted(load_kwargs["transcoder_paths"]) == list(range(34))
@@ -125,6 +128,9 @@ def test_plt_loader_dispatches_to_transcoder_set(monkeypatch, tmp_path) -> None:
 
 def test_clt_loader_dispatches_to_native_clt_loader(monkeypatch, tmp_path) -> None:
     calls: dict[str, object] = {}
+    module_name = "nlp_research_project.exact_trace_bench.trace_runtime.provider"
+    provider = importlib.import_module(module_name)
+    provider = importlib.reload(provider)
     clt_dir = tmp_path / "clt" / "width_262k_l0_medium_affine"
     clt_dir.mkdir(parents=True)
     for layer in range(2):
@@ -178,9 +184,7 @@ def test_clt_loader_dispatches_to_native_clt_loader(monkeypatch, tmp_path) -> No
         "circuit_tracer.transcoder.cross_layer_transcoder",
         fake_clt,
     )
-    module_name = "nlp_research_project.exact_trace_bench.trace_runtime.provider"
-    monkeypatch.delitem(sys.modules, module_name, raising=False)
-    provider = importlib.import_module(module_name)
+    provider = importlib.reload(provider)
 
     provider.load_gemma_scope_2_clt_native(paths={0: ""})
     assert calls["load_gemma_scope_2_clt"]["paths"] == {0: ""}

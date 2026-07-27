@@ -669,6 +669,66 @@ def test_case_scenario_reuses_canonical_builder_and_adds_gate() -> None:
     }
 
 
+def test_diagnostic_case_scenario_disables_scientific_acceptance() -> None:
+    case = perf_cli.Case("gemma3_1b_plt", "361_base")
+    scenario = perf_cli._case_scenario(
+        case,
+        "bounded",
+        diagnostic_stop_mode="transition_probe",
+        diagnostic_stop_phase4_batches=2,
+    )["scenarios"][0]
+
+    assert scenario["diagnostic_stop_mode"] == "transition_probe"
+    assert scenario["diagnostic_stop_phase4_batches"] == 2
+    assert scenario["baseline_check"]["enabled"] is False
+    assert scenario["baseline_check"]["mode"] == "diagnostic"
+    assert scenario["baseline_check"]["baseline_required"] is False
+
+
+def test_diagnostic_stop_phase4_batches_requires_transition_probe() -> None:
+    with pytest.raises(ValueError, match="requires --diagnostic-stop-mode"):
+        perf_cli.main(
+            [
+                "run",
+                "plt-hard",
+                "--diagnostic-stop-phase4-batches",
+                "2",
+                "--dry-run",
+            ]
+        )
+
+
+def test_snapshot_provenance_uses_manifest_without_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "project"
+    sibling = tmp_path / "circuit-tracer_chunked"
+    project.mkdir()
+    sibling.mkdir()
+    manifest = {
+        "read_only": True,
+        "snapshot_root": str(project),
+        "repo_state": {"commit": "project-commit", "dirty_files": []},
+        "uv_source_snapshots": [
+            {
+                "package_name": "circuit-tracer",
+                "snapshot_path": str(sibling),
+                "repo_state": {"commit": "sibling-commit", "dirty_files": []},
+            }
+        ],
+    }
+    (tmp_path / ".exact_trace_bench_snapshot.json").write_text(json.dumps(manifest))
+    monkeypatch.setattr(perf_cli, "REPO_ROOT", project)
+    monkeypatch.setattr(perf_cli, "SIBLING_ROOT", sibling)
+
+    state = perf_cli.capture_source_state()
+
+    assert state["workspace_mode"] == "immutable"
+    assert state["project"] == manifest["repo_state"]
+    assert state["sibling"] == manifest["uv_source_snapshots"][0]["repo_state"]
+    assert state["snapshot_manifest"] == manifest
+
+
 def test_merged_performance_registry_maps_all_suite_case_keys() -> None:
     registry = json.loads(perf_cli.DEFAULT_BASELINE_REGISTRY.read_text())
     entries = registry["entries"]
