@@ -122,6 +122,24 @@ def test_mapped_decoder_row_profile_refuses_provider_without_row_source() -> Non
     assert profile.variant_for(no_source) is None
 
 
+def test_mapped_decoder_row_source_requires_known_gemmascope_lazy_contract() -> None:
+    scenario = {
+        "transcoder_architecture": "plt",
+        "transcoder_provider_family": "gemmascope2-plt-4b-small",
+        "lazy_decoder": True,
+        "decoder_chunk_size": 4096,
+    }
+    generic_same_layer = {
+        **scenario,
+        "transcoder_provider_family": "unknown-plt-provider",
+    }
+    eager_same_layer = {**scenario, "lazy_decoder": False}
+
+    assert perf_cli._supports_mapped_decoder_row_source(scenario) is True
+    assert perf_cli._supports_mapped_decoder_row_source(generic_same_layer) is False
+    assert perf_cli._supports_mapped_decoder_row_source(eager_same_layer) is False
+
+
 def test_mechanism_and_scientific_baseline_registries_are_separate() -> None:
     scientific = json.loads(perf_cli.DEFAULT_BASELINE_REGISTRY.read_text())
     mechanism = json.loads(
@@ -1388,6 +1406,7 @@ def _active_row_diagnostics(
     effective: bool = True,
     phase0_ranges: bool = False,
     phase0_ranges_effective: bool = True,
+    phase0_backend: str = "coalesced_ranges",
 ) -> dict[str, object]:
     resident_bytes = perf_cli.ACTIVE_ROW_EXPECTED_BYTES
     diagnostics = {
@@ -1446,7 +1465,17 @@ def _active_row_diagnostics(
                 100_000_000 if phase0_ranges_effective else 15_665_725_440
             ),
             "baseline_full_page_bytes": 15_665_725_440,
+            "backend": phase0_backend,
+            "backend_request_count": 32 if phase0_ranges_effective else 0,
+            "mapping_count": 16 if phase0_ranges_effective else 0,
+            "block_count": 512 if phase0_ranges_effective else 0,
+            "read_count": 0,
+            "backend_materialized_bytes": (
+                100_000_000 if phase0_ranges_effective else 15_665_725_440
+            ),
         }
+        if phase0_backend == "mapped_safetensors":
+            diagnostics["phase0_decoder_row_ranges"]["range_request_count"] = 0
     return diagnostics
 
 
@@ -1663,6 +1692,44 @@ def test_phase0_coalesced_row_report_rejects_explicit_exact_fallback(
     assert "fell back to exact full-page reads" in " ".join(
         report["mechanism_failure_reasons"]
     )
+
+
+def test_phase0_mapped_safetensors_report_accepts_zero_range_requests(
+    tmp_path: Path,
+) -> None:
+    diagnostics = _active_row_diagnostics(
+        phase0_ranges=True,
+        phase0_backend="mapped_safetensors",
+    )
+    report = _active_row_report(
+        tmp_path,
+        duration_seconds=75.0,
+        diagnostics=diagnostics,
+        phase0_ranges_requested=True,
+    )
+
+    assert report["passed"] is True
+    assert report["mechanism_validation_passed"] is True
+    assert report["phase0_decoder_row_ranges"]["backend_request_count"] == 32
+    assert report["phase0_decoder_row_ranges"]["range_request_count"] == 0
+
+
+def test_phase0_mapped_safetensors_gate_refuses_missing_backend_requests() -> None:
+    diagnostics = _active_row_diagnostics(
+        phase0_ranges=True,
+        phase0_backend="mapped_safetensors",
+    )
+    diagnostics["phase0_decoder_row_ranges"]["backend_request_count"] = 0
+
+    passed, reasons = perf_cli._active_row_mechanism_gate(
+        True,
+        diagnostics,
+        1024**3,
+        phase0_ranges_requested=True,
+    )
+
+    assert passed is False
+    assert "backend request count must be positive" in " ".join(reasons)
 
 
 @pytest.mark.parametrize(

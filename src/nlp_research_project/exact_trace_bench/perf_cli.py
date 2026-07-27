@@ -701,6 +701,21 @@ GPU_SAMPLE_COMMAND = (
 )
 
 
+def _supports_mapped_decoder_row_source(scenario: Mapping[str, Any]) -> bool:
+    """Return whether the generated scenario has the verified mapped-row contract."""
+    provider_family = scenario.get("transcoder_provider_family")
+    decoder_chunk_size = scenario.get("decoder_chunk_size")
+    return (
+        scenario.get("transcoder_architecture") == "plt"
+        and isinstance(provider_family, str)
+        and provider_family.startswith("gemmascope2-plt-")
+        and scenario.get("lazy_decoder") is True
+        and isinstance(decoder_chunk_size, int)
+        and not isinstance(decoder_chunk_size, bool)
+        and decoder_chunk_size > 0
+    )
+
+
 @dataclass(frozen=True)
 class Case:
     variant: str
@@ -723,6 +738,7 @@ class Case:
             int(layer_count_raw) if isinstance(layer_count_raw, int) else None
         )
         same_layer = architecture == "plt"
+        supports_mapped_rows = _supports_mapped_decoder_row_source(scenario)
         return ProviderCapabilities(
             architecture=architecture,
             decoder_output_topology=("same_layer" if same_layer else "cross_layer"),
@@ -730,7 +746,7 @@ class Case:
             supports_exact_chunked_provider=True,
             supports_active_decoder_row_residency=same_layer,
             supports_phase0_decoder_row_ranges=same_layer,
-            supports_decoder_row_source=same_layer,
+            supports_decoder_row_source=supports_mapped_rows,
         )
 
 
@@ -1888,31 +1904,68 @@ def _active_row_mechanism_gate(
             reasons.append(
                 f"effective Phase0 decoder-row ranges recorded fallback: {fallback_reason}"
             )
-        range_count = range_diagnostics.get("range_request_count")
         range_unique_rows = range_diagnostics.get("unique_row_count")
-        if (
-            not is_int(range_count)
-            or range_count <= 0
-            or not is_int(range_unique_rows)
-            or range_unique_rows <= 0
-            or range_count * 2 > range_unique_rows
-        ):
-            reasons.append(
-                "Phase0 decoder range count must be positive and at most half "
-                "the unique-row count"
-            )
-        logical_bytes = range_diagnostics.get("logical_materialized_bytes")
+        backend = range_diagnostics.get("backend")
         baseline_page_bytes = range_diagnostics.get("baseline_full_page_bytes")
-        if (
-            not is_int(logical_bytes)
-            or logical_bytes <= 0
-            or not is_int(baseline_page_bytes)
-            or baseline_page_bytes <= 0
-            or logical_bytes >= baseline_page_bytes
-        ):
+        if backend == "mapped_safetensors":
+            backend_requests = range_diagnostics.get("backend_request_count")
+            mapping_count = range_diagnostics.get("mapping_count")
+            block_count = range_diagnostics.get("block_count")
+            explicit_read_count = range_diagnostics.get("read_count")
+            backend_materialized_bytes = range_diagnostics.get(
+                "backend_materialized_bytes"
+            )
+            if not is_int(backend_requests) or backend_requests <= 0:
+                reasons.append(
+                    "mapped safetensors backend request count must be positive"
+                )
+            if not is_int(mapping_count) or mapping_count <= 0:
+                reasons.append("mapped safetensors mapping count must be positive")
+            if not is_int(block_count) or block_count <= 0:
+                reasons.append("mapped safetensors block count must be positive")
+            if not is_int(explicit_read_count) or explicit_read_count != 0:
+                reasons.append(
+                    "mapped safetensors must use mapped gathers without explicit reads"
+                )
+            if (
+                not is_int(backend_materialized_bytes)
+                or backend_materialized_bytes <= 0
+                or not is_int(baseline_page_bytes)
+                or baseline_page_bytes <= 0
+                or backend_materialized_bytes >= baseline_page_bytes
+            ):
+                reasons.append(
+                    "mapped safetensors backend materialized bytes must be positive "
+                    "and below baseline full-page bytes"
+                )
+        elif backend == "coalesced_ranges":
+            range_count = range_diagnostics.get("range_request_count")
+            if (
+                not is_int(range_count)
+                or range_count <= 0
+                or not is_int(range_unique_rows)
+                or range_unique_rows <= 0
+                or range_count * 2 > range_unique_rows
+            ):
+                reasons.append(
+                    "Phase0 decoder range count must be positive and at most half "
+                    "the unique-row count"
+                )
+            logical_bytes = range_diagnostics.get("logical_materialized_bytes")
+            if (
+                not is_int(logical_bytes)
+                or logical_bytes <= 0
+                or not is_int(baseline_page_bytes)
+                or baseline_page_bytes <= 0
+                or logical_bytes >= baseline_page_bytes
+            ):
+                reasons.append(
+                    "Phase0 logical materialized bytes must be positive and below "
+                    "baseline full-page bytes"
+                )
+        else:
             reasons.append(
-                "Phase0 logical materialized bytes must be positive and below "
-                "baseline full-page bytes"
+                "Phase0 decoder-row ranges must record a recognized backend"
             )
     return not reasons, reasons
 
