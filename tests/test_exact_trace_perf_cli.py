@@ -723,6 +723,21 @@ def test_noncanonical_profile_rejects_suite_with_no_applicable_case(
     )
 
 
+def test_mixed_large_suite_rejects_model_specific_profile(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="does not apply to every case"):
+        perf_cli.main(
+            [
+                "run",
+                "plt-large",
+                "--candidate-profile",
+                "plt-active-rows-4b-c4096-v1",
+                "--dry-run",
+                "--output-root",
+                str(tmp_path),
+            ]
+        )
+
+
 def test_phase0_coalesced_rows_profile_is_exact_eligible_and_provider_scoped() -> None:
     plt_case = perf_cli.Case("gemma3_1b_plt", "361_base")
     clt_case = perf_cli.Case("gemma3_1b_clt", "361_base")

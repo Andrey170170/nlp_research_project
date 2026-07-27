@@ -1601,6 +1601,16 @@ def _run(args: argparse.Namespace) -> int:
             + ", ".join(sorted(allowed_variants))
         )
     if (
+        args.suite == "plt-large"
+        and allowed_variants
+        and not all(case.variant in allowed_variants for case in cases)
+    ):
+        raise ValueError(
+            f"candidate profile {args.candidate_profile!r} does not apply to every "
+            "case in the mixed-model 'plt-large' suite; run the model-specific "
+            "'plt-4b' and 'plt-12b' suites separately"
+        )
+    if (
         args.fidelity == "exact"
         and args.candidate_profile in BOUNDED_ONLY_CANDIDATE_PROFILES
     ):
