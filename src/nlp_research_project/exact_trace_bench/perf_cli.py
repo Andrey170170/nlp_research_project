@@ -10,8 +10,9 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from .config import DEFAULT_SCRATCH_ROOT, REPO_ROOT
 from .io_utils import read_json, write_json
@@ -26,6 +27,12 @@ DEFAULT_BASELINE_REGISTRY = (
     / "experiments"
     / "baselines"
     / "exact_trace_performance_granite_20260726.json"
+)
+DEFAULT_MECHANISM_BASELINE_REGISTRY = (
+    REPO_ROOT
+    / "experiments"
+    / "baselines"
+    / "exact_trace_mechanism_granite_20260727.json"
 )
 RUNNER = REPO_ROOT / "experiments" / "run_sparsification_experiment.py"
 SIBLING_ROOT = REPO_ROOT.parent / "circuit-tracer_chunked"
@@ -61,6 +68,7 @@ DEFAULT_RUN_GOAL = (
 )
 PERFORMANCE_TARGET_SECONDS = {
     "performance/gemma3_1b_plt/361_base": 600.0,
+    "performance/gemma3_4b_plt/361_base": 600.0,
 }
 PERFORMANCE_STRETCH_TARGET_SECONDS = {
     "performance/gemma3_1b_plt/361_base": 300.0,
@@ -81,10 +89,6 @@ ACTIVE_ROW_FRAMEBUFFER_REFERENCE = {
     ),
     "gpu_framebuffer_peak_mib": 26113.0,
 }
-LARGE_MODEL_ACTIVE_ROW_CAP_BYTES = {
-    "gemma3_4b_plt": 4 * 1024**3,
-    "gemma3_12b_plt": 8 * 1024**3,
-}
 LARGE_MODEL_HBM_PEAK_FRACTION_LIMIT = 0.90
 _PLT_BOUNDED_TAPE_V1 = {
     "decoder_chunk_size": 65536,
@@ -96,7 +100,7 @@ _PLT_BOUNDED_TAPE_V1 = {
     "feature_vjp_tape_batch_window": 2,
     "feature_vjp_tape_max_bytes": 12 * 1024**3,
 }
-CANDIDATE_PROFILES: dict[str, dict[str, Any]] = {
+_LEGACY_CANDIDATE_OVERRIDES: dict[str, dict[str, Any]] = {
     "canonical": {},
     "clt-phase1-cap128-v1": {
         "phase1_trace_batch_policy": "cap_effective_batches",
@@ -331,49 +335,282 @@ CANDIDATE_PROFILES: dict[str, dict[str, Any]] = {
         "decoder_active_row_max_bytes": 8 * 1024**3,
     },
 }
-PLT_1B_VARIANT = frozenset({"gemma3_1b_plt"})
-CANDIDATE_PROFILE_ALLOWED_VARIANTS: dict[str, frozenset[str]] = {
-    "canonical": frozenset(),
+
+
+class BaselineScope(str, Enum):
+    SCIENTIFIC = "frozen_scientific"
+    MECHANISM = "same_regime_mechanism"
+
+
+@dataclass(frozen=True)
+class ProviderCapabilities:
+    architecture: str
+    decoder_output_topology: str
+    layer_count: int | None
+    supports_exact_chunked_provider: bool
+    supports_active_decoder_row_residency: bool
+    supports_phase0_decoder_row_ranges: bool
+
+
+@dataclass(frozen=True)
+class CapabilityRequirements:
+    architecture: str | None = None
+    decoder_output_topology: str | None = None
+    supports_exact_chunked_provider: bool | None = None
+    supports_active_decoder_row_residency: bool | None = None
+    supports_phase0_decoder_row_ranges: bool | None = None
+    minimum_layer_count: int | None = None
+    maximum_layer_count: int | None = None
+
+    def mismatch_reasons(self, capabilities: ProviderCapabilities) -> tuple[str, ...]:
+        reasons: list[str] = []
+        for field in (
+            "architecture",
+            "decoder_output_topology",
+            "supports_exact_chunked_provider",
+            "supports_active_decoder_row_residency",
+            "supports_phase0_decoder_row_ranges",
+        ):
+            expected = getattr(self, field)
+            observed = getattr(capabilities, field)
+            if expected is not None and observed != expected:
+                reasons.append(f"{field} requires {expected!r}, observed {observed!r}")
+        if (
+            self.minimum_layer_count is not None
+            and (
+                capabilities.layer_count is None
+                or capabilities.layer_count < self.minimum_layer_count
+            )
+        ):
+            reasons.append(
+                f"layer_count requires >= {self.minimum_layer_count}, "
+                f"observed {capabilities.layer_count!r}"
+            )
+        if (
+            self.maximum_layer_count is not None
+            and (
+                capabilities.layer_count is None
+                or capabilities.layer_count > self.maximum_layer_count
+            )
+        ):
+            reasons.append(
+                f"layer_count requires <= {self.maximum_layer_count}, "
+                f"observed {capabilities.layer_count!r}"
+            )
+        return tuple(reasons)
+
+
+@dataclass(frozen=True)
+class SemanticBaselinePins:
+    exact_trace_internal_dtype: str = "fp32"
+
+
+@dataclass(frozen=True)
+class CompatibilityBaselinePins:
+    decoder_chunk_size: int = 4096
+
+
+@dataclass(frozen=True)
+class BaselinePins:
+    semantic: SemanticBaselinePins = SemanticBaselinePins()
+    compatibility_mixed: CompatibilityBaselinePins = CompatibilityBaselinePins()
+
+    def as_overrides(self) -> dict[str, Any]:
+        return {
+            "exact_trace_internal_dtype": self.semantic.exact_trace_internal_dtype,
+            "decoder_chunk_size": self.compatibility_mixed.decoder_chunk_size,
+        }
+
+
+@dataclass(frozen=True)
+class PhysicalControls:
+    values: tuple[tuple[str, Any], ...] = ()
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, Any]) -> PhysicalControls:
+        if "decoder_chunk_size" in values or "exact_trace_internal_dtype" in values:
+            raise ValueError(
+                "semantic and compatibility-mixed values belong in baseline_pins"
+            )
+        return cls(tuple(values.items()))
+
+    def as_overrides(self) -> dict[str, Any]:
+        return dict(self.values)
+
+
+@dataclass(frozen=True)
+class EvidenceScope:
+    exact_baseline: BaselineScope
+    bounded_baseline: BaselineScope = BaselineScope.SCIENTIFIC
+
+    def for_fidelity(self, fidelity: str) -> BaselineScope:
+        return self.exact_baseline if fidelity == "exact" else self.bounded_baseline
+
+
+@dataclass(frozen=True)
+class CandidateVariant:
+    requires: CapabilityRequirements
+    baseline_pins: BaselinePins
+    compatibility_controls: tuple[tuple[str, Any], ...]
+    physical: PhysicalControls
+
+    def overrides(self) -> dict[str, Any]:
+        return {**dict(self.compatibility_controls), **self.physical.as_overrides()}
+
+
+@dataclass(frozen=True)
+class CandidateProfile:
+    name: str
+    variants: tuple[CandidateVariant, ...]
+    evidence_scope: EvidenceScope
+
+    def variant_for(
+        self, capabilities: ProviderCapabilities
+    ) -> CandidateVariant | None:
+        matches = [
+            variant
+            for variant in self.variants
+            if not variant.requires.mismatch_reasons(capabilities)
+        ]
+        if len(matches) > 1:
+            raise ValueError(
+                f"candidate profile {self.name!r} has overlapping capability variants"
+            )
+        return matches[0] if matches else None
+
+
+_ANY_PROVIDER = CapabilityRequirements()
+_CLT_CROSS_LAYER = CapabilityRequirements(
+    architecture="clt",
+    decoder_output_topology="cross_layer",
+    supports_exact_chunked_provider=True,
+)
+_PLT_SAME_LAYER = CapabilityRequirements(
+    architecture="plt",
+    decoder_output_topology="same_layer",
+    supports_exact_chunked_provider=True,
+    supports_active_decoder_row_residency=True,
+)
+_PLT_1B = CapabilityRequirements(
     **{
-        name: frozenset({"gemma3_1b_clt"})
-        for name in CANDIDATE_PROFILES
-        if name.startswith("clt-phase1-cap")
-    },
+        **_PLT_SAME_LAYER.__dict__,
+        "maximum_layer_count": 26,
+    }
+)
+_PLT_4B = CapabilityRequirements(
     **{
-        name: PLT_1B_VARIANT
-        for name in CANDIDATE_PROFILES
-        if name.startswith("plt-") and "-4b-" not in name and "-12b-" not in name
-    },
+        **_PLT_SAME_LAYER.__dict__,
+        "minimum_layer_count": 27,
+        "maximum_layer_count": 34,
+    }
+)
+_PLT_12B = CapabilityRequirements(
     **{
-        name: frozenset({"gemma3_4b_plt"})
-        for name in CANDIDATE_PROFILES
-        if "-4b-" in name
-    },
-    **{
-        name: frozenset({"gemma3_12b_plt"})
-        for name in CANDIDATE_PROFILES
-        if "-12b-" in name
-    },
-}
-BOUNDED_ONLY_CANDIDATE_PROFILES = frozenset(
-    {
-        "plt-bounded-fast-v1",
-        "plt-bounded-fast-v2",
-        "plt-bounded-fast-v3",
-        "plt-bounded-tape-v1",
-        "plt-bounded-tape-prefetch-v1",
-        "plt-bounded-frontier-v1",
-        "plt-active-rows-c65536-v1",
+        **_PLT_SAME_LAYER.__dict__,
+        "minimum_layer_count": 35,
+    }
+)
+
+
+def _candidate_variant(
+    overrides: Mapping[str, Any],
+    requires: CapabilityRequirements,
+) -> CandidateVariant:
+    values = dict(overrides)
+    compatibility_controls: tuple[tuple[str, Any], ...] = ()
+    if "decoder_chunk_size" in values:
+        compatibility_controls = (
+            ("decoder_chunk_size", int(values["decoder_chunk_size"])),
+        )
+    pins = BaselinePins(
+        compatibility_mixed=CompatibilityBaselinePins(
+            decoder_chunk_size=int(values.pop("decoder_chunk_size", 4096))
+        )
+    )
+    return CandidateVariant(
+        requires=requires,
+        baseline_pins=pins,
+        compatibility_controls=compatibility_controls,
+        physical=PhysicalControls.from_mapping(values),
+    )
+
+
+def _profile_contracts() -> dict[str, CandidateProfile]:
+    contracts: dict[str, CandidateProfile] = {
+        "canonical": CandidateProfile(
+            name="canonical",
+            variants=(_candidate_variant({}, _ANY_PROVIDER),),
+            evidence_scope=EvidenceScope(BaselineScope.SCIENTIFIC),
+        )
+    }
+    clt_names = {
+        "clt-phase1-cap128-v1",
+        "clt-phase1-cap256-v1",
+        "clt-phase1-cap512-v1",
+    }
+    plt_4b_names = {
         "plt-active-rows-4b-c4096-v1",
         "plt-active-rows-4b-c65536-v1",
         "plt-active-rows-4b-b512-c4096-v1",
         "plt-active-rows-4b-b512-c65536-v1",
+    }
+    plt_12b_names = {
+        "plt-active-rows-12b-c4096-v1",
         "plt-active-rows-12b-c32768-v1",
         "plt-active-rows-12b-c65536-v1",
         "plt-active-rows-12b-b256-c4096-v1",
         "plt-active-rows-12b-b256-c65536-v1",
     }
-)
+    for name, overrides in _LEGACY_CANDIDATE_OVERRIDES.items():
+        if name == "canonical":
+            continue
+        if name in clt_names:
+            requirement = _CLT_CROSS_LAYER
+            exact_scope = BaselineScope.SCIENTIFIC
+        elif name in plt_4b_names:
+            requirement = _PLT_4B
+            exact_scope = BaselineScope.MECHANISM
+        elif name in plt_12b_names:
+            requirement = _PLT_12B
+            exact_scope = BaselineScope.MECHANISM
+        else:
+            requirement = _PLT_1B
+            exact_scope = (
+                BaselineScope.MECHANISM
+                if overrides.get("decoder_active_row_residency") is True
+                else BaselineScope.SCIENTIFIC
+            )
+        if overrides.get("phase0_decoder_row_ranges") is True:
+            requirement = CapabilityRequirements(
+                **{
+                    **requirement.__dict__,
+                    "supports_phase0_decoder_row_ranges": True,
+                }
+            )
+        contracts[name] = CandidateProfile(
+            name=name,
+            variants=(_candidate_variant(overrides, requirement),),
+            evidence_scope=EvidenceScope(exact_scope),
+        )
+
+    contracts["plt-active-rows-large-c4096-v1"] = CandidateProfile(
+        name="plt-active-rows-large-c4096-v1",
+        variants=(
+            _candidate_variant(
+                _LEGACY_CANDIDATE_OVERRIDES["plt-active-rows-4b-c4096-v1"],
+                _PLT_4B,
+            ),
+            _candidate_variant(
+                _LEGACY_CANDIDATE_OVERRIDES["plt-active-rows-12b-c4096-v1"],
+                _PLT_12B,
+            ),
+        ),
+        evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
+    )
+    return contracts
+
+
+CANDIDATE_PROFILES = _profile_contracts()
 GPU_SAMPLE_COMMAND = (
     "nvidia-smi",
     (
@@ -393,6 +630,28 @@ class Case:
     @property
     def key(self) -> str:
         return f"performance/{self.variant}/{self.fixture}"
+
+    def provider_capabilities(self) -> ProviderCapabilities:
+        payload = build_chpc_baseline_config(variant=self.variant, cluster="granite")
+        scenario = next(
+            row
+            for row in payload["scenarios"]
+            if row["fixture_name"] == self.fixture
+        )
+        architecture = str(scenario["transcoder_architecture"])
+        layer_count_raw = scenario.get("layer_count")
+        layer_count = (
+            int(layer_count_raw) if isinstance(layer_count_raw, int) else None
+        )
+        same_layer = architecture == "plt"
+        return ProviderCapabilities(
+            architecture=architecture,
+            decoder_output_topology=("same_layer" if same_layer else "cross_layer"),
+            layer_count=layer_count,
+            supports_exact_chunked_provider=True,
+            supports_active_decoder_row_residency=same_layer,
+            supports_phase0_decoder_row_ranges=same_layer,
+        )
 
 
 SUITES: dict[str, tuple[Case, ...]] = {
@@ -560,16 +819,79 @@ def execution_evidence(
 
 
 def _candidate_overrides(case: Case, candidate_profile: str) -> dict[str, Any]:
-    allowed_variants = CANDIDATE_PROFILE_ALLOWED_VARIANTS[candidate_profile]
-    if not allowed_variants or case.variant not in allowed_variants:
+    profile = CANDIDATE_PROFILES[candidate_profile]
+    variant = profile.variant_for(case.provider_capabilities())
+    if variant is None:
         return {}
-    return dict(CANDIDATE_PROFILES[candidate_profile])
+    return variant.overrides()
+
+
+def _profile_variant(case: Case, candidate_profile: str) -> CandidateVariant:
+    profile = CANDIDATE_PROFILES[candidate_profile]
+    capabilities = case.provider_capabilities()
+    variant = profile.variant_for(capabilities)
+    if variant is None:
+        alternatives = [
+            "; ".join(candidate.requires.mismatch_reasons(capabilities))
+            for candidate in profile.variants
+        ]
+        raise ValueError(
+            f"candidate profile {candidate_profile!r} is not applicable to "
+            f"{case.key}: " + " | ".join(alternatives)
+        )
+    return variant
+
+
+def _baseline_scope(
+    candidate_profile: str,
+    fidelity: str,
+) -> BaselineScope:
+    return CANDIDATE_PROFILES[candidate_profile].evidence_scope.for_fidelity(
+        fidelity
+    )
+
+
+def _baseline_registry_path(scope: BaselineScope) -> Path:
+    if scope is BaselineScope.MECHANISM:
+        return DEFAULT_MECHANISM_BASELINE_REGISTRY
+    return DEFAULT_BASELINE_REGISTRY
+
+
+def _validate_exact_baseline_pins(
+    *,
+    case: Case,
+    candidate_profile: str,
+    baseline_entry: Mapping[str, Any],
+) -> None:
+    candidate = _profile_variant(case, candidate_profile).baseline_pins.as_overrides()
+    baseline = baseline_entry.get("baseline_pins")
+    if not isinstance(baseline, Mapping):
+        # The frozen registry predates typed pins; its canonical scenario contract is
+        # reconstructed without mutating that immutable scientific record.
+        baseline = {
+            "exact_trace_internal_dtype": "fp32",
+            "decoder_chunk_size": 4096,
+        }
+    mismatches = [
+        f"{key}: candidate={value!r}, baseline={baseline.get(key)!r}"
+        for key, value in candidate.items()
+        if baseline.get(key) != value
+    ]
+    if mismatches:
+        raise ValueError(
+            f"candidate profile {candidate_profile!r} cannot run with "
+            "--fidelity exact because compatibility-mixed or semantic baseline "
+            "pins differ: "
+            + "; ".join(mismatches)
+        )
 
 
 def _case_scenario(
     case: Case,
     fidelity: str,
     candidate_profile: str = "canonical",
+    *,
+    baseline_scope: BaselineScope | None = None,
 ) -> dict[str, Any]:
     payload = build_chpc_baseline_config(variant=case.variant, cluster="granite")
     scenario = next(
@@ -586,6 +908,10 @@ def _case_scenario(
         "mode": "gate",
         "registry_key": case.key,
         "baseline_required": True,
+        "scope": (
+            baseline_scope
+            or _baseline_scope(candidate_profile, fidelity)
+        ).value,
         "thresholds": FIDELITY_THRESHOLDS[fidelity],
     }
     return {"defaults": payload["defaults"], "scenarios": [scenario]}
@@ -597,6 +923,7 @@ def _runner_command(
     output_root: Path,
     run_id: str,
     run_goal: str = DEFAULT_RUN_GOAL,
+    baseline_registry: Path = DEFAULT_BASELINE_REGISTRY,
 ) -> list[str]:
     return [
         sys.executable,
@@ -606,7 +933,7 @@ def _runner_command(
         "--output-root",
         str(output_root),
         "--baseline-registry",
-        str(DEFAULT_BASELINE_REGISTRY),
+        str(baseline_registry),
         "--fail-on-baseline-missing",
         "--fail-on-validation-fail",
         "--run-id",
@@ -1006,12 +1333,14 @@ def _tail_logs(output_root: Path, offsets: dict[Path, int]) -> None:
             offsets[path] = handle.tell()
 
 
-def _baseline_entries() -> dict[str, dict[str, Any]]:
-    registry = read_json(DEFAULT_BASELINE_REGISTRY)
+def _baseline_entries(
+    registry_path: Path = DEFAULT_BASELINE_REGISTRY,
+) -> dict[str, dict[str, Any]]:
+    registry = read_json(registry_path)
     entries = registry.get("entries")
     if not isinstance(entries, dict):
         raise ValueError(
-            f"Invalid performance baseline registry: {DEFAULT_BASELINE_REGISTRY}"
+            f"Invalid performance baseline registry: {registry_path}"
         )
     return entries
 
@@ -1274,7 +1603,13 @@ def _active_row_framebuffer_gate(
 ) -> tuple[bool | None, dict[str, Any], list[str]]:
     if not requested:
         return None, {"status": "not_applicable"}, []
-    if case.variant in LARGE_MODEL_ACTIVE_ROW_CAP_BYTES:
+    capabilities = case.provider_capabilities()
+    large_model = (
+        capabilities.decoder_output_topology == "same_layer"
+        and capabilities.layer_count is not None
+        and capabilities.layer_count > 26
+    )
+    if large_model:
         candidate = resource_summary.get("gpu_framebuffer_peak_mib")
         total = resource_summary.get("gpu_framebuffer_total_mib")
         comparison = {
@@ -1381,7 +1716,12 @@ def _result_report(
     parity_failure_reasons = result.get("baseline_check", {}).get("failure_reasons", [])
     performance_failure_reasons: list[str] = []
     reconciliation_required = False
-    large_model = case.variant in LARGE_MODEL_ACTIVE_ROW_CAP_BYTES
+    capabilities = case.provider_capabilities()
+    large_model = (
+        capabilities.decoder_output_topology == "same_layer"
+        and capabilities.layer_count is not None
+        and capabilities.layer_count > 26
+    )
     if active_rows_requested and not large_model:
         performance_target = ACTIVE_ROW_FUSED_TARGET_SECONDS
         stretch_target = None
@@ -1400,28 +1740,6 @@ def _result_report(
                 f"active-row duration {candidate_duration:.2f}s exceeds the reconciled "
                 f"fused engineering target {performance_target:.2f}s; "
                 "reconciliation is required"
-            )
-    elif large_model:
-        performance_target = baseline_duration
-        stretch_target = PERFORMANCE_STRETCH_TARGET_SECONDS[case.key]
-        performance_requirement = "strict_improvement_vs_frozen_baseline"
-        performance_passed = bool(
-            candidate_duration is not None and candidate_duration < baseline_duration
-        )
-        stretch_passed = (
-            candidate_duration <= stretch_target
-            if candidate_duration is not None
-            else False
-        )
-        if candidate_duration is None:
-            performance_failure_reasons.append(
-                "candidate duration is missing; improvement versus the frozen "
-                "large-model baseline cannot be evaluated"
-            )
-        elif not performance_passed:
-            performance_failure_reasons.append(
-                f"candidate duration {candidate_duration:.2f}s does not improve "
-                f"the frozen baseline {baseline_duration:.2f}s"
             )
     else:
         performance_target = PERFORMANCE_TARGET_SECONDS.get(case.key)
@@ -1653,31 +1971,29 @@ def _gate_summary(reports: Sequence[dict[str, Any]]) -> dict[str, bool | None]:
 
 def _run(args: argparse.Namespace) -> int:
     cases = SUITES[args.suite]
-    allowed_variants = CANDIDATE_PROFILE_ALLOWED_VARIANTS[args.candidate_profile]
-    if allowed_variants and not any(case.variant in allowed_variants for case in cases):
+    profile_variants = {
+        case.key: _profile_variant(case, args.candidate_profile) for case in cases
+    }
+    scope = _baseline_scope(args.candidate_profile, args.fidelity)
+    baseline_registry_path = _baseline_registry_path(scope)
+    baseline_entries = (
+        _baseline_entries()
+        if baseline_registry_path == DEFAULT_BASELINE_REGISTRY
+        else _baseline_entries(baseline_registry_path)
+    )
+    missing_baselines = [case.key for case in cases if case.key not in baseline_entries]
+    if missing_baselines:
         raise ValueError(
-            f"candidate profile {args.candidate_profile!r} is not applicable "
-            f"to suite {args.suite!r}; allowed variants: "
-            + ", ".join(sorted(allowed_variants))
+            f"{scope.value} baseline is not registered for: "
+            + ", ".join(missing_baselines)
         )
-    if (
-        args.suite == "plt-large"
-        and allowed_variants
-        and not all(case.variant in allowed_variants for case in cases)
-    ):
-        raise ValueError(
-            f"candidate profile {args.candidate_profile!r} does not apply to every "
-            "case in the mixed-model 'plt-large' suite; run the model-specific "
-            "'plt-4b' and 'plt-12b' suites separately"
-        )
-    if (
-        args.fidelity == "exact"
-        and args.candidate_profile in BOUNDED_ONLY_CANDIDATE_PROFILES
-    ):
-        raise ValueError(
-            f"candidate profile {args.candidate_profile!r} is bounded-only; "
-            "use --fidelity bounded"
-        )
+    if args.fidelity == "exact":
+        for case in cases:
+            _validate_exact_baseline_pins(
+                case=case,
+                candidate_profile=args.candidate_profile,
+                baseline_entry=baseline_entries[case.key],
+            )
     run_id = args.run_id or time.strftime("perf-%Y%m%d-%H%M%S")
     run_root = args.output_root / run_id
     if args.dry_run:
@@ -1686,7 +2002,7 @@ def _run(args: argparse.Namespace) -> int:
             candidate_root = run_root / "candidates" / f"{case.variant}_{case.fixture}"
             print(
                 f"{case.key}: "
-                f"{shlex.join(_runner_command(scenario_file=scenario_file, output_root=candidate_root, run_id=run_id, run_goal=args.run_goal))}"
+                f"{shlex.join(_runner_command(scenario_file=scenario_file, output_root=candidate_root, run_id=run_id, run_goal=args.run_goal, baseline_registry=baseline_registry_path))}"
             )
         return 0
 
@@ -1700,8 +2016,7 @@ def _run(args: argparse.Namespace) -> int:
         provenance,
         allow_test_environment=args.allow_non_h200_test_only,
     )
-    baseline_registry = read_json(DEFAULT_BASELINE_REGISTRY)
-    baseline_entries = _baseline_entries()
+    baseline_registry = read_json(baseline_registry_path)
     run_root.mkdir(parents=True, exist_ok=False)
     (run_root / "configs").mkdir()
     (run_root / "candidates").mkdir()
@@ -1710,9 +2025,16 @@ def _run(args: argparse.Namespace) -> int:
         "run_id": run_id,
         "run_goal": args.run_goal,
         "candidate_profile": args.candidate_profile,
-        "candidate_profile_allowed_variants": sorted(
-            CANDIDATE_PROFILE_ALLOWED_VARIANTS[args.candidate_profile]
-        ),
+        "candidate_profile_contract": {
+            case.key: {
+                "requires": profile_variants[case.key].requires.__dict__,
+                "baseline_pins": profile_variants[
+                    case.key
+                ].baseline_pins.as_overrides(),
+                "physical": profile_variants[case.key].physical.as_overrides(),
+            }
+            for case in cases
+        },
         "candidate_overrides_by_case": {
             case.key: _candidate_overrides(case, args.candidate_profile)
             for case in cases
@@ -1720,7 +2042,8 @@ def _run(args: argparse.Namespace) -> int:
         "suite": args.suite,
         "fidelity": args.fidelity,
         "thresholds": FIDELITY_THRESHOLDS[args.fidelity],
-        "baseline_registry": str(DEFAULT_BASELINE_REGISTRY),
+        "baseline_scope": scope.value,
+        "baseline_registry": str(baseline_registry_path),
         "baseline_registry_id": baseline_registry.get("registry_id"),
         "baseline_registry_provenance": baseline_registry.get("source_provenance"),
         "baseline_references": {case.key: baseline_entries[case.key] for case in cases},
@@ -1762,7 +2085,12 @@ def _run(args: argparse.Namespace) -> int:
             scenario_file = run_root / "configs" / f"{case.variant}_{case.fixture}.json"
             write_json(
                 scenario_file,
-                _case_scenario(case, args.fidelity, args.candidate_profile),
+                _case_scenario(
+                    case,
+                    args.fidelity,
+                    args.candidate_profile,
+                    baseline_scope=scope,
+                ),
             )
             candidate_root = run_root / "candidates" / f"{case.variant}_{case.fixture}"
             command = _runner_command(
@@ -1770,6 +2098,7 @@ def _run(args: argparse.Namespace) -> int:
                 output_root=candidate_root,
                 run_id=run_id,
                 run_goal=args.run_goal,
+                baseline_registry=baseline_registry_path,
             )
             print(f"Running {case.key}: {shlex.join(command)}", flush=True)
             returncode = _stream_runner(

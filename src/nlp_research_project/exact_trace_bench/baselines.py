@@ -156,9 +156,13 @@ def normalize_baseline_check(scenario: dict[str, Any]) -> dict[str, Any]:
     mode = str(raw.get("mode") or "metrics")
     if mode not in {"metrics", "gate"}:
         raise ValueError(f"Unsupported baseline_check mode: {mode!r}")
+    scope = str(raw.get("scope") or "frozen_scientific")
+    if scope not in {"frozen_scientific", "same_regime_mechanism"}:
+        raise ValueError(f"Unsupported baseline_check scope: {scope!r}")
     return {
         "enabled": True,
         "mode": mode,
+        "scope": scope,
         "registry_key": raw.get("registry_key"),
         "baseline_required": bool(raw.get("baseline_required", True)),
         "thresholds": raw.get("thresholds") or {},

@@ -88,6 +88,38 @@ def test_fidelity_thresholds_are_explicit() -> None:
     }
 
 
+def test_capability_contract_distinguishes_same_layer_and_cross_layer() -> None:
+    same_layer = perf_cli.Case(
+        "gemma3_1b_plt", "361_base"
+    ).provider_capabilities()
+    cross_layer = perf_cli.Case(
+        "gemma3_1b_clt", "361_base"
+    ).provider_capabilities()
+    profile = perf_cli.CANDIDATE_PROFILES["plt-active-rows-v1"]
+
+    assert profile.variant_for(same_layer) is not None
+    assert profile.variant_for(cross_layer) is None
+    assert (
+        same_layer.decoder_output_topology,
+        cross_layer.decoder_output_topology,
+    ) == ("same_layer", "cross_layer")
+
+
+def test_mechanism_and_scientific_baseline_registries_are_separate() -> None:
+    scientific = json.loads(perf_cli.DEFAULT_BASELINE_REGISTRY.read_text())
+    mechanism = json.loads(
+        perf_cli.DEFAULT_MECHANISM_BASELINE_REGISTRY.read_text()
+    )
+
+    assert scientific["registry_id"] == "exact-trace-performance-granite-20260726"
+    assert mechanism["registry_id"] == "exact-trace-mechanism-granite-20260727"
+    assert mechanism["scope"] == "same_regime_mechanism"
+    assert mechanism["entries"]["performance/gemma3_4b_plt/361_base"][
+        "baseline_pins"
+    ]["decoder_chunk_size"] == 4096
+    assert "scope" not in scientific
+
+
 def test_profiling_parser_accepts_execution_batches_without_total(
     tmp_path: Path,
 ) -> None:
@@ -516,6 +548,7 @@ def test_case_scenario_reuses_canonical_builder_and_adds_gate() -> None:
         "mode": "gate",
         "registry_key": case.key,
         "baseline_required": True,
+        "scope": "frozen_scientific",
         "thresholds": perf_cli.FIDELITY_THRESHOLDS["bounded"],
     }
 
@@ -642,7 +675,7 @@ def test_bounded_fast_profile_rejects_exact_fidelity(
     tmp_path: Path,
     profile: str,
 ) -> None:
-    with pytest.raises(ValueError, match="bounded-only"):
+    with pytest.raises(ValueError, match="baseline pins differ"):
         perf_cli.main(
             [
                 "run",
@@ -686,7 +719,10 @@ def test_active_rows_profiles_match_exact_baseline_and_are_exact_eligible(
 
     assert perf_cli._candidate_overrides(plt_case, profile) == expected
     assert perf_cli._candidate_overrides(clt_case, profile) == {}
-    assert profile not in perf_cli.BOUNDED_ONLY_CANDIDATE_PROFILES
+    assert (
+        perf_cli.CANDIDATE_PROFILES[profile].evidence_scope.exact_baseline
+        is perf_cli.BaselineScope.MECHANISM
+    )
     payload = perf_cli._case_scenario(plt_case, "exact", profile)
     scenario = payload["scenarios"][0]
     assert scenario["decoder_chunk_size"] == 4096
@@ -717,7 +753,12 @@ def test_large_chunk_active_rows_profile_is_bounded_only_and_single_knob_variant
     assert "feature_vjp_tape_max_bytes" not in candidate
     assert candidate["feature_vjp_tape_batch_window"] == 1
     assert perf_cli._candidate_overrides(clt_case, "plt-active-rows-c65536-v1") == {}
-    assert "plt-active-rows-c65536-v1" in perf_cli.BOUNDED_ONLY_CANDIDATE_PROFILES
+    assert (
+        perf_cli.CANDIDATE_PROFILES[
+            "plt-active-rows-c65536-v1"
+        ].variants[0].baseline_pins.compatibility_mixed.decoder_chunk_size
+        == 65536
+    )
 
     scenario = perf_cli._case_scenario(
         plt_case, "bounded", "plt-active-rows-c65536-v1"
@@ -803,13 +844,17 @@ def test_large_model_active_row_profiles_are_explicitly_scoped(
     case = perf_cli.Case(variant, "361_base")
     overrides = perf_cli._candidate_overrides(case, profile)
 
-    assert perf_cli.CANDIDATE_PROFILE_ALLOWED_VARIANTS[profile] == {variant}
+    contract = perf_cli.CANDIDATE_PROFILES[profile]
+    assert contract.variant_for(case.provider_capabilities()) is not None
     assert overrides["decoder_chunk_size"] == chunk
     assert overrides["phase1_trace_batch_size_max"] == batch
     assert overrides["phase3_compute_microbatch_max_rows"] == batch
     assert overrides["phase4_execution_batch_max_rows"] == execution_batch
     assert overrides["decoder_active_row_max_bytes"] == cap_gib * 1024**3
-    assert (profile in perf_cli.BOUNDED_ONLY_CANDIDATE_PROFILES) is bounded_only
+    assert (
+        contract.variants[0].baseline_pins.compatibility_mixed.decoder_chunk_size
+        != 4096
+    ) is (chunk != 4096)
     assert (
         perf_cli._candidate_overrides(
             perf_cli.Case("gemma3_1b_clt", "361_base"), profile
@@ -818,33 +863,48 @@ def test_large_model_active_row_profiles_are_explicitly_scoped(
     )
 
 
-@pytest.mark.parametrize(
-    "profile",
-    [
-        "plt-active-rows-4b-c4096-v1",
-        "plt-active-rows-4b-c65536-v1",
-        "plt-active-rows-4b-b512-c4096-v1",
-        "plt-active-rows-4b-b512-c65536-v1",
-        "plt-active-rows-12b-c32768-v1",
-        "plt-active-rows-12b-c65536-v1",
-        "plt-active-rows-12b-b256-c4096-v1",
-        "plt-active-rows-12b-b256-c65536-v1",
-    ],
-)
-def test_large_model_bounded_profiles_reject_exact(
+def test_large_model_exact_uses_mechanism_scope_and_refuses_chunk_pin_mismatch(
     tmp_path: Path,
-    profile: str,
 ) -> None:
-    suite = "plt-4b" if "-4b-" in profile else "plt-12b"
-    with pytest.raises(ValueError, match="bounded-only"):
+    assert (
         perf_cli.main(
             [
                 "run",
-                suite,
+                "plt-4b",
                 "--fidelity",
                 "exact",
                 "--candidate-profile",
-                profile,
+                "plt-active-rows-4b-c4096-v1",
+                "--dry-run",
+                "--output-root",
+                str(tmp_path),
+            ]
+        )
+        == 0
+    )
+    with pytest.raises(ValueError, match="decoder_chunk_size"):
+        perf_cli.main(
+            [
+                "run",
+                "plt-4b",
+                "--fidelity",
+                "exact",
+                "--candidate-profile",
+                "plt-active-rows-4b-c65536-v1",
+                "--dry-run",
+                "--output-root",
+                str(tmp_path),
+            ]
+        )
+    with pytest.raises(ValueError, match="not registered"):
+        perf_cli.main(
+            [
+                "run",
+                "plt-12b",
+                "--fidelity",
+                "exact",
+                "--candidate-profile",
+                "plt-active-rows-12b-c4096-v1",
                 "--dry-run",
                 "--output-root",
                 str(tmp_path),
@@ -868,7 +928,7 @@ def test_noncanonical_profile_rejects_suite_with_no_applicable_case(
             ]
         )
 
-    assert (
+    with pytest.raises(ValueError, match="not applicable"):
         perf_cli.main(
             [
                 "run",
@@ -880,12 +940,10 @@ def test_noncanonical_profile_rejects_suite_with_no_applicable_case(
                 str(tmp_path),
             ]
         )
-        == 0
-    )
 
 
 def test_mixed_large_suite_rejects_model_specific_profile(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="does not apply to every case"):
+    with pytest.raises(ValueError, match="not applicable"):
         perf_cli.main(
             [
                 "run",
@@ -897,6 +955,22 @@ def test_mixed_large_suite_rejects_model_specific_profile(tmp_path: Path) -> Non
                 str(tmp_path),
             ]
         )
+    assert (
+        perf_cli.main(
+            [
+                "run",
+                "plt-large",
+                "--candidate-profile",
+                "plt-active-rows-large-c4096-v1",
+                "--fidelity",
+                "bounded",
+                "--dry-run",
+                "--output-root",
+                str(tmp_path),
+            ]
+        )
+        == 0
+    )
 
 
 def test_phase0_coalesced_rows_profile_is_exact_eligible_and_provider_scoped() -> None:
@@ -910,7 +984,10 @@ def test_phase0_coalesced_rows_profile_is_exact_eligible_and_provider_scoped() -
     }
     assert perf_cli._candidate_overrides(clt_case, "plt-phase0-coalesced-rows-v1") == {}
     assert (
-        "plt-phase0-coalesced-rows-v1" not in perf_cli.BOUNDED_ONLY_CANDIDATE_PROFILES
+        perf_cli.CANDIDATE_PROFILES[
+            "plt-phase0-coalesced-rows-v1"
+        ].evidence_scope.exact_baseline
+        is perf_cli.BaselineScope.MECHANISM
     )
     scenario = perf_cli._case_scenario(
         plt_case, "exact", "plt-phase0-coalesced-rows-v1"
@@ -947,7 +1024,10 @@ def test_clt_phase1_cap_profile_is_exact_eligible_and_provider_scoped(
 
     assert perf_cli._candidate_overrides(clt_case, profile) == expected
     assert perf_cli._candidate_overrides(plt_case, profile) == {}
-    assert profile not in perf_cli.BOUNDED_ONLY_CANDIDATE_PROFILES
+    assert (
+        perf_cli.CANDIDATE_PROFILES[profile].evidence_scope.exact_baseline
+        is perf_cli.BaselineScope.SCIENTIFIC
+    )
 
     scenario = perf_cli._case_scenario(clt_case, "exact", profile)["scenarios"][0]
     assert {key: scenario[key] for key in expected} == expected
@@ -1208,18 +1288,26 @@ def _active_row_report(
 
 
 @pytest.mark.parametrize(
-    ("variant", "baseline", "duration", "stretch", "cap_gib"),
+    (
+        "variant",
+        "baseline",
+        "duration",
+        "hard_target",
+        "performance_passed",
+        "cap_gib",
+    ),
     [
-        ("gemma3_4b_plt", 5471.7, 3040.99, 600.0, 4),
-        ("gemma3_12b_plt", 23051.72, 10551.32, 3600.0, 8),
+        ("gemma3_4b_plt", 5471.7, 600.01, 600.0, False, 4),
+        ("gemma3_12b_plt", 23051.72, 10551.32, None, None, 8),
     ],
 )
-def test_large_model_active_row_report_requires_baseline_improvement_not_1b_target(
+def test_large_model_runtime_gates_are_explicit_and_fail_closed(
     tmp_path: Path,
     variant: str,
     baseline: float,
     duration: float,
-    stretch: float,
+    hard_target: float | None,
+    performance_passed: bool | None,
     cap_gib: int,
 ) -> None:
     case = perf_cli.Case(variant, "361_base")
@@ -1261,13 +1349,12 @@ def test_large_model_active_row_report_requires_baseline_improvement_not_1b_targ
         baseline_entry={"duration_seconds": baseline},
     )
 
-    assert report["passed"] is True
+    assert report["passed"] is (performance_passed is not False)
     assert report["performance_requirement"] == (
-        "strict_improvement_vs_frozen_baseline"
+        "fixed_target" if hard_target is not None else "none"
     )
-    assert report["performance_target_seconds"] == baseline
-    assert report["performance_stretch_target_seconds"] == stretch
-    assert report["performance_stretch_passed"] is False
+    assert report["performance_target_seconds"] == hard_target
+    assert report["performance_passed"] is performance_passed
     assert report["active_row_fused_target_seconds"] is None
     assert report["framebuffer_comparison"]["peak_fraction_limit"] == 0.9
 

@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "registry_id": "exact-trace-mechanism-granite-20260727",
+  "created_at": "2026-07-27",
+  "description": "Same-regime active-row controls for compact-strict mechanism validation. This registry is separate from and does not promote or replace the frozen scientific baseline registry.",
+  "scope": "same_regime_mechanism",
+  "entries": {
+    "performance/gemma3_1b_plt/361_base": {
+      "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/perf-plt-phase0-control-exact-dev-20260726-01/candidates/gemma3_1b_plt_361_base/perf_gemma3_1b_plt_361_base/artifacts",
+      "result_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/perf-plt-phase0-control-exact-dev-20260726-01/candidates/gemma3_1b_plt_361_base/perf_gemma3_1b_plt_361_base/result.json",
+      "duration_seconds": 108.62,
+      "expected_status": "success",
+      "baseline_pins": {
+        "exact_trace_internal_dtype": "fp32",
+        "decoder_chunk_size": 4096
+      },
+      "artifact_sha256": {
+        "artifacts/prompt_000/completion_000/step_000.npz": "cb787dfa424997a917d02ba7c67e098b49aa39fbe45f639e4e82b064899abf7f",
+        "artifacts/prompt_000/completion_000/completion.json": "8112d220db36c1145d21bcdd95a50687456efdb333d56c98ff6377727b407811",
+        "result.json": "ba77bbc30de17cdb16ff2b65cdd52d6206e0c1045cc2da9b3bc9b7e74bfc53b9"
+      }
+    },
+    "performance/gemma3_4b_plt/361_base": {
+      "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/perf-plt-4b-active-rows-c4096-20260726-04/candidates/gemma3_4b_plt_361_base/perf_gemma3_4b_plt_361_base/artifacts",
+      "result_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/perf-plt-4b-active-rows-c4096-20260726-04/candidates/gemma3_4b_plt_361_base/perf_gemma3_4b_plt_361_base/result.json",
+      "duration_seconds": 335.61,
+      "expected_status": "success",
+      "baseline_pins": {
+        "exact_trace_internal_dtype": "fp32",
+        "decoder_chunk_size": 4096
+      },
+      "artifact_sha256": {
+        "artifacts/prompt_000/completion_000/step_000.npz": "32a94a56e458bfd1786ddcec7855d485587fce3e33b9b9b57417c38940b80217",
+        "artifacts/prompt_000/completion_000/completion.json": "285223c5b8afa3a61ccc95920d0e09b952608ba0e53ad6f9e7483b01488f5937",
+        "result.json": "2c3f416330dfeddf749e4ee9f5ab5810be63d2cfafc15b3d417c308153792b0a"
+      }
+    }
+  }
+}

@@ -20,6 +20,33 @@ from nlp_research_project.exact_trace_bench.jobs import (  # noqa: E402
 from experiments.run_sparsification_experiment import main, run_scenario  # noqa: E402
 
 
+def test_baseline_check_preserves_typed_comparison_scope() -> None:
+    scientific = baselines.normalize_baseline_check(
+        {"baseline_check": {"enabled": True, "mode": "gate"}}
+    )
+    mechanism = baselines.normalize_baseline_check(
+        {
+            "baseline_check": {
+                "enabled": True,
+                "mode": "gate",
+                "scope": "same_regime_mechanism",
+            }
+        }
+    )
+
+    assert scientific["scope"] == "frozen_scientific"
+    assert mechanism["scope"] == "same_regime_mechanism"
+    with pytest.raises(ValueError, match="scope"):
+        baselines.normalize_baseline_check(
+            {
+                "baseline_check": {
+                    "enabled": True,
+                    "scope": "mixed_or_unknown",
+                }
+            }
+        )
+
+
 def test_baseline_comparison_writes_metrics(monkeypatch, tmp_path: Path) -> None:
     baseline_artifacts = tmp_path / "baseline" / "artifacts"
     current_artifacts = tmp_path / "current" / "artifacts"
