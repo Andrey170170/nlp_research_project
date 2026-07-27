@@ -382,6 +382,7 @@ class ProviderCapabilities:
     decoder_output_topology: str
     layer_count: int | None
     supports_exact_chunked_provider: bool
+    supports_exact_encoder_residency: bool
     supports_active_decoder_row_residency: bool
     supports_phase0_decoder_row_ranges: bool
     supports_decoder_row_source: bool
@@ -392,6 +393,7 @@ class CapabilityRequirements:
     architecture: str | None = None
     decoder_output_topology: str | None = None
     supports_exact_chunked_provider: bool | None = None
+    supports_exact_encoder_residency: bool | None = None
     supports_active_decoder_row_residency: bool | None = None
     supports_phase0_decoder_row_ranges: bool | None = None
     supports_decoder_row_source: bool | None = None
@@ -404,6 +406,7 @@ class CapabilityRequirements:
             "architecture",
             "decoder_output_topology",
             "supports_exact_chunked_provider",
+            "supports_exact_encoder_residency",
             "supports_active_decoder_row_residency",
             "supports_phase0_decoder_row_ranges",
             "supports_decoder_row_source",
@@ -533,6 +536,12 @@ _PLT_MAPPED_DECODER_ROWS = CapabilityRequirements(
         **_PLT_SAME_LAYER.__dict__,
         "supports_phase0_decoder_row_ranges": True,
         "supports_decoder_row_source": True,
+    }
+)
+_PLT_MAPPED_DECODER_ROWS_WITH_ENCODER_RESIDENCY = CapabilityRequirements(
+    **{
+        **_PLT_MAPPED_DECODER_ROWS.__dict__,
+        "supports_exact_encoder_residency": True,
     }
 )
 _PLT_1B = CapabilityRequirements(
@@ -688,6 +697,50 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
         ),
         evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
     )
+    for encoder_mode in ("active_cpu", "active_pinned_cpu"):
+        profile_name = (
+            "plt-selective-mapped-rows-"
+            f"{encoder_mode.replace('_', '-')}-large-v1"
+        )
+        contracts[profile_name] = CandidateProfile(
+            name=profile_name,
+            variants=(
+                _candidate_variant(
+                    {
+                        **_LEGACY_CANDIDATE_OVERRIDES[
+                            "plt-active-rows-4b-c4096-v1"
+                        ],
+                        "phase0_decoder_row_ranges": True,
+                        "checkpoint_asset_scope": "job_private",
+                        "exact_encoder_residency": encoder_mode,
+                    },
+                    CapabilityRequirements(
+                        **{
+                            **_PLT_MAPPED_DECODER_ROWS_WITH_ENCODER_RESIDENCY.__dict__,
+                            "minimum_layer_count": 27,
+                            "maximum_layer_count": 34,
+                        }
+                    ),
+                ),
+                _candidate_variant(
+                    {
+                        **_LEGACY_CANDIDATE_OVERRIDES[
+                            "plt-active-rows-12b-c4096-v1"
+                        ],
+                        "phase0_decoder_row_ranges": True,
+                        "checkpoint_asset_scope": "job_private",
+                        "exact_encoder_residency": encoder_mode,
+                    },
+                    CapabilityRequirements(
+                        **{
+                            **_PLT_MAPPED_DECODER_ROWS_WITH_ENCODER_RESIDENCY.__dict__,
+                            "minimum_layer_count": 35,
+                        }
+                    ),
+                ),
+            ),
+            evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
+        )
     return contracts
 
 
@@ -746,6 +799,7 @@ class Case:
             decoder_output_topology=("same_layer" if same_layer else "cross_layer"),
             layer_count=layer_count,
             supports_exact_chunked_provider=True,
+            supports_exact_encoder_residency=True,
             supports_active_decoder_row_residency=same_layer,
             supports_phase0_decoder_row_ranges=same_layer,
             supports_decoder_row_source=supports_mapped_rows,

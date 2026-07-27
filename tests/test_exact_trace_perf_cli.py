@@ -1205,6 +1205,45 @@ def test_mapped_decoder_row_profile_selects_4b_and_12b_variants() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("profile_name", "encoder_mode"),
+    [
+        (
+            "plt-selective-mapped-rows-active-cpu-large-v1",
+            "active_cpu",
+        ),
+        (
+            "plt-selective-mapped-rows-active-pinned-cpu-large-v1",
+            "active_pinned_cpu",
+        ),
+    ],
+)
+def test_mapped_encoder_profiles_are_capability_scoped(
+    profile_name: str,
+    encoder_mode: str,
+) -> None:
+    profile = perf_cli.CANDIDATE_PROFILES[profile_name]
+    case_4b = perf_cli.Case("gemma3_4b_plt", "361_base")
+    case_12b = perf_cli.Case("gemma3_12b_plt", "361_base")
+    capabilities = case_12b.provider_capabilities()
+    no_encoder_residency = perf_cli.ProviderCapabilities(
+        **{
+            **capabilities.__dict__,
+            "supports_exact_encoder_residency": False,
+        }
+    )
+
+    assert profile.variant_for(case_4b.provider_capabilities()) is not None
+    assert profile.variant_for(capabilities) is not None
+    assert profile.variant_for(no_encoder_residency) is None
+    assert perf_cli._candidate_overrides(case_12b, profile_name) == {
+        **perf_cli._candidate_overrides(
+            case_12b, "plt-selective-mapped-rows-large-v1"
+        ),
+        "exact_encoder_residency": encoder_mode,
+    }
+
+
 def test_phase0_coalesced_rows_profile_is_exact_eligible_and_provider_scoped() -> None:
     plt_case = perf_cli.Case("gemma3_1b_plt", "361_base")
     clt_case = perf_cli.Case("gemma3_1b_clt", "361_base")
