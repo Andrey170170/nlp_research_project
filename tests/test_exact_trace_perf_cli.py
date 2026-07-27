@@ -323,9 +323,7 @@ def test_bounded_fast_profile_changes_only_plt_physical_controls(
         expected_overrides["feature_vjp_tape_batch_window"] = tape_batch_window
         expected_overrides["feature_vjp_tape_max_bytes"] = tape_max_bytes
     if decoder_page_prefetch_depth:
-        expected_overrides["decoder_page_prefetch_depth"] = (
-            decoder_page_prefetch_depth
-        )
+        expected_overrides["decoder_page_prefetch_depth"] = decoder_page_prefetch_depth
     assert perf_cli._candidate_overrides(plt_case, profile) == expected_overrides
     assert plt["attribution_batch_size"] == 128
     assert plt["feature_batch_size"] == 128
@@ -336,9 +334,7 @@ def test_bounded_fast_profile_changes_only_plt_physical_controls(
     assert plt["phase4_execution_batch_max_rows"] == execution_batch_rows
     assert plt.get("feature_vjp_tape_batch_window", 1) == tape_batch_window
     assert plt.get("feature_vjp_tape_max_bytes", 0) == tape_max_bytes
-    assert (
-        plt.get("decoder_page_prefetch_depth", 0) == decoder_page_prefetch_depth
-    )
+    assert plt.get("decoder_page_prefetch_depth", 0) == decoder_page_prefetch_depth
     assert plt_payload["defaults"]["row_subchunk_size"] is None
     assert clt["decoder_chunk_size"] == 4096
     assert "phase4_execution_batch_max_rows" not in clt
@@ -373,6 +369,47 @@ def test_bounded_fast_profile_rejects_exact_fidelity(
                 str(tmp_path),
             ]
         )
+
+
+@pytest.mark.parametrize(
+    ("profile", "tape_batch_window"),
+    [("plt-active-rows-v1", 1), ("plt-active-rows-tape-v1", 2)],
+)
+def test_active_rows_profiles_match_exact_baseline_and_are_exact_eligible(
+    profile: str,
+    tape_batch_window: int,
+) -> None:
+    plt_case = perf_cli.Case("gemma3_1b_plt", "361_base")
+    clt_case = perf_cli.Case("gemma3_1b_clt", "361_base")
+    expected = {
+        "decoder_chunk_size": 4096,
+        "cross_batch_decoder_cache_bytes": 0,
+        "nnsight_session_capacity": 256,
+        "phase1_trace_batch_policy": "cap_effective_batches",
+        "phase1_trace_batch_size_max": 128,
+        "phase3_compute_microbatch_max_rows": 128,
+        "phase4_execution_batch_max_rows": 256,
+        "feature_vjp_tape_batch_window": tape_batch_window,
+        "decoder_page_prefetch_depth": 0,
+        "decoder_active_row_residency": True,
+        "decoder_active_row_max_bytes": 1024**3,
+    }
+    if tape_batch_window > 1:
+        expected["feature_vjp_tape_max_bytes"] = 12 * 1024**3
+
+    assert perf_cli._candidate_overrides(plt_case, profile) == expected
+    assert perf_cli._candidate_overrides(clt_case, profile) == {}
+    assert profile not in perf_cli.BOUNDED_ONLY_CANDIDATE_PROFILES
+    payload = perf_cli._case_scenario(plt_case, "exact", profile)
+    scenario = payload["scenarios"][0]
+    assert scenario["decoder_chunk_size"] == 4096
+    assert scenario["feature_vjp_tape_batch_window"] == tape_batch_window
+    assert scenario["decoder_active_row_residency"] is True
+    assert scenario["decoder_active_row_max_bytes"] == 1024**3
+    assert (
+        scenario["baseline_check"]["thresholds"]
+        == perf_cli.FIDELITY_THRESHOLDS["exact"]
+    )
 
 
 def test_h200_guard_requires_slurm_and_h200() -> None:
@@ -486,6 +523,11 @@ def test_clt_report_has_no_hard_duration_target(tmp_path: Path) -> None:
             }
         )
     )
+    (tmp_path / "resource_summary.json").write_text(
+        json.dumps(
+            {"resource_validation_passed": True, "gpu_framebuffer_peak_mib": 1024.0}
+        )
+    )
 
     report = perf_cli._result_report(
         case,
@@ -496,6 +538,218 @@ def test_clt_report_has_no_hard_duration_target(tmp_path: Path) -> None:
     assert report["performance_target_seconds"] is None
     assert report["performance_passed"] is None
     assert report["passed"] is True
+
+
+def _active_row_diagnostics(*, effective: bool = True) -> dict[str, object]:
+    resident_bytes = perf_cli.ACTIVE_ROW_EXPECTED_BYTES
+    return {
+        "requested": True,
+        "effective": effective,
+        "fallback_reason": None if effective else "estimated_bytes_exceed_max",
+        "max_bytes_requested": 1024**3,
+        "max_bytes_effective": 1024**3 if effective else 0,
+        "resident": {
+            "row_count": 66_158 if effective else 0,
+            "bytes": resident_bytes if effective else 0,
+            "estimated_bytes": resident_bytes,
+            "device": "cuda:0" if effective else None,
+            "owner_count": 1 if effective else 0,
+        },
+        "build": {
+            "source": "phase0_fused_seed",
+            "count": 1 if effective else 0,
+            "seconds": 1.25 if effective else None,
+            "traversal_bytes": 0,
+            "decoder_page_load_count": 0,
+            "decoder_load_bytes": 0,
+        },
+        "seed": {
+            "capture_seconds": 137.0 if effective else None,
+            "shared_traversal_bytes": 15_665_725_440 if effective else 0,
+            "shared_decoder_page_load_count": 1660 if effective else 0,
+            "shared_decoder_load_bytes": 15_665_725_440 if effective else 0,
+            "unique_row_count": 42_000 if effective else 0,
+            "bytes": 96_768_000 if effective else 0,
+            "materialization_seconds": 0.25 if effective else None,
+            "materialization_h2d_bytes": resident_bytes if effective else 0,
+            "missing_keys": 0,
+        },
+        "phase4": {
+            "decoder_page_load_count_delta": 0,
+            "decoder_load_bytes_delta": 0,
+        },
+    }
+
+
+def _active_row_report(
+    tmp_path: Path,
+    *,
+    duration_seconds: float,
+    framebuffer_peak_mib: float = 26_113.0,
+    diagnostics: dict[str, object] | None = None,
+) -> dict[str, object]:
+    case = perf_cli.Case("gemma3_1b_plt", "361_base")
+    scenario_root = tmp_path / "perf_gemma3_1b_plt_361_base"
+    scenario_root.mkdir()
+    (scenario_root / "scenario.json").write_text(
+        json.dumps(
+            {
+                "decoder_active_row_residency": True,
+                "decoder_active_row_max_bytes": 1024**3,
+            }
+        )
+    )
+    (scenario_root / "result.json").write_text(
+        json.dumps(
+            {
+                "duration_seconds": duration_seconds,
+                "status": "success",
+                "baseline_check": {"passed": True, "failure_reasons": []},
+                "artifact_summary": {
+                    "decoder_active_row_residency": (
+                        diagnostics
+                        if diagnostics is not None
+                        else _active_row_diagnostics()
+                    )
+                },
+            }
+        )
+    )
+    (tmp_path / "resource_summary.json").write_text(
+        json.dumps(
+            {
+                "resource_validation_passed": True,
+                "gpu_framebuffer_peak_mib": framebuffer_peak_mib,
+            }
+        )
+    )
+    return perf_cli._result_report(
+        case,
+        candidate_root=tmp_path,
+        baseline_entry={"duration_seconds": 307.34},
+    )
+
+
+@pytest.mark.parametrize("duration_seconds", [65.0, 230.0, 245.0])
+def test_active_row_report_passes_reconciled_fused_target(
+    tmp_path: Path,
+    duration_seconds: float,
+) -> None:
+    report = _active_row_report(tmp_path, duration_seconds=duration_seconds)
+
+    assert report["passed"] is True
+    assert report["mechanism_validation_passed"] is True
+    assert report["resource_gate_passed"] is True
+    assert report["reconciliation_required"] is False
+    assert report["framebuffer_comparison"]["reference"] == (
+        perf_cli.ACTIVE_ROW_FRAMEBUFFER_REFERENCE
+    )
+
+
+@pytest.mark.parametrize("duration_seconds", [245.01, 287.26])
+def test_active_row_report_requires_reconciliation_above_fused_target(
+    tmp_path: Path,
+    duration_seconds: float,
+) -> None:
+    report = _active_row_report(tmp_path, duration_seconds=duration_seconds)
+
+    assert report["passed"] is False
+    assert report["performance_passed"] is False
+    assert report["reconciliation_required"] is True
+    assert "reconciliation is required" in " ".join(report["failure_reasons"])
+    assert report["active_row_initial_predicted_duration_seconds"] == [65.0, 90.0]
+    assert report["active_row_fused_target_seconds"] == 245.0
+
+
+def test_active_row_report_fails_explicit_fallback(tmp_path: Path) -> None:
+    report = _active_row_report(
+        tmp_path,
+        duration_seconds=75.0,
+        diagnostics=_active_row_diagnostics(effective=False),
+    )
+
+    assert report["passed"] is False
+    assert report["mechanism_validation_passed"] is False
+    assert "estimated_bytes_exceed_max" in " ".join(report["failure_reasons"])
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "reason"),
+    [
+        ("build_count", 0, "build count"),
+        ("build_source", "page_scan", "build source"),
+        ("resident_bytes", 2 * 1024**3, "configured byte cap"),
+        ("seed_missing_keys", 1, "cover every final"),
+        ("phase4_load_count", 1, "must both equal zero"),
+        ("phase4_load_bytes", 4096, "must both equal zero"),
+    ],
+)
+def test_active_row_mechanism_gate_rejects_invalid_evidence(
+    field: str,
+    value: int | str,
+    reason: str,
+) -> None:
+    diagnostics = _active_row_diagnostics()
+    if field == "build_count":
+        diagnostics["build"]["count"] = value
+    elif field == "build_source":
+        diagnostics["build"]["source"] = value
+    elif field == "resident_bytes":
+        diagnostics["resident"]["bytes"] = value
+    elif field == "seed_missing_keys":
+        diagnostics["seed"]["missing_keys"] = value
+    elif field == "phase4_load_count":
+        diagnostics["phase4"]["decoder_page_load_count_delta"] = value
+    else:
+        diagnostics["phase4"]["decoder_load_bytes_delta"] = value
+
+    passed, reasons = perf_cli._active_row_mechanism_gate(
+        True,
+        diagnostics,
+        1024**3,
+    )
+
+    assert passed is False
+    assert reason in " ".join(reasons)
+
+
+@pytest.mark.parametrize(
+    ("peak_mib", "passed"),
+    [(26_113.0, True), (26_113.01, False)],
+)
+def test_active_row_framebuffer_gate_uses_audited_reference(
+    tmp_path: Path,
+    peak_mib: float,
+    passed: bool,
+) -> None:
+    report = _active_row_report(
+        tmp_path,
+        duration_seconds=75.0,
+        framebuffer_peak_mib=peak_mib,
+    )
+
+    assert report["framebuffer_passed"] is passed
+    assert report["resource_gate_passed"] is passed
+    assert report["passed"] is passed
+
+
+def test_artifact_summary_keeps_active_row_structured_diagnostics(
+    tmp_path: Path,
+) -> None:
+    prompt_root = tmp_path / "prompt_000"
+    completion_root = prompt_root / "completion_000"
+    completion_root.mkdir(parents=True)
+    (prompt_root / "prompt_meta.json").write_text(
+        json.dumps({"fixture_name": "361_base"})
+    )
+    diagnostics = _active_row_diagnostics()
+    (completion_root / "completion.json").write_text(
+        json.dumps({"steps": [{"decoder_active_row_residency": diagnostics}]})
+    )
+
+    summary = experiment_runner._summarize_artifacts(tmp_path)
+
+    assert summary["decoder_active_row_residency"] == diagnostics
 
 
 def test_dry_run_skips_allocation_guard(
@@ -690,6 +944,7 @@ def test_print_report_includes_compact_phase_timings(
             "parity_passed": True,
             "performance_passed": True,
             "resource_validation_passed": True,
+            "resource_gate_passed": True,
             "passed": True,
         }
     )
@@ -699,7 +954,10 @@ def test_print_report_includes_compact_phase_timings(
     assert "phase4=15.25s" in output
     assert "phase4_batch=0.50s" in output
     assert "batches=4/30" in output
-    assert "parity=PASS performance=PASS stretch=MISS resource=PASS gate=PASS" in output
+    assert (
+        "parity=PASS performance=PASS stretch=MISS resource=PASS "
+        "mechanism=n/a reconciliation=OK gate=PASS" in output
+    )
 
 
 @pytest.mark.parametrize(
@@ -711,11 +969,17 @@ def test_print_report_includes_compact_phase_timings(
                     "parity_passed": True,
                     "performance_passed": None,
                     "runner_returncode": 0,
+                    "resource_gate_passed": True,
+                    "mechanism_validation_passed": None,
+                    "reconciliation_required": False,
                 }
             ],
             {
                 "parity_passed": True,
                 "performance_passed": None,
+                "resource_gate_passed": True,
+                "mechanism_validation_passed": None,
+                "reconciliation_required": False,
                 "passed": True,
             },
         ),
@@ -725,11 +989,17 @@ def test_print_report_includes_compact_phase_timings(
                     "parity_passed": True,
                     "performance_passed": False,
                     "runner_returncode": 0,
+                    "resource_gate_passed": True,
+                    "mechanism_validation_passed": None,
+                    "reconciliation_required": False,
                 }
             ],
             {
                 "parity_passed": True,
                 "performance_passed": False,
+                "resource_gate_passed": True,
+                "mechanism_validation_passed": None,
+                "reconciliation_required": False,
                 "passed": False,
             },
         ),
@@ -739,11 +1009,17 @@ def test_print_report_includes_compact_phase_timings(
                     "parity_passed": False,
                     "performance_passed": True,
                     "runner_returncode": 0,
+                    "resource_gate_passed": True,
+                    "mechanism_validation_passed": None,
+                    "reconciliation_required": False,
                 }
             ],
             {
                 "parity_passed": False,
                 "performance_passed": True,
+                "resource_gate_passed": True,
+                "mechanism_validation_passed": None,
+                "reconciliation_required": False,
                 "passed": False,
             },
         ),
@@ -754,3 +1030,30 @@ def test_gate_summary_keeps_parity_performance_and_overall_separate(
     expected: dict[str, object],
 ) -> None:
     assert perf_cli._gate_summary(reports) == expected
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("resource_gate_passed", False),
+        ("mechanism_validation_passed", False),
+        ("reconciliation_required", True),
+    ],
+)
+def test_gate_summary_rejects_each_active_row_acceptance_failure(
+    field: str,
+    value: bool,
+) -> None:
+    report = {
+        "parity_passed": True,
+        "performance_passed": True,
+        "runner_returncode": 0,
+        "resource_gate_passed": True,
+        "mechanism_validation_passed": True,
+        "reconciliation_required": False,
+    }
+    report[field] = value
+
+    summary = perf_cli._gate_summary([report])
+
+    assert summary["passed"] is False

@@ -1,6 +1,7 @@
-# Exact-trace optimization plan: active-row decoder residency
+# Exact-trace optimization plan: active-row residency and Phase-0 selective I/O
 
-Status: proposed execution plan; work item G is implemented, A-F and H are not
+Status: active-row residency and its fused Phase-0 seed are implemented and
+exact-H200 verified; work item J is the next optimization path
 Date: 2026-07-26
 Branch: `perf/exact-trace-loop` (both project and sibling worktrees)
 Scope: sibling `../circuit-tracer_chunked` chunked attribution path + project
@@ -10,9 +11,9 @@ Work items, in priority order:
 
 | Item | Subject | Status |
 |---|---|---|
-| A | Active-row decoder residency — removes the Phase-4 decoder scan | proposed |
-| B | Project knob plumbing and `plt-active-rows-v1` profile | proposed |
-| B2 | **Parity confound: every candidate changed `decoder_chunk_size`** | diagnosed, fix proposed |
+| A | Active-row decoder residency — removes the Phase-4 decoder scan | **implemented; exact H200 pass** |
+| B | Project knob plumbing and `plt-active-rows-v1` profile | **implemented** |
+| B2 | **Parity confound: every candidate changed `decoder_chunk_size`** | fixed for active-row exact; general guard proposed |
 | C | Source-layer fusion (`coalesced_bounded` rung) | proposed, gated on A |
 | D | Confirm or refute the per-visit cost model | proposed, parallel to A |
 | E | Phase-1 batch cap is never applied to CLT — the long-prefix blocker | diagnosed, fix proposed |
@@ -20,11 +21,13 @@ Work items, in priority order:
 | G | Pin float32 matmul precision (no silent TF32) | **implemented** |
 | H | `max_feature_nodes` as the real scaling knob | decision, not a task |
 | I | Provider agnosticism: enforce the caste boundary in the harness | proposed, after A |
+| J | Phase-0 coalesced safetensor row-range loading | **proposed; next bottleneck** |
 
-A is the headline change. **B2 must be read before any profile value is set** —
-it shows the loop has not been able to detect exactness at all. E is independent
-of A, measurable on the same allocation, and decides whether long-prefix CLT is
-possible. I generalises E and is the prerequisite for a second model family.
+A and B are now the verified incumbent. **B2 must still be read before any
+profile value is set** because exact comparisons must keep the baseline chunk
+size pinned. J is now the primary performance path. E remains independent and
+decides whether long-prefix CLT is possible. I generalises E and is the
+prerequisite for a second model family.
 
 Companion documents:
 
@@ -60,16 +63,18 @@ From `perf-plt-tape-w2-c65536-20260725-01` (1B PLT `361_base`, Granite job
   i.e. all 262,144 decoder rows of each layer are read on every traversal
 - Phase 3 performs one further complete traversal (15.47s for one batch)
 
-`max_feature_nodes` is fixed at `8192` in
-`src/nlp_research_project/exact_trace_bench/config.py:54`, and
-`artifact_max_active_features=8192` is recorded identically for 1B CLT, 1B PLT,
-4B PLT, and 12B PLT. The decoder rows the run actually consumes are therefore
-`8192 x 1152 x 2 B = 18.9 MB`.
+The original plan incorrectly treated `max_feature_nodes=8192` as the complete
+active decoder universe. It is the selected-frontier budget. On the exact 1B
+PLT `361_base` gate, Phase 0 contains 66,158 active occurrences and 29,973
+unique `(source_layer, feature_id)` rows. The final occurrence-aligned resident
+table is `66,158 x 1152 x 2 B = 152,428,032` bytes; the keyed unique Phase-0
+seed is `29,973 x 1152 x 2 B = 69,057,792` bytes.
 
-**The run reads 226 GB to consume 19 MB.** This is not a page-size artifact:
-315 active features per layer scattered over 262,144 feature ids hit
-essentially every chunk at any granularity (at `c4096`, expected distinct
-chunks hit per layer is 63.6 of 64).
+The waste diagnosis still holds, but the denominator is 152.4 MB of resident
+occurrences (69.1 MB unique), not 18.9 MB. Before residency, Phase 4 read
+226 GB to consume those rows. At `c4096`, the observed Phase-0 reconstruction
+still touches 1,660 decoder pages and logically materializes 15,665,725,440
+bytes because sparse feature IDs cover nearly every page.
 
 ### Derived cost model
 
@@ -96,6 +101,46 @@ PLT decoder scan is essentially the entire PLT cost and is ~99% waste.
 Note that the scan term is prefix-length independent. Long-prefix cost is
 currently hidden behind it; after this change, prefix length becomes the
 dominant term.
+
+### 2026-07-26 execution update
+
+All runs below used Granite job `1657613` on one H200, exact fidelity,
+`decoder_chunk_size=4096`, and live isolated project/runtime worktrees whose
+source hashes were checked before and after each run. They are engineering
+gates, not frozen baseline promotions.
+
+The first exact active-row run,
+`perf-plt-active-rows-exact-dev-20260726-01`, verified the contraction but
+falsified the original 65-90 second model:
+
+- 287.26s end to end;
+- exact compact parity: feature/all-edge/top-256 Jaccard 1.0, weighted Jaccard
+  0.999999995889084, normalized edge-magnitude L1 deviation
+  4.110916e-09, and target-token match 1.0;
+- Phase 0: 137.41s, 1,660 decoder-page loads, 15,665,725,440 logical bytes;
+- standalone active-row build: 57.54s and the same 1,660 pages/15.67 GB again;
+- resident table: 66,158 rows / 152,428,032 bytes;
+- Phase 4: 62.97s with zero decoder-page loads/bytes;
+- peak framebuffer: 26,111 MiB.
+
+The duplicate build traversal was then fused into Phase 0. Corrected exact
+runs `perf-plt-active-rows-fused-exact-dev-20260726-02` and `-03` both passed:
+
+| run | end to end | Phase 0 | Phase 3 | Phase 4 | framebuffer |
+|---|---:|---:|---:|---:|---:|
+| `...-02` | 94.47s | 15.67s | 0.25s | 60.38s | 26,111 MiB |
+| `...-03` | 98.36s | 15.32s | 0.26s | 64.16s | 26,111 MiB |
+
+Both fused runs report `build.source=phase0_fused_seed`, zero incremental
+build traversal/page loads/bytes, 1,660 shared Phase-0 page loads and
+15,665,725,440 shared logical bytes, 29,973 unique seed rows / 69,057,792
+bytes, 152,428,032 H2D materialization bytes, zero missing keys, and zero
+Phase-4 decoder loads. Exact parity matches the first run.
+
+The 15-second Phase-0 values are warm-page-cache observations and must not be
+substituted for the earlier 137.41-second cold-ish observation. The verified
+claim is that fusion removes the second traversal exactly. J targets the sole
+remaining Phase-0 traversal and requires explicit cache-state provenance.
 
 ## Work item A — active-row decoder residency (sibling)
 
@@ -559,6 +604,110 @@ would delay the change that matters most. But do it before adding a second model
 family, because every hardcoded variant string added between now and then is
 another one to remove.
 
+## Work item J — Phase-0 coalesced safetensor row-range loading
+
+**Goal.** Reduce the sole remaining PLT decoder traversal in Phase 0. The
+cold-ish exact run measured 137.41s, 1,660 logical decoder-page loads, and
+15,665,725,440 materialized bytes. Once the fused active-row path is enabled,
+this is expected to be the main bottleneck.
+
+### J1. Primary I/O design
+
+The existing safetensor path already supports contiguous range reads:
+`safe_open(...).get_slice(key)[start:stop]`. Do not reuse `_slice_rows`; it
+issues one safetensor slice per row in a Python loop and is exactly the mmap
+access pattern to avoid.
+
+For each source layer after sparsification:
+
+1. derive sorted unique active feature IDs;
+2. coalesce adjacent IDs into half-open row ranges `[start, stop)`;
+3. optionally merge small gaps under an explicit maximum-overfetch policy;
+4. issue one safetensor slice per coalesced range and gather requested rows into
+   a compact keyed table;
+5. replay the existing sorted decoder-chunk groups from that table.
+
+Only the I/O source changes. Preserve, byte for byte:
+
+- the existing sorted chunk traversal;
+- each chunk mask and active-occurrence order;
+- activation scaling;
+- the number, order, and row membership of reconstruction `index_add_` calls;
+- bias/skip addition order;
+- the keyed Phase-0 seed and its canonical provider fingerprint.
+
+This is intentionally not "one mmap read per row." Range fragmentation is a
+measured planning input. If coalescing would produce too many requests or
+exceed the overfetch bound, refuse explicitly and use the current full-page
+path unchanged.
+
+### J2. Ownership and failure safety
+
+Stage at most one bounded range (or one admitted range window) on the GPU at a
+time. Release range tensors and gather intermediates on normal and exceptional
+paths. The compact unique-row table may be reused as the fused Phase-0 seed;
+do not build a second copy. Admission must account separately for:
+
+- the current range staging buffer;
+- the unique CPU seed;
+- the final occurrence-aligned GPU resident table.
+
+Provider/checkpoint identity remains caller-bound and is checked before any
+seed-to-resident transfer.
+
+### J3. Telemetry and claim boundary
+
+Report Phase 0 separately from the full run:
+
+- total Phase-0 wall time;
+- range planning, safetensor read, row gather, reconstruction, and seed-capture
+  seconds;
+- unique row count/bytes;
+- coalesced range request count and rows per range;
+- merged-gap rows and overfetch bytes;
+- logical requested/materialized bytes;
+- fallback/refusal reason and baseline full-page count/bytes;
+- Phase-0 CUDA allocated/reserved peaks and sampled framebuffer;
+- end-to-end duration and whole-run framebuffer as separate fields.
+
+Current `decoder_load_bytes` measures logical materialized tensor volume, not
+storage-device physical I/O. If physical read bytes are collected, publish
+them under a separate process/cgroup counter with filesystem page-cache state
+and its limitations. Never relabel logical safetensor bytes as physical disk
+traffic.
+
+### J4. Independent larger-chunk candidate
+
+Keep larger decoder chunks as a separate candidate/profile. Changing
+`decoder_chunk_size` changes the partition and boundaries of Phase-0
+`index_add_` calls, so it can change floating-point accumulation order even
+when decoder values are identical. Do not combine it with coalesced row-range
+loading in the first experiment. It needs its own exact-parity result against
+the `c4096` frozen baseline; bounded parity is not exact semantics.
+
+### J5. Validation and H200 gates
+
+Synthetic gates:
+
+- Phase-0 reconstruction is `torch.equal` with range loading on/off;
+- selected rows equal full-page gathers for contiguous, fragmented, duplicate,
+  empty, and final-short-range cases;
+- the sequence and row membership of reconstruction `index_add_` operations is
+  unchanged;
+- fallback/refusal preserves output and releases all range owners;
+- provider mismatch and injected second-range failure are cleanup-safe.
+
+H200 gates, on fixed source and workload:
+
+1. run the current fused profile as the control;
+2. run `plt-phase0-coalesced-rows-v1` under exact fidelity;
+3. repeat the winner twice on the same allocation;
+4. record cache state explicitly and retain at least one cold-ish comparison;
+5. require exact worst-step parity, zero post-Phase-0 decoder loads, no
+   framebuffer regression above 26,111 MiB (26,113 MiB audited bound), and
+   separately report Phase-0 time, logical bytes/pages/ranges, end-to-end time,
+   and framebuffer.
+
 ## Explicitly deferred: multi-GPU
 
 Multi-GPU is **out of scope for this plan and should not be started until A is
@@ -670,23 +819,27 @@ uv run exact-trace-perf run all --run-id perf-active-rows-all-01
 
 A run is a success only if all of the following hold:
 
-1. `parity_passed` is true at the declared fidelity, on the worst aligned step,
+1. `parity_passed` is true at the declared fidelity on the worst aligned step,
    not only the means;
-2. Phase-4 `decoder_load_bytes` is at or near zero and `decoder_load_count` is
-   at or near zero — this is the mechanism check, and a speedup without it means
-   something else changed;
-3. `active_row_bytes` is within an order of magnitude of the predicted 18.9 MB
-   for 1B PLT, and the build traversal is counted exactly once;
+2. fused residency reports `build.source=phase0_fused_seed`, zero incremental
+   build traversal/page loads/bytes, and zero Phase-4 decoder loads/bytes;
+3. the 1B gate reports 29,973 unique seed rows / 69,057,792 bytes and 66,158
+   occurrence-aligned resident rows / 152,428,032 bytes, rather than treating
+   the 8,192 frontier budget as the active universe;
 4. end-to-end duration is reproducible across two runs on the same allocation
    and source state;
 5. peak framebuffer does not increase relative to
    `perf-plt-streaming-baseline-c65536-20260724-03` (26,113 MiB);
-6. the CLT control still matches its compact artifacts.
+6. the CLT control still matches its compact artifacts;
+7. Phase-0 selective-I/O candidates separately report Phase-0 time,
+   page/range counts, logical bytes, end-to-end time, and framebuffer.
 
-Predicted 1B PLT `361_base` end-to-end: **65-90s**, from 307s. If the result
-lands far outside that band in either direction, stop and reconcile the model
-before continuing — a much better number is as much a reason to check the
-artifacts as a much worse one.
+The original **65-90s** prediction was falsified by the non-fused 287.26s run,
+then reconciled by identifying and removing its duplicated decoder traversal.
+The corrected warm-cache repeats are 94.47s and 98.36s. These do not establish
+a cold-cache target: Phase 0 alone ranged from 137.41s cold-ish to 15.32-15.67s
+warm. Work item J must report both cache state and Phase-0 time rather than
+promoting the warm number as a general baseline.
 
 ## Targets and floors
 
@@ -697,7 +850,7 @@ utilization on one H200 and the current 8192-feature cap.
 | Case | Today | Floor | Target after this plan |
 |---|---:|---:|---|
 | 1B CLT, 124 tok | 85.8s | ~15s | sub-60s expected; sub-30s needs the 22.9s non-attribution segment |
-| 1B PLT, 124 tok | 307s | ~27s | **65-90s** |
+| 1B PLT, 124 tok | 94-98s warm-cache verified | ~27s | Phase-0 range-loading target pending cold/warm measurement |
 | 4B PLT, 124 tok | 5,472s | ~90s | 200-400s |
 | 12B PLT, 124 tok | 23,052s | ~110s | ~35 min, then 18-25 min with larger execution envelopes |
 | 1B PLT, 1k prefix | unmeasured | ~225s | 5-8 min; sub-60s is not physical |

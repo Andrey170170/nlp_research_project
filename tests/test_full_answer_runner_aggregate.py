@@ -9,6 +9,8 @@ import types
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
+
 from nlp_research_project.exact_trace_bench.full_answer.aggregate import (
     aggregate_shards,
 )
@@ -180,6 +182,8 @@ def test_trace_request_builds_canonical_domain_policies() -> None:
             "feature_vjp_tape_batch_window": 2,
             "feature_vjp_tape_max_bytes": 4096,
             "decoder_page_prefetch_depth": 1,
+            "decoder_active_row_residency": True,
+            "decoder_active_row_max_bytes": 8192,
             "phase4_scheduler_mode": "planner_v1",
             "phase4_scheduler_telemetry_detail": "debug",
             "phase4_refresh_optimization": "v1",
@@ -241,11 +245,42 @@ def test_trace_request_builds_canonical_domain_policies() -> None:
     assert request.execution.frontier.feature_vjp_tape_batch_window == 2
     assert request.execution.frontier.feature_vjp_tape_max_bytes == 4096
     assert request.execution.frontier.decoder_page_prefetch_depth == 1
+    assert request.execution.frontier.decoder_active_row_residency is True
+    assert request.execution.frontier.decoder_active_row_max_bytes == 8192
     assert request.semantics.frontier.scheduler == "planner_v1"
     assert request.execution.session.decoder_cache.enabled is True
     assert request.execution.session.decoder_cache.max_bytes == 8589934592
     assert request.execution.observability.telemetry_max_events == 500
     assert request.evidence.metadata["prefix_view_metadata"] == {}
+
+
+@pytest.mark.parametrize(
+    ("knob", "value", "message"),
+    [
+        (
+            "decoder_active_row_residency",
+            1,
+            "decoder_active_row_residency must be a bool",
+        ),
+        (
+            "decoder_active_row_max_bytes",
+            -1,
+            "decoder_active_row_max_bytes must be a non-negative int",
+        ),
+        (
+            "decoder_active_row_max_bytes",
+            True,
+            "decoder_active_row_max_bytes must be a non-negative int",
+        ),
+    ],
+)
+def test_model_load_knobs_rejects_invalid_active_row_controls(
+    knob: str, value: object, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        runner_module._model_load_knobs(
+            [cast(Any, {"graph_knobs": {knob: value}})]
+        )
 
 
 def test_trace_request_uses_legacy_phase4_rows_when_canonical_default_is_none() -> None:

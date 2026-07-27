@@ -274,6 +274,12 @@ def _summarize_artifacts(run_output_dir: Path) -> dict[str, Any]:
         for step in manifest.get("steps", [])
         if isinstance(step.get("feature_semantic_descriptor_path"), str)
     ]
+    active_row_diagnostics = [
+        step["decoder_active_row_residency"]
+        for manifest in completion_manifests
+        for step in manifest.get("steps", [])
+        if isinstance(step.get("decoder_active_row_residency"), dict)
+    ]
 
     first_prompt_meta = prompt_metas[0] if prompt_metas else {}
     first_completion = completion_manifests[0] if completion_manifests else {}
@@ -301,6 +307,9 @@ def _summarize_artifacts(run_output_dir: Path) -> dict[str, Any]:
         "decoder_cache_eviction_count": max(cache_evictions)
         if cache_evictions
         else None,
+        "decoder_active_row_residency": (
+            active_row_diagnostics[-1] if active_row_diagnostics else None
+        ),
         "feature_semantic_descriptor_status": (
             feature_semantic_descriptor_statuses[-1]
             if feature_semantic_descriptor_statuses

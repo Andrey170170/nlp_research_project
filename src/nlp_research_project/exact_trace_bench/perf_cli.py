@@ -65,6 +65,19 @@ PERFORMANCE_TARGET_SECONDS = {
 PERFORMANCE_STRETCH_TARGET_SECONDS = {
     "performance/gemma3_1b_plt/361_base": 300.0,
 }
+ACTIVE_ROW_INITIAL_PREDICTED_DURATION_SECONDS = (65.0, 90.0)
+ACTIVE_ROW_FUSED_TARGET_SECONDS = 245.0
+ACTIVE_ROW_EXPECTED_BYTES = 66_158 * 1152 * 2
+ACTIVE_ROW_FRAMEBUFFER_REFERENCE = {
+    "run_id": "perf-plt-streaming-baseline-c65536-20260724-03",
+    "resource_summary_path": (
+        "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/"
+        "granite/sweep/performance_optimization/"
+        "perf-plt-streaming-baseline-c65536-20260724-03/candidates/"
+        "gemma3_1b_plt_361_base/resource_summary.json"
+    ),
+    "gpu_framebuffer_peak_mib": 26113.0,
+}
 _PLT_BOUNDED_TAPE_V1 = {
     "decoder_chunk_size": 65536,
     "nnsight_session_capacity": 256,
@@ -116,6 +129,33 @@ CANDIDATE_PROFILES: dict[str, dict[str, Any]] = {
         "phase1_trace_batch_size_max": 128,
         "phase3_compute_microbatch_max_rows": 128,
         "phase4_execution_batch_max_rows": 512,
+    },
+    "plt-active-rows-v1": {
+        "decoder_chunk_size": 4096,
+        "cross_batch_decoder_cache_bytes": 0,
+        "nnsight_session_capacity": 256,
+        "phase1_trace_batch_policy": "cap_effective_batches",
+        "phase1_trace_batch_size_max": 128,
+        "phase3_compute_microbatch_max_rows": 128,
+        "phase4_execution_batch_max_rows": 256,
+        "feature_vjp_tape_batch_window": 1,
+        "decoder_page_prefetch_depth": 0,
+        "decoder_active_row_residency": True,
+        "decoder_active_row_max_bytes": 1024**3,
+    },
+    "plt-active-rows-tape-v1": {
+        "decoder_chunk_size": 4096,
+        "cross_batch_decoder_cache_bytes": 0,
+        "nnsight_session_capacity": 256,
+        "phase1_trace_batch_policy": "cap_effective_batches",
+        "phase1_trace_batch_size_max": 128,
+        "phase3_compute_microbatch_max_rows": 128,
+        "phase4_execution_batch_max_rows": 256,
+        "feature_vjp_tape_batch_window": 2,
+        "feature_vjp_tape_max_bytes": 12 * 1024**3,
+        "decoder_page_prefetch_depth": 0,
+        "decoder_active_row_residency": True,
+        "decoder_active_row_max_bytes": 1024**3,
     },
 }
 BOUNDED_ONLY_CANDIDATE_PROFILES = frozenset(
@@ -556,6 +596,179 @@ def _baseline_entries() -> dict[str, dict[str, Any]]:
     return entries
 
 
+def _active_row_mechanism_gate(
+    requested: bool,
+    diagnostics: Any,
+    max_bytes: int,
+) -> tuple[bool | None, list[str]]:
+    if not requested:
+        return None, []
+    if not isinstance(diagnostics, dict):
+        return False, ["active-row diagnostics missing from result artifact summary"]
+
+    reasons: list[str] = []
+    resident = diagnostics.get("resident")
+    build = diagnostics.get("build")
+    phase4 = diagnostics.get("phase4")
+    if diagnostics.get("requested") is not True:
+        reasons.append("active-row runtime did not record requested=true")
+    if diagnostics.get("effective") is not True:
+        reasons.append("active-row residency was not effective")
+    fallback = diagnostics.get("fallback_reason")
+    if fallback is not None:
+        reasons.append(f"active-row fallback was recorded: {fallback}")
+    if not all(isinstance(value, dict) for value in (resident, build, phase4)):
+        reasons.append("active-row resident/build/phase4 diagnostics are incomplete")
+        return False, reasons
+
+    assert isinstance(resident, dict)
+    assert isinstance(build, dict)
+    assert isinstance(phase4, dict)
+    seed = diagnostics.get("seed")
+    if not isinstance(seed, dict):
+        reasons.append("active-row fused-seed diagnostics are incomplete")
+        return False, reasons
+    resident_bytes = resident.get("bytes")
+    estimated_bytes = resident.get("estimated_bytes")
+    if not isinstance(resident_bytes, int) or resident_bytes <= 0:
+        reasons.append("active-row resident bytes must be positive")
+    if not isinstance(estimated_bytes, int) or estimated_bytes <= 0:
+        reasons.append("active-row estimated bytes must be positive")
+    if (
+        isinstance(resident_bytes, int)
+        and isinstance(estimated_bytes, int)
+        and resident_bytes != estimated_bytes
+    ):
+        reasons.append("active-row resident bytes differ from admitted estimate")
+    if (
+        not isinstance(max_bytes, int)
+        or max_bytes <= 0
+        or not isinstance(resident_bytes, int)
+        or resident_bytes > max_bytes
+    ):
+        reasons.append(
+            "active-row resident bytes exceed or lack the configured byte cap"
+        )
+    if isinstance(resident_bytes, int) and not (
+        ACTIVE_ROW_EXPECTED_BYTES / 10
+        <= resident_bytes
+        <= ACTIVE_ROW_EXPECTED_BYTES * 10
+    ):
+        reasons.append(
+            "active-row resident bytes are outside the predicted order of magnitude"
+        )
+    if not isinstance(resident.get("row_count"), int) or resident["row_count"] <= 0:
+        reasons.append("active-row resident row count must be positive")
+    if resident.get("owner_count") != 1:
+        reasons.append("active-row owner count must equal 1")
+    if build.get("count") != 1:
+        reasons.append("active-row build count must equal 1")
+    if build.get("source") != "phase0_fused_seed":
+        reasons.append("active-row build source must equal phase0_fused_seed")
+    traversal = build.get("traversal_bytes")
+    loaded = build.get("decoder_load_bytes")
+    if (
+        not isinstance(traversal, int)
+        or traversal != 0
+        or not isinstance(loaded, int)
+        or loaded != 0
+    ):
+        reasons.append(
+            "fused active-row materialization must add zero traversal/load bytes"
+        )
+    if (
+        not isinstance(build.get("decoder_page_load_count"), int)
+        or build["decoder_page_load_count"] != 0
+    ):
+        reasons.append("fused active-row materialization must add zero decoder page loads")
+    shared_traversal = seed.get("shared_traversal_bytes")
+    shared_loaded = seed.get("shared_decoder_load_bytes")
+    if (
+        not isinstance(shared_traversal, int)
+        or shared_traversal <= 0
+        or not isinstance(shared_loaded, int)
+        or shared_loaded <= 0
+        or shared_traversal != shared_loaded
+    ):
+        reasons.append(
+            "fused active-row seed shared traversal/load bytes are missing or inconsistent"
+        )
+    if (
+        not isinstance(seed.get("shared_decoder_page_load_count"), int)
+        or seed["shared_decoder_page_load_count"] <= 0
+    ):
+        reasons.append("fused active-row seed shared decoder page-load count must be positive")
+    seed_bytes = seed.get("bytes")
+    if (
+        not isinstance(seed_bytes, int)
+        or seed_bytes <= 0
+        or not isinstance(resident_bytes, int)
+        or seed_bytes > resident_bytes
+    ):
+        reasons.append("active-row seed bytes must be positive and no larger than resident bytes")
+    unique_row_count = seed.get("unique_row_count")
+    resident_row_count = resident.get("row_count")
+    if (
+        not isinstance(unique_row_count, int)
+        or unique_row_count <= 0
+        or not isinstance(resident_row_count, int)
+        or unique_row_count > resident_row_count
+    ):
+        reasons.append(
+            "active-row seed unique-row count must be positive and no larger than resident rows"
+        )
+    if seed.get("materialization_h2d_bytes") != resident_bytes:
+        reasons.append("active-row seed H2D bytes must equal resident bytes")
+    if seed.get("missing_keys") != 0:
+        reasons.append("active-row seed must cover every final decoder-row key")
+    if not isinstance(resident.get("device"), str) or not resident["device"].startswith(
+        "cuda"
+    ):
+        reasons.append("active-row residency device must be CUDA")
+    if (
+        phase4.get("decoder_page_load_count_delta") != 0
+        or phase4.get("decoder_load_bytes_delta") != 0
+    ):
+        reasons.append(
+            "Phase4 decoder page-load and load-byte deltas must both equal zero"
+        )
+    return not reasons, reasons
+
+
+def _active_row_framebuffer_gate(
+    requested: bool,
+    resource_summary: dict[str, Any],
+) -> tuple[bool | None, dict[str, Any], list[str]]:
+    reference = dict(ACTIVE_ROW_FRAMEBUFFER_REFERENCE)
+    if not requested:
+        return None, {"status": "not_applicable", "reference": reference}, []
+    candidate = resource_summary.get("gpu_framebuffer_peak_mib")
+    limit = reference["gpu_framebuffer_peak_mib"]
+    comparison = {
+        "status": "unavailable",
+        "candidate_peak_mib": candidate,
+        "reference_peak_mib": limit,
+        "reference": reference,
+    }
+    if not isinstance(candidate, (int, float)):
+        return (
+            False,
+            comparison,
+            ["active-row framebuffer comparison unavailable: candidate peak missing"],
+        )
+    passed = float(candidate) <= float(limit)
+    comparison["status"] = "passed" if passed else "exceeded_reference"
+    reasons = (
+        []
+        if passed
+        else [
+            f"candidate peak framebuffer {float(candidate):.1f} MiB exceeds "
+            f"audited reference {float(limit):.1f} MiB"
+        ]
+    )
+    return passed, comparison, reasons
+
+
 def _result_report(
     case: Case,
     *,
@@ -565,6 +778,15 @@ def _result_report(
 ) -> dict[str, Any]:
     scenario_root = candidate_root / f"perf_{case.variant}_{case.fixture}"
     result = read_json(scenario_root / "result.json")
+    scenario_path = scenario_root / "scenario.json"
+    scenario = read_json(scenario_path) if scenario_path.is_file() else {}
+    active_rows_requested = scenario.get("decoder_active_row_residency") is True
+    active_rows_max_bytes_raw = scenario.get("decoder_active_row_max_bytes", 0)
+    active_rows_max_bytes = (
+        int(active_rows_max_bytes_raw)
+        if isinstance(active_rows_max_bytes_raw, int)
+        else 0
+    )
     comparison_path = scenario_root / "baseline_compare.json"
     comparison = read_json(comparison_path) if comparison_path.is_file() else {}
     candidate_duration_raw = result.get("duration_seconds")
@@ -578,35 +800,56 @@ def _result_report(
         label: comparison.get(metric_key) for label, metric_key in METRIC_KEYS.items()
     }
     parity_passed = result.get("baseline_check", {}).get("passed") is True
-    performance_target = PERFORMANCE_TARGET_SECONDS.get(case.key)
-    stretch_target = PERFORMANCE_STRETCH_TARGET_SECONDS.get(case.key)
-    performance_passed = (
-        candidate_duration <= performance_target
-        if performance_target is not None and candidate_duration is not None
-        else None
-    )
-    if performance_target is not None and candidate_duration is None:
-        performance_passed = False
-    stretch_passed = (
-        candidate_duration <= stretch_target
-        if stretch_target is not None and candidate_duration is not None
-        else None
-    )
-    if stretch_target is not None and candidate_duration is None:
-        stretch_passed = False
     parity_failure_reasons = result.get("baseline_check", {}).get("failure_reasons", [])
-    performance_failure_reasons = []
-    if performance_passed is False:
+    performance_failure_reasons: list[str] = []
+    reconciliation_required = False
+    if active_rows_requested:
+        performance_target = ACTIVE_ROW_FUSED_TARGET_SECONDS
+        stretch_target = None
+        performance_passed = bool(
+            candidate_duration is not None
+            and candidate_duration <= performance_target
+        )
+        stretch_passed = None
+        reconciliation_required = not performance_passed
         if candidate_duration is None:
             performance_failure_reasons.append(
-                f"performance target {performance_target:.2f}s could not be "
-                "evaluated because candidate duration is missing"
+                "active-row duration is missing; the fused engineering target cannot be evaluated"
             )
-        else:
+        elif not performance_passed:
             performance_failure_reasons.append(
-                f"candidate duration {candidate_duration:.2f}s exceeds "
-                f"performance target {performance_target:.2f}s"
+                f"active-row duration {candidate_duration:.2f}s exceeds the reconciled "
+                f"fused engineering target {performance_target:.2f}s; "
+                "reconciliation is required"
             )
+    else:
+        performance_target = PERFORMANCE_TARGET_SECONDS.get(case.key)
+        stretch_target = PERFORMANCE_STRETCH_TARGET_SECONDS.get(case.key)
+        performance_passed = (
+            candidate_duration <= performance_target
+            if performance_target is not None and candidate_duration is not None
+            else None
+        )
+        if performance_target is not None and candidate_duration is None:
+            performance_passed = False
+        stretch_passed = (
+            candidate_duration <= stretch_target
+            if stretch_target is not None and candidate_duration is not None
+            else None
+        )
+        if stretch_target is not None and candidate_duration is None:
+            stretch_passed = False
+        if performance_passed is False:
+            if candidate_duration is None:
+                performance_failure_reasons.append(
+                    f"performance target {performance_target:.2f}s could not be "
+                    "evaluated because candidate duration is missing"
+                )
+            else:
+                performance_failure_reasons.append(
+                    f"candidate duration {candidate_duration:.2f}s exceeds "
+                    f"performance target {performance_target:.2f}s"
+                )
     resource_summary = (
         read_json(candidate_root / "resource_summary.json")
         if (candidate_root / "resource_summary.json").is_file()
@@ -625,8 +868,28 @@ def _result_report(
             )
         ]
     )
+    diagnostics = (result.get("artifact_summary") or {}).get(
+        "decoder_active_row_residency"
+    )
+    mechanism_passed, mechanism_failure_reasons = _active_row_mechanism_gate(
+        active_rows_requested,
+        diagnostics,
+        active_rows_max_bytes,
+    )
+    framebuffer_passed, framebuffer_comparison, framebuffer_failure_reasons = (
+        _active_row_framebuffer_gate(active_rows_requested, resource_summary)
+    )
+    resource_failure_reasons.extend(framebuffer_failure_reasons)
+    resource_gate_passed = resource_validation_passed and (
+        framebuffer_passed is not False
+    )
     passed = (
-        parity_passed and performance_passed is not False and runner_returncode == 0
+        parity_passed
+        and performance_passed is not False
+        and resource_gate_passed
+        and mechanism_passed is not False
+        and not reconciliation_required
+        and runner_returncode == 0
     )
     return {
         "case": case.key,
@@ -645,17 +908,37 @@ def _result_report(
         "resource_summary": resource_summary,
         "performance_target_seconds": performance_target,
         "performance_stretch_target_seconds": stretch_target,
+        "active_row_initial_predicted_duration_seconds": (
+            list(ACTIVE_ROW_INITIAL_PREDICTED_DURATION_SECONDS)
+            if active_rows_requested
+            else None
+        ),
+        "active_row_fused_target_seconds": (
+            ACTIVE_ROW_FUSED_TARGET_SECONDS if active_rows_requested else None
+        ),
+        "reconciliation_required": reconciliation_required,
+        "decoder_active_row_residency": diagnostics,
+        "mechanism_validation_passed": mechanism_passed,
+        "mechanism_validation_status": "not_applicable"
+        if mechanism_passed is None
+        else ("passed" if mechanism_passed else "failed"),
+        "framebuffer_comparison": framebuffer_comparison,
+        "framebuffer_passed": framebuffer_passed,
         "parity_passed": parity_passed,
         "performance_passed": performance_passed,
         "performance_stretch_passed": stretch_passed,
         "resource_validation_passed": resource_validation_passed,
+        "resource_gate_passed": resource_gate_passed,
         "passed": passed,
         "parity_failure_reasons": parity_failure_reasons,
         "performance_failure_reasons": performance_failure_reasons,
+        "mechanism_failure_reasons": mechanism_failure_reasons,
         "resource_failure_reasons": resource_failure_reasons,
         "failure_reasons": [
             *parity_failure_reasons,
             *performance_failure_reasons,
+            *mechanism_failure_reasons,
+            *resource_failure_reasons,
         ],
         "scenario_root": str(scenario_root),
     }
@@ -679,7 +962,14 @@ def _print_report(report: dict[str, Any]) -> None:
     performance_status = (
         "n/a" if performance_gate is None else ("PASS" if performance_gate else "FAIL")
     )
-    resource_status = "PASS" if report.get("resource_validation_passed") else "FAIL"
+    resource_status = "PASS" if report.get("resource_gate_passed") else "FAIL"
+    mechanism_gate = report.get("mechanism_validation_passed")
+    mechanism_status = (
+        "n/a" if mechanism_gate is None else ("PASS" if mechanism_gate else "FAIL")
+    )
+    reconciliation_status = (
+        "REQUIRED" if report.get("reconciliation_required") else "OK"
+    )
     print(
         f"{report['case']}: "
         f"candidate={render(report.get('candidate_duration_seconds'), 2)}s "
@@ -698,6 +988,8 @@ def _print_report(report: dict[str, Any]) -> None:
         f"performance={performance_status} "
         f"stretch={'PASS' if report.get('performance_stretch_passed') else 'MISS'} "
         f"resource={resource_status} "
+        f"mechanism={mechanism_status} "
+        f"reconciliation={reconciliation_status} "
         f"gate={'PASS' if report['passed'] else 'FAIL'}"
     )
 
@@ -710,15 +1002,33 @@ def _gate_summary(reports: Sequence[dict[str, Any]]) -> dict[str, bool | None]:
         if report["performance_passed"] is not None
     ]
     performance_passed = all(performance_results) if performance_results else None
+    resource_gate_passed = bool(reports) and all(
+        report.get("resource_gate_passed") is True for report in reports
+    )
+    mechanism_results = [
+        report.get("mechanism_validation_passed")
+        for report in reports
+        if report.get("mechanism_validation_passed") is not None
+    ]
+    mechanism_validation_passed = all(mechanism_results) if mechanism_results else None
+    reconciliation_required = any(
+        report.get("reconciliation_required") is True for report in reports
+    )
     passed = (
         bool(reports)
         and parity_passed
         and performance_passed is not False
+        and resource_gate_passed
+        and mechanism_validation_passed is not False
+        and not reconciliation_required
         and all(report["runner_returncode"] == 0 for report in reports)
     )
     return {
         "parity_passed": parity_passed,
         "performance_passed": performance_passed,
+        "resource_gate_passed": resource_gate_passed,
+        "mechanism_validation_passed": mechanism_validation_passed,
+        "reconciliation_required": reconciliation_required,
         "passed": passed,
     }
 

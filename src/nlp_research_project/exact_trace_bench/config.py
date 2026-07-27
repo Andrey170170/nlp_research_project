@@ -74,6 +74,8 @@ def base_trace_defaults() -> dict[str, Any]:
         "feature_vjp_tape_batch_window": 1,
         "feature_vjp_tape_max_bytes": 0,
         "decoder_page_prefetch_depth": 0,
+        "decoder_active_row_residency": False,
+        "decoder_active_row_max_bytes": 0,
         "full_retention_backend": "full_file",
         "feature_row_column_tile_size": 2048,
         "influence_row_tile_size": 4096,

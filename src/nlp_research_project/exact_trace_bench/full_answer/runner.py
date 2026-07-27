@@ -496,6 +496,16 @@ def _model_load_knobs(specs: list[TraceSpec]) -> dict[str, Any]:
             raise ValueError(
                 "cross_batch_decoder_cache_bytes must be a non-negative int"
             )
+        active_row_residency = knobs.get("decoder_active_row_residency", False)
+        if not isinstance(active_row_residency, bool):
+            raise ValueError("decoder_active_row_residency must be a bool")
+        active_row_max_bytes = knobs.get("decoder_active_row_max_bytes", 0)
+        if (
+            isinstance(active_row_max_bytes, bool)
+            or not isinstance(active_row_max_bytes, int)
+            or active_row_max_bytes < 0
+        ):
+            raise ValueError("decoder_active_row_max_bytes must be a non-negative int")
         if resolved is not None and any(
             config[k] != resolved[k] for k in PUBLIC_TRANSCODER_KNOB_KEYS
         ):
@@ -680,6 +690,12 @@ def _trace_request(
             ),
             decoder_page_prefetch_depth=int(
                 knobs.get("decoder_page_prefetch_depth", 0)
+            ),
+            decoder_active_row_residency=bool(
+                knobs.get("decoder_active_row_residency", False)
+            ),
+            decoder_active_row_max_bytes=int(
+                knobs.get("decoder_active_row_max_bytes", 0)
             ),
         ),
         observability=ObservabilityPolicy(
