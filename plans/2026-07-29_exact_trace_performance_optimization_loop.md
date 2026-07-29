@@ -1,6 +1,6 @@
 # Exact-trace performance optimization loop: short-prefix promotion and scaling
 
-Status: ready for execution; SP0 not started
+Status: in progress; SP2/SP3 evaluated on 12B, no exact promotion candidate
 
 Date: 2026-07-29
 
@@ -975,3 +975,22 @@ The immediate coding task is item 2, followed by the SP1 diagnostic boundary.
 The immediate performance mechanism is SP2, the exact full-residency GPU
 feature-row tier. No new 12B full run is justified until those smaller gates
 pass.
+
+### 2026-07-29 execution update
+
+At the user's direction, the available H200 allocation was used to evaluate
+SP2 directly on the 12B workload instead of running the planned 1B/4B ladder.
+The implementation, exact/bounded variants, traffic-accounting correction, and
+SP3 prepared-row follow-up are recorded in
+`reports/2026-07-29_exact_trace_sp2_row_tier_results.md`.
+
+- [x] Define the GPU feature-row-tier interface and exact capacity estimator.
+- [x] Implement focused append/read/fallback/cleanup and telemetry tests.
+- [x] Complete a 12B mapped-lazy control and full SP2 variants from immutable
+      dual-repository snapshots.
+- [x] Re-profile and evaluate the prepared-row SP3 objective.
+- [x] Reject promotion because the fast variants are not exact and the exact
+      variant is 1.4% slower in Phase 4.
+
+The 1B/4B promotion ladder, SP4, and SP5 remain unexecuted. They should not be
+run for this candidate without a newly measured exact optimization mechanism.
