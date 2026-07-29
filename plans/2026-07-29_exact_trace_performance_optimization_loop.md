@@ -1,6 +1,7 @@
 # Exact-trace performance optimization loop: short-prefix promotion and scaling
 
-Status: in progress; SP2/SP3 evaluated on 12B, no exact promotion candidate
+Status: in progress; SP2.2 selectable CPU/CUDA row execution and bounded-HBM
+scaling authorized
 
 Date: 2026-07-29
 
@@ -433,7 +434,62 @@ The first implementation should be full-residency, not an LRU:
 The performance campaign may use an explicit byte budget, but it must not call
 that budget a calibrated governor policy.
 
-#### SP2.2 Focused validation
+#### SP2.2 Selectable execution and bounded-HBM scaling
+
+The 12B SP2 characterization established two useful fidelity lanes and one
+scaling limit. Preserve them as explicit, inspectable modes over the same
+canonical signed row-store contract:
+
+```text
+canonical signed file/host rows
+  -> cpu_exact
+  -> cpu_prepared
+  -> cuda_full
+  -> cuda_windowed
+```
+
+- `cpu_exact` preserves the incumbent signed CPU preparation, layout, and
+  reduction path.
+- `cpu_prepared` prepares absolute host rows once and is bounded until an exact
+  layout-preserving pipeline passes signed graph evidence.
+- `cuda_full` retains the complete signed matrix in HBM and performs absolute
+  value, normalization, and influence accumulation on CUDA.
+- `cuda_windowed` retains canonical signed rows on the host, stages
+  chunk-aligned bounded windows into HBM, and uses the same CUDA influence
+  consumer as `cuda_full`.
+
+Keep mode selection separate from byte admission. `cuda_full` must retain the
+existing complete-allocation budget and safety gate. `cuda_windowed` must use
+an explicit staging-byte budget, allocate a bounded number of complete row
+windows, and fall back atomically when even one legal window cannot fit. An
+`auto` selector may choose `cuda_full`, then `cuda_windowed`, then `cpu_exact`,
+but it must report the resolved mode and reason.
+
+The first windowed implementation may use synchronous transfers to establish
+correctness and scaling. The performance implementation should use reusable
+pinned host staging and two CUDA buffers so transfer of window `N+1` can
+overlap computation of window `N`. Coalesce stable canonical ranges rather
+than caching exact active-row requests. Preserve fixed processing order and
+measure any change caused by window geometry under the bounded signed-graph
+gate.
+
+Required mode telemetry:
+
+- requested and resolved execution mode;
+- full-residency and window-staging required/admitted bytes;
+- host, H2D, resident-hit, and fallback bytes;
+- staging window count, rows, calls, transfer time, and synchronization time;
+- peak owned HBM and pinned-host bytes; and
+- CPU preparation, CUDA preparation, normalization, and accumulation time.
+
+At the current 12B shape, full residency owns about 4.18 GB. Required bytes
+scale as row capacity times active-feature width times element size: roughly
+linearly with prompt length at a fixed output-node cap, and multiplicatively
+when both axes grow. Test `cuda_windowed` on the current 12B workload by
+artificially constraining staging/residency budgets before requiring a longer
+prompt.
+
+#### SP2.3 Focused validation
 
 - [ ] append/read equality for empty, partial, full, duplicate, non-monotonic,
       and cross-tile ranges;
@@ -446,7 +502,7 @@ that budget a calibrated governor policy.
 - [ ] telemetry/schema coverage for admitted, hit, fallback, and refused paths;
 - [ ] file-backed reference path unchanged when the feature is disabled.
 
-#### SP2.3 Performance ladder
+#### SP2.4 Performance ladder
 
 1. login-safe synthetic solver benchmark using generated tensors only;
 2. 1B PLT `361_base` exact full run;
@@ -992,5 +1048,7 @@ SP3 prepared-row follow-up are recorded in
 - [x] Reject promotion because the fast variants are not exact and the exact
       variant is 1.4% slower in Phase 4.
 
-The 1B/4B promotion ladder, SP4, and SP5 remain unexecuted. They should not be
-run for this candidate without a newly measured exact optimization mechanism.
+The 1B/4B promotion ladder, SP4, and SP5 remain unexecuted. Subsequent work is
+authorized under SP2.2's explicit bounded lane: restore the fast CUDA consumer,
+evaluate the prepared CPU mode independently, and measure a bounded-HBM
+windowed CUDA provider before selecting a new SP3 bottleneck.
