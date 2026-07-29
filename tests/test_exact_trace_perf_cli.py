@@ -1205,6 +1205,25 @@ def test_mapped_decoder_row_profile_selects_4b_and_12b_variants() -> None:
     }
 
 
+def test_gpu_row_store_profile_is_exact_eligible_and_12b_scoped() -> None:
+    profile_name = "plt-selective-mapped-rows-gpu-store-12b-v1"
+    profile = perf_cli.CANDIDATE_PROFILES[profile_name]
+    case_4b = perf_cli.Case("gemma3_4b_plt", "361_base")
+    case_12b = perf_cli.Case("gemma3_12b_plt", "361_base")
+
+    assert profile.variant_for(case_4b.provider_capabilities()) is None
+    assert profile.variant_for(case_12b.provider_capabilities()) is not None
+    assert profile.evidence_scope.exact_baseline is perf_cli.BaselineScope.MECHANISM
+    assert perf_cli._candidate_overrides(case_12b, profile_name) == {
+        **perf_cli._candidate_overrides(
+            case_12b,
+            "plt-selective-mapped-rows-large-v1",
+        ),
+        "feature_row_gpu_resident_max_bytes": 8 * 1024**3,
+        "feature_row_gpu_resident_safety_margin_bytes": 16 * 1024**3,
+    }
+
+
 @pytest.mark.parametrize(
     ("profile_name", "encoder_mode"),
     [

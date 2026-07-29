@@ -244,6 +244,12 @@ def trace_policy_from_scenario(
             replay_tile_cache_bytes=_optional_int(
                 scenario.get("replay_tile_cache_bytes")
             ),
+            gpu_resident_max_bytes=int(
+                scenario.get("feature_row_gpu_resident_max_bytes", 0)
+            ),
+            gpu_resident_safety_margin_bytes=int(
+                scenario.get("feature_row_gpu_resident_safety_margin_bytes", 0)
+            ),
             exact_encoder_residency=_choice(
                 scenario, "exact_encoder_residency", "lazy"
             ),

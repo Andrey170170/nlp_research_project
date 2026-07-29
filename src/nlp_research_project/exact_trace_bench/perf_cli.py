@@ -697,6 +697,29 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
         ),
         evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
     )
+    contracts["plt-selective-mapped-rows-gpu-store-12b-v1"] = CandidateProfile(
+        name="plt-selective-mapped-rows-gpu-store-12b-v1",
+        variants=(
+            _candidate_variant(
+                {
+                    **_LEGACY_CANDIDATE_OVERRIDES[
+                        "plt-active-rows-12b-c4096-v1"
+                    ],
+                    "phase0_decoder_row_ranges": True,
+                    "checkpoint_asset_scope": "job_private",
+                    "feature_row_gpu_resident_max_bytes": 8 * 1024**3,
+                    "feature_row_gpu_resident_safety_margin_bytes": 16 * 1024**3,
+                },
+                CapabilityRequirements(
+                    **{
+                        **_PLT_MAPPED_DECODER_ROWS.__dict__,
+                        "minimum_layer_count": 35,
+                    }
+                ),
+            ),
+        ),
+        evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
+    )
     for encoder_mode in ("active_cpu", "active_pinned_cpu"):
         profile_name = (
             "plt-selective-mapped-rows-"

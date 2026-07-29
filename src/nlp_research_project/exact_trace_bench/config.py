@@ -85,6 +85,8 @@ def base_trace_defaults() -> dict[str, Any]:
         "influence_column_tile_size": 2048,
         "feature_row_retention": "full_file",
         "replay_tile_cache_bytes": None,
+        "feature_row_gpu_resident_max_bytes": 0,
+        "feature_row_gpu_resident_safety_margin_bytes": 0,
         "exact_encoder_residency": "lazy",
         "exact_trace_internal_dtype": "fp32",
         "governor_admission_mode": "enforce",
