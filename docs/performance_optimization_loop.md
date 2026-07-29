@@ -17,18 +17,24 @@ projects/worktrees/exact-trace-perf/
 └── circuit-tracer_chunked/
 ```
 
-Both worktrees should be on `perf/exact-trace-loop`. The CLI records the branch,
-commit, dirty-file list, and content hash for both repositories before execution,
-then compares that recorded state before and after every case. A detected
-source-state change aborts the suite. This is after-the-fact change detection,
-not a filesystem lock: the operator remains responsible for making no edits
-while a case runs.
+Both development worktrees should be on `perf/exact-trace-loop`. Every GPU run
+that executes project code must use an immutable read-only snapshot containing
+the exact project and sibling source state. Reuse one verified snapshot for a
+campaign when the code state is shared. The CLI records the branch, commit,
+dirty-file list, content hash, snapshot roots, and manifest for both
+repositories, then verifies that the runtime paths resolve inside the declared
+snapshot.
 
-This is an explicit live-workspace exception to the ordinary immutable
-experiment policy: `run_manifest.json` records `workspace_mode=live`, the
-non-empty rationale that the isolated worktree itself is the candidate under
-test, and `no_edits_during_run_enforced=true`. Do not edit either worktree while
-a case is running.
+A live-workspace launch is an explicit exceptional override only. It must record
+`workspace_mode=live`, a non-empty rationale, both dirty states, and
+`no_edits_during_run_enforced=true`; neither runtime checkout may be edited
+until the job terminates. Live runs are useful for exceptional debugging but
+are not formal promotion evidence.
+
+The active successor campaign is
+`plans/2026-07-29_exact_trace_performance_optimization_loop.md`. It preserves
+the fixed suites below as short-prefix regression aliases and adds the planned
+manifest-driven prefix/prompt/model scaling workflow.
 
 ## Suites
 

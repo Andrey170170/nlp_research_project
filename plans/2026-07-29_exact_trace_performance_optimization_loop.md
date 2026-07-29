@@ -1,0 +1,977 @@
+# Exact-trace performance optimization loop: short-prefix promotion and scaling
+
+Status: ready for execution; SP0 not started
+
+Date: 2026-07-29
+
+Branches: `perf/exact-trace-loop` in the project and sibling worktrees
+
+Scope: exact-trace runtime performance only. Governor calibration, response
+models, plan fitting, fidelity-scope authorization, baseline-registry changes,
+and launch-default promotion are explicitly out of scope.
+
+Predecessor plan: `plans/2026-07-27_large_model_optimizations.md`
+
+Starting results: `reports/2026-07-27_large_model_optimization_results.md`
+
+Workflow reference: `docs/performance_optimization_loop.md`
+
+This plan has two ordered campaigns:
+
+1. finish, prove, and package the short-prefix work, including the current
+   approximately ten-minute 12B result; and
+2. measure and improve scaling across longer prefixes, new prompts, and then
+   larger models, using 1B as the fast development case.
+
+The first campaign must produce a stable exact finalist and a mechanism-by-
+mechanism evidence dossier before the second campaign changes the workload.
+The scaling campaign then separates prefix-length effects from prompt effects
+and transfers only accepted mechanisms from 1B to 4B and 12B.
+
+The stage prefixes are descriptive:
+
+| Prefix | Meaning | Current state |
+|---|---|---|
+| `SP` | canonical short-prefix completion and promotion evidence | ready to start at SP0 |
+| `LS` | prefix-length, prompt, and model-size scaling | blocked on the SP5 finalist, except login-safe harness/fixture planning |
+
+Within each campaign the number is execution order, not a governor phase or
+calibration wave.
+
+## 1. Desired outcomes
+
+At completion, the performance workstream should be able to answer:
+
+1. Which current short-prefix mechanisms are exact and independently
+   promotable?
+2. Is active-CPU encoder residency exact, repairably exact, or necessarily a
+   bounded/research profile?
+3. Can an exact GPU-resident feature-row tier remove the dominant Phase-4
+   refresh traffic?
+4. What is the fastest reproducible exact profile for the canonical short
+   prefix at 1B, 4B, and 12B?
+5. How do total and phase times scale with prefix tokens, active features,
+   feature-row-store bytes, and model size?
+6. Does the result transfer to prompts that were not used for optimization?
+7. Where does full GPU row residency stop fitting, and what exact hybrid or
+   file-backed fallback should take over?
+
+The deliverables are:
+
+- accepted sibling runtime mechanisms with focused tests;
+- project-owned candidate profiles, probes, comparison gates, and campaign
+  manifests;
+- immutable-run evidence under declared cache and resource conditions;
+- a short-prefix promotion report;
+- a length/prompt/model scaling report and machine-readable measurements;
+- append-only experiment-log records for accepted or rejected mechanisms; and
+- a compact update to `EXPERIMENTS.md` only when an accepted result changes the
+  current performance interpretation.
+
+## 2. Boundaries and non-goals
+
+This is not a governor campaign. Do not:
+
+- fit or calibrate governor response models;
+- promote calibration observations or fidelity scopes;
+- change launch defaults as a side effect of selecting a fast candidate;
+- turn measured model-specific breakpoints into hard-coded runtime branches;
+- use governor stage names for the work below; or
+- claim that a selected plan is a default-ready profile without a separate
+  reviewed default-promotion action.
+
+Also out of scope until new profiling changes the conclusion:
+
+- multi-GPU execution;
+- larger contraction-tile sweeps;
+- ranking or frontier-planner optimization;
+- Phase-5 optimization;
+- revival of the old exact-range prepared-refresh cache;
+- larger decoder chunks as an "exact physical" optimization; and
+- broad batch-size sweeps that change endogenous frontier behavior.
+
+The old prepared-refresh cache was rejected because exact-range reuse was poor,
+miss preparation was expensive, and 0/8/32/64 GiB variants did not produce a
+robust improvement. A new GPU row tier must retain canonical row data or use a
+chunk-aligned/windowed ownership design. It must not reintroduce the rejected
+exact-range LRU under a new name.
+
+## 3. Starting state
+
+### 3.1 Accepted and unresolved mechanisms
+
+| Mechanism | Current evidence | Starting disposition |
+|---|---|---|
+| Provider-owned mapped selective decoder rows | byte-exact values/order in focused gates; repeated signed 4B exact gate; 12B traffic reduced from 95.316 GB to 0.910 GB; no Phase-4 decoder loads | accepted exact physical mechanism; formal packaging remains |
+| Checkpoint page/working-set lifecycle | first 12B Phase-4 transition stall removed | strong engineering evidence; formal matched cold three-batch gate remains |
+| Phase-scoped telemetry | detailed attribution available | implemented; paired `<2%` overhead gate remains |
+| Lazy mapped b64/c4096 | repeated 12B reference | reproducible exact reference |
+| Active-CPU encoder residency | fastest 12B candidate | bounded/research only until repeatable exactness is established |
+| Active pinned CPU | slower than active CPU | rejected |
+| b128/b256 execution envelopes | slower and substantially more HBM than active CPU | rejected for the short-prefix finalist |
+| Larger FP32 contraction tiles | no wall-time improvement | rejected |
+| Source-layer fusion | not run after the compute proxy missed | deferred; profile again only if accumulation becomes material |
+
+Mechanisms are promoted independently. Failure of active CPU must not block
+packaging the mapped-row source or checkpoint-lifecycle result.
+
+### 3.2 Current 12B timings
+
+All cases below use the mapped selective-row source, b64/c4096, internal FP32,
+`max_feature_nodes=8192`, `361_base`, and one H200.
+
+| Configuration | Subprocess | Completion | Phase 0 | Phase 4 | Peak CUDA reserved |
+|---|---:|---:|---:|---:|---:|
+| lazy repeat 1 | 586.30s | 555.62s | 63.43s | 458.42s | 38.82 GiB |
+| lazy repeat 2 | 563.27s | 539.42s | 62.59s | 443.74s | 38.82 GiB |
+| active CPU repeat 1 | 509.80s | 478.01s | 86.56s | 359.68s | 38.82 GiB |
+| active CPU repeat 2 | 508.67s | 483.19s | 90.67s | 359.56s | 38.82 GiB |
+
+Active CPU removes about 83-85 seconds of lazy encoder materialization while
+adding about 24-28 seconds to Phase 0. It is therefore a major performance
+candidate, but one repeat differs from the lazy reference and executes 130
+instead of 129 Phase-4 batches. It cannot yet be called exact.
+
+### 3.3 Localized Phase-4 cost
+
+The active-CPU repeats show:
+
+| Component | Repeat 1 | Repeat 2 |
+|---|---:|---:|
+| Phase 4 | 359.83s | 359.72s |
+| refresh total | 223.42s | 229.55s |
+| partial influence solver | 213.01s | 219.90s |
+| feature-row reads | 71.56s | 75.63s |
+| transfer/cast/absolute value | 103.54s | comparable dominant share |
+| direct accumulation/matmul | 26.58s | 26.64s |
+| normalization | 10.02s | 10.71s |
+| feature execution batches | 109.87s | 105.12s |
+| encoder materialization inside batches | 0.14s | 0.12s |
+| ranking | 0.57s | 0.54s |
+| frontier planning | 0.39s | 0.38s |
+
+The first active-CPU repeat performed 33 refreshes and:
+
+- 35,443 direct-accumulation row subranges;
+- 3,166,810 row touches;
+- about 1.616 TB of cumulative row bytes;
+- 35,443 feature-row read calls;
+- 2,281 hits and 33,162 misses in the current 256 MiB CPU read cache; and
+- only about 4.18 GB of retained logical feature-row data.
+
+The dominant remaining short-prefix problem is repeated file/CPU row traffic
+and CPU-to-GPU preparation during refresh. Ranking, planning, and finalization
+are not meaningful optimization targets at this point.
+
+### 3.4 Active-CPU first-divergence evidence
+
+At the first differing refresh in the inspected lazy/active pair:
+
+- the pending-frontier hash still matched;
+- selected membership still matched;
+- selected order differed;
+- cutoff scores differed by only a few billionths; and
+- later membership and execution-count differences compounded from there.
+
+The diagnostic order is therefore raw encoder materialization, produced Phase-4
+rows, refresh score inputs, and only then ranking/tie behavior. Do not begin by
+changing the scheduler or adding arbitrary tie tolerances.
+
+## 4. Campaign-wide invariants
+
+### 4.1 Semantic pins
+
+Within a control/candidate comparison, freeze:
+
+- model, provider, checkpoint content, and tokenizer;
+- prompt text, tokenized prefix, prefix-token count, target position, and target
+  token;
+- `max_feature_nodes=8192`;
+- exact internal dtype FP32;
+- stable row-L1 denominator behavior;
+- semantic batch boundaries and refresh checkpoints;
+- retention policy and compact-graph construction;
+- decoder chunk regime;
+- feature ordering and duplicate reconstruction; and
+- all random seeds and deterministic settings.
+
+Any candidate that changes these belongs to a separately named bounded regime,
+not the exact physical comparison.
+
+### 4.2 Exactness evidence levels
+
+Do not use serialized NPZ byte identity as the only exactness test. Equal graph
+entries may exchange serialization order even between reference repeats.
+Record three independent evidence layers:
+
+1. **Raw mechanism evidence**
+   - provider values are byte-exact;
+   - requested indices, duplicates, and reconstruction order are exact;
+   - stored dtypes and shapes match;
+   - denominators and other semantic fingerprints match.
+2. **Execution evidence**
+   - semantic batches and refresh checkpoints match;
+   - prepared frontier membership and order match;
+   - produced row hashes match in canonical row order;
+   - no extra fallback, load, or recomputation path is used.
+3. **Graph evidence**
+   - aligned completion and target-token identity;
+   - canonicalized labeled feature and edge support;
+   - signed edge values or signed raw intermediates where the mechanism can
+     affect sign;
+   - compact-strict metrics against the declared same-regime control; and
+   - explicit reporting of harmless serialization-order differences.
+
+The existing CLI `exact` thresholds remain a compact-strict graph gate. They do
+not, by themselves, prove raw or signed internal exactness.
+
+### 4.3 Comparison scopes
+
+Every candidate report declares both scopes when available:
+
+- **Mechanism control:** the current mapped lazy exact profile with the same
+  prompt, chunk regime, resource envelope, and code state.
+- **Historical anchor:** the frozen scientific or performance artifact, used
+  only when a valid artifact exists for that model/prompt/workload.
+
+A new long-prefix or new-prompt workload will initially have only a newly
+created current-source mechanism control. Do not imply historical parity where
+no historical artifact exists.
+
+### 4.4 Timing and repetition
+
+Separate:
+
+- setup or sidecar preparation;
+- subprocess/startup;
+- completion;
+- Phase 0, Phase 1, Phase 3, Phase 4, and Phase 5;
+- refresh planning, row read, transfer/preparation, accumulation, and
+  normalization;
+- feature execution and encoder materialization;
+- GPU kernel/event time;
+- host I/O and page/refault evidence; and
+- teardown/reporting.
+
+Use paired control/candidate ordering where feasible and reverse the order on a
+second pair. Record cache state as controlled cold, controlled warm, or
+uncontrolled. Never label an uncontrolled run cold.
+
+Minimum formal repeats:
+
+- 1B: three timing-eligible repeats for a finalist;
+- 4B: two repeats;
+- 12B: two repeats;
+- exactness diagnostics: repeat until the first-divergence location is stable,
+  with at least two completed comparisons.
+
+A speed result is promotional only when its exactness gate passes and the
+improvement exceeds noise. Use 10% Phase-4 improvement as the continuation
+threshold for a new Phase-4 mechanism. Report smaller stable wins, but do not
+automatically promote them as added complexity.
+
+### 4.5 Workspace and cluster policy
+
+All GPU/model runs are SLURM-only. Formal performance evidence uses Granite
+H200 and an immutable read-only snapshot containing both the project and
+sibling checkouts. Reuse one verified snapshot across runs that share an exact
+source state.
+
+Before launch, record:
+
+- both branches, commits, and dirty-file lists;
+- snapshot container, project root, sibling root, and manifest;
+- model/provider/prompt and all semantic/physical controls;
+- Slurm job, node, GPU, CPU, host-memory, HBM, and walltime envelope;
+- cache-state protocol;
+- output root; and
+- probe or termination conditions.
+
+A live-workspace launch is an explicit exception only. It must record the
+reason and both dirty states, and neither runtime checkout may be edited until
+the job terminates. Live runs do not become formal promotion evidence.
+
+## 5. Campaign SP — finish and promote the short-prefix work
+
+`SP` means short prefix. These stages are performance-campaign stages, not
+governor phases.
+
+### SP0 — Freeze the incumbent and mechanism claim ledger
+
+Purpose: make the current ten-minute 12B result durable and prevent one
+unresolved candidate from obscuring already accepted mechanisms.
+
+SP0 is report/schema work. Populate it from retained July 27 reports and
+telemetry; it does not require a new GPU run.
+
+Tasks:
+
+- [ ] Register the repeated mapped lazy b64/c4096 12B result as this campaign's
+      same-regime short-prefix control without overwriting the frozen scientific
+      baseline registry.
+- [ ] Add a machine-readable mechanism claim ledger to the campaign report.
+- [ ] Give every mechanism a stable evidence identifier and disposition:
+      `exact_promotion_candidate`, `exact_opt_in`, `bounded_research`, or
+      `rejected`.
+- [ ] Extract the current 1B/4B/12B short-prefix metrics into one compact table.
+- [ ] Record the unresolved telemetry-overhead and cold-transition gates rather
+      than silently treating the July 27 campaign as formally complete.
+- [ ] Verify that the performance report distinguishes mechanism selection from
+      default or baseline promotion.
+
+Required claim-ledger fields:
+
+| Category | Fields |
+|---|---|
+| Identity | mechanism ID, implementation commit, candidate profile |
+| Applicability | provider capabilities, topology, dtype, shape/resource conditions |
+| Semantics | scenario fingerprint, chunk regime, feature cap, refresh contract |
+| Correctness | raw/order, execution, signed graph, compact comparison |
+| Performance | paired timings, repeat count, cache state, speedup |
+| Resources | host/HBM peaks, owned bytes, fallback/admission |
+| Disposition | accepted/rejected status, rationale, remaining evidence |
+| Promotion separation | mechanism, baseline, default, governor all recorded separately |
+
+**Gate SP0:** a reader can identify exactly what is already accepted, what is
+only bounded, and which formal evidence is missing without reading raw Slurm
+logs.
+
+### SP1 — Resolve active-CPU exactness
+
+Purpose: determine whether the fastest current candidate can become the exact
+short-prefix encoder placement.
+
+Add diagnostic-only evidence at the following boundaries:
+
+1. encoder row request:
+   - requested index sequence and duplicate-aware hash;
+   - source residency mode;
+   - dtype, shape, device, and canonical byte hash;
+2. selected encoder materialization:
+   - post-selection/post-reorder index and value hashes;
+   - transfer/cast operation and stream/synchronization metadata;
+3. Phase-4 row production:
+   - semantic batch and canonical output-row range;
+   - signed FP32 row hash before row-store append;
+   - denominator/normalization input hash;
+4. refresh input:
+   - active-row ranges and order;
+   - pending-frontier hash;
+   - complete score-vector hash or a collision-resistant chunked digest;
+   - selected membership hash and selected-order hash;
+   - cutoff score, gap, and tie count.
+
+Diagnostics that force synchronization or hash large tensors are not timing
+evidence. The harness must label diagnostic runs and exclude them from
+performance comparisons.
+
+Run the localization ladder:
+
+1. focused synthetic active-CPU versus lazy row-selection tests;
+2. 1B PLT `361_base` diagnostic comparison;
+3. 1B repeat to confirm the first divergence boundary;
+4. repair the earliest differing boundary only;
+5. 1B exact end-to-end comparison;
+6. 4B exact transfer gate; and
+7. 12B exact repeat only after the smaller gates pass.
+
+Decision branches:
+
+- If raw encoder rows differ, repair provider materialization, dtype, ordering,
+  or transfer synchronization.
+- If raw rows match but produced Phase-4 rows differ, isolate the first
+  computation/reduction boundary.
+- If produced rows match but refresh score inputs differ, inspect row-store read
+  order, accumulation grouping, and normalization.
+- If score vectors match but order differs, inspect deterministic ranking/tie
+  behavior without adding approximate score tolerances.
+- If exactness requires removing the measured speed benefit, retain active CPU
+  as `bounded_research` and keep lazy mapped as the exact finalist input.
+
+**Gate SP1:** repeated 1B and transferred 4B evidence identifies and repairs the
+first differing boundary, followed by two 12B comparisons with identical
+semantic batches, refresh membership/order, signed canonical graph, and target
+token. Otherwise active CPU remains bounded/research with a documented first
+divergence and no exact-promotion claim.
+
+### SP2 — Exact GPU-resident feature-row tier
+
+Purpose: remove repeated file/CPU-to-GPU traffic from the dominant Phase-4
+refresh path while preserving the canonical file-backed contract.
+
+#### SP2.1 Design
+
+Add a sibling-owned GPU-resident hot tier around the existing feature-row
+store:
+
+```text
+Phase-4 row commit
+  -> canonical signed FP32 row and canonical row index
+  -> durable/reference file-backed append
+  -> admitted GPU-resident append
+
+Refresh read
+  -> GPU tier when the complete requested canonical range is resident
+  -> otherwise exact file-backed path
+  -> identical returned values, shape, and requested order
+```
+
+The first implementation should be full-residency, not an LRU:
+
+- calculate required bytes as canonical rows times active-feature width times
+  element size, plus explicitly measured allocator/metadata overhead;
+- admit only under an explicit experimental HBM budget and safety margin;
+- allocate from actual shape/capability information, never a model-name branch;
+- retain signed canonical FP32 values;
+- preserve append and read order, including partial final ranges;
+- keep file backing for durability, recovery, and exact fallback;
+- rebuild or refuse the GPU tier explicitly after resume;
+- never silently mix incomplete GPU data with file reads; and
+- record admission, owned bytes, high-water mark, read hits, fallbacks, and
+  refusal reason.
+
+The performance campaign may use an explicit byte budget, but it must not call
+that budget a calibrated governor policy.
+
+#### SP2.2 Focused validation
+
+- [ ] append/read equality for empty, partial, full, duplicate, non-monotonic,
+      and cross-tile ranges;
+- [ ] exact canonical row order;
+- [ ] exact direct and two-dimensional influence-solver results;
+- [ ] capacity refusal before allocation;
+- [ ] allocation-failure cleanup and exact fallback;
+- [ ] checkpoint/resume rebuild or explicit refusal;
+- [ ] no leaked GPU allocations after normal completion or injected failure;
+- [ ] telemetry/schema coverage for admitted, hit, fallback, and refused paths;
+- [ ] file-backed reference path unchanged when the feature is disabled.
+
+#### SP2.3 Performance ladder
+
+1. login-safe synthetic solver benchmark using generated tensors only;
+2. 1B PLT `361_base` exact full run;
+3. repeated 1B control/candidate timing;
+4. 4B exact transfer run;
+5. 12B transition probe with a few refreshes;
+6. completed 12B exact run; and
+7. repeated 12B finalist timing.
+
+Use lazy encoder placement first to isolate row-store behavior. Compose with
+active CPU only after SP1 independently passes exactness.
+
+Required telemetry:
+
+- logical and physically allocated row-store bytes;
+- row count and active-feature width;
+- GPU-tier admission budget, safety margin, and result;
+- append bytes/time;
+- file mirror bytes/time;
+- refresh ranges/bytes served from GPU and file;
+- avoided CPU reads and avoided H2D bytes;
+- residual absolute-value, normalization, and accumulation time;
+- CUDA allocated/reserved and external framebuffer peaks; and
+- cleanup/rebuild/fallback outcomes.
+
+Continuation thresholds:
+
+- exact raw, execution, and signed graph evidence;
+- at least 10% Phase-4 improvement on repeated 1B runs;
+- no material regression in row production or Phase 0;
+- no unsafe HBM pressure or unexplained allocator growth; and
+- a projected 12B store that fits with the declared safety margin.
+
+**Gate SP2:** the accepted candidate is exact, capability/shape-based, falls
+back exactly, and produces a repeated Phase-4 speedup. A short-prefix 12B
+promotion additionally requires two complete artifacts and an end-to-end
+improvement outside paired timing noise.
+
+### SP3 — Re-profile and choose remaining non-batch work
+
+Purpose: optimize the bottleneck that remains after SP2 rather than continuing
+the old profile blindly.
+
+Produce a new Phase-4 accounting table whose major categories sum to within 5%
+of measured Phase-4 wall time. Choose at most one next mechanism from:
+
+1. **Chunk-aligned/windowed GPU row residency**
+   - pursue only when the full store is exact and useful but does not fit the
+     next prefix/resource envelope;
+   - key residency on stable canonical chunks/windows, not exact row ranges;
+   - preserve a deterministic exact file-backed fallback.
+2. **Refresh source-pass fusion**
+   - pursue only if direct accumulation/launch/scatter work becomes at least
+     10% of Phase 4 after I/O removal;
+   - treat changed accumulation grouping as requiring raw/signed validation.
+3. **Normalization traffic reduction**
+   - pursue only if normalization becomes a material share;
+   - preserve the stable row-L1 denominator baseline.
+4. **Active-CPU Phase-0 construction**
+   - pursue only if active CPU passes SP1 and its extra Phase-0 cost is at least
+     5% of end-to-end finalist time.
+5. **Mapped-row Phase-0 gather/layout**
+   - pursue only if cold/warm evidence shows the mapped gather itself remains a
+     material, repeatable cost after cache attribution.
+
+Explicitly do not spend runs on ranking, frontier planning, Phase 5, larger
+contraction tiles, b128/b256, or the old prepared-range cache unless the new
+profile demonstrates that their bottleneck has returned.
+
+**Gate SP3:** one profile-driven next mechanism either passes its own exact
+10%-of-target-phase continuation gate or is rejected before a full 12B run.
+SP3 may close with no new implementation if SP2 leaves no sufficiently large
+and safe opportunity.
+
+### SP4 — Close formal telemetry and lifecycle evidence
+
+Purpose: finish the two formal gates left unresolved by the July 27 campaign.
+
+#### SP4.1 Telemetry overhead
+
+Run paired 4B no-policy-change controls with detailed telemetry on and off:
+
+- same immutable snapshot;
+- same cache protocol and resource envelope;
+- reversed order pair;
+- identical compact/signed result;
+- event counts and sink status recorded; and
+- completion and phase deltas reported.
+
+**Gate:** telemetry overhead is less than 2% in the paired mean. If not, reduce
+diagnostic event volume or move expensive hashes to diagnostic-only mode.
+
+#### SP4.2 Checkpoint lifecycle
+
+Create a matched, attributable cold protocol using job-private staged files or
+another explicitly exclusive and recorded cache identity. Compare:
+
+- the reference lifecycle/fallback;
+- mapped selective rows with lifecycle release/advice; and
+- at least the first three Phase-4 batches with CUDA-event and OS/cgroup
+  evidence.
+
+Never use node-global `drop_caches`. The old two-batch artifact remains
+historical context but cannot satisfy this gate.
+
+**Gate:** the current mechanism shows the expected owned-page/reload behavior,
+completes three matched transition batches, preserves exactness, and does not
+harm warm steady-state timing.
+
+### SP5 — Compose and formally promote the short-prefix finalist
+
+Candidate composition order:
+
+1. mapped selective decoder rows;
+2. accepted checkpoint lifecycle;
+3. lazy encoder or SP1-passing active CPU;
+4. SP2 GPU row tier; and
+5. at most one SP3 mechanism.
+
+Do not validate all combinations. Each mechanism first passes an isolated
+gate, then one composed finalist is selected.
+
+Formal matrix:
+
+| Model/provider | Prompts | Minimum repeats | Role |
+|---|---|---:|---|
+| 1B PLT | `828_base`, `361_base`, `94_base` | 3 for `361_base`, 1 for other prompts | exact regression and prompt breadth |
+| 1B CLT | `361_base`; add `828_base` if touched path is provider-general | 1-2 | cross-provider regression |
+| 4B PLT | `361_base` plus one holdout prompt when available | 2 canonical, 1 holdout | model transfer |
+| 12B PLT | `361_base`; one holdout only after admission | 2 canonical | stress and promotion evidence |
+
+Before launching this matrix, add either the minimum manifest support described
+in LS0 or explicit fixed PLT prompt-breadth cases to the performance harness.
+This login-safe harness work may start during SP and does not begin the scaling
+experiment campaign.
+
+Every formal result includes:
+
+- immutable dual-repo snapshot provenance;
+- exact semantic and workload fingerprints;
+- raw/order, execution, and signed graph evidence;
+- cache-state classification;
+- paired/repeated phase and completion timing;
+- resource peaks and row-store byte accounting;
+- explicit fallback/admission outcomes; and
+- mechanism-by-mechanism disposition.
+
+Promotion products:
+
+- `reports/YYYY-MM-DD_short_prefix_performance_results.md`;
+- machine-readable performance and mechanism evidence;
+- append-only `experiments/logs/YYYY-MM.jsonl` records;
+- compact `EXPERIMENTS.md` update if the current interpretation changes; and
+- a separately reviewable recommendation for any launch-default change.
+
+**Gate SP5:** the exact short-prefix finalist is reproducible at 1B/4B/12B,
+the ten-minute 12B achievement and all accepted mechanisms have durable formal
+evidence, and bounded candidates are visibly separated from exact mechanisms.
+
+## 6. Campaign LS — length, prompt, and model scaling
+
+`LS` means length scaling. Start LS only after SP5 freezes the exact short-
+prefix finalist, except that login-safe harness work and fixture planning may
+begin earlier.
+
+### LS0 — Add a campaign manifest and prepare workloads
+
+The current `exact-trace-perf` CLI has fixed suites and does not express an
+arbitrary prompt/prefix matrix. Extend the project harness with a typed
+performance-campaign manifest. It should identify:
+
+- campaign and workload IDs;
+- fixture catalog and immutable fixture fingerprints;
+- model/provider case;
+- prompt family and development/holdout role;
+- trajectory ID;
+- exact prefix-token count and prefix-token hash;
+- target position/token identity;
+- expected operational class;
+- candidate/control profiles;
+- probe/full-run disposition;
+- resource and stop envelopes; and
+- comparison/evidence policy.
+
+Do not replace the existing fixed suites immediately. Preserve them as short-
+prefix regression aliases while the manifest path is tested.
+
+#### LS0.1 Length ladder
+
+Use one frozen prompt and deterministic trajectory to construct prefixes near:
+
+- 124 tokens;
+- 256 tokens;
+- 512 tokens; and
+- 1,024 tokens.
+
+Record actual token counts rather than assuming the requested label. Each
+prefix is a distinct workload with its own target token and prefix hash. The
+same prompt/trajectory isolates length better than unrelated prompts, even
+though the target position changes.
+
+The committed fixture catalog currently reaches only about 248 tokens. Generate
+longer deterministic trajectories in a SLURM job; do not load the model on a
+login node. Do not manufacture long contexts by undeclared arbitrary text
+concatenation.
+
+#### LS0.2 Prompt-generalization matrix
+
+At selected length bands, use:
+
+- one development prompt used for optimization;
+- at least two held-out prompt families; and
+- current canonical prompts plus newly prepared GSM8K prompts where suitable.
+
+Prefer three prompts per representative length band if resource cost permits.
+Match prompts approximately by actual token length, then report active-feature
+and row-store differences rather than claiming token matching makes them equal.
+
+**Gate LS0:** all workloads have immutable prompt/trajectory/prefix/target
+fingerprints, development versus holdout roles are frozen before tuning, and
+the campaign can be listed/dry-run without loading a model.
+
+### LS1 — Establish the current-source 1B reference curve
+
+Use the SP5 exact finalist as the candidate and mapped lazy exact as the
+mechanism control where those differ.
+
+Order:
+
+1. 124-token full reference;
+2. 256-token full reference;
+3. 512-token early probe, then full run if admitted;
+4. 1,024-token early probe, then full run if admitted; and
+5. repeat any surprising point before interpreting the curve.
+
+The early probe should:
+
+- complete Phase 0 and resource accounting;
+- run a declared first-N Phase-4 batches and refreshes;
+- report active features, unique/occurrence decoder rows, planned `K x N`
+  bytes, refresh bytes/time, Phase-1 peak HBM, host charge, and CUDA peaks;
+- project completion time with an explicit uncertainty range;
+- produce `probe_completed`, not an ordinary successful trace result; and
+- release all runtime resources and close telemetry.
+
+Stop before a full run when:
+
+- projected HBM exceeds the declared safety envelope;
+- host charge approaches the Slurm hard limit;
+- projected walltime exceeds the application/Slurm limit;
+- required row-store capacity is refused without an exact fallback; or
+- early telemetry shows a correctness/fallback violation.
+
+Historical long-prefix Cardinal results are priors only:
+
+- old 1B, 424-token target: about 857 seconds total and 745 seconds Phase 4;
+- old 4B, 424-token target: about 5,558 seconds total and 5,221 seconds Phase 4.
+
+They do not replace current-source Granite controls.
+
+**Gate LS1:** the 1B reference curve contains exact completed artifacts for
+every admitted length, explicit probe outcomes for refused lengths, and enough
+telemetry to explain time in terms of tokens, active features, and row-store
+bytes.
+
+### LS2 — Optimize the 1B length curve
+
+Use only the development prompt for iteration.
+
+Storage/residency ladder:
+
+1. full GPU-resident row tier when the entire canonical store fits;
+2. chunk-aligned/windowed GPU residency when full residency does not fit;
+3. file-backed exact fallback.
+
+At every length, compare against the same current-source workload control.
+Do not extrapolate a 124-token speedup to 1,024 tokens without running the
+longer case.
+
+Profile-driven candidate selection:
+
+- if row read/H2D remains dominant, improve residency/layout;
+- if accumulation becomes dominant, consider one source-fusion design;
+- if Phase 1 becomes the capacity limit, isolate physical session capacity
+  without changing later semantic batching;
+- if Phase 0 dominates, revisit active encoder construction or mapped-row
+  layout; and
+- if no component offers at least 10% target-phase opportunity, stop optimizing
+  that length and record the envelope.
+
+Use small-model iteration for implementation speed, but keep the mechanism
+capability/shape-based and test large synthetic shapes on the login-safe path.
+
+**Gate LS2:** the 1B candidate is exact at all admitted development lengths,
+has repeated wins outside timing noise, and falls back predictably when full
+GPU residency stops fitting.
+
+### LS3 — Validate prompt generalization at 1B
+
+Freeze the LS2 candidate before running holdouts.
+
+For each selected length band:
+
+- run the development prompt once as a contemporaneous control;
+- run at least two held-out prompts;
+- record actual tokens, active features, decoder-row counts, logical row-store
+  bytes, refresh counts/bytes, phase times, and resource peaks; and
+- compare per-prompt results, not only the aggregate mean.
+
+Acceptance:
+
+- exactness on every admitted holdout;
+- no prompt-specific fallback or memory failure hidden by the average;
+- directionally consistent speedup;
+- residual runtime variation explainable by measured workload variables; and
+- no tuning after observing holdout outcomes except to reject the mechanism or
+  define an explicitly narrower applicability scope.
+
+**Gate LS3:** the mechanism generalizes across held-out prompts or is assigned a
+precise, evidence-backed applicability boundary.
+
+### LS4 — Transfer the scaling finalist to 4B
+
+Run:
+
+1. canonical short prefix;
+2. one mid-length development prefix;
+3. the longest resource-admitted development prefix; and
+4. at least one held-out prompt/length combination.
+
+Begin each new length with the early probe. Reopen optimization only if the 4B
+profile shows a different component consuming at least 10% of the relevant
+phase or end-to-end time. Do not repeat a broad parameter sweep merely because
+the model size changed.
+
+**Gate LS4:** exact 4B transfer, completed artifacts for admitted cases,
+credible resource projections, and either preserved speedups or a documented
+model-size boundary.
+
+### LS5 — Transfer the scaling finalist to 12B
+
+Admission prerequisites:
+
+- SP5 exact 12B short-prefix finalist;
+- LS2 exact 1B length result;
+- LS4 exact 4B transfer;
+- projected row-store, HBM, host, and walltime fit;
+- immutable dual-repo snapshot; and
+- successful abbreviated 12B probe.
+
+Run the minimum matrix needed to establish the envelope:
+
+1. canonical short control;
+2. one mid-length development prefix;
+3. longest admitted development prefix; and
+4. one held-out prompt only when the first three results justify the cost.
+
+Use two repeats for any 12B result proposed as a stable performance claim.
+
+**Gate LS5:** exact completed 12B artifacts for admitted workloads, explicit
+probe/refusal records elsewhere, and a measured rather than extrapolated
+large-model scaling boundary.
+
+### LS6 — Publish the performance envelope
+
+Produce plots/tables for:
+
+- total, Phase 0, Phase 1, Phase 3, Phase 4, and refresh time versus prefix
+  tokens;
+- the same times versus active-feature count;
+- Phase-4 and refresh time versus logical row-store bytes;
+- cumulative refresh bytes and avoided H2D bytes;
+- full-GPU, windowed, and file-backed residency regions;
+- peak CUDA allocated/reserved, external framebuffer, host RSS/anonymous/file
+  charge, and cgroup peak;
+- prompt-to-prompt residuals within length bands; and
+- 1B/4B/12B transfer ratios.
+
+Fit simple descriptive curves only to summarize the measured campaign. These
+curves are performance-report artifacts, not governor calibration bundles.
+
+The final report must state:
+
+- fastest exact profile by measured operating region;
+- exact fallback outside each region;
+- development and held-out prompts;
+- confidence/repeat count and cache protocol;
+- unresolved anomalies;
+- rejected mechanisms; and
+- which future run would most reduce remaining uncertainty.
+
+**Gate LS6:** another researcher can select a measured exact profile or fallback
+from the report without interpreting internal stage letters or consulting
+governor calibration artifacts.
+
+## 7. Ownership and implementation seams
+
+| Work | Owner | Primary seams |
+|---|---|---|
+| Mechanism ledger and campaign manifests | project | `src/nlp_research_project/exact_trace_bench/perf_cli.py`, report schemas |
+| Active-CPU diagnostic evidence | sibling observability/runtime | encoder materialization context, Phase-4 row commit, refresh telemetry |
+| GPU feature-row tier | sibling Phase-4 storage | `row_store.py`, `phase4_storage.py`, influence solver read interface |
+| Exact solver validation | sibling | `graph.py`, focused row-store/solver tests |
+| Profiles, probes, gates, immutable launches | project | exact-trace bench CLI/runner and SLURM packaging |
+| Long fixture/trajectory preparation | project | fixture-prep/full-answer harness |
+| Scaling aggregation and plots | project | performance report/extraction modules |
+| Experiment provenance | project | `experiments/logs/YYYY-MM.jsonl`, compact `EXPERIMENTS.md` update |
+
+Keep mechanism, telemetry, harness, and promotion decisions in separate commits
+where practical. Review both repository diffs before every immutable GPU gate.
+
+### 7.1 Immediate source map
+
+Start SP0 and the project-side reporting work in:
+
+- `src/nlp_research_project/exact_trace_bench/perf_cli.py`;
+- `tests/test_exact_trace_perf_cli.py`;
+- `docs/performance_optimization_loop.md`; and
+- the eventual short-prefix report under `reports/`.
+
+Start SP1 in the sibling at:
+
+- `circuit_tracer/attribution/context_nnsight.py`;
+- `circuit_tracer/attribution/nnsight/phases/phase4_batches.py`;
+- `circuit_tracer/attribution/nnsight/phases/phase4_storage.py`;
+- `circuit_tracer/attribution/nnsight/phases/phase4_diagnostics.py`; and
+- the observability event/recorder modules.
+
+Start SP2 in the sibling at:
+
+- `circuit_tracer/attribution/nnsight/row_store.py`;
+- `circuit_tracer/attribution/nnsight/phases/phase4_storage.py`;
+- `circuit_tracer/attribution/nnsight/phases/phase4_influence.py`;
+- `circuit_tracer/graph.py`;
+- `tests/test_nnsight_phase4.py`;
+- `tests/test_partial_influences.py`; and
+- `tests/test_phase4_resource_architecture.py`.
+
+The project path above is relative to this repository. Sibling paths are
+relative to `../circuit-tracer_chunked`.
+
+## 8. Evidence artifact layout
+
+Use an external scratch root organized as:
+
+```text
+exact_trace_bench/granite/
+├── smoke/performance_optimization/<run-id>/
+├── baseline/performance_optimization/<run-id>/
+├── sweep/performance_optimization/<run-id>/
+├── long_trace/performance_optimization/<run-id>/
+└── analysis/performance_optimization/<run-id>/
+```
+
+Each campaign root should contain:
+
+```text
+campaign_manifest.json
+snapshot_manifest.json
+mechanism_claims.json
+configs/
+candidates/
+comparisons/
+probes/
+resource_summaries/
+performance_report.json
+performance_report.md
+```
+
+The report schema should make these independent:
+
+- runner success;
+- probe/full outcome;
+- raw mechanism exactness;
+- execution-order exactness;
+- graph exactness;
+- performance gate;
+- resource/admission gate; and
+- overall mechanism disposition.
+
+A missing field fails the corresponding evidence gate rather than becoming
+implicit success.
+
+## 9. Stop/go rules
+
+- Stop at the first failed smaller-model or diagnostic gate.
+- Do not spend a full 12B run on a mechanism that failed 1B exactness.
+- Do not spend a full long-prefix run when the early probe refuses capacity or
+  walltime.
+- Do not combine two unproven mechanisms in the same first experiment.
+- Repeat surprising results before redesigning around them.
+- Do not treat compact bounded parity as exact semantics.
+- Do not treat an uncontrolled cache state as a cold comparison.
+- Do not let a performance result change a baseline, governor bundle, fidelity
+  authorization, or launch default implicitly.
+- Preserve rejected mechanisms and their evidence so they are not repeated
+  without a newly measured bottleneck.
+- Keep multi-GPU deferred until a single-H200 workload is compute-saturated or
+  its exact admitted working set genuinely cannot fit.
+
+## 10. Initial execution checklist
+
+Start here:
+
+1. [ ] Add this plan to the active roadmap and documentation index.
+2. [ ] Create the SP0 mechanism claim-ledger schema and populate it from the
+       July 27 report.
+3. [ ] Add diagnostic-only encoder-row and Phase-4 row hashes for SP1.
+4. [ ] Reproduce the active-CPU first divergence on 1B PLT `361_base`.
+5. [ ] Decide active CPU's exact/bounded disposition from the earliest differing
+       boundary.
+6. [ ] Define the GPU feature-row-tier interface and exact capacity estimator.
+7. [ ] Implement focused append/read/fallback/cleanup tests.
+8. [ ] Run the SP2 1B exact control/candidate pair from one immutable snapshot.
+9. [ ] Re-profile before selecting any SP3 work.
+10. [ ] Close SP4 telemetry-overhead and cold-transition evidence.
+11. [ ] Compose and run the SP5 formal short-prefix matrix.
+12. [ ] Extend the harness with the LS0 campaign manifest and dry-run listing.
+13. [ ] Prepare deterministic 256/512/1,024-token trajectories in SLURM.
+14. [ ] Run the LS1 1B reference/probe ladder.
+15. [ ] Optimize only the measured 1B scaling bottleneck, then freeze it.
+16. [ ] Validate held-out prompts before 4B/12B transfer.
+17. [ ] Publish the short-prefix and scaling reports separately.
+
+The immediate coding task is item 2, followed by the SP1 diagnostic boundary.
+The immediate performance mechanism is SP2, the exact full-residency GPU
+feature-row tier. No new 12B full run is justified until those smaller gates
+pass.
