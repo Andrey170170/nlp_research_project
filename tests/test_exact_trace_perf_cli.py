@@ -91,12 +91,8 @@ def test_fidelity_thresholds_are_explicit() -> None:
 
 
 def test_capability_contract_distinguishes_same_layer_and_cross_layer() -> None:
-    same_layer = perf_cli.Case(
-        "gemma3_1b_plt", "361_base"
-    ).provider_capabilities()
-    cross_layer = perf_cli.Case(
-        "gemma3_1b_clt", "361_base"
-    ).provider_capabilities()
+    same_layer = perf_cli.Case("gemma3_1b_plt", "361_base").provider_capabilities()
+    cross_layer = perf_cli.Case("gemma3_1b_clt", "361_base").provider_capabilities()
     profile = perf_cli.CANDIDATE_PROFILES["plt-active-rows-v1"]
 
     assert profile.variant_for(same_layer) is not None
@@ -110,9 +106,7 @@ def test_capability_contract_distinguishes_same_layer_and_cross_layer() -> None:
 
 
 def test_mapped_decoder_row_profile_refuses_provider_without_row_source() -> None:
-    capabilities = perf_cli.Case(
-        "gemma3_4b_plt", "361_base"
-    ).provider_capabilities()
+    capabilities = perf_cli.Case("gemma3_4b_plt", "361_base").provider_capabilities()
     no_source = perf_cli.ProviderCapabilities(
         **{**capabilities.__dict__, "supports_decoder_row_source": False}
     )
@@ -142,16 +136,17 @@ def test_mapped_decoder_row_source_requires_known_gemmascope_lazy_contract() -> 
 
 def test_mechanism_and_scientific_baseline_registries_are_separate() -> None:
     scientific = json.loads(perf_cli.DEFAULT_BASELINE_REGISTRY.read_text())
-    mechanism = json.loads(
-        perf_cli.DEFAULT_MECHANISM_BASELINE_REGISTRY.read_text()
-    )
+    mechanism = json.loads(perf_cli.DEFAULT_MECHANISM_BASELINE_REGISTRY.read_text())
 
     assert scientific["registry_id"] == "exact-trace-performance-granite-20260726"
     assert mechanism["registry_id"] == "exact-trace-mechanism-granite-20260727"
     assert mechanism["scope"] == "same_regime_mechanism"
-    assert mechanism["entries"]["performance/gemma3_4b_plt/361_base"][
-        "baseline_pins"
-    ]["decoder_chunk_size"] == 4096
+    assert (
+        mechanism["entries"]["performance/gemma3_4b_plt/361_base"]["baseline_pins"][
+            "decoder_chunk_size"
+        ]
+        == 4096
+    )
     assert "scope" not in scientific
 
 
@@ -201,9 +196,9 @@ def test_exact_pin_facts_verify_reference_and_generated_scenario(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     case = perf_cli.Case("gemma3_4b_plt", "361_base")
-    entry = json.loads(
-        perf_cli.DEFAULT_MECHANISM_BASELINE_REGISTRY.read_text()
-    )["entries"][case.key]
+    entry = json.loads(perf_cli.DEFAULT_MECHANISM_BASELINE_REGISTRY.read_text())[
+        "entries"
+    ][case.key]
     verified = perf_cli._validate_exact_baseline_pins(
         case=case,
         candidate_profile="plt-active-rows-4b-c4096-v1",
@@ -963,9 +958,9 @@ def test_large_chunk_active_rows_profile_is_bounded_only_and_single_knob_variant
     assert candidate["feature_vjp_tape_batch_window"] == 1
     assert perf_cli._candidate_overrides(clt_case, "plt-active-rows-c65536-v1") == {}
     assert (
-        perf_cli.CANDIDATE_PROFILES[
-            "plt-active-rows-c65536-v1"
-        ].variants[0].baseline_pins.compatibility_mixed.decoder_chunk_size
+        perf_cli.CANDIDATE_PROFILES["plt-active-rows-c65536-v1"]
+        .variants[0]
+        .baseline_pins.compatibility_mixed.decoder_chunk_size
         == 65536
     )
 
@@ -1205,7 +1200,7 @@ def test_mapped_decoder_row_profile_selects_4b_and_12b_variants() -> None:
     }
 
 
-def test_gpu_row_store_profile_is_exact_eligible_and_12b_scoped() -> None:
+def test_cuda_full_row_store_profile_is_bounded_and_12b_scoped() -> None:
     profile_name = "plt-selective-mapped-rows-gpu-store-12b-v1"
     profile = perf_cli.CANDIDATE_PROFILES[profile_name]
     case_4b = perf_cli.Case("gemma3_4b_plt", "361_base")
@@ -1219,8 +1214,56 @@ def test_gpu_row_store_profile_is_exact_eligible_and_12b_scoped() -> None:
             case_12b,
             "plt-selective-mapped-rows-large-v1",
         ),
+        "feature_row_influence_mode": "cuda_full",
         "feature_row_gpu_resident_max_bytes": 8 * 1024**3,
         "feature_row_gpu_resident_safety_margin_bytes": 16 * 1024**3,
+    }
+
+
+@pytest.mark.parametrize(
+    ("profile_name", "expected"),
+    [
+        (
+            "plt-selective-mapped-rows-cpu-prepared-12b-v1",
+            {
+                "feature_row_influence_mode": "cpu_prepared",
+            },
+        ),
+        (
+            "plt-selective-mapped-rows-cuda-windowed-12b-v1",
+            {
+                "feature_row_influence_mode": "cuda_windowed",
+                "feature_row_gpu_window_max_bytes": 512 * 1024**2,
+                "feature_row_gpu_resident_safety_margin_bytes": 16 * 1024**3,
+            },
+        ),
+        (
+            "plt-selective-mapped-rows-cuda-auto-12b-v1",
+            {
+                "feature_row_influence_mode": "auto",
+                "feature_row_gpu_resident_max_bytes": 8 * 1024**3,
+                "feature_row_gpu_window_max_bytes": 512 * 1024**2,
+                "feature_row_gpu_resident_safety_margin_bytes": 16 * 1024**3,
+            },
+        ),
+    ],
+)
+def test_sp2_2_row_execution_profiles_are_12b_scoped(
+    profile_name: str,
+    expected: dict[str, object],
+) -> None:
+    profile = perf_cli.CANDIDATE_PROFILES[profile_name]
+    case_4b = perf_cli.Case("gemma3_4b_plt", "361_base")
+    case_12b = perf_cli.Case("gemma3_12b_plt", "361_base")
+
+    assert profile.variant_for(case_4b.provider_capabilities()) is None
+    assert profile.variant_for(case_12b.provider_capabilities()) is not None
+    assert perf_cli._candidate_overrides(case_12b, profile_name) == {
+        **perf_cli._candidate_overrides(
+            case_12b,
+            "plt-selective-mapped-rows-large-v1",
+        ),
+        **expected,
     }
 
 
@@ -1256,9 +1299,7 @@ def test_mapped_encoder_profiles_are_capability_scoped(
     assert profile.variant_for(capabilities) is not None
     assert profile.variant_for(no_encoder_residency) is None
     assert perf_cli._candidate_overrides(case_12b, profile_name) == {
-        **perf_cli._candidate_overrides(
-            case_12b, "plt-selective-mapped-rows-large-v1"
-        ),
+        **perf_cli._candidate_overrides(case_12b, "plt-selective-mapped-rows-large-v1"),
         "exact_encoder_residency": encoder_mode,
     }
 
@@ -1275,9 +1316,7 @@ def test_mapped_12b_execution_profiles_widen_only_physical_batches(
     assert profile.variant_for(case_4b.provider_capabilities()) is None
     assert profile.variant_for(case_12b.provider_capabilities()) is not None
     assert perf_cli._candidate_overrides(case_12b, profile_name) == {
-        **perf_cli._candidate_overrides(
-            case_12b, "plt-selective-mapped-rows-large-v1"
-        ),
+        **perf_cli._candidate_overrides(case_12b, "plt-selective-mapped-rows-large-v1"),
         "nnsight_session_capacity": execution_rows,
         "phase4_execution_batch_max_rows": execution_rows,
     }
@@ -1288,8 +1327,7 @@ def test_mapped_12b_active_cpu_encoder_tile_profiles_are_capability_scoped(
     row_subchunk_size: int,
 ) -> None:
     profile_name = (
-        "plt-selective-mapped-rows-active-cpu-12b-"
-        f"tile{row_subchunk_size}-v1"
+        f"plt-selective-mapped-rows-active-cpu-12b-tile{row_subchunk_size}-v1"
     )
     profile = perf_cli.CANDIDATE_PROFILES[profile_name]
     case_4b = perf_cli.Case("gemma3_4b_plt", "361_base")
@@ -1314,9 +1352,7 @@ def test_mapped_12b_active_cpu_encoder_tile_profiles_are_capability_scoped(
     assert profile.variant_for(without_encoder_residency) is None
     assert profile.evidence_scope.exact_baseline is perf_cli.BaselineScope.MECHANISM
     assert perf_cli._candidate_overrides(case_12b, profile_name) == {
-        **perf_cli._candidate_overrides(
-            case_12b, "plt-selective-mapped-rows-large-v1"
-        ),
+        **perf_cli._candidate_overrides(case_12b, "plt-selective-mapped-rows-large-v1"),
         "exact_encoder_residency": "active_cpu",
         "row_subchunk_size": row_subchunk_size,
     }
@@ -1720,9 +1756,7 @@ def test_large_model_runtime_gates_are_explicit_and_fail_closed(
     assert report["performance_passed"] is performance_passed
     assert report["promotion_eligible"] is (variant != "gemma3_12b_plt")
     assert report["acceptance_status"] == (
-        "eligible"
-        if variant != "gemma3_12b_plt"
-        else "measurement_only_not_accepted"
+        "eligible" if variant != "gemma3_12b_plt" else "measurement_only_not_accepted"
     )
     if variant == "gemma3_12b_plt":
         assert "measurement-only" in " ".join(report["failure_reasons"])

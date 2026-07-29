@@ -239,6 +239,9 @@ def test_exact_mode_knobs_are_classified_without_duplicates() -> None:
     assert "decoder_page_prefetch_depth" in ADVANCED_PUBLIC_TUNING_KEYS
     assert "decoder_active_row_residency" in ADVANCED_PUBLIC_TUNING_KEYS
     assert "decoder_active_row_max_bytes" in ADVANCED_PUBLIC_TUNING_KEYS
+    assert "feature_row_influence_mode" in ADVANCED_PUBLIC_TUNING_KEYS
+    assert "feature_row_gpu_resident_max_bytes" in ADVANCED_PUBLIC_TUNING_KEYS
+    assert "feature_row_gpu_window_max_bytes" in ADVANCED_PUBLIC_TUNING_KEYS
     assert "phase0_decoder_row_ranges" in ADVANCED_PUBLIC_TUNING_KEYS
     assert "phase3_row_replay_mode" in DEBUG_REPLAY_PUBLIC_KEYS
     assert "telemetry_max_events" in TELEMETRY_KEYS
@@ -255,6 +258,9 @@ def test_canonical_exact_bench_defaults_are_stable() -> None:
         assert defaults["decoder_page_prefetch_depth"] == 0
         assert defaults["decoder_active_row_residency"] is False
         assert defaults["decoder_active_row_max_bytes"] == 0
+        assert defaults["feature_row_influence_mode"] == "cpu_exact"
+        assert defaults["feature_row_gpu_resident_max_bytes"] == 0
+        assert defaults["feature_row_gpu_window_max_bytes"] == 0
         assert defaults["phase0_decoder_row_ranges"] is False
         assert defaults["phase4_scheduler_mode"] == "locality"
         assert defaults["phase4_scheduler_debug"] is False
@@ -466,9 +472,12 @@ def test_wave0_commands_do_not_enable_debug_or_replay_knobs() -> None:
                 "-m",
                 "nlp_research_project.exact_trace_bench.trace_runtime",
             ]
-            assert trace_policy_from_scenario(
-                scenario
-            ).semantics.exact_trace_internal_dtype == "fp32"
+            assert (
+                trace_policy_from_scenario(
+                    scenario
+                ).semantics.exact_trace_internal_dtype
+                == "fp32"
+            )
             assert ProviderLoadPolicy.from_scenario(scenario).decoder_chunk_size > 0
 
 

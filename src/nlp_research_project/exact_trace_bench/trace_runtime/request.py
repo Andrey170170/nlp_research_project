@@ -115,15 +115,9 @@ def trace_policy_from_scenario(
 ) -> TracePolicy:
     """Resolve one scenario into the canonical sibling-owned policy types."""
 
-    phase0_decoder_row_ranges = _bool_knob(
-        scenario, "phase0_decoder_row_ranges", False
-    )
-    active_row_residency = _bool_knob(
-        scenario, "decoder_active_row_residency", False
-    )
-    reuse_phase0_window_state = _bool_knob(
-        scenario, "reuse_phase0_window_state", False
-    )
+    phase0_decoder_row_ranges = _bool_knob(scenario, "phase0_decoder_row_ranges", False)
+    active_row_residency = _bool_knob(scenario, "decoder_active_row_residency", False)
+    reuse_phase0_window_state = _bool_knob(scenario, "reuse_phase0_window_state", False)
     active_row_max_bytes = scenario.get("decoder_active_row_max_bytes", 0)
     if phase0_decoder_row_ranges:
         provider = resolve_transcoder_load_config(
@@ -135,8 +129,7 @@ def trace_policy_from_scenario(
             )
         if not active_row_residency:
             raise ValueError(
-                "phase0_decoder_row_ranges requires "
-                "decoder_active_row_residency=true"
+                "phase0_decoder_row_ranges requires decoder_active_row_residency=true"
             )
         if (
             isinstance(active_row_max_bytes, bool)
@@ -244,8 +237,16 @@ def trace_policy_from_scenario(
             replay_tile_cache_bytes=_optional_int(
                 scenario.get("replay_tile_cache_bytes")
             ),
+            feature_row_influence_mode=_choice(
+                scenario,
+                "feature_row_influence_mode",
+                "cpu_exact",
+            ),
             gpu_resident_max_bytes=int(
                 scenario.get("feature_row_gpu_resident_max_bytes", 0)
+            ),
+            gpu_window_max_bytes=int(
+                scenario.get("feature_row_gpu_window_max_bytes", 0)
             ),
             gpu_resident_safety_margin_bytes=int(
                 scenario.get("feature_row_gpu_resident_safety_margin_bytes", 0)
@@ -313,9 +314,7 @@ def trace_policy_from_scenario(
             decoder_page_prefetch_depth=int(
                 scenario.get("decoder_page_prefetch_depth", 0)
             ),
-            decoder_active_row_residency=bool(
-                active_row_residency
-            ),
+            decoder_active_row_residency=bool(active_row_residency),
             decoder_active_row_max_bytes=int(active_row_max_bytes),
             phase0_decoder_row_ranges=phase0_decoder_row_ranges,
         ),
@@ -478,8 +477,7 @@ def _sibling_fidelity_policy(
     ):
         kwargs["budget"] = SiblingFidelityBudget(
             metric_floors=tuple(
-                (name, metric.minimum)
-                for name, metric in policy.budget.metrics.items()
+                (name, metric.minimum) for name, metric in policy.budget.metrics.items()
             ),
             allowed_sensitive_axes=policy.budget.allowed_sensitive_axes,
             confidence=max(
@@ -487,9 +485,7 @@ def _sibling_fidelity_policy(
                 default=0.95,
             ),
             penalty_weight=(
-                policy.budget.penalty
-                if policy.budget.penalty is not None
-                else 1.0
+                policy.budget.penalty if policy.budget.penalty is not None else 1.0
             ),
         )
     if "penalty" in fields:
@@ -515,7 +511,9 @@ def _physical_requirements_from_scenario(
 ) -> PhysicalExecutionRequirements:
     row_store_policy = None
     if scenario.get("governor_required_row_store_policy") is not None:
-        row_store_policy = RowStorePolicy(str(scenario["governor_required_row_store_policy"]))
+        row_store_policy = RowStorePolicy(
+            str(scenario["governor_required_row_store_policy"])
+        )
     encoder_residency = None
     if scenario.get("governor_required_encoder_residency") is not None:
         encoder_residency = (
@@ -528,14 +526,18 @@ def _physical_requirements_from_scenario(
         spill_target = StorageTier(str(scenario["governor_required_spill_target"]))
     return PhysicalExecutionRequirements(
         decoder_fetch_chunk_size=_optional_int(scenario.get("decoder_chunk_size")),
-        decoder_cache_bytes=_optional_int(scenario.get("cross_batch_decoder_cache_bytes")),
+        decoder_cache_bytes=_optional_int(
+            scenario.get("cross_batch_decoder_cache_bytes")
+        ),
         session_capacity=_optional_int(scenario.get("nnsight_session_capacity")),
         phase1_source_batch_size=(
             _optional_int(scenario.get("phase1_trace_batch_size_max"))
             if scenario.get("phase1_trace_batch_policy") == "cap_effective_batches"
             else None
         ),
-        feature_microbatch_size=_optional_int(_phase4_execution_batch_max_rows(scenario)),
+        feature_microbatch_size=_optional_int(
+            _phase4_execution_batch_max_rows(scenario)
+        ),
         logit_microbatch_size=_optional_int(
             scenario.get("phase3_compute_microbatch_max_rows")
         ),

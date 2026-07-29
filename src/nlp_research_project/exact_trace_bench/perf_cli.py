@@ -45,9 +45,7 @@ METRIC_KEYS = {
     "target_token_match": "worst_step_target_token_match",
     "edge_magnitude_l1_deviation": ("worst_step_all_edge_normalized_l1_deviation"),
     "edge_sign_agreement": "worst_step_all_edge_shared_sign_agreement",
-    "edge_signed_l1_deviation": (
-        "worst_step_all_edge_signed_normalized_l1_deviation"
-    ),
+    "edge_signed_l1_deviation": ("worst_step_all_edge_signed_normalized_l1_deviation"),
 }
 FIDELITY_THRESHOLDS = {
     "bounded": {
@@ -85,9 +83,7 @@ PERFORMANCE_TARGET_SECONDS = {
     "performance/gemma3_1b_plt/361_base": 600.0,
     "performance/gemma3_4b_plt/361_base": 600.0,
 }
-MEASUREMENT_ONLY_PERFORMANCE_CASES = frozenset(
-    {"performance/gemma3_12b_plt/361_base"}
-)
+MEASUREMENT_ONLY_PERFORMANCE_CASES = frozenset({"performance/gemma3_12b_plt/361_base"})
 PERFORMANCE_STRETCH_TARGET_SECONDS = {
     "performance/gemma3_1b_plt/361_base": 300.0,
     "performance/gemma3_4b_plt/361_base": 600.0,
@@ -415,23 +411,17 @@ class CapabilityRequirements:
             observed = getattr(capabilities, field)
             if expected is not None and observed != expected:
                 reasons.append(f"{field} requires {expected!r}, observed {observed!r}")
-        if (
-            self.minimum_layer_count is not None
-            and (
-                capabilities.layer_count is None
-                or capabilities.layer_count < self.minimum_layer_count
-            )
+        if self.minimum_layer_count is not None and (
+            capabilities.layer_count is None
+            or capabilities.layer_count < self.minimum_layer_count
         ):
             reasons.append(
                 f"layer_count requires >= {self.minimum_layer_count}, "
                 f"observed {capabilities.layer_count!r}"
             )
-        if (
-            self.maximum_layer_count is not None
-            and (
-                capabilities.layer_count is None
-                or capabilities.layer_count > self.maximum_layer_count
-            )
+        if self.maximum_layer_count is not None and (
+            capabilities.layer_count is None
+            or capabilities.layer_count > self.maximum_layer_count
         ):
             reasons.append(
                 f"layer_count requires <= {self.maximum_layer_count}, "
@@ -665,9 +655,7 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
         variants=(
             _candidate_variant(
                 {
-                    **_LEGACY_CANDIDATE_OVERRIDES[
-                        "plt-active-rows-4b-c4096-v1"
-                    ],
+                    **_LEGACY_CANDIDATE_OVERRIDES["plt-active-rows-4b-c4096-v1"],
                     "phase0_decoder_row_ranges": True,
                     "checkpoint_asset_scope": "job_private",
                 },
@@ -681,9 +669,7 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
             ),
             _candidate_variant(
                 {
-                    **_LEGACY_CANDIDATE_OVERRIDES[
-                        "plt-active-rows-12b-c4096-v1"
-                    ],
+                    **_LEGACY_CANDIDATE_OVERRIDES["plt-active-rows-12b-c4096-v1"],
                     "phase0_decoder_row_ranges": True,
                     "checkpoint_asset_scope": "job_private",
                 },
@@ -702,11 +688,10 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
         variants=(
             _candidate_variant(
                 {
-                    **_LEGACY_CANDIDATE_OVERRIDES[
-                        "plt-active-rows-12b-c4096-v1"
-                    ],
+                    **_LEGACY_CANDIDATE_OVERRIDES["plt-active-rows-12b-c4096-v1"],
                     "phase0_decoder_row_ranges": True,
                     "checkpoint_asset_scope": "job_private",
+                    "feature_row_influence_mode": "cuda_full",
                     "feature_row_gpu_resident_max_bytes": 8 * 1024**3,
                     "feature_row_gpu_resident_safety_margin_bytes": 16 * 1024**3,
                 },
@@ -720,19 +705,62 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
         ),
         evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
     )
+    for mode, extra_overrides in (
+        (
+            "cpu-prepared",
+            {
+                "feature_row_influence_mode": "cpu_prepared",
+            },
+        ),
+        (
+            "cuda-windowed",
+            {
+                "feature_row_influence_mode": "cuda_windowed",
+                "feature_row_gpu_window_max_bytes": 512 * 1024**2,
+                "feature_row_gpu_resident_safety_margin_bytes": 16 * 1024**3,
+            },
+        ),
+        (
+            "cuda-auto",
+            {
+                "feature_row_influence_mode": "auto",
+                "feature_row_gpu_resident_max_bytes": 8 * 1024**3,
+                "feature_row_gpu_window_max_bytes": 512 * 1024**2,
+                "feature_row_gpu_resident_safety_margin_bytes": 16 * 1024**3,
+            },
+        ),
+    ):
+        profile_name = f"plt-selective-mapped-rows-{mode}-12b-v1"
+        contracts[profile_name] = CandidateProfile(
+            name=profile_name,
+            variants=(
+                _candidate_variant(
+                    {
+                        **_LEGACY_CANDIDATE_OVERRIDES["plt-active-rows-12b-c4096-v1"],
+                        "phase0_decoder_row_ranges": True,
+                        "checkpoint_asset_scope": "job_private",
+                        **extra_overrides,
+                    },
+                    CapabilityRequirements(
+                        **{
+                            **_PLT_MAPPED_DECODER_ROWS.__dict__,
+                            "minimum_layer_count": 35,
+                        }
+                    ),
+                ),
+            ),
+            evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
+        )
     for encoder_mode in ("active_cpu", "active_pinned_cpu"):
         profile_name = (
-            "plt-selective-mapped-rows-"
-            f"{encoder_mode.replace('_', '-')}-large-v1"
+            f"plt-selective-mapped-rows-{encoder_mode.replace('_', '-')}-large-v1"
         )
         contracts[profile_name] = CandidateProfile(
             name=profile_name,
             variants=(
                 _candidate_variant(
                     {
-                        **_LEGACY_CANDIDATE_OVERRIDES[
-                            "plt-active-rows-4b-c4096-v1"
-                        ],
+                        **_LEGACY_CANDIDATE_OVERRIDES["plt-active-rows-4b-c4096-v1"],
                         "phase0_decoder_row_ranges": True,
                         "checkpoint_asset_scope": "job_private",
                         "exact_encoder_residency": encoder_mode,
@@ -747,9 +775,7 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
                 ),
                 _candidate_variant(
                     {
-                        **_LEGACY_CANDIDATE_OVERRIDES[
-                            "plt-active-rows-12b-c4096-v1"
-                        ],
+                        **_LEGACY_CANDIDATE_OVERRIDES["plt-active-rows-12b-c4096-v1"],
                         "phase0_decoder_row_ranges": True,
                         "checkpoint_asset_scope": "job_private",
                         "exact_encoder_residency": encoder_mode,
@@ -771,9 +797,7 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
             variants=(
                 _candidate_variant(
                     {
-                        **_LEGACY_CANDIDATE_OVERRIDES[
-                            "plt-active-rows-12b-c4096-v1"
-                        ],
+                        **_LEGACY_CANDIDATE_OVERRIDES["plt-active-rows-12b-c4096-v1"],
                         "nnsight_session_capacity": execution_rows,
                         "phase4_execution_batch_max_rows": execution_rows,
                         "phase0_decoder_row_ranges": True,
@@ -791,17 +815,14 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
         )
     for row_subchunk_size in (16384, 65536):
         profile_name = (
-            "plt-selective-mapped-rows-active-cpu-12b-"
-            f"tile{row_subchunk_size}-v1"
+            f"plt-selective-mapped-rows-active-cpu-12b-tile{row_subchunk_size}-v1"
         )
         contracts[profile_name] = CandidateProfile(
             name=profile_name,
             variants=(
                 _candidate_variant(
                     {
-                        **_LEGACY_CANDIDATE_OVERRIDES[
-                            "plt-active-rows-12b-c4096-v1"
-                        ],
+                        **_LEGACY_CANDIDATE_OVERRIDES["plt-active-rows-12b-c4096-v1"],
                         "phase0_decoder_row_ranges": True,
                         "checkpoint_asset_scope": "job_private",
                         "exact_encoder_residency": "active_cpu",
@@ -859,15 +880,11 @@ class Case:
     def provider_capabilities(self) -> ProviderCapabilities:
         payload = build_chpc_baseline_config(variant=self.variant, cluster="granite")
         scenario = next(
-            row
-            for row in payload["scenarios"]
-            if row["fixture_name"] == self.fixture
+            row for row in payload["scenarios"] if row["fixture_name"] == self.fixture
         )
         architecture = str(scenario["transcoder_architecture"])
         layer_count_raw = scenario.get("layer_count")
-        layer_count = (
-            int(layer_count_raw) if isinstance(layer_count_raw, int) else None
-        )
+        layer_count = int(layer_count_raw) if isinstance(layer_count_raw, int) else None
         same_layer = architecture == "plt"
         supports_mapped_rows = _supports_mapped_decoder_row_source(scenario)
         return ProviderCapabilities(
@@ -972,8 +989,13 @@ def capture_source_state() -> dict[str, Any]:
                 "immutable snapshot manifest"
             ) from exc
         if not isinstance(manifest, dict) or manifest.get("read_only") is not True:
-            raise RuntimeError("immutable snapshot manifest is missing or not read-only")
-        if Path(str(manifest.get("snapshot_root", ""))).resolve() != REPO_ROOT.resolve():
+            raise RuntimeError(
+                "immutable snapshot manifest is missing or not read-only"
+            )
+        if (
+            Path(str(manifest.get("snapshot_root", ""))).resolve()
+            != REPO_ROOT.resolve()
+        ):
             raise RuntimeError("snapshot manifest does not match the project workspace")
         snapshots = manifest.get("uv_source_snapshots")
         if not isinstance(snapshots, list):
@@ -995,7 +1017,9 @@ def capture_source_state() -> dict[str, Any]:
             else None
         )
         if not isinstance(project_state, dict) or not isinstance(sibling_state, dict):
-            raise RuntimeError("snapshot manifest lacks recorded project/sibling states")
+            raise RuntimeError(
+                "snapshot manifest lacks recorded project/sibling states"
+            )
         return {
             "workspace_mode": "immutable",
             "snapshot_manifest_path": str(manifest_path.resolve()),
@@ -1117,9 +1141,7 @@ def _baseline_scope(
     candidate_profile: str,
     fidelity: str,
 ) -> BaselineScope:
-    return CANDIDATE_PROFILES[candidate_profile].evidence_scope.for_fidelity(
-        fidelity
-    )
+    return CANDIDATE_PROFILES[candidate_profile].evidence_scope.for_fidelity(fidelity)
 
 
 def _baseline_registry_path(scope: BaselineScope) -> Path:
@@ -1229,17 +1251,13 @@ def _verify_baseline_pin_facts(
     if scenario_path is not None and scenario_path.is_file():
         scenario = read_json(scenario_path)
         observed = {
-            "exact_trace_internal_dtype": scenario.get(
-                "exact_trace_internal_dtype"
-            ),
+            "exact_trace_internal_dtype": scenario.get("exact_trace_internal_dtype"),
             "decoder_chunk_size": scenario.get("decoder_chunk_size"),
         }
         expected_sha = baseline_entry.get("scenario_sha256")
         observed_sha = _sha256_file(scenario_path)
         if expected_sha is not None and str(expected_sha) != observed_sha:
-            raise ValueError(
-                f"baseline scenario checksum mismatch for {scenario_path}"
-            )
+            raise ValueError(f"baseline scenario checksum mismatch for {scenario_path}")
         if declared is not None:
             mismatches = [
                 f"{key}: declared={value!r}, observed={observed.get(key)!r}"
@@ -1304,8 +1322,7 @@ def _validate_exact_baseline_pins(
         raise ValueError(
             f"candidate profile {candidate_profile!r} cannot run with "
             "--fidelity exact because compatibility-mixed or semantic baseline "
-            "pins differ: "
-            + "; ".join(mismatches)
+            "pins differ: " + "; ".join(mismatches)
         )
     return {
         **verification,
@@ -1341,12 +1358,16 @@ def _case_scenario(
 ) -> dict[str, Any]:
     if diagnostic_stop_mode not in {"none", "phase0_probe", "transition_probe"}:
         raise ValueError("invalid diagnostic stop mode")
-    if diagnostic_stop_phase4_batches is not None and diagnostic_stop_phase4_batches <= 0:
+    if (
+        diagnostic_stop_phase4_batches is not None
+        and diagnostic_stop_phase4_batches <= 0
+    ):
         raise ValueError("diagnostic stop phase4 batches must be positive")
-    if diagnostic_stop_mode != "transition_probe" and diagnostic_stop_phase4_batches is not None:
-        raise ValueError(
-            "diagnostic stop phase4 batches require transition_probe mode"
-        )
+    if (
+        diagnostic_stop_mode != "transition_probe"
+        and diagnostic_stop_phase4_batches is not None
+    ):
+        raise ValueError("diagnostic stop phase4 batches require transition_probe mode")
     payload = build_chpc_baseline_config(variant=case.variant, cluster="granite")
     scenario = next(
         row for row in payload["scenarios"] if row["fixture_name"] == case.fixture
@@ -1370,10 +1391,7 @@ def _case_scenario(
         "mode": "diagnostic" if diagnostic else "gate",
         "registry_key": case.key,
         "baseline_required": not diagnostic,
-        "scope": (
-            baseline_scope
-            or _baseline_scope(candidate_profile, fidelity)
-        ).value,
+        "scope": (baseline_scope or _baseline_scope(candidate_profile, fidelity)).value,
         "comparison_semantics": COMPARISON_SEMANTICS[fidelity],
         "claim_limitation": COMPARISON_CLAIM_LIMITATION,
         "thresholds": FIDELITY_THRESHOLDS[fidelity],
@@ -1809,9 +1827,7 @@ def _baseline_entries(
         registry_path,
         expected_scope=expected_scope,
     )
-    return {
-        key: dict(entry.payload) for key, entry in contract.entries.items()
-    }
+    return {key: dict(entry.payload) for key, entry in contract.entries.items()}
 
 
 def _active_row_mechanism_gate(
@@ -2096,9 +2112,7 @@ def _active_row_mechanism_gate(
                     "baseline full-page bytes"
                 )
         else:
-            reasons.append(
-                "Phase0 decoder-row ranges must record a recognized backend"
-            )
+            reasons.append("Phase0 decoder-row ranges must record a recognized backend")
     return not reasons, reasons
 
 
@@ -2463,9 +2477,7 @@ def _print_report(report: dict[str, Any]) -> None:
         "REQUIRED" if report.get("reconciliation_required") else "OK"
     )
     acceptance_status = (
-        "ELIGIBLE"
-        if report.get("promotion_eligible", True)
-        else "MEASUREMENT_ONLY"
+        "ELIGIBLE" if report.get("promotion_eligible", True) else "MEASUREMENT_ONLY"
     )
     print(
         f"{report['case']}: "
@@ -2495,7 +2507,9 @@ def _print_report(report: dict[str, Any]) -> None:
 
 
 def _gate_summary(reports: Sequence[dict[str, Any]]) -> dict[str, bool | None]:
-    if reports and all(report.get("scientific_acceptance_attempted") is False for report in reports):
+    if reports and all(
+        report.get("scientific_acceptance_attempted") is False for report in reports
+    ):
         return {
             "parity_passed": None,
             "performance_passed": None,
