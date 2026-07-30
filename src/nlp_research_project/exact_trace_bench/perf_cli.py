@@ -16,6 +16,11 @@ from typing import Any, Mapping, Sequence
 
 from .config import DEFAULT_SCRATCH_ROOT, REPO_ROOT
 from .io_utils import read_json, write_json
+from .performance_campaign import (
+    load_mechanism_claims,
+    load_performance_campaign,
+    render_campaign_workloads,
+)
 from .scenarios.chpc_baseline import build_chpc_baseline_config
 
 
@@ -2798,12 +2803,46 @@ def _list_suites() -> int:
     return 0
 
 
+def _validate_claims(path: Path) -> int:
+    payload = load_mechanism_claims(path)
+    print(
+        f"{payload['campaign_id']}: {len(payload['claims'])} validated mechanism claims"
+    )
+    return 0
+
+
+def _list_campaign(path: Path, *, require_frozen: bool) -> int:
+    payload, workloads = load_performance_campaign(
+        path,
+        require_frozen=require_frozen,
+    )
+    print(f"{payload['campaign_id']}: {len(workloads)} workloads")
+    for line in render_campaign_workloads(workloads):
+        print(line)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="H200 exact-trace performance and graph-parity loop"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("list", help="List fixed performance suites")
+    claims = subparsers.add_parser(
+        "validate-claims",
+        help="Validate a machine-readable mechanism claim ledger",
+    )
+    claims.add_argument("path", type=Path)
+    campaign = subparsers.add_parser(
+        "list-campaign",
+        help="Validate and list a typed performance campaign without model loading",
+    )
+    campaign.add_argument("manifest", type=Path)
+    campaign.add_argument(
+        "--require-frozen",
+        action="store_true",
+        help="Fail when any workload or immutable fingerprint remains planned",
+    )
     run = subparsers.add_parser("run", help="Run one suite and enforce parity")
     run.add_argument("suite", choices=tuple(SUITES))
     run.add_argument(
@@ -2855,6 +2894,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "list":
         return _list_suites()
+    if args.command == "validate-claims":
+        return _validate_claims(args.path)
+    if args.command == "list-campaign":
+        return _list_campaign(args.manifest, require_frozen=args.require_frozen)
     if args.host_memory_stop_gib is not None and args.host_memory_stop_gib <= 0:
         raise ValueError("--host-memory-stop-gib must be positive")
     if args.host_rss_stop_gib is not None and args.host_rss_stop_gib <= 0:

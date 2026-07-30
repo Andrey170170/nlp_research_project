@@ -16,8 +16,11 @@ plan in
 completed July 27 4B/12B engineering plan and has two ordered campaigns:
 formally finish and package the current short-prefix mechanisms, then measure
 and improve prefix/prompt/model scaling with 1B as the fast development case
-before 4B/12B transfer. Its immediate targets are active-CPU exactness and the
-measured Phase-4 feature-row refresh traffic. Governor calibration, response
+before 4B/12B transfer. SP0 now freezes the claim ledger, SP2/SP3 have closed,
+and the immediate order is SP4 formal telemetry/lifecycle evidence, then the
+SP1 active-CPU exactness ladder and SP5 composition. The login-safe LS0
+campaign scaffold is implemented; deterministic trajectory generation remains.
+Governor calibration, response
 models, fidelity authorization, baseline-registry changes, and launch-default
 promotion remain outside that performance plan.
 

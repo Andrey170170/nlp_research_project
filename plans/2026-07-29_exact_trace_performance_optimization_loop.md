@@ -1,7 +1,8 @@
 # Exact-trace performance optimization loop: short-prefix promotion and scaling
 
-Status: in progress; SP2.2 selectable CPU/CUDA row execution and bounded-HBM
-scaling complete; SP3 re-profile closed with no qualifying non-batch target
+Status: in progress; SP0 ledger and LS0 login-safe scaffold complete; SP2.2
+selectable CPU/CUDA row execution and bounded-HBM scaling complete; SP3
+re-profile closed with no qualifying non-batch target
 
 Date: 2026-07-29
 
@@ -33,7 +34,7 @@ The stage prefixes are descriptive:
 
 | Prefix | Meaning | Current state |
 |---|---|---|
-| `SP` | canonical short-prefix completion and promotion evidence | ready to start at SP0 |
+| `SP` | canonical short-prefix completion and promotion evidence | SP0/SP2/SP3 closed; SP4 next |
 | `LS` | prefix-length, prompt, and model-size scaling | blocked on the SP5 finalist, except login-safe harness/fixture planning |
 
 Within each campaign the number is execution order, not a governor phase or
@@ -307,17 +308,17 @@ telemetry; it does not require a new GPU run.
 
 Tasks:
 
-- [ ] Register the repeated mapped lazy b64/c4096 12B result as this campaign's
+- [x] Register the repeated mapped lazy b64/c4096 12B result as this campaign's
       same-regime short-prefix control without overwriting the frozen scientific
       baseline registry.
-- [ ] Add a machine-readable mechanism claim ledger to the campaign report.
-- [ ] Give every mechanism a stable evidence identifier and disposition:
+- [x] Add a machine-readable mechanism claim ledger to the campaign report.
+- [x] Give every mechanism a stable evidence identifier and disposition:
       `exact_promotion_candidate`, `exact_opt_in`, `bounded_research`, or
       `rejected`.
-- [ ] Extract the current 1B/4B/12B short-prefix metrics into one compact table.
-- [ ] Record the unresolved telemetry-overhead and cold-transition gates rather
+- [x] Extract the current 1B/4B/12B short-prefix metrics into one compact table.
+- [x] Record the unresolved telemetry-overhead and cold-transition gates rather
       than silently treating the July 27 campaign as formally complete.
-- [ ] Verify that the performance report distinguishes mechanism selection from
+- [x] Verify that the performance report distinguishes mechanism selection from
       default or baseline promotion.
 
 Required claim-ledger fields:
@@ -1081,3 +1082,17 @@ The bounded result does not unblock exact SP5 promotion. The next meaningful
 choice is SP4 formal evidence or LS longer-prefix characterization using
 `cuda_full` until its explicit budget/safety gate refuses, then
 `cuda_windowed`, with `cpu_exact` as the atomic exact fallback.
+
+SP0 is now complete and the login-safe portion of LS0 is implemented:
+
+- [x] Validate a machine-readable mechanism ledger with stable evidence IDs,
+      all required evidence categories, and explicit promotion separation.
+- [x] Register the repeated mapped-lazy 12B result as the campaign control
+      without modifying the frozen scientific baseline registry.
+- [x] Extract current 1B/4B/12B controls and unresolved SP1/SP4 gates into
+      `reports/2026-07-29_exact_trace_sp0_claim_ledger.md`.
+- [x] Add a typed 124/256/512/1,024-token campaign manifest and login-safe
+      listing command while retaining all fixed suite aliases.
+- [ ] Generate the long deterministic trajectory and populate immutable
+      fixture, trajectory, prefix, and target fingerprints.
+- [ ] Add and freeze the two held-out prompt families before LS tuning.

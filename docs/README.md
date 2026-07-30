@@ -57,6 +57,7 @@ plans.
 | Location | Role |
 |---|---|
 | `../reports/**` | Generated/scouting outputs; useful for inspection, not binding decisions |
+| `../experiments/performance_campaigns/**` | Validated short-prefix mechanism ledgers and typed scaling campaign manifests |
 
 ## Historical docs
 

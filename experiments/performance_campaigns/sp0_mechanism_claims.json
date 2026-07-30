@@ -1,0 +1,228 @@
+{
+  "schema_version": 1,
+  "campaign_id": "exact-trace-short-prefix-20260729",
+  "created_at": "2026-07-29",
+  "source_reports": [
+    "reports/2026-07-27_large_model_optimization_results.md",
+    "reports/2026-07-29_exact_trace_sp2_row_tier_results.md",
+    "reports/2026-07-29_exact_trace_sp2_2_selectable_modes_results.md"
+  ],
+  "same_regime_controls": [
+    {
+      "case": "gemma3_1b_plt/361_base",
+      "profile": "mapped selective rows, active-row exact control, c4096",
+      "subprocess_seconds": [108.62],
+      "completion_seconds": [],
+      "phase0_seconds": [],
+      "phase4_seconds": [],
+      "peak_cuda_reserved_gib": [],
+      "cache_state": "warm_or_uncontrolled",
+      "repeat_count": 1,
+      "source": "experiments/baselines/exact_trace_mechanism_granite_20260727.json"
+    },
+    {
+      "case": "gemma3_4b_plt/361_base",
+      "profile": "mapped selective rows, active-row exact control, c4096",
+      "subprocess_seconds": [345.39, 234.46],
+      "completion_seconds": [310.83, 206.61],
+      "phase0_seconds": [128.51, 39.89],
+      "phase4_seconds": [158.37, 149.12],
+      "peak_cuda_reserved_gib": [26.24, 26.24],
+      "cache_state": "warm_or_uncontrolled",
+      "repeat_count": 2,
+      "source": "reports/2026-07-27_large_model_optimization_results.md"
+    },
+    {
+      "case": "gemma3_12b_plt/361_base",
+      "profile": "mapped selective rows, lazy encoder, b64/c4096",
+      "subprocess_seconds": [586.30, 563.27],
+      "completion_seconds": [555.62, 539.42],
+      "phase0_seconds": [63.43, 62.59],
+      "phase4_seconds": [458.42, 443.74],
+      "peak_cuda_reserved_gib": [38.82, 38.82],
+      "cache_state": "warm_or_uncontrolled",
+      "repeat_count": 2,
+      "source": "reports/2026-07-27_large_model_optimization_results.md"
+    }
+  ],
+  "unresolved_formal_gates": [
+    "SP4.1 paired 4B telemetry overhead below 2%",
+    "SP4.2 attributable cold checkpoint lifecycle over three Phase-4 batches",
+    "SP1 active-CPU first-divergence localization and exact disposition"
+  ],
+  "claims": [
+    {
+      "identity": {
+        "mechanism_id": "mapped-selective-decoder-rows-v1",
+        "implementation_commit": "circuit-tracer:a648e5f",
+        "candidate_profile": "plt-selective-mapped-rows-large-v1"
+      },
+      "applicability": {
+        "provider_capabilities": ["selective mapped decoder-row source"],
+        "topology": "PLT",
+        "dtype": "FP32 attribution",
+        "conditions": "known GemmaScope lazy checkpoint contract"
+      },
+      "semantics": {
+        "scenario": "361_base short prefix",
+        "chunk_regime": 4096,
+        "feature_cap": 8192,
+        "refresh_contract": "unchanged"
+      },
+      "correctness": {
+        "raw_order": "byte-exact values and duplicate-aware caller order",
+        "execution": "zero Phase-4 decoder loads",
+        "signed_graph": "two repeated 4B compact-strict passes",
+        "compact_comparison": "pass"
+      },
+      "performance": {
+        "paired_timings": "4B repeats 345.39s and 234.46s subprocess; cache-sensitive",
+        "repeat_count": 2,
+        "cache_state": "warm_or_uncontrolled",
+        "speedup": "12B accounted raw checkpoint bytes 95.316 GB to 0.910 GB"
+      },
+      "resources": {
+        "host_hbm_peaks": "4B 26.24 GiB CUDA reserved",
+        "owned_bytes": "12B retained output 455,032,320 bytes",
+        "fallback_admission": "capability and checkpoint identity gated"
+      },
+      "disposition": {
+        "status": "exact_promotion_candidate",
+        "rationale": "accepted exact physical mechanism",
+        "remaining_evidence": ["SP4.2 lifecycle gate", "SP5 composed matrix"]
+      },
+      "promotion_separation": {
+        "mechanism": "candidate",
+        "baseline": "unchanged",
+        "default": "unchanged",
+        "governor": "unchanged"
+      }
+    },
+    {
+      "identity": {
+        "mechanism_id": "mapped-lazy-c4096-reference-v1",
+        "implementation_commit": "project:05e29a0;circuit-tracer:a648e5f",
+        "candidate_profile": "plt-selective-mapped-rows-large-v1"
+      },
+      "applicability": {"provider_capabilities": ["mapped decoder rows"], "topology": "PLT", "dtype": "FP32", "conditions": "lazy encoder placement"},
+      "semantics": {"scenario": "361_base", "chunk_regime": 4096, "feature_cap": 8192, "refresh_contract": "canonical"},
+      "correctness": {"raw_order": "accepted mapped-row contract", "execution": "129 repeated Phase-4 batches", "signed_graph": "repeat comparison exact", "compact_comparison": "pass"},
+      "performance": {"paired_timings": "12B subprocess 586.30s and 563.27s", "repeat_count": 2, "cache_state": "warm_or_uncontrolled", "speedup": "reference"},
+      "resources": {"host_hbm_peaks": "38.82 GiB CUDA reserved", "owned_bytes": "mapped row source", "fallback_admission": "exact fallback"},
+      "disposition": {"status": "exact_opt_in", "rationale": "reproducible exact incumbent", "remaining_evidence": ["SP5 formal repetitions"]},
+      "promotion_separation": {"mechanism": "accepted opt-in", "baseline": "same-regime control only", "default": "unchanged", "governor": "unchanged"}
+    },
+    {
+      "identity": {
+        "mechanism_id": "checkpoint-lifecycle-release-v1",
+        "implementation_commit": "circuit-tracer:65c94bb",
+        "candidate_profile": "plt-selective-mapped-rows-large-v1"
+      },
+      "applicability": {"provider_capabilities": ["mapped checkpoint"], "topology": "provider-general lifecycle", "dtype": "not applicable", "conditions": "exclusive mapped ownership"},
+      "semantics": {"scenario": "short prefix", "chunk_regime": 4096, "feature_cap": 8192, "refresh_contract": "unchanged"},
+      "correctness": {"raw_order": "unchanged", "execution": "three-batch warm transition observed", "signed_graph": "covered by mapped-row runs", "compact_comparison": "pass"},
+      "performance": {"paired_timings": "5.86s for first three mapped Phase-4 batches", "repeat_count": 1, "cache_state": "warm_or_uncontrolled", "speedup": "old unmapped path required 308.14s for two batches"},
+      "resources": {"host_hbm_peaks": "not independently isolated", "owned_bytes": "page lifecycle telemetry", "fallback_admission": "reference fallback retained"},
+      "disposition": {"status": "exact_promotion_candidate", "rationale": "strong engineering evidence", "remaining_evidence": ["SP4.2 matched attributable cold gate"]},
+      "promotion_separation": {"mechanism": "candidate", "baseline": "unchanged", "default": "unchanged", "governor": "unchanged"}
+    },
+    {
+      "identity": {
+        "mechanism_id": "phase-scoped-telemetry-v1",
+        "implementation_commit": "circuit-tracer:17c8e41",
+        "candidate_profile": "diagnostic telemetry toggle"
+      },
+      "applicability": {"provider_capabilities": ["observability events"], "topology": "provider-general", "dtype": "not applicable", "conditions": "incremental sink available"},
+      "semantics": {"scenario": "no policy change", "chunk_regime": "unchanged", "feature_cap": "unchanged", "refresh_contract": "unchanged"},
+      "correctness": {"raw_order": "observational only", "execution": "probe lifecycle passed", "signed_graph": "formal paired check pending", "compact_comparison": "pending"},
+      "performance": {"paired_timings": "pending SP4.1", "repeat_count": 0, "cache_state": "pending", "speedup": "not applicable"},
+      "resources": {"host_hbm_peaks": "recorded by sink", "owned_bytes": "event stream", "fallback_admission": "telemetry can be disabled"},
+      "disposition": {"status": "exact_promotion_candidate", "rationale": "implemented attribution mechanism", "remaining_evidence": ["SP4.1 paired mean overhead below 2%"]},
+      "promotion_separation": {"mechanism": "candidate", "baseline": "unchanged", "default": "unchanged", "governor": "unchanged"}
+    },
+    {
+      "identity": {
+        "mechanism_id": "active-cpu-encoder-residency-v1",
+        "implementation_commit": "circuit-tracer:17c8e41",
+        "candidate_profile": "plt-selective-mapped-rows-12b-active-cpu-b64-v1"
+      },
+      "applicability": {"provider_capabilities": ["mapped encoder residency"], "topology": "PLT", "dtype": "FP32", "conditions": "active CPU placement"},
+      "semantics": {"scenario": "361_base", "chunk_regime": 4096, "feature_cap": 8192, "refresh_contract": "placement frozen"},
+      "correctness": {"raw_order": "first boundary not fully localized", "execution": "129 versus 130 batches across repeats", "signed_graph": "bounded only", "compact_comparison": "fail exact"},
+      "performance": {"paired_timings": "12B 509.80s and 508.67s subprocess", "repeat_count": 2, "cache_state": "warm_or_uncontrolled", "speedup": "about 11% total and 20% Phase 4"},
+      "resources": {"host_hbm_peaks": "38.82 GiB CUDA reserved", "owned_bytes": "active encoder rows in CPU memory", "fallback_admission": "lazy exact placement"},
+      "disposition": {"status": "bounded_research", "rationale": "fast but compact-strict repeatability failed", "remaining_evidence": ["SP1 first-divergence ladder"]},
+      "promotion_separation": {"mechanism": "bounded only", "baseline": "unchanged", "default": "unchanged", "governor": "unchanged"}
+    },
+    {
+      "identity": {
+        "mechanism_id": "cuda-full-row-consumer-v1",
+        "implementation_commit": "circuit-tracer:6324210",
+        "candidate_profile": "plt-selective-mapped-rows-gpu-store-12b-v1"
+      },
+      "applicability": {"provider_capabilities": ["CUDA influence consumer"], "topology": "PLT tested", "dtype": "signed FP32 store", "conditions": "full matrix passes byte and HBM-safety admission"},
+      "semantics": {"scenario": "361_base", "chunk_regime": 4096, "feature_cap": 8192, "refresh_contract": "bounded CUDA arithmetic"},
+      "correctness": {"raw_order": "canonical signed rows retained", "execution": "130 batches", "signed_graph": "signed L1 0.000471032", "compact_comparison": "bounded pass, exact fail"},
+      "performance": {"paired_timings": "12B Phase 4 190.59s", "repeat_count": 1, "cache_state": "warm_or_uncontrolled", "speedup": "54.8% Phase-4 reduction versus cpu_exact"},
+      "resources": {"host_hbm_peaks": "42.71 GiB CUDA reserved", "owned_bytes": "4,181,562,080 bytes", "fallback_admission": "atomic cpu_exact fallback"},
+      "disposition": {"status": "bounded_research", "rationale": "fastest selectable mode; CUDA reduction regime is bounded", "remaining_evidence": ["long-prefix scaling"]},
+      "promotion_separation": {"mechanism": "bounded only", "baseline": "unchanged", "default": "unchanged", "governor": "unchanged"}
+    },
+    {
+      "identity": {
+        "mechanism_id": "cuda-windowed-row-consumer-v1",
+        "implementation_commit": "circuit-tracer:127a928",
+        "candidate_profile": "plt-selective-mapped-rows-cuda-windowed-12b-v1"
+      },
+      "applicability": {"provider_capabilities": ["host mirror", "CUDA influence consumer"], "topology": "PLT tested", "dtype": "signed FP32 store", "conditions": "one complete legal double-buffer window fits"},
+      "semantics": {"scenario": "361_base", "chunk_regime": 4096, "feature_cap": 8192, "refresh_contract": "fixed window order"},
+      "correctness": {"raw_order": "canonical windows", "execution": "129 batches", "signed_graph": "pipeline exactly matches synchronous window", "compact_comparison": "bounded pass, exact fail"},
+      "performance": {"paired_timings": "12B Phase 4 300.91s", "repeat_count": 1, "cache_state": "warm_or_uncontrolled", "speedup": "28.7% versus cpu_exact"},
+      "resources": {"host_hbm_peaks": "38.82 GiB CUDA reserved", "owned_bytes": "512 MiB HBM plus 512 MiB pinned staging", "fallback_admission": "atomic cpu_exact fallback"},
+      "disposition": {"status": "bounded_research", "rationale": "bounded-HBM scaling fallback", "remaining_evidence": ["long-prefix scaling"]},
+      "promotion_separation": {"mechanism": "bounded only", "baseline": "unchanged", "default": "unchanged", "governor": "unchanged"}
+    },
+    {
+      "identity": {
+        "mechanism_id": "cpu-prepared-row-consumer-v1",
+        "implementation_commit": "circuit-tracer:6324210",
+        "candidate_profile": "plt-selective-mapped-rows-cpu-prepared-12b-v1"
+      },
+      "applicability": {"provider_capabilities": ["host row mirror"], "topology": "PLT tested", "dtype": "pre-absolute FP32 host rows", "conditions": "explicit bounded mode"},
+      "semantics": {"scenario": "361_base", "chunk_regime": 4096, "feature_cap": 8192, "refresh_contract": "bounded prepared layout"},
+      "correctness": {"raw_order": "canonical store preserved", "execution": "129 batches in complete predecessor", "signed_graph": "same bounded divergence as CUDA", "compact_comparison": "exact fail"},
+      "performance": {"paired_timings": "predecessor Phase 4 215.56s", "repeat_count": 1, "cache_state": "warm_or_uncontrolled", "speedup": "about 49% versus cpu_exact"},
+      "resources": {"host_hbm_peaks": "38.82 GiB CUDA reserved", "owned_bytes": "4.18 GB host mirror", "fallback_admission": "cpu_exact"},
+      "disposition": {"status": "bounded_research", "rationale": "useful explicit CPU bounded lane", "remaining_evidence": ["long-prefix characterization if selected"]},
+      "promotion_separation": {"mechanism": "bounded only", "baseline": "unchanged", "default": "unchanged", "governor": "unchanged"}
+    },
+    {
+      "identity": {
+        "mechanism_id": "exact-signed-host-row-mirror-v1",
+        "implementation_commit": "circuit-tracer:fff8650",
+        "candidate_profile": "historical SP2 exact host mirror"
+      },
+      "applicability": {"provider_capabilities": ["host row mirror"], "topology": "PLT tested", "dtype": "signed FP32", "conditions": "incumbent CPU reduction layout"},
+      "semantics": {"scenario": "361_base", "chunk_regime": 4096, "feature_cap": 8192, "refresh_contract": "exact"},
+      "correctness": {"raw_order": "exact", "execution": "130 batches", "signed_graph": "all canonical metrics 1.0", "compact_comparison": "pass"},
+      "performance": {"paired_timings": "12B Phase 4 427.84s", "repeat_count": 1, "cache_state": "warm_or_uncontrolled", "speedup": "-1.4% versus cpu_exact"},
+      "resources": {"host_hbm_peaks": "38.82 GiB CUDA reserved", "owned_bytes": "4.18 GB host mirror", "fallback_admission": "file-backed cpu_exact"},
+      "disposition": {"status": "rejected", "rationale": "exact but slower than incumbent", "remaining_evidence": []},
+      "promotion_separation": {"mechanism": "rejected", "baseline": "unchanged", "default": "unchanged", "governor": "unchanged"}
+    },
+    {
+      "identity": {
+        "mechanism_id": "short-prefix-rejected-envelope-v1",
+        "implementation_commit": "project:75bee35;circuit-tracer:17c8e41",
+        "candidate_profile": "active-pinned,b128,b256,fp32-tiles"
+      },
+      "applicability": {"provider_capabilities": ["PLT"], "topology": "PLT", "dtype": "FP32", "conditions": "short-prefix 12B"},
+      "semantics": {"scenario": "361_base", "chunk_regime": 4096, "feature_cap": 8192, "refresh_contract": "varied physical envelopes"},
+      "correctness": {"raw_order": "varies", "execution": "completed where admitted", "signed_graph": "exact or bounded as individually reported", "compact_comparison": "no Pareto winner"},
+      "performance": {"paired_timings": "active pinned 520.60s; b128 538.30s; b256 533.37s", "repeat_count": 1, "cache_state": "warm_or_uncontrolled", "speedup": "inferior to active CPU"},
+      "resources": {"host_hbm_peaks": "38.82 to 86.97 GiB CUDA reserved", "owned_bytes": "profile dependent", "fallback_admission": "canonical profiles"},
+      "disposition": {"status": "rejected", "rationale": "slower, higher HBM, or no wall-time win", "remaining_evidence": []},
+      "promotion_separation": {"mechanism": "rejected", "baseline": "unchanged", "default": "unchanged", "governor": "unchanged"}
+    }
+  ]
+}
