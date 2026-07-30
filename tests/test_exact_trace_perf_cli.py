@@ -1208,8 +1208,8 @@ def test_sp4_telemetry_profiles_change_only_observability(enabled: bool) -> None
     overrides = perf_cli._candidate_overrides(case, profile)
     assert overrides["telemetry_enabled"] is enabled
     assert overrides["incremental_telemetry_jsonl"] is enabled
-    assert overrides["profile_attribution"] is enabled
-    assert overrides["verbose_attribution"] is enabled
+    assert overrides["profile_attribution"] is True
+    assert overrides["verbose_attribution"] is False
     assert overrides["checkpoint_asset_scope"] == "shared"
     assert overrides["phase0_decoder_row_ranges"] is True
 
