@@ -319,6 +319,7 @@ def trace_policy_from_scenario(
             phase0_decoder_row_ranges=phase0_decoder_row_ranges,
         ),
         observability=ObservabilityPolicy(
+            telemetry_enabled=scenario.get("telemetry_enabled"),
             verbose=bool(scenario.get("verbose_attribution", False)),
             profile=bool(scenario.get("profile_attribution", False)),
             profile_log_interval=int(scenario.get("profile_log_interval", 1)),

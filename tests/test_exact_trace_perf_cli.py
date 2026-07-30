@@ -1200,6 +1200,29 @@ def test_mapped_decoder_row_profile_selects_4b_and_12b_variants() -> None:
     }
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+def test_sp4_telemetry_profiles_change_only_observability(enabled: bool) -> None:
+    case = perf_cli.Case("gemma3_4b_plt", "361_base")
+    suffix = "on" if enabled else "off"
+    profile = f"plt-selective-mapped-rows-telemetry-{suffix}-4b-v1"
+    overrides = perf_cli._candidate_overrides(case, profile)
+    assert overrides["telemetry_enabled"] is enabled
+    assert overrides["incremental_telemetry_jsonl"] is enabled
+    assert overrides["checkpoint_asset_scope"] == "shared"
+    assert overrides["phase0_decoder_row_ranges"] is True
+
+
+@pytest.mark.parametrize("scope", ["reference", "private"])
+def test_sp4_lifecycle_profiles_are_matched_except_asset_scope(scope: str) -> None:
+    case = perf_cli.Case("gemma3_4b_plt", "361_base")
+    profile = f"plt-selective-mapped-rows-lifecycle-{scope}-4b-v1"
+    overrides = perf_cli._candidate_overrides(case, profile)
+    assert overrides["checkpoint_asset_scope"] == (
+        "shared" if scope == "reference" else "job_private"
+    )
+    assert overrides["phase0_decoder_row_ranges"] is True
+
+
 def test_cuda_full_row_store_profile_is_bounded_and_12b_scoped() -> None:
     profile_name = "plt-selective-mapped-rows-gpu-store-12b-v1"
     profile = perf_cli.CANDIDATE_PROFILES[profile_name]

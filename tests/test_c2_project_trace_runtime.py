@@ -47,6 +47,17 @@ def _fingerprints(overrides: dict[str, object]) -> tuple[str, str]:
     return plan.semantic_fingerprint, plan.execution_fingerprint
 
 
+def test_scenario_maps_explicit_telemetry_enablement() -> None:
+    disabled = trace_policy_from_scenario(
+        {"name": "telemetry-off", "method": "exact", "telemetry_enabled": False}
+    )
+    enabled = trace_policy_from_scenario(
+        {"name": "telemetry-on", "method": "exact", "telemetry_enabled": True}
+    )
+    assert disabled.execution.observability.telemetry_enabled is False
+    assert enabled.execution.observability.telemetry_enabled is True
+
+
 def test_semantic_frontier_knobs_change_only_semantic_fingerprint() -> None:
     baseline = _fingerprints({})
     for key, value in (

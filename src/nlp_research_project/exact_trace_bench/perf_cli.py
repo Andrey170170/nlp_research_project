@@ -688,6 +688,63 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
         ),
         evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
     )
+    mapped_4b_requirements = CapabilityRequirements(
+        **{
+            **_PLT_MAPPED_DECODER_ROWS.__dict__,
+            "minimum_layer_count": 27,
+            "maximum_layer_count": 34,
+        }
+    )
+    mapped_4b_controls = {
+        **_LEGACY_CANDIDATE_OVERRIDES["plt-active-rows-4b-c4096-v1"],
+        "phase0_decoder_row_ranges": True,
+    }
+    for telemetry_enabled in (False, True):
+        suffix = "on" if telemetry_enabled else "off"
+        profile_name = f"plt-selective-mapped-rows-telemetry-{suffix}-4b-v1"
+        contracts[profile_name] = CandidateProfile(
+            name=profile_name,
+            variants=(
+                _candidate_variant(
+                    {
+                        **mapped_4b_controls,
+                        "checkpoint_asset_scope": "shared",
+                        "telemetry_enabled": telemetry_enabled,
+                        "incremental_telemetry_jsonl": telemetry_enabled,
+                    },
+                    mapped_4b_requirements,
+                ),
+            ),
+            evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
+        )
+    contracts["plt-selective-mapped-rows-lifecycle-reference-4b-v1"] = (
+        CandidateProfile(
+            name="plt-selective-mapped-rows-lifecycle-reference-4b-v1",
+            variants=(
+                _candidate_variant(
+                    {
+                        **mapped_4b_controls,
+                        "checkpoint_asset_scope": "shared",
+                    },
+                    mapped_4b_requirements,
+                ),
+            ),
+            evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
+        )
+    )
+    contracts["plt-selective-mapped-rows-lifecycle-private-4b-v1"] = CandidateProfile(
+        name="plt-selective-mapped-rows-lifecycle-private-4b-v1",
+        variants=(
+            _candidate_variant(
+                {
+                    **mapped_4b_controls,
+                    "checkpoint_asset_scope": "job_private",
+                },
+                mapped_4b_requirements,
+            ),
+        ),
+        evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
+    )
     contracts["plt-selective-mapped-rows-gpu-store-12b-v1"] = CandidateProfile(
         name="plt-selective-mapped-rows-gpu-store-12b-v1",
         variants=(
