@@ -2,7 +2,8 @@
 
 Status: in progress; SP0 ledger and LS0 login-safe scaffold complete; SP2.2
 selectable CPU/CUDA row execution and bounded-HBM scaling complete; SP3
-re-profile closed with no qualifying non-batch target
+re-profile closed with no qualifying non-batch target; SP4.1 exact pairs
+complete but the telemetry-overhead gate remains open
 
 Date: 2026-07-29
 
@@ -34,7 +35,7 @@ The stage prefixes are descriptive:
 
 | Prefix | Meaning | Current state |
 |---|---|---|
-| `SP` | canonical short-prefix completion and promotion evidence | SP0/SP2/SP3 closed; SP4 next |
+| `SP` | canonical short-prefix completion and promotion evidence | SP0/SP2/SP3 closed; SP4.1 overhead gate failed |
 | `LS` | prefix-length, prompt, and model-size scaling | blocked on the SP5 finalist, except login-safe harness/fixture planning |
 
 Within each campaign the number is execution order, not a governor phase or
@@ -1096,3 +1097,23 @@ SP0 is now complete and the login-safe portion of LS0 is implemented:
 - [ ] Generate the long deterministic trajectory and populate immutable
       fixture, trajectory, prefix, and target fingerprints.
 - [ ] Add and freeze the two held-out prompt families before LS tuning.
+
+SP4.1 now has two exact formal pairs:
+
+- [x] Add explicit telemetry-on/off profiles and a true disabled observer.
+- [x] Run off→on v3: 163.614817 s versus 179.769358 s completion
+      (9.873% overhead), with exact signed compact parity.
+- [x] Retain all batch timing events while reducing Phase-4 resource samples
+      from 65 batches to batches 1-3, every 32nd batch, and the final batch.
+- [x] Run reversed on→off v4: 178.782410 s versus 157.858818 s completion
+      (13.254% overhead), again with exact signed compact parity.
+- [ ] Reduce incremental event-sink overhead below the preregistered 2% gate.
+      The v4 telemetry sidecar contains 9,822 events; sparse memory snapshots
+      changed telemetry-on completion by only 0.55% relative to v3, so bounded
+      JSONL buffering/event serialization is the next implementation seam.
+- [ ] Execute SP4.2 from a genuinely job-private staged 4B transcoder cache.
+
+The exact restart record, run IDs, snapshots, and next commands are documented
+in `reports/2026-07-29_exact_trace_sp4_intermediate_results.md`. After SP4,
+continue in the user-selected order: open-ended SP1, then SP5/LS0 including
+deterministic trajectory generation.
