@@ -711,6 +711,8 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
                         "checkpoint_asset_scope": "shared",
                         "telemetry_enabled": telemetry_enabled,
                         "incremental_telemetry_jsonl": telemetry_enabled,
+                        "profile_attribution": telemetry_enabled,
+                        "verbose_attribution": telemetry_enabled,
                     },
                     mapped_4b_requirements,
                 ),
