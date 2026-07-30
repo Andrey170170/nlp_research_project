@@ -1,7 +1,7 @@
 # Exact-trace performance optimization loop: short-prefix promotion and scaling
 
 Status: in progress; SP2.2 selectable CPU/CUDA row execution and bounded-HBM
-scaling authorized
+scaling complete; SP3 re-profile closed with no qualifying non-batch target
 
 Date: 2026-07-29
 
@@ -1052,3 +1052,32 @@ The 1B/4B promotion ladder, SP4, and SP5 remain unexecuted. Subsequent work is
 authorized under SP2.2's explicit bounded lane: restore the fast CUDA consumer,
 evaluate the prepared CPU mode independently, and measure a bounded-HBM
 windowed CUDA provider before selecting a new SP3 bottleneck.
+
+SP2.2 is now implemented and characterized in
+`reports/2026-07-29_exact_trace_sp2_2_selectable_modes_results.md`.
+
+- [x] Add explicit `cpu_exact`, `cpu_prepared`, `cuda_full`,
+      `cuda_windowed`, and `auto` modes with typed profile wiring.
+- [x] Keep `cpu_exact` as the exact default and make all accelerated modes
+      explicit/default-off.
+- [x] Validate full CUDA, prepared CPU, and artificially constrained 512 MiB
+      window admission on the 12B H200 workload.
+- [x] Complete a full selectable `cuda_full` trace: 190.59-second Phase 4,
+      42.71 GiB peak CUDA reservation, bounded gate pass.
+- [x] Complete synchronous and pinned double-buffered `cuda_windowed` traces.
+      Double buffering reduced Phase 4 from 373.20 to 300.91 seconds while
+      preserving the synchronous window graph exactly and holding CUDA
+      reservation at 38.82 GiB.
+- [x] Record the actual window stream: 111.87 GB read from host and sent H2D,
+      536.86 MB total window HBM, 536.86 MB pinned staging, and a 4.18 GB host
+      mirror.
+- [x] Re-profile SP3 after full residency. Feature-batch execution is 145.28
+      of 190.59 seconds; normalization is 17.45 seconds (9.2%), direct
+      accumulation 0.98 seconds, and row reads 0.37 seconds. No allowed
+      non-batch target meets the 10% continuation threshold, so SP3 closes
+      without another implementation.
+
+The bounded result does not unblock exact SP5 promotion. The next meaningful
+choice is SP4 formal evidence or LS longer-prefix characterization using
+`cuda_full` until its explicit budget/safety gate refuses, then
+`cuda_windowed`, with `cpu_exact` as the atomic exact fallback.

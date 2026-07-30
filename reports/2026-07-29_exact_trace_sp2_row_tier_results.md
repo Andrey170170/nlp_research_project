@@ -124,3 +124,11 @@ has a demonstrated exact 10% opportunity, so the campaign should not advance
 to formal SP4/SP5 promotion on this candidate. A future revisit needs a
 fundamentally exact reduction implementation or a workload where storage
 traffic, rather than the CPU reduction memory pass, is controlling.
+
+## SP2.2 addendum
+
+The exact-promotion decision above remains unchanged, but its final-source
+disposition is superseded for the explicitly bounded lane. SP2.2 restores the
+fast CUDA and prepared CPU consumers as named, selectable, default-off modes
+and adds a pinned double-buffered bounded-HBM CUDA fallback. See
+`reports/2026-07-29_exact_trace_sp2_2_selectable_modes_results.md`.
