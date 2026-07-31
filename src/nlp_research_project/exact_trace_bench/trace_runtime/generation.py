@@ -184,6 +184,9 @@ def trace_completion_compact_chunked(
             incremental_telemetry=completion.incremental_telemetry_jsonl,
         )
         if isinstance(step, DiagnosticStepResult):
+            sidecar_status = writer.write_diagnostic_sidecars(
+                step_index, step.diagnostic.diagnostic_artifacts or {}
+            )
             telemetry_records = [
                 {
                     "prompt_id": workspace.prompt_id,
@@ -224,6 +227,7 @@ def trace_completion_compact_chunked(
                 ),
                 "telemetry_summary": dict(step.diagnostic.telemetry_summary),
                 "telemetry_event_count": len(telemetry_records),
+                "sidecar_status": sidecar_status,
                 "admission_report": step.diagnostic.admission_report,
                 "resource_snapshot": capture_resource_snapshot(),
                 "timing_summary": build_completion_timing_summary(

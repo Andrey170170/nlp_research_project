@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 import torch
 from nlp_research_project.exact_trace_bench.compact_io import save_compact
@@ -135,6 +135,13 @@ class StepArtifactWriter:
             else:
                 statuses[payload_name] = str(payload.get("status", "captured"))
         return statuses
+
+    def write_diagnostic_sidecars(
+        self, step_index: int, artifacts: Mapping[str, Any]
+    ) -> dict[str, str]:
+        """Persist bounded captures returned by a graph-free diagnostic probe."""
+
+        return self._write_sidecars(step_index, dict(artifacts))
 
     def _write_debug_artifacts(
         self, step_index: int, result: dict[str, Any]

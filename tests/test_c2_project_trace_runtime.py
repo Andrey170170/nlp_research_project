@@ -463,6 +463,12 @@ def test_diagnostic_completion_persists_telemetry_without_graph_packaging(
                     "attrs": {"status": "probe_completed"},
                 },
             ),
+            diagnostic_artifacts={
+                "phase3_seed_bundle": {
+                    "status": "captured",
+                    "active_features": torch.tensor([1, 2]),
+                }
+            },
         ),
     )
 
@@ -499,6 +505,7 @@ def test_diagnostic_completion_persists_telemetry_without_graph_packaging(
                 "method": "exact",
                 "diagnostic_stop_mode": "transition_probe",
                 "diagnostic_stop_phase4_batches": 2,
+                "capture_phase3_seed_bundle": True,
             }
         ),
     )
@@ -509,5 +516,7 @@ def test_diagnostic_completion_persists_telemetry_without_graph_packaging(
     assert manifest["phase4_batches_completed"] == 2
     assert manifest["graph_packaging_mode"] == "diagnostic_no_graph"
     assert manifest["n_steps_traced"] == 0
-    assert not list(root.glob("step_*.npz"))
+    assert not (root / "step_000.npz").exists()
+    assert manifest["sidecar_status"]["phase3_seed_bundle"] == "captured"
+    assert (root / "step_000_phase3_seed_bundle.npz").is_file()
     assert (root / "telemetry.jsonl").is_file()

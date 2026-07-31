@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import gc
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -22,6 +22,7 @@ class DiagnosticTraceCompletion:
     telemetry_summary: Mapping[str, Any]
     telemetry_events: tuple[Mapping[str, Any], ...]
     admission_report: Mapping[str, Any] | None = None
+    diagnostic_artifacts: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def diagnostic_stop_mode(self) -> str | None:
@@ -63,6 +64,9 @@ def extract_compact_chunked_attribution(
         detail = "; ".join(reasons) if reasons else "no refusal reason was recorded"
         raise RuntimeError(f"trace refused by memory governor: {detail}")
     if getattr(result.status, "value", result.status) == "probe_completed":
+        diagnostic_artifacts = (
+            dict(result.output) if isinstance(result.output, dict) else {}
+        )
         return DiagnosticTraceCompletion(
             semantic_fingerprint=result.semantic_fingerprint,
             execution_fingerprint=result.execution_fingerprint,
@@ -73,6 +77,7 @@ def extract_compact_chunked_attribution(
                 if result.admission_report is None
                 else asdict(result.admission_report)
             ),
+            diagnostic_artifacts=diagnostic_artifacts,
         )
     if not isinstance(result.output, dict):
         raise TypeError(
