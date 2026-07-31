@@ -1351,6 +1351,7 @@ def test_sp1_diagnostic_profiles_capture_phase3_boundaries(
     assert overrides["capture_phase3_row_bundle"] is True
     assert overrides["capture_phase3_seed_bundle"] is True
     assert overrides["profile_attribution"] is True
+    assert profile.evidence_scope.exact_baseline is perf_cli.BaselineScope.SCIENTIFIC
 
 
 @pytest.mark.parametrize("execution_rows", [128, 256])

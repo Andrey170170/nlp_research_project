@@ -878,7 +878,7 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
                     sp1_diagnostic_requirements,
                 ),
             ),
-            evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
+            evidence_scope=EvidenceScope(BaselineScope.SCIENTIFIC),
         )
     for execution_rows in (128, 256):
         profile_name = f"plt-selective-mapped-rows-12b-b{execution_rows}-v1"
