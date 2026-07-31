@@ -1,9 +1,10 @@
 # Exact-trace performance optimization loop: short-prefix promotion and scaling
 
-Status: in progress; SP0 ledger and LS0 login-safe scaffold complete; SP2.2
-selectable CPU/CUDA row execution and bounded-HBM scaling complete; SP3
-re-profile closed with no qualifying non-batch target; SP4 telemetry and
-lifecycle gates passed; open-ended SP1 is next
+Status: in progress; SP0 ledger and LS0 login-safe scaffold complete; SP1
+closed with active CPU retained as bounded/research; SP2.2 selectable CPU/CUDA
+row execution and bounded-HBM scaling complete; SP3 re-profile closed with no
+qualifying non-batch target; SP4 telemetry and lifecycle gates passed; SP5 and
+LS0 trajectory generation are next
 
 Date: 2026-07-29
 
@@ -35,7 +36,7 @@ The stage prefixes are descriptive:
 
 | Prefix | Meaning | Current state |
 |---|---|---|
-| `SP` | canonical short-prefix completion and promotion evidence | SP0/SP2/SP3/SP4 closed; SP1 then SP5 next |
+| `SP` | canonical short-prefix completion and promotion evidence | SP0-SP4 closed; SP5 next |
 | `LS` | prefix-length, prompt, and model-size scaling | blocked on the SP5 finalist, except login-safe harness/fixture planning |
 
 Within each campaign the number is execution order, not a governor phase or
@@ -1009,18 +1010,20 @@ implicit success.
 
 Start here:
 
-1. [ ] Add this plan to the active roadmap and documentation index.
-2. [ ] Create the SP0 mechanism claim-ledger schema and populate it from the
+1. [x] Add this plan to the active roadmap and documentation index.
+2. [x] Create the SP0 mechanism claim-ledger schema and populate it from the
        July 27 report.
-3. [ ] Add diagnostic-only encoder-row and Phase-4 row hashes for SP1.
-4. [ ] Reproduce the active-CPU first divergence on 1B PLT `361_base`.
-5. [ ] Decide active CPU's exact/bounded disposition from the earliest differing
+3. [x] Add diagnostic-only encoder and Phase-3/early-Phase-4 evidence for SP1.
+4. [x] Reproduce the active-CPU divergence on 12B PLT `361_base`, as directed
+       for the current fast workload.
+5. [x] Decide active CPU's exact/bounded disposition from the earliest differing
        boundary.
-6. [ ] Define the GPU feature-row-tier interface and exact capacity estimator.
-7. [ ] Implement focused append/read/fallback/cleanup tests.
-8. [ ] Run the SP2 1B exact control/candidate pair from one immutable snapshot.
-9. [ ] Re-profile before selecting any SP3 work.
-10. [ ] Close SP4 telemetry-overhead and cold-transition evidence.
+6. [x] Define the GPU feature-row-tier interface and exact capacity estimator.
+7. [x] Implement focused append/read/fallback/cleanup tests.
+8. [x] Run SP2 control/candidate variants from immutable snapshots (12B at the
+       user's direction rather than the planned 1B entry case).
+9. [x] Re-profile before selecting any SP3 work.
+10. [x] Close SP4 telemetry-overhead and cold-transition evidence.
 11. [ ] Compose and run the SP5 formal short-prefix matrix.
 12. [ ] Extend the harness with the LS0 campaign manifest and dry-run listing.
 13. [ ] Prepare deterministic 256/512/1,024-token trajectories in SLURM.
@@ -1127,3 +1130,24 @@ in `reports/2026-07-29_exact_trace_sp4_intermediate_results.md` and
 `reports/2026-07-31_exact_trace_sp4_lifecycle_results.md`. Continue in the
 user-selected order: open-ended SP1, then SP5/LS0 including deterministic
 trajectory generation.
+
+SP1 is now closed at its bounded/research branch. Direct duplicate-aware host
+materialization removed the old approximately 0.98 GiB GPU occurrence table
+and bulk per-layer gather removed the pathological tiny host reads. A matched
+12B full pair measured:
+
+- direct active CPU: 368.70-second completion, 44.66-second Phase 0,
+  286.69-second Phase 4, and 129 semantic batches;
+- mapped lazy: 457.30-second completion, 34.43-second Phase 0,
+  389.50-second Phase 4, and 130 semantic batches; and
+- active-CPU savings: 19.4% completion and 26.4% Phase 4.
+
+The matched graphs shared 8,190/8,192 features, with feature Jaccard
+0.999511838, all-edge Jaccard 0.999500125, signed normalized L1 0.000471032,
+exact Top-64 through Top-1024 support, exact sign agreement, and exact target
+token. Persisted diagnostic sidecars localized the first numerical difference
+after byte-exact Phase-3 feature rows, in the placement-specific seed-influence
+reduction (maximum absolute delta `9.0245e-7`). Because support and semantic
+batches still differ, `active_cpu` remains a fast default-off bounded/research
+placement and mapped lazy remains the exact SP5 input. See
+`reports/2026-07-31_exact_trace_sp1_results.md`.

@@ -97,6 +97,19 @@ The synchronized three-batch private probe was 7.25% slower, so the lifecycle
 is accepted for ownership/reclamation correctness without claiming a repeatable
 speedup. See `reports/2026-07-31_exact_trace_sp4_lifecycle_results.md`.
 
+SP1 closes active-CPU encoder placement as a high-value bounded/research path,
+not an exact finalist. Direct duplicate-aware host materialization removed the
+old approximately 0.98 GiB GPU occurrence table and reduced a matched 12B
+Phase 4 from 389.50s to 286.69s (26.4%) and completion from 457.30s to 368.70s
+(19.4%). The full graphs nevertheless selected two different features per arm
+and executed 129 versus 130 semantic batches: feature/all-edge/weighted-edge
+Jaccard was `0.999512/0.999500/0.999529`, signed normalized L1 was `0.000471`,
+and the target token and Top-64 through Top-1024 support remained exact.
+Persisted probes localized the first numerical difference after byte-exact
+Phase-3 feature rows to seed-influence reduction. Keep mapped lazy in the SP5
+exact finalist and retain direct active CPU as a default-off bounded option.
+See `reports/2026-07-31_exact_trace_sp1_results.md`.
+
 Governor Wave A completed on Granite H200 and was analyzed on 2026-07-19. The
 provider-local CLT/PLT references match the original corrected-hook Granite
 `361_base` artifacts. CLT has a useful `c10080` fetch candidate at 1.43x warm
