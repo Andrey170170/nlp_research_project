@@ -1,8 +1,8 @@
 # SP4 intermediate results: telemetry overhead
 
-Date: 2026-07-29
+Date: 2026-07-29; updated 2026-07-31
 
-Status: SP4.1 gate failed; SP4.2 not yet executed
+Status: SP4.1 gate passed; SP4.2 is next
 
 ## Scope
 
@@ -49,13 +49,43 @@ Focused validation passed:
 - source diff check passed; and
 - the v4 formal pair passed exact parity.
 
-The change did not close the overhead gate. Telemetry-on moved from 179.769 s
-in v3 to 178.782 s in v4, only 0.55%, while the v4 sidecar still contains 9,822
-fine-grained events. Cross-run cache/order effects prevent treating that
-0.55% as an isolated speedup, but the persistent 13.254% paired overhead
-rejects the hypothesis that per-batch resource snapshots were the principal
-cost. The next seam is event serialization and the line-flushed incremental
-JSONL sink, while retaining crash-useful incremental durability.
+Those runs did not close the overhead gate. Telemetry-on moved from 179.769 s
+in v3 to 178.782 s in v4, only 0.55%, while the v4 sidecar still contained
+9,822 fine-grained events. This motivated a unified resource-sampling and
+bounded-sink implementation, followed by a new reversed pair.
+
+## Unified sampling and bounded-sink result
+
+Sibling commit `c78ab46` applies the same first-three/every-32/final policy to
+the inner compute batch, outer Phase-4 feature batch, and refresh resource
+intervals. It also buffers the JSONL sink, flushes every 64 events and at
+phase/run boundaries, and reports a maximum 63-event crash-loss window.
+
+The recorder replay microbenchmark reduced 9,822-event sink flushes from 9,822
+to 154. Median replay time changed from 0.148 s to 0.106 s on node-local
+storage and from 0.292 s to 0.259 s on shared VAST. This established that sink
+flushing was a secondary cost, but bounded buffering was retained for its
+durability/performance contract.
+
+The formal v5 reversed pair used Slurm job 1685189 on Granite node `grn029`,
+one H200, and immutable snapshot
+`workspace_20260731_153216_sp4_unified_telemetry_v5`:
+
+| Pair | Order | Telemetry off completion | Telemetry on completion | Per-order delta |
+|---|---|---:|---:|---:|
+| v5 pair 3 | off, on | 204.085826 s | 176.572635 s | -13.481% |
+| v5 pair 4 | on, off | 167.638877 s | 192.993689 s | +15.124% |
+| paired mean | reversed | 185.862352 s | 184.783162 s | **-0.581%** |
+
+The large, opposite single-order deltas show cold/runtime variance and must not
+be interpreted individually. The preregistered reversed-pair mean is the gate
+metric: measured telemetry overhead is -0.581%, below the 2% ceiling. All four
+runs passed exact signed compact parity. Both telemetry-on sidecars recorded
+9,835 events with 171 bounded flushes, a 64-event maximum pending window, zero
+sink errors, and sampled Phase-4 feature batches 1-3, 32, 64, and 65.
+
+SP4.1 therefore passes. The implementation does not claim telemetry makes the
+workload faster; the small negative estimate is noise around zero overhead.
 
 ## Provenance
 
@@ -70,22 +100,24 @@ JSONL sink, while retaining crash-useful incremental durability.
   `sp4-telemetry-sparse-pair2-off-v4`
 - v4 project commit: `4698c29`
 - v4 sibling commit: `9a6cd33`
+- v5 snapshot:
+  `/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/workspace_snapshots/workspace_20260731_153216_sp4_unified_telemetry_v5`
+- v5 run IDs:
+  `sp4-telemetry-unified-pair3-off-v5`,
+  `sp4-telemetry-unified-pair3-on-v5`,
+  `sp4-telemetry-unified-pair4-on-v5`, and
+  `sp4-telemetry-unified-pair4-off-v5`
+- v5 project commit: `5199fd5`
+- v5 sibling commit: `c78ab46`
 
 The run artifacts are under
 `/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization`.
 
 ## Restart point
 
-Continue SP4.1 before SP4.2:
-
-1. preserve the current per-batch event schema and sparse resource-sampling
-   policy;
-2. add bounded buffering to the incremental JSONL sink (flush periodically
-   and at terminal/close events) and record the maximum crash-loss window;
-3. run a focused recorder microbenchmark, then a fresh reversed 4B exact pair;
-4. accept SP4.1 only if paired completion overhead is below 2%;
-5. run SP4.2 from a genuinely job-private staged 4B transcoder cache with
-   matched cold first-three-batch and warm steady-state probes.
+Continue with SP4.2 from a genuinely job-private staged 4B transcoder cache,
+using matched cold first-three-batch and warm steady-state probes. Preserve the
+accepted SP4.1 sampling and bounded-sink policy.
 
 After SP4 closes, proceed in the user-selected order: open-ended SP1, then
 SP5/LS0 including deterministic trajectory generation.

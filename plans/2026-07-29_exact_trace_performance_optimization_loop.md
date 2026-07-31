@@ -2,8 +2,8 @@
 
 Status: in progress; SP0 ledger and LS0 login-safe scaffold complete; SP2.2
 selectable CPU/CUDA row execution and bounded-HBM scaling complete; SP3
-re-profile closed with no qualifying non-batch target; SP4.1 exact pairs
-complete but the telemetry-overhead gate remains open
+re-profile closed with no qualifying non-batch target; SP4.1 telemetry gate
+passed; SP4.2 lifecycle evidence in progress
 
 Date: 2026-07-29
 
@@ -35,7 +35,7 @@ The stage prefixes are descriptive:
 
 | Prefix | Meaning | Current state |
 |---|---|---|
-| `SP` | canonical short-prefix completion and promotion evidence | SP0/SP2/SP3 closed; SP4.1 overhead gate failed |
+| `SP` | canonical short-prefix completion and promotion evidence | SP0/SP2/SP3/SP4.1 closed; SP4.2 next |
 | `LS` | prefix-length, prompt, and model-size scaling | blocked on the SP5 finalist, except login-safe harness/fixture planning |
 
 Within each campaign the number is execution order, not a governor phase or
@@ -1107,10 +1107,12 @@ SP4.1 now has two exact formal pairs:
       from 65 batches to batches 1-3, every 32nd batch, and the final batch.
 - [x] Run reversed on→off v4: 178.782410 s versus 157.858818 s completion
       (13.254% overhead), again with exact signed compact parity.
-- [ ] Reduce incremental event-sink overhead below the preregistered 2% gate.
-      The v4 telemetry sidecar contains 9,822 events; sparse memory snapshots
-      changed telemetry-on completion by only 0.55% relative to v3, so bounded
-      JSONL buffering/event serialization is the next implementation seam.
+- [x] Reduce incremental event-sink overhead below the preregistered 2% gate.
+      Unified first-three/every-32/final Phase-4 resource sampling and a
+      64-event bounded JSONL flush interval passed the v5 reversed-pair gate:
+      telemetry-on mean 184.783162 seconds versus off mean 185.862352 seconds,
+      or -0.581% measured overhead. Both on runs recorded 9,835 events, zero
+      sink errors, and a maximum 63-event crash-loss window.
 - [ ] Execute SP4.2 from a genuinely job-private staged 4B transcoder cache.
 
 The exact restart record, run IDs, snapshots, and next commands are documented

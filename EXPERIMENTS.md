@@ -1,7 +1,7 @@
 # Experiments inventory
 
 Status: Current compact index and interpretation summary
-Last updated: 2026-07-27
+Last updated: 2026-07-31
 
 This file is the readable front page for experiment provenance. It should stay
 small enough to edit by hand.
@@ -80,6 +80,14 @@ Keep lazy mapped b64 as the reproducible reference and active CPU only as an
 explicitly bounded, placement-frozen candidate. Pinned CPU, b128, b256, and
 16,384/65,536 FP32 contraction tiles were slower or failed the Pareto margin.
 No default, governor bundle, fidelity scope, or baseline registry changed.
+
+SP4.1 phase-scoped telemetry now passes its formal overhead gate. A reversed
+4B exact pair after unified sparse resource sampling and bounded JSONL flushing
+measured telemetry-on at 184.783s versus telemetry-off at 185.862s in the
+paired mean (-0.581%, interpreted as noise around zero). All four artifacts
+were exact; both on runs recorded 9,835 events with zero sink errors and a
+maximum 63-event crash-loss window. SP4.2 job-private checkpoint lifecycle
+evidence remains open.
 
 Governor Wave A completed on Granite H200 and was analyzed on 2026-07-19. The
 provider-local CLT/PLT references match the original corrected-hook Granite
