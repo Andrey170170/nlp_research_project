@@ -2,8 +2,8 @@
 
 Status: in progress; SP0 ledger and LS0 login-safe scaffold complete; SP2.2
 selectable CPU/CUDA row execution and bounded-HBM scaling complete; SP3
-re-profile closed with no qualifying non-batch target; SP4.1 telemetry gate
-passed; SP4.2 lifecycle evidence in progress
+re-profile closed with no qualifying non-batch target; SP4 telemetry and
+lifecycle gates passed; open-ended SP1 is next
 
 Date: 2026-07-29
 
@@ -35,7 +35,7 @@ The stage prefixes are descriptive:
 
 | Prefix | Meaning | Current state |
 |---|---|---|
-| `SP` | canonical short-prefix completion and promotion evidence | SP0/SP2/SP3/SP4.1 closed; SP4.2 next |
+| `SP` | canonical short-prefix completion and promotion evidence | SP0/SP2/SP3/SP4 closed; SP1 then SP5 next |
 | `LS` | prefix-length, prompt, and model-size scaling | blocked on the SP5 finalist, except login-safe harness/fixture planning |
 
 Within each campaign the number is execution order, not a governor phase or
@@ -1113,9 +1113,17 @@ SP4.1 now has two exact formal pairs:
       telemetry-on mean 184.783162 seconds versus off mean 185.862352 seconds,
       or -0.581% measured overhead. Both on runs recorded 9,835 events, zero
       sink errors, and a maximum 63-event crash-loss window.
-- [ ] Execute SP4.2 from a genuinely job-private staged 4B transcoder cache.
+- [x] Execute SP4.2 from a genuinely job-private staged 4B transcoder cache.
+      The private lifecycle issued all 34 owned decoder-range releases (85
+      GiB requested) and reduced the observed cgroup file charge by 4.426 GiB;
+      the matched shared-scope reference refused all 34. Both full runs were
+      exact with zero Phase-4 decoder reloads. Three-batch probes recorded CUDA
+      events plus OS/cgroup-v1 evidence, and warm batches showed no material
+      regression. See
+      `reports/2026-07-31_exact_trace_sp4_lifecycle_results.md`.
 
-The exact restart record, run IDs, snapshots, and next commands are documented
-in `reports/2026-07-29_exact_trace_sp4_intermediate_results.md`. After SP4,
-continue in the user-selected order: open-ended SP1, then SP5/LS0 including
-deterministic trajectory generation.
+The SP4.1 and SP4.2 run IDs, snapshots, evidence, and decisions are documented
+in `reports/2026-07-29_exact_trace_sp4_intermediate_results.md` and
+`reports/2026-07-31_exact_trace_sp4_lifecycle_results.md`. Continue in the
+user-selected order: open-ended SP1, then SP5/LS0 including deterministic
+trajectory generation.

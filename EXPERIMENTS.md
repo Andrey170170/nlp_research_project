@@ -86,8 +86,16 @@ SP4.1 phase-scoped telemetry now passes its formal overhead gate. A reversed
 measured telemetry-on at 184.783s versus telemetry-off at 185.862s in the
 paired mean (-0.581%, interpreted as noise around zero). All four artifacts
 were exact; both on runs recorded 9,835 events with zero sink errors and a
-maximum 63-event crash-loss window. SP4.2 job-private checkpoint lifecycle
-evidence remains open.
+maximum 63-event crash-loss window.
+
+SP4.2 checkpoint lifecycle also passes. A verified 171 GiB job-private 4B
+transcoder cache produced 34/34 safe release refusals under shared scope and
+34/34 issued releases under job-private scope. The private transition reduced
+cgroup file charge by 4.426 GiB, caused zero Phase-4 decoder reloads, preserved
+the exact signed compact graph, and did not harm full-run warm steady state.
+The synchronized three-batch private probe was 7.25% slower, so the lifecycle
+is accepted for ownership/reclamation correctness without claiming a repeatable
+speedup. See `reports/2026-07-31_exact_trace_sp4_lifecycle_results.md`.
 
 Governor Wave A completed on Granite H200 and was analyzed on 2026-07-19. The
 provider-local CLT/PLT references match the original corrected-hook Granite
