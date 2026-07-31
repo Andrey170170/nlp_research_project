@@ -688,6 +688,62 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
         ),
         evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
     )
+    contracts["sp5-exact-finalist-plt-v1"] = CandidateProfile(
+        name="sp5-exact-finalist-plt-v1",
+        variants=(
+            _candidate_variant(
+                {
+                    **_LEGACY_CANDIDATE_OVERRIDES["plt-active-rows-v1"],
+                    "phase0_decoder_row_ranges": True,
+                    "checkpoint_asset_scope": "shared",
+                    "exact_encoder_residency": "lazy",
+                    "feature_row_influence_mode": "cpu_exact",
+                },
+                CapabilityRequirements(
+                    **{
+                        **_PLT_MAPPED_DECODER_ROWS.__dict__,
+                        "maximum_layer_count": 26,
+                    }
+                ),
+            ),
+            _candidate_variant(
+                {
+                    **_LEGACY_CANDIDATE_OVERRIDES[
+                        "plt-active-rows-4b-c4096-v1"
+                    ],
+                    "phase0_decoder_row_ranges": True,
+                    "checkpoint_asset_scope": "shared",
+                    "exact_encoder_residency": "lazy",
+                    "feature_row_influence_mode": "cpu_exact",
+                },
+                CapabilityRequirements(
+                    **{
+                        **_PLT_MAPPED_DECODER_ROWS.__dict__,
+                        "minimum_layer_count": 27,
+                        "maximum_layer_count": 34,
+                    }
+                ),
+            ),
+            _candidate_variant(
+                {
+                    **_LEGACY_CANDIDATE_OVERRIDES[
+                        "plt-active-rows-12b-c4096-v1"
+                    ],
+                    "phase0_decoder_row_ranges": True,
+                    "checkpoint_asset_scope": "shared",
+                    "exact_encoder_residency": "lazy",
+                    "feature_row_influence_mode": "cpu_exact",
+                },
+                CapabilityRequirements(
+                    **{
+                        **_PLT_MAPPED_DECODER_ROWS.__dict__,
+                        "minimum_layer_count": 35,
+                    }
+                ),
+            ),
+        ),
+        evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
+    )
     mapped_4b_requirements = CapabilityRequirements(
         **{
             **_PLT_MAPPED_DECODER_ROWS.__dict__,

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "registry_id": "exact-trace-mechanism-granite-20260727",
   "created_at": "2026-07-27",
-  "description": "Same-regime active-row controls for compact-strict mechanism validation. This registry is separate from and does not promote or replace the frozen scientific baseline registry.",
+  "description": "Same-regime active-row and mapped-lazy controls for compact-strict mechanism validation. This registry is separate from and does not promote or replace the frozen scientific baseline registry.",
   "scope": "same_regime_mechanism",
   "entries": {
     "performance/gemma3_1b_plt/361_base": {
@@ -39,6 +39,33 @@
         "artifacts/prompt_000/completion_000/step_000.npz": "32a94a56e458bfd1786ddcec7855d485587fce3e33b9b9b57417c38940b80217",
         "artifacts/prompt_000/completion_000/completion.json": "285223c5b8afa3a61ccc95920d0e09b952608ba0e53ad6f9e7483b01488f5937",
         "result.json": "2c3f416330dfeddf749e4ee9f5ab5810be63d2cfafc15b3d417c308153792b0a"
+      }
+    },
+    "performance/gemma3_12b_plt/361_base": {
+      "scope": "same_regime_mechanism",
+      "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/sp1-lazy-current-full-01/candidates/gemma3_12b_plt_361_base/perf_gemma3_12b_plt_361_base/artifacts",
+      "result_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/sp1-lazy-current-full-01/candidates/gemma3_12b_plt_361_base/perf_gemma3_12b_plt_361_base/result.json",
+      "scenario_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/sp1-lazy-current-full-01/candidates/gemma3_12b_plt_361_base/perf_gemma3_12b_plt_361_base/scenario.json",
+      "scenario_sha256": "877d24053b8a2841f8d4e2d2924125dc1491f6674d04640d6d8b48c4b4c8450e",
+      "duration_seconds": 487.75,
+      "expected_status": "success",
+      "baseline_pins": {
+        "exact_trace_internal_dtype": "fp32",
+        "decoder_chunk_size": 4096
+      },
+      "artifact_sha256": {
+        "artifacts/prompt_000/completion_000/step_000.npz": "e7b83307cd2484894f87f8662e3e0f7c87f52860c6b3d7c579a12921acbb7e67",
+        "artifacts/prompt_000/completion_000/completion.json": "e2f56c9d81faec187c38fad2503ecbce37d681015d26451577d422387634366e",
+        "result.json": "d0e058f9599117840f2a134ca245ee24c2928e78df6b5ffde273cdeef187e6a9"
+      },
+      "source_provenance": {
+        "run_id": "sp1-lazy-current-full-01",
+        "allocation": "Slurm 1685189 on grn029, NVIDIA H200",
+        "workspace_snapshot": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/workspace_snapshots/workspace_20260731_173012_sp1-full-direct-host-v5",
+        "project_commit": "eb93f1d7d023039745935ce4dcbbe6eedb76b118",
+        "sibling_commit": "2f637797bd099d2aa10177912674f1d879e73866",
+        "cache_state": "warm uncontrolled shared offline Hugging Face cache",
+        "role": "current-source mapped-lazy cpu_exact mechanism control"
       }
     }
   }

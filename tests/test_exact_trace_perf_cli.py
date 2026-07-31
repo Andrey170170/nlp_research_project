@@ -116,6 +116,41 @@ def test_mapped_decoder_row_profile_refuses_provider_without_row_source() -> Non
     assert profile.variant_for(no_source) is None
 
 
+@pytest.mark.parametrize(
+    ("variant", "batch_rows", "active_row_gib"),
+    [
+        ("gemma3_1b_plt", 256, 1),
+        ("gemma3_4b_plt", 128, 4),
+        ("gemma3_12b_plt", 64, 8),
+    ],
+)
+def test_sp5_exact_finalist_is_safe_mapped_lazy_cpu_exact(
+    variant: str,
+    batch_rows: int,
+    active_row_gib: int,
+) -> None:
+    case = perf_cli.Case(variant, "361_base")
+    profile = perf_cli.CANDIDATE_PROFILES["sp5-exact-finalist-plt-v1"]
+    overrides = perf_cli._candidate_overrides(case, profile.name)
+
+    assert profile.variant_for(case.provider_capabilities()) is not None
+    assert profile.evidence_scope.exact_baseline is perf_cli.BaselineScope.MECHANISM
+    assert overrides["decoder_chunk_size"] == 4096
+    assert overrides["phase0_decoder_row_ranges"] is True
+    assert overrides["checkpoint_asset_scope"] == "shared"
+    assert overrides["exact_encoder_residency"] == "lazy"
+    assert overrides["feature_row_influence_mode"] == "cpu_exact"
+    assert overrides["phase4_execution_batch_max_rows"] == batch_rows
+    assert overrides["decoder_active_row_max_bytes"] == active_row_gib * 1024**3
+
+
+def test_sp5_exact_finalist_refuses_cross_layer_provider() -> None:
+    profile = perf_cli.CANDIDATE_PROFILES["sp5-exact-finalist-plt-v1"]
+    capabilities = perf_cli.Case("gemma3_1b_clt", "361_base").provider_capabilities()
+
+    assert profile.variant_for(capabilities) is None
+
+
 def test_mapped_decoder_row_source_requires_known_gemmascope_lazy_contract() -> None:
     scenario = {
         "transcoder_architecture": "plt",
@@ -1100,7 +1135,7 @@ def test_large_model_exact_uses_mechanism_scope_and_refuses_chunk_pin_mismatch(
                 str(tmp_path),
             ]
         )
-    with pytest.raises(ValueError, match="not registered"):
+    assert (
         perf_cli.main(
             [
                 "run",
@@ -1114,6 +1149,8 @@ def test_large_model_exact_uses_mechanism_scope_and_refuses_chunk_pin_mismatch(
                 str(tmp_path),
             ]
         )
+        == 0
+    )
 
 
 def test_noncanonical_profile_rejects_suite_with_no_applicable_case(
