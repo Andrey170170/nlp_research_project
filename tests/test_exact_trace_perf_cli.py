@@ -1329,6 +1329,30 @@ def test_mapped_encoder_profiles_are_capability_scoped(
     }
 
 
+@pytest.mark.parametrize(
+    ("profile_name", "encoder_mode"),
+    [
+        ("plt-sp1-lazy-diagnostic-12b-v1", "lazy"),
+        ("plt-sp1-active-cpu-diagnostic-12b-v1", "active_cpu"),
+    ],
+)
+def test_sp1_diagnostic_profiles_capture_phase3_boundaries(
+    profile_name: str,
+    encoder_mode: str,
+) -> None:
+    profile = perf_cli.CANDIDATE_PROFILES[profile_name]
+    case_4b = perf_cli.Case("gemma3_4b_plt", "361_base")
+    case_12b = perf_cli.Case("gemma3_12b_plt", "361_base")
+
+    assert profile.variant_for(case_4b.provider_capabilities()) is None
+    overrides = perf_cli._candidate_overrides(case_12b, profile_name)
+    assert overrides["checkpoint_asset_scope"] == "shared"
+    assert overrides["exact_encoder_residency"] == encoder_mode
+    assert overrides["capture_phase3_row_bundle"] is True
+    assert overrides["capture_phase3_seed_bundle"] is True
+    assert overrides["profile_attribution"] is True
+
+
 @pytest.mark.parametrize("execution_rows", [128, 256])
 def test_mapped_12b_execution_profiles_widen_only_physical_batches(
     execution_rows: int,

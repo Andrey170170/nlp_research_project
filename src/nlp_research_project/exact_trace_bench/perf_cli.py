@@ -854,6 +854,32 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
             ),
             evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
         )
+    sp1_diagnostic_requirements = CapabilityRequirements(
+        **{
+            **_PLT_MAPPED_DECODER_ROWS_WITH_ENCODER_RESIDENCY.__dict__,
+            "minimum_layer_count": 35,
+        }
+    )
+    for suffix, encoder_mode in (("lazy", "lazy"), ("active-cpu", "active_cpu")):
+        profile_name = f"plt-sp1-{suffix}-diagnostic-12b-v1"
+        contracts[profile_name] = CandidateProfile(
+            name=profile_name,
+            variants=(
+                _candidate_variant(
+                    {
+                        **_LEGACY_CANDIDATE_OVERRIDES["plt-active-rows-12b-c4096-v1"],
+                        "phase0_decoder_row_ranges": True,
+                        "checkpoint_asset_scope": "shared",
+                        "exact_encoder_residency": encoder_mode,
+                        "capture_phase3_row_bundle": True,
+                        "capture_phase3_seed_bundle": True,
+                        "profile_attribution": True,
+                    },
+                    sp1_diagnostic_requirements,
+                ),
+            ),
+            evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
+        )
     for execution_rows in (128, 256):
         profile_name = f"plt-selective-mapped-rows-12b-b{execution_rows}-v1"
         contracts[profile_name] = CandidateProfile(
