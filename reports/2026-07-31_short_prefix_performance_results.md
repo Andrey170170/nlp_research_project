@@ -128,9 +128,11 @@ no longer blocks canonical `exact` scaling work.
 
 LS0 is complete, and the canonical taxonomy now unblocks LS1. The frozen
 campaign manifest contains development prefixes at 129, 256, 512, and 1,024
-tokens from one deterministic 1,329-token trajectory, plus two held-out
-256-token workloads. Every workload records prompt, trajectory, prefix, and
-target hashes. `list-campaign --require-frozen` passes without model loading.
+tokens from one deterministic 1,329-token trajectory. Two held-out response
+extensions add both 256- and 512-token workloads for each holdout, producing
+eight frozen workloads total. Every workload records prompt, trajectory,
+prefix, and target hashes. `list-campaign --require-frozen` passes without
+model loading.
 
 ## Validation and artifacts
 

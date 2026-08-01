@@ -40,12 +40,16 @@ def test_committed_ls0_scaffold_lists_without_model_loading() -> None:
         1024,
         256,
         256,
+        512,
+        512,
     ]
     assert [workload.prompt_role for workload in workloads] == [
         "development",
         "development",
         "development",
         "development",
+        "holdout",
+        "holdout",
         "holdout",
         "holdout",
     ]
@@ -72,8 +76,22 @@ def test_perf_cli_campaign_and_claim_commands(capsys: pytest.CaptureFixture[str]
     assert "validated mechanism claims" in capsys.readouterr().out
     assert perf_cli.main(["list-campaign", str(CAMPAIGN)]) == 0
     output = capsys.readouterr().out
-    assert "ls0-361-length-scaling-v1: 6 workloads" in output
+    assert "ls0-361-length-scaling-v1: 8 workloads" in output
     assert "ls0-361-dev-1024" in output
+    assert "ls0-828-holdout-512" in output
+    assert "ls0-94-holdout-512" in output
+
+
+@pytest.mark.parametrize("fixture", ["828", "94"])
+def test_long_holdout_trajectory_extends_frozen_256_prefix(fixture: str) -> None:
+    root = REPO_ROOT / "experiments/generated/performance_campaigns/ls0"
+    short = json.loads((root / f"{fixture}_trajectory.json").read_text())
+    long = json.loads((root / f"{fixture}_long_trajectory.json").read_text())
+    assert long["prompt_token_ids"] == short["prompt_token_ids"]
+    assert long["generated_tokens"][: len(short["generated_tokens"])] == short[
+        "generated_tokens"
+    ]
+    assert len(long["prompt_token_ids"]) + len(long["generated_tokens"]) > 512
 
 
 def test_freeze_campaign_derives_prefix_and_target_fingerprints(

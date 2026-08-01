@@ -1166,7 +1166,7 @@ default is selected until LS1 compares their scope. See
 
 LS0 is complete. One deterministic 1,329-token trajectory supplies frozen
 development prefixes at 129/256/512/1,024 tokens, and two held-out prompt
-families supply frozen 256-token workloads. All six workloads have immutable
+families supply frozen 256- and 512-token workloads. All eight workloads have immutable
 prompt, trajectory, prefix, and target fingerprints, and the strict login-safe
 campaign listing passes.
 
