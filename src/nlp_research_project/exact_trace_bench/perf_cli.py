@@ -61,7 +61,7 @@ FIDELITY_LEVELS = (
     "best_effort",
     "research",
 )
-RETAINED_SELECTABLE_FIDELITIES = frozenset(
+CODE_RETENTION_ALLOWED_FIDELITIES = frozenset(
     {"strict_exact", "exact", "close", "bounded"}
 )
 AUTOMATIC_PROMOTION_ALLOWED_FIDELITIES = frozenset({"strict_exact", "exact"})
@@ -949,7 +949,7 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
             ),
             evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
         )
-    for encoder_mode in ("active_cpu", "active_pinned_cpu"):
+    for encoder_mode in ("active_cpu",):
         profile_name = (
             f"plt-selective-mapped-rows-{encoder_mode.replace('_', '-')}-large-v1"
         )
@@ -2458,7 +2458,7 @@ def _result_report(
             else "research"
         )
     )
-    retention_allowed = fidelity_level in RETAINED_SELECTABLE_FIDELITIES
+    code_retention_allowed = fidelity_level in CODE_RETENTION_ALLOWED_FIDELITIES
     automatic_promotion_allowed = (
         fidelity_level in AUTOMATIC_PROMOTION_ALLOWED_FIDELITIES
     )
@@ -2499,8 +2499,10 @@ def _result_report(
             "mechanism_validation_passed": None,
             "promotion_eligible": False,
             "fidelity_level": fidelity_level,
-            "retention_allowed": retention_allowed,
-            "retention_eligible": False,
+            "code_retention_allowed": code_retention_allowed,
+            "code_retention_eligible": False,
+            "code_retention_selected": False,
+            "code_retention_decision": "not_eligible",
             "automatic_promotion_allowed": automatic_promotion_allowed,
             "automatic_promotion_eligible": False,
             "automatic_promotion_selected": False,
@@ -2626,7 +2628,7 @@ def _result_report(
         and not reconciliation_required
         and runner_returncode == 0
     )
-    retention_eligible = bool(retention_allowed and parity_passed)
+    code_retention_eligible = bool(code_retention_allowed and parity_passed)
     automatic_promotion_eligible = bool(
         automatic_promotion_allowed
         and passed
@@ -2651,8 +2653,14 @@ def _result_report(
         "claim_limitation": COMPARISON_CLAIM_LIMITATION,
         "exact_semantics_claim_allowed": False,
         "fidelity_level": fidelity_level,
-        "retention_allowed": retention_allowed,
-        "retention_eligible": retention_eligible,
+        "code_retention_allowed": code_retention_allowed,
+        "code_retention_eligible": code_retention_eligible,
+        "code_retention_selected": False,
+        "code_retention_decision": (
+            "eligible_pending_comparative_selection"
+            if code_retention_eligible
+            else "not_eligible"
+        ),
         "automatic_promotion_allowed": automatic_promotion_allowed,
         "automatic_promotion_eligible": automatic_promotion_eligible,
         "automatic_promotion_selected": False,
@@ -2815,8 +2823,8 @@ def _gate_summary(reports: Sequence[dict[str, Any]]) -> dict[str, bool | None]:
     promotion_eligible = bool(reports) and all(
         report.get("promotion_eligible", True) is True for report in reports
     )
-    retention_eligible = bool(reports) and all(
-        report.get("retention_eligible", report.get("parity_passed")) is True
+    code_retention_eligible = bool(reports) and all(
+        report.get("code_retention_eligible", report.get("parity_passed")) is True
         for report in reports
     )
     automatic_promotion_allowed = bool(reports) and all(
@@ -2839,7 +2847,8 @@ def _gate_summary(reports: Sequence[dict[str, Any]]) -> dict[str, bool | None]:
         "resource_gate_passed": resource_gate_passed,
         "mechanism_validation_passed": mechanism_validation_passed,
         "promotion_eligible": promotion_eligible,
-        "retention_eligible": retention_eligible,
+        "code_retention_eligible": code_retention_eligible,
+        "code_retention_selected": False,
         "automatic_promotion_allowed": automatic_promotion_allowed,
         "automatic_promotion_eligible": automatic_promotion_eligible,
         "automatic_promotion_selected": False,
@@ -2930,8 +2939,14 @@ def _run(args: argparse.Namespace) -> int:
         },
         "suite": args.suite,
         "fidelity": args.fidelity,
-        "fidelity_retention_allowed": (
-            args.fidelity in RETAINED_SELECTABLE_FIDELITIES
+        "code_retention_allowed": (
+            args.fidelity in CODE_RETENTION_ALLOWED_FIDELITIES
+        ),
+        "code_retention_policy": (
+            "Bounded-or-stronger fidelity is necessary but not sufficient for "
+            "runtime inclusion. Retain only a non-dominated implementation or "
+            "one with a distinct operational role; archive dominated candidates "
+            "as indexed patches instead of selectable dead code."
         ),
         "automatic_promotion_allowed": (
             args.fidelity in AUTOMATIC_PROMOTION_ALLOWED_FIDELITIES

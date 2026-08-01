@@ -17,7 +17,9 @@ The canonical fidelity definitions and retention/promotion policy are in
 older binary exact/bounded wording retained in the historical execution notes
 below. In particular, `exact` permits promotion consideration but does not
 select or mutate a default without comparative runtime, memory, compatibility,
-and prompt-length evidence.
+and prompt-length evidence. Likewise, `bounded` permits code-retention review;
+it does not require every passing experiment to remain selectable. Dominated
+implementations are archived as patches and removed from runtime code.
 
 Predecessor plan: `plans/2026-07-27_large_model_optimizations.md`
 
@@ -115,8 +117,8 @@ exact-range LRU under a new name.
 | Checkpoint page/working-set lifecycle | first 12B Phase-4 transition stall removed | strong engineering evidence; formal matched cold three-batch gate remains |
 | Phase-scoped telemetry | detailed attribution available | implemented; paired `<2%` overhead gate remains |
 | Lazy mapped b64/c4096 | repeated 12B reference | reproducible exact reference |
-| Active-CPU encoder residency | fastest measured 12B exact candidate; not strict_exact | retained/selectable; eligible for comparative promotion after broader evidence |
-| Active pinned CPU | slower than active CPU | rejected |
+| Active-CPU encoder residency | fastest measured 12B exact candidate; not strict_exact | currently retained/selectable; eligible for comparative promotion after broader evidence |
+| Active pinned CPU | slower than active CPU, no memory or fidelity advantage | rejected; runtime/profile branches removed and restoration patches archived |
 | b128/b256 execution envelopes | slower and substantially more HBM than active CPU | rejected for the short-prefix finalist |
 | Larger FP32 contraction tiles | no wall-time improvement | rejected |
 | Source-layer fusion | not run after the compute proxy missed | deferred; profile again only if accumulation becomes material |

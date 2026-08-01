@@ -8,10 +8,12 @@ Date: 2026-07-31
 
 The fast selective Phase-0 decoder-row path meets the canonical `exact` floor
 over every measured short-prefix workload, including held-out 1B `94_base`,
-and completes two 12B runs below ten minutes. It is therefore retained and
+and completes two 12B runs below ten minutes. It is currently retained and is
 eligible for promotion consideration. Exactness is only the admission gate:
 prompt-length scaling and comparative runtime/memory evidence still determine
-whether it is selected for a default scope.
+whether it is selected for a default scope. The same selection rule applies to
+code retention: `bounded` permits review but does not protect a dominated mode
+from removal.
 
 Accordingly:
 
@@ -112,10 +114,13 @@ selection, and the source revision together define the numerical regime:
 - near-cutoff differences can be either isolated feature ties or materially
   retained edge changes.
 
-The next task is LS1 prefix scaling. It should compare retained selective and
+The next task is LS1 prefix scaling. It should compare currently retained selective and
 canonical/placement candidates at frozen 129/256/512/1,024-token workloads,
 classify each result independently, and choose among exact candidates using
-runtime, memory, provider admission, and prompt-length scope. Phase-0
+runtime, memory, provider admission, and prompt-length scope. It should also
+decide whether each bounded execution mode owns a non-dominated scaling or
+resource region; modes that do not should move to the indexed patch archive.
+Phase-0
 first-divergence localization remains useful for improving `strict_exact`, but
 no longer blocks canonical `exact` scaling work.
 

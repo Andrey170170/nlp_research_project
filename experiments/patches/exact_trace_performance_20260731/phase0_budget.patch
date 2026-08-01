@@ -1,0 +1,28 @@
+diff --git a/circuit_tracer/transcoder/phase0_decoder_ranges.py b/circuit_tracer/transcoder/phase0_decoder_ranges.py
+--- a/circuit_tracer/transcoder/phase0_decoder_ranges.py
++++ b/circuit_tracer/transcoder/phase0_decoder_ranges.py
+@@ -154,10 +154,11 @@ def plan_decoder_row_ranges(
+     start = previous = int(ids[0])
+     group_ids = [start]
+     merged_gap_rows = 0
++    overfetch_row_budget = int(unique_ids.numel() * max_overfetch_fraction)
+     for raw_id in ids[1:]:
+         feature_id = int(raw_id)
+         gap = feature_id - previous - 1
+-        if gap <= max_gap_rows:
++        if gap <= max_gap_rows and merged_gap_rows + gap <= overfetch_row_budget:
+             merged_gap_rows += gap
+             group_ids.append(feature_id)
+         else:
+@@ -169,8 +170,6 @@ def plan_decoder_row_ranges(
+ 
+     requested_bytes = int(unique_ids.numel()) * d_model * itemsize
+     overfetch_bytes = merged_gap_rows * d_model * itemsize
+-    fallback_reason = None
+-    if len(groups) > max_range_count:
+-        fallback_reason = "range_count_exceeds_max"
+-    elif overfetch_bytes > int(requested_bytes * max_overfetch_fraction):
+-        fallback_reason = "overfetch_fraction_exceeds_max"
++    fallback_reason = (
++        "range_count_exceeds_max" if len(groups) > max_range_count else None
++    )

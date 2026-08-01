@@ -33,26 +33,34 @@ average that can hide an outlier. Provider- or campaign-specific contracts may
 add stronger Top-K or resource constraints but must not silently weaken these
 floors.
 
-## Promotion and retention policy
+## Promotion and code-retention policy
 
-Every mechanism that meets `bounded` or a stronger level is retained as a
-supported selectable solution. Only `strict_exact` and `exact` results are
-eligible for automatic promotion consideration. Exactness is an admission
-condition for promotion, not the promotion decision itself: an eligible
-candidate must still be selected using runtime, memory, provider compatibility,
-prompt-length admission constraints, and the strength and breadth of its
-evidence. Automatic promotion does not require one mechanism to be the single
-global default for every workload.
+The two fidelity gates are permissions, not selection decisions:
 
-`close` and `bounded` implementations remain explicit selectable modes but are
-not candidates for automatic default promotion. They may be chosen when the
-caller requests that fidelity or when a separately reviewed policy explicitly
-permits it.
+- meeting `bounded` or a stronger level permits a mechanism to enter
+  code-retention review; and
+- meeting `exact` or `strict_exact` permits a mechanism to enter automatic
+  promotion review.
 
-Mechanisms below the `bounded` floor remain in experiment evidence but are not
-automatically registered as defaults. Default selection must expose the
-effective fidelity level and preserve atomic fallback to an admitted stronger
-mode when a resource or compatibility check refuses a faster mechanism.
+Neither permission compels a positive decision. Code retention compares
+fidelity, runtime, host and device memory, provider compatibility,
+prompt-length admission, fallback behavior, implementation complexity, and the
+strength and breadth of the evidence. Keep a candidate selectable only when it
+is non-dominated on those dimensions or serves a distinct, documented
+operational role. A candidate that is clearly worse than a neighboring mode
+without a fidelity or operational advantage is removed from runtime code and
+preserved as an indexed patch plus its experiment evidence.
+
+Retained `close` and `bounded` implementations may be chosen for real traces
+when their measured drift and admitted workload scope are acceptable. They are
+not candidates for automatic default promotion. Implementations below the
+`bounded` floor remain experiment evidence and patch artifacts, not supported
+runtime choices.
+
+Default selection must expose the effective fidelity level and preserve atomic
+fallback to an admitted stronger mode when a resource or compatibility check
+refuses a faster mechanism. Automatic promotion does not require one mechanism
+to be the single global default for every workload.
 
 An `exact` label therefore permits, but never compels, promotion. Scientific
 reports must record the measured metrics, evaluated workload scope, scaling
@@ -84,10 +92,13 @@ that result matches its declared reference.
 - The active-CPU result is `exact`: feature/edge/weighted Jaccard
   `0.999512/0.999500/0.999529` and signed normalized L1 `0.000471`.
 - The measured CUDA-full/prepared family near `0.989` broad graph agreement is
-  `bounded` and therefore remains supported as an explicit selectable mode
-  under its resource/admission contract, but is not automatically promotable.
+  `bounded` and therefore permitted to enter code-retention review, but is not
+  automatically retained or promotable. Its modes require comparative
+  runtime/memory and scaling evidence to justify each selectable branch.
 
 Longer-prefix LS evaluation must continue reporting drift. A mechanism keeps
 its promoted fidelity label only over the workload scope for which the floors
 have been demonstrated; new scaling evidence may broaden that scope or trigger
-fallback without erasing the retained implementation.
+fallback. Loss of a useful operating region can also reverse an earlier
+retention decision; the removed implementation remains available in the patch
+archive rather than as dead runtime code.

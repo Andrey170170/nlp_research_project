@@ -355,7 +355,7 @@ def test_canonical_fidelity_taxonomy_and_promotion_policy() -> None:
         "best_effort",
         "research",
     )
-    assert perf_cli.RETAINED_SELECTABLE_FIDELITIES == {
+    assert perf_cli.CODE_RETENTION_ALLOWED_FIDELITIES == {
         "strict_exact",
         "exact",
         "close",
@@ -1437,10 +1437,6 @@ def test_sp2_2_row_execution_profiles_are_12b_scoped(
         (
             "plt-selective-mapped-rows-active-cpu-large-v1",
             "active_cpu",
-        ),
-        (
-            "plt-selective-mapped-rows-active-pinned-cpu-large-v1",
-            "active_pinned_cpu",
         ),
     ],
 )
@@ -2569,7 +2565,8 @@ def test_print_report_includes_compact_phase_timings(
                 "resource_gate_passed": True,
                 "mechanism_validation_passed": None,
                 "promotion_eligible": True,
-                "retention_eligible": True,
+                "code_retention_eligible": True,
+                "code_retention_selected": False,
                 "automatic_promotion_allowed": True,
                 "automatic_promotion_eligible": True,
                 "automatic_promotion_selected": False,
@@ -2594,7 +2591,8 @@ def test_print_report_includes_compact_phase_timings(
                 "resource_gate_passed": True,
                 "mechanism_validation_passed": None,
                 "promotion_eligible": True,
-                "retention_eligible": True,
+                "code_retention_eligible": True,
+                "code_retention_selected": False,
                 "automatic_promotion_allowed": True,
                 "automatic_promotion_eligible": False,
                 "automatic_promotion_selected": False,
@@ -2619,7 +2617,8 @@ def test_print_report_includes_compact_phase_timings(
                 "resource_gate_passed": True,
                 "mechanism_validation_passed": None,
                 "promotion_eligible": True,
-                "retention_eligible": False,
+                "code_retention_eligible": False,
+                "code_retention_selected": False,
                 "automatic_promotion_allowed": True,
                 "automatic_promotion_eligible": False,
                 "automatic_promotion_selected": False,

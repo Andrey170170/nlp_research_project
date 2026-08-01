@@ -214,7 +214,7 @@ def test_trace_request_builds_canonical_domain_policies() -> None:
             "error_vector_prefetch_lookahead": 8,
             "stage_encoder_vecs_on_cpu": False,
             "stage_error_vectors_on_cpu": False,
-            "exact_encoder_residency": "active_pinned_cpu",
+            "exact_encoder_residency": "active_cpu",
             "phase1_trace_batch_policy": "cap_effective_batches",
             "phase1_trace_batch_size_max": 16,
             "feature_row_retention": "none_recompute",

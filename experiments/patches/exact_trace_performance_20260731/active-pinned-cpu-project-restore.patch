@@ -1,0 +1,38 @@
+diff --git a/src/nlp_research_project/exact_trace_bench/cli.py b/src/nlp_research_project/exact_trace_bench/cli.py
+--- a/src/nlp_research_project/exact_trace_bench/cli.py
++++ b/src/nlp_research_project/exact_trace_bench/cli.py
+@@ -1398,7 +1398,7 @@ def build_parser() -> argparse.ArgumentParser:
+     )
+     full_answer_trace_specs.add_argument(
+         "--exact-encoder-residency",
+-        choices=["lazy", "active_cpu"],
++        choices=["lazy", "active_cpu", "active_pinned_cpu"],
+         default=None,
+     )
+     full_answer_trace_specs.add_argument(
+diff --git a/src/nlp_research_project/exact_trace_bench/perf_cli.py b/src/nlp_research_project/exact_trace_bench/perf_cli.py
+--- a/src/nlp_research_project/exact_trace_bench/perf_cli.py
++++ b/src/nlp_research_project/exact_trace_bench/perf_cli.py
+@@ -949,7 +949,7 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
+             ),
+             evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
+         )
+-    for encoder_mode in ("active_cpu",):
++    for encoder_mode in ("active_cpu", "active_pinned_cpu"):
+         profile_name = (
+             f"plt-selective-mapped-rows-{encoder_mode.replace('_', '-')}-large-v1"
+         )
+diff --git a/src/nlp_research_project/exact_trace_bench/scenarios/base.py b/src/nlp_research_project/exact_trace_bench/scenarios/base.py
+--- a/src/nlp_research_project/exact_trace_bench/scenarios/base.py
++++ b/src/nlp_research_project/exact_trace_bench/scenarios/base.py
+@@ -128,6 +128,10 @@ WAVE2C_ROW_ENCODER_VARIANTS: tuple[dict[str, Any], ...] = (
+         "label": "active_cpu_encoder",
+         "exact_encoder_residency": "active_cpu",
+     },
++    {
++        "label": "active_pinned_cpu_encoder",
++        "exact_encoder_residency": "active_pinned_cpu",
++    },
+     {
+         "label": "no_cpu_staging",
+         "stage_encoder_vecs_on_cpu": False,

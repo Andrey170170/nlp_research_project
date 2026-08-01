@@ -186,8 +186,14 @@ worktree were not modified or committed.
 
 ## Decision
 
-Keep `cpu_exact` as the exact default. Retain all other modes as explicit,
-default-off bounded research choices:
+This section records the original SP2.2 decision. The canonical policy was
+subsequently clarified on 2026-07-31: a `bounded` pass permits code-retention
+review but does not require retention. The modes below are therefore current
+retention candidates pending comparative scaling/dominance review, not a
+promise that every branch stays in runtime code.
+
+Keep `cpu_exact` as the exact default. The measured roles for the other,
+default-off bounded candidates are:
 
 - use `cuda_full` for speed when the complete allocation and safety gate pass;
 - use pipelined `cuda_windowed` when preserving about 3.9 GiB of HBM matters

@@ -8,6 +8,13 @@
     "reports/2026-07-29_exact_trace_sp2_2_selectable_modes_results.md",
     "reports/2026-07-31_short_prefix_performance_results.md"
   ],
+  "code_retention_policy": {
+    "fidelity_permission_floor": "bounded",
+    "permission_is_selection": false,
+    "selection_rule": "retain a non-dominated mechanism or one with a distinct documented operational role",
+    "comparison_dimensions": ["fidelity", "runtime", "host memory", "device memory", "provider compatibility", "prompt-length admission", "fallback behavior", "implementation complexity", "evidence breadth"],
+    "dominated_disposition": "remove from runtime code and preserve as an indexed patch with experiment evidence"
+  },
   "same_regime_controls": [
     {
       "case": "gemma3_1b_plt/361_base",
@@ -212,7 +219,7 @@
     {
       "identity": {
         "mechanism_id": "short-prefix-rejected-envelope-v1",
-        "implementation_commit": "project:75bee35;circuit-tracer:17c8e41",
+        "implementation_commit": "project:75bee35;circuit-tracer:17c8e41;removed-by:circuit-tracer:f7b657b",
         "candidate_profile": "active-pinned,b128,b256,fp32-tiles"
       },
       "applicability": {"provider_capabilities": ["PLT"], "topology": "PLT", "dtype": "FP32", "conditions": "short-prefix 12B"},
@@ -220,7 +227,7 @@
       "correctness": {"raw_order": "varies", "execution": "completed where admitted", "signed_graph": "exact or bounded as individually reported", "compact_comparison": "no Pareto winner"},
       "performance": {"paired_timings": "active pinned 520.60s; b128 538.30s; b256 533.37s", "repeat_count": 1, "cache_state": "warm_or_uncontrolled", "speedup": "inferior to active CPU"},
       "resources": {"host_hbm_peaks": "38.82 to 86.97 GiB CUDA reserved", "owned_bytes": "profile dependent", "fallback_admission": "canonical profiles"},
-      "disposition": {"status": "rejected", "rationale": "slower, higher HBM, or no wall-time win", "remaining_evidence": []},
+      "disposition": {"status": "rejected", "rationale": "slower, higher HBM, or no wall-time win; active_pinned_cpu was removed from selectable runtime code and archived as restoration patches on 2026-07-31, while batch sizes remain calibration inputs rather than separate algorithms", "remaining_evidence": []},
       "promotion_separation": {"mechanism": "rejected", "baseline": "unchanged", "default": "unchanged", "governor": "unchanged"}
     }
   ]

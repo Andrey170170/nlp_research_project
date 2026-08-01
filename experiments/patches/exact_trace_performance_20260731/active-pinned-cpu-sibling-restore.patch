@@ -1,0 +1,230 @@
+diff --git a/circuit_tracer/attribution/context_nnsight.py b/circuit_tracer/attribution/context_nnsight.py
+--- a/circuit_tracer/attribution/context_nnsight.py
++++ b/circuit_tracer/attribution/context_nnsight.py
+@@ -107,7 +107,9 @@ class AttributionContext:
+         self.exact_encoder_materialized_during_phase0 = bool(
+             numeric_policy.materialized_encoder_vectors_during_phase0
+         )
+-        self.exact_encoder_pinned_requested = False
++        self.exact_encoder_pinned_requested = bool(
++            policy.encoder_residency_effective == "active_pinned_cpu"
++        )
+         self.exact_encoder_pinned_effective = False
+         self.exact_encoder_pinning_success: bool | None = None
+         self.exact_encoder_pinning_failure_reason: str | None = None
+@@ -131,7 +133,15 @@ class AttributionContext:
+         self.token_vectors = tensors.token_vectors
+         self.decoder_vecs = tensors.decoder_vectors
+         if self._stage_encoder_vecs_on_cpu:
+-            self.encoder_vecs = self._stage_tensor_on_cpu(tensors.encoder_vectors)
++            self.encoder_vecs, pinning_success, pinning_failure_reason = self._stage_encoder_tensor(
++                tensors.encoder_vectors,
++                pin_memory=self.exact_encoder_pinned_requested,
++            )
++            self.exact_encoder_pinning_success = pinning_success
++            self.exact_encoder_pinning_failure_reason = pinning_failure_reason
++            self.exact_encoder_pinned_effective = bool(
++                self.exact_encoder_pinned_requested and self.encoder_vecs.is_pinned()
++            )
+         else:
+             self.encoder_vecs = tensors.encoder_vectors
+         self.exact_encoder_staging_destination = self._resolve_encoder_staging_destination(
+@@ -251,26 +261,43 @@ class AttributionContext:
+             staged = staged.clone()
+         return staged
+ 
++    @staticmethod
++    def _stage_encoder_tensor(
++        tensor: torch.Tensor,
++        *,
++        pin_memory: bool,
++    ) -> tuple[torch.Tensor, bool | None, str | None]:
++        staged = AttributionContext._stage_tensor_on_cpu(tensor)
++        if not pin_memory:
++            return staged, None, None
++        try:
++            pinned = staged.pin_memory()
++        except Exception as exc:  # pragma: no cover - platform dependent
++            return staged, False, f"{type(exc).__name__}: {exc}"
++        if not pinned.is_pinned():
++            return pinned, False, "pin_memory returned a non-pinned tensor"
++        return pinned, True, None
++
+     @staticmethod
+     def _normalize_exact_encoder_residency(
+         exact_encoder_residency: str,
+-    ) -> Literal["lazy", "active_cpu"]:
++    ) -> Literal["lazy", "active_cpu", "active_pinned_cpu"]:
+         normalized = str(exact_encoder_residency).strip().lower()
+-        allowed_values = {"lazy", "active_cpu"}
++        allowed_values = {"lazy", "active_cpu", "active_pinned_cpu"}
+         if normalized not in allowed_values:
+             allowed = ", ".join(sorted(allowed_values))
+             raise ValueError(
+                 "exact_encoder_residency must be one of: "
+                 f"{allowed} (got {exact_encoder_residency!r})"
+             )
+-        return cast(Literal["lazy", "active_cpu"], normalized)
++        return cast(Literal["lazy", "active_cpu", "active_pinned_cpu"], normalized)
+ 
+     @staticmethod
+     def _resolve_encoder_staging_destination(
+         encoder_vecs: torch.Tensor,
+         *,
+         exact_chunked_mode: bool,
+-        encoder_residency: Literal["lazy", "active_cpu"],
++        encoder_residency: Literal["lazy", "active_cpu", "active_pinned_cpu"],
+     ) -> str:
+         if encoder_residency == "lazy":
+             if exact_chunked_mode and encoder_vecs.numel() == 0:
+diff --git a/circuit_tracer/attribution/nnsight/context_state.py b/circuit_tracer/attribution/nnsight/context_state.py
+--- a/circuit_tracer/attribution/nnsight/context_state.py
++++ b/circuit_tracer/attribution/nnsight/context_state.py
+@@ -12,7 +12,7 @@ from circuit_tracer.transcoder.attribution_result import DecoderRowSeed
+ from circuit_tracer.transcoder.provider import get_transcoder_capabilities, provider_fingerprint
+ 
+ 
+-EncoderResidency = Literal["lazy", "active_cpu"]
++EncoderResidency = Literal["lazy", "active_cpu", "active_pinned_cpu"]
+ 
+ 
+ @dataclass(frozen=True)
+@@ -70,7 +70,7 @@ class ContextExecutionPolicy:
+         row_subchunk_size: int | None,
+     ) -> "ContextExecutionPolicy":
+         normalized = str(exact_encoder_residency).strip().lower()
+-        allowed = {"lazy", "active_cpu"}
++        allowed = {"lazy", "active_cpu", "active_pinned_cpu"}
+         if normalized not in allowed:
+             raise ValueError(
+                 "exact_encoder_residency must be one of: "
+diff --git a/circuit_tracer/attribution/nnsight/phase4_policy.py b/circuit_tracer/attribution/nnsight/phase4_policy.py
+--- a/circuit_tracer/attribution/nnsight/phase4_policy.py
++++ b/circuit_tracer/attribution/nnsight/phase4_policy.py
+@@ -148,6 +148,7 @@ _EXACT_ENCODER_RESIDENCY_DEFAULT: Literal["lazy"] = "lazy"
+ _EXACT_ENCODER_RESIDENCY_EFFECTIVE_MODE_BY_MODE: dict[str, str] = {
+     "lazy": "lazy",
+     "active_cpu": "active_cpu",
++    "active_pinned_cpu": "active_pinned_cpu",
+ }
+ 
+ 
+@@ -233,8 +234,8 @@ class _Phase4RankerConfig:
+ 
+ @dataclass(frozen=True)
+ class _ExactEncoderResidencyConfig:
+-    requested_mode: Literal["lazy", "active_cpu"]
+-    effective_mode: Literal["lazy", "active_cpu"]
++    requested_mode: Literal["lazy", "active_cpu", "active_pinned_cpu"]
++    effective_mode: Literal["lazy", "active_cpu", "active_pinned_cpu"]
+     default_mode: Literal["lazy"]
+     mode_applicable: bool
+     effective_behavior: Literal["requested", "lazy_reference_execution"]
+@@ -1132,15 +1133,15 @@ def _select_phase4_frontier_rank_selection(
+ 
+ def _resolve_exact_encoder_residency(
+     exact_encoder_residency: str,
+-) -> Literal["lazy", "active_cpu"]:
++) -> Literal["lazy", "active_cpu", "active_pinned_cpu"]:
+     normalized = str(exact_encoder_residency).strip().lower()
+-    allowed_values = {"lazy", "active_cpu"}
++    allowed_values = {"lazy", "active_cpu", "active_pinned_cpu"}
+     if normalized not in allowed_values:
+         allowed = ", ".join(sorted(allowed_values))
+         raise ValueError(
+             f"exact_encoder_residency must be one of: {allowed} (got {exact_encoder_residency!r})"
+         )
+-    return cast(Literal["lazy", "active_cpu"], normalized)
++    return cast(Literal["lazy", "active_cpu", "active_pinned_cpu"], normalized)
+ 
+ 
+ def _resolve_exact_encoder_residency_config(
+@@ -1152,14 +1153,14 @@ def _resolve_exact_encoder_residency_config(
+     mode_applicable = bool(supports_exact_encoder_residency)
+     fallback_reason: str | None = None
+     if requested_mode != "lazy" and not mode_applicable:
+-        effective_mode = cast(Literal["lazy", "active_cpu"], "lazy")
++        effective_mode = cast(Literal["lazy", "active_cpu", "active_pinned_cpu"], "lazy")
+         fallback_reason = (
+             "active encoder residency requires exact encoder-residency provider support; "
+             "falling back to lazy execution"
+         )
+     else:
+         effective_mode = cast(
+-            Literal["lazy", "active_cpu"],
++            Literal["lazy", "active_cpu", "active_pinned_cpu"],
+             _EXACT_ENCODER_RESIDENCY_EFFECTIVE_MODE_BY_MODE[requested_mode],
+         )
+     effective_behavior: Literal["requested", "lazy_reference_execution"] = (
+@@ -1191,10 +1192,14 @@ def _build_exact_encoder_residency_metadata(
+         "exact_encoder_residency_fallback_reason": exact_encoder_residency_config.fallback_reason,
+         "exact_encoder_materialize_phase0": bool(effective_mode != "lazy"),
+         "exact_encoder_staging_destination_planned": (
+-            "none" if effective_mode == "lazy" else "cpu"
++            "none"
++            if effective_mode == "lazy"
++            else ("pinned_cpu" if effective_mode == "active_pinned_cpu" else "cpu")
+         ),
+-        "exact_encoder_pinned_requested": False,
+-        "exact_encoder_pinned_planned": False,
++        "exact_encoder_pinned_requested": bool(
++            exact_encoder_residency_config.requested_mode == "active_pinned_cpu"
++        ),
++        "exact_encoder_pinned_planned": bool(effective_mode == "active_pinned_cpu"),
+         "exact_encoder_pinned_effective": None,
+         "exact_encoder_pinning_success": None,
+         "exact_encoder_pinning_failure_reason": None,
+@@ -2375,7 +2380,7 @@ def _plan_phase4_feature_batch_size_preflight(
+     stage_encoder_vecs_on_cpu: bool | None = None,
+     stage_error_vectors_on_cpu: bool | None = None,
+     row_subchunk_size: int | None = None,
+-    exact_encoder_residency: Literal["lazy", "active_cpu"] = "lazy",
++    exact_encoder_residency: Literal["lazy", "active_cpu", "active_pinned_cpu"] = "lazy",
+     diagnostic_feature_cap: int | None = None,
+     feature_batch_target_reserved_fraction: float = 0.9,
+     feature_batch_min_free_fraction: float = 0.05,
+diff --git a/circuit_tracer/replacement_model/attribution_setup.py b/circuit_tracer/replacement_model/attribution_setup.py
+--- a/circuit_tracer/replacement_model/attribution_setup.py
++++ b/circuit_tracer/replacement_model/attribution_setup.py
+@@ -26,7 +26,7 @@ from circuit_tracer.transcoder.provider import (
+ )
+ 
+ 
+-EncoderResidency = Literal["lazy", "active_cpu"]
++EncoderResidency = Literal["lazy", "active_cpu", "active_pinned_cpu"]
+ 
+ 
+ @dataclass(frozen=True)
+@@ -110,7 +110,7 @@ class EncoderResidencyPlan:
+         stage_on_cpu: bool | None,
+     ) -> "EncoderResidencyPlan":
+         normalized = str(requested).strip().lower()
+-        allowed = {"lazy", "active_cpu"}
++        allowed = {"lazy", "active_cpu", "active_pinned_cpu"}
+         if normalized not in allowed:
+             raise ValueError(
+                 f"exact_encoder_residency must be one of: {', '.join(sorted(allowed))} "
+diff --git a/circuit_tracer/replacement_model/replacement_model_nnsight.py b/circuit_tracer/replacement_model/replacement_model_nnsight.py
+--- a/circuit_tracer/replacement_model/replacement_model_nnsight.py
++++ b/circuit_tracer/replacement_model/replacement_model_nnsight.py
+@@ -575,7 +575,7 @@ class NNSightReplacementModel(LanguageModel):
+         stage_encoder_vecs_on_cpu: bool | None = None,
+         stage_error_vectors_on_cpu: bool | None = None,
+         row_subchunk_size: int | None = None,
+-        exact_encoder_residency: Literal["lazy", "active_cpu"] = "lazy",
++        exact_encoder_residency: Literal["lazy", "active_cpu", "active_pinned_cpu"] = "lazy",
+         internal_precision_requested: str | None = None,
+         resolved_dtype_map: dict[str, str] | None = None,
+         prefix_view_length: int | None = None,
+diff --git a/circuit_tracer/tracing/plan.py b/circuit_tracer/tracing/plan.py
+--- a/circuit_tracer/tracing/plan.py
++++ b/circuit_tracer/tracing/plan.py
+@@ -113,7 +113,7 @@ class RowStoragePlan:
+     gpu_resident_max_bytes: int = 0
+     gpu_window_max_bytes: int = 0
+     gpu_resident_safety_margin_bytes: int = 0
+-    exact_encoder_residency: Literal["lazy", "active_cpu"] = "lazy"
++    exact_encoder_residency: Literal["lazy", "active_cpu", "active_pinned_cpu"] = "lazy"
+     placement: StorageTier | None = None
+ 
+     def __post_init__(self) -> None:

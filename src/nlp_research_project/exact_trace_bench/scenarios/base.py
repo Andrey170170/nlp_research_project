@@ -129,10 +129,6 @@ WAVE2C_ROW_ENCODER_VARIANTS: tuple[dict[str, Any], ...] = (
         "exact_encoder_residency": "active_cpu",
     },
     {
-        "label": "active_pinned_cpu_encoder",
-        "exact_encoder_residency": "active_pinned_cpu",
-    },
-    {
         "label": "no_cpu_staging",
         "stage_encoder_vecs_on_cpu": False,
         "stage_error_vectors_on_cpu": False,

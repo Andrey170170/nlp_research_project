@@ -1398,7 +1398,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     full_answer_trace_specs.add_argument(
         "--exact-encoder-residency",
-        choices=["lazy", "active_cpu", "active_pinned_cpu"],
+        choices=["lazy", "active_cpu"],
         default=None,
     )
     full_answer_trace_specs.add_argument(

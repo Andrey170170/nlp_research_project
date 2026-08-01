@@ -1,0 +1,28 @@
+diff --git a/circuit_tracer/replacement_model/attribution_setup.py b/circuit_tracer/replacement_model/attribution_setup.py
+--- a/circuit_tracer/replacement_model/attribution_setup.py
++++ b/circuit_tracer/replacement_model/attribution_setup.py
+@@ -5,3 +5,3 @@ from __future__ import annotations
+ 
+ import time
+-from dataclasses import dataclass
++from dataclasses import dataclass, replace
+ from typing import Literal, cast
+@@ -19,5 +19,6 @@ from circuit_tracer.observability.events import MemorySnapshot, TraceObserver
+ from circuit_tracer.transcoder.provider import (
+     TranscoderCapabilities,
+     get_transcoder_capabilities,
++    provider_fingerprint,
+     require_exact_chunked_provider,
+ )
+@@ -198,6 +199,11 @@ class AttributionSetupOperation:
+             model.zero_positions,  # type: ignore[attr-defined]
+             **component_kwargs,
+         )
++        if components.decoder_row_seed is not None:
++            components = replace(
++                components,
++                decoder_row_seed=replace(
++                    components.decoder_row_seed, source_fingerprint=provider_fingerprint(transcoders)
++                ),
++            )
+         component_seconds = time.perf_counter() - component_start

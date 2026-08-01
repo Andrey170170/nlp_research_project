@@ -208,7 +208,7 @@ def test_full_answer_trace_spec_perf_knob_overrides(tmp_path: Path) -> None:
         "--no-stage-encoder-vecs-on-cpu",
         "--no-stage-error-vectors-on-cpu",
         "--exact-encoder-residency",
-        "active_pinned_cpu",
+        "active_cpu",
         "--input-context-mode",
         "full_sequence",
         "--verbose-attribution",
@@ -251,10 +251,20 @@ def test_full_answer_trace_spec_perf_knob_overrides(tmp_path: Path) -> None:
     assert knobs["error_vector_prefetch_lookahead"] == 8
     assert knobs["stage_encoder_vecs_on_cpu"] is False
     assert knobs["stage_error_vectors_on_cpu"] is False
-    assert knobs["exact_encoder_residency"] == "active_pinned_cpu"
+    assert knobs["exact_encoder_residency"] == "active_cpu"
     assert knobs["input_context_mode"] == "full_sequence"
     assert knobs["verbose_attribution"] is True
     assert knobs["profile_attribution"] is True
+
+
+def test_full_answer_trace_spec_rejects_archived_active_pinned_mode() -> None:
+    proc = run_cli(
+        "build-full-answer-trace-specs",
+        "--exact-encoder-residency",
+        "active_pinned_cpu",
+    )
+    assert proc.returncode == 2
+    assert "invalid choice" in proc.stderr
 
 
 def test_full_answer_trace_spec_provider_family_resolves_complete_plt_config(

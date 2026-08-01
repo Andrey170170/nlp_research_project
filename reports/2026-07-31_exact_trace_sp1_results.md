@@ -149,6 +149,12 @@ SP1 closes with a positive exact classification under the canonical taxonomy:
 No scientific baseline, fidelity authorization, governor bundle, or launch
 default changed.
 
+The 2026-07-31 code-retention clarification subsequently removed
+`active_pinned_cpu` from the runtime and project profile surface. Its measured
+520.60-second result was slower than `active_cpu`, used no less HBM, and offered
+no stronger fidelity. Exact restoration patches are indexed under
+`experiments/patches/exact_trace_performance_20260731/`.
+
 ## Validation
 
 - sibling focused and affected suites: 160 passed; lint passed;
