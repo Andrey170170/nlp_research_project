@@ -1053,7 +1053,12 @@ SUITES: dict[str, tuple[Case, ...]] = {
         Case("gemma3_1b_clt", "361_base"),
     ),
     "plt-hard": (Case("gemma3_1b_plt", "361_base"),),
+    "plt-breadth": (
+        Case("gemma3_1b_plt", "828_base"),
+        Case("gemma3_1b_plt", "94_base"),
+    ),
     "plt-4b": (Case("gemma3_4b_plt", "361_base"),),
+    "plt-4b-holdout": (Case("gemma3_4b_plt", "828_base"),),
     "plt-12b": (Case("gemma3_12b_plt", "361_base"),),
     "plt-large": (
         Case("gemma3_4b_plt", "361_base"),

@@ -23,6 +23,60 @@
         "result.json": "ba77bbc30de17cdb16ff2b65cdd52d6206e0c1045cc2da9b3bc9b7e74bfc53b9"
       }
     },
+    "performance/gemma3_1b_plt/828_base": {
+      "scope": "same_regime_mechanism",
+      "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/sp5-prompt-controls/gemma3_1b_plt_828_base/perf_gemma3_1b_plt_828_base/artifacts",
+      "result_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/sp5-prompt-controls/gemma3_1b_plt_828_base/perf_gemma3_1b_plt_828_base/result.json",
+      "scenario_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/sp5-prompt-controls/gemma3_1b_plt_828_base/perf_gemma3_1b_plt_828_base/scenario.json",
+      "scenario_sha256": "3a45df7f96c1232a216e133369b570309debfb4a4c8e2e0ecc3b49f757d9c47a",
+      "duration_seconds": 190.96,
+      "expected_status": "success",
+      "baseline_pins": {
+        "exact_trace_internal_dtype": "fp32",
+        "decoder_chunk_size": 4096
+      },
+      "artifact_sha256": {
+        "artifacts/prompt_000/completion_000/step_000.npz": "7e4dd3267d165e482997a5fc0548e92427c0f52f56cc059a50cfbfd35137d63e",
+        "artifacts/prompt_000/completion_000/completion.json": "bb57eb547632630e031cd76ca73af4f259a430103fe7c587cc9f5517927c4d42",
+        "result.json": "56794114f42ce996d88996450bca79b5267acd6316c0d79e735093bb7333c167"
+      },
+      "source_provenance": {
+        "run_id": "sp5-prompt-control-1b-828",
+        "allocation": "Slurm 1685189 on grn029, NVIDIA H200",
+        "workspace_snapshot": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/workspace_snapshots/workspace_20260731_175923_sp5-exact-finalist-v1",
+        "project_commit": "afee5eb8b29d015f8ef80695cc711a7049e11270",
+        "sibling_commit": "2f637797bd099d2aa10177912674f1d879e73866",
+        "cache_state": "warm uncontrolled shared offline Hugging Face cache",
+        "role": "SP5 prompt-breadth mapped-row mechanism control"
+      }
+    },
+    "performance/gemma3_1b_plt/94_base": {
+      "scope": "same_regime_mechanism",
+      "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/sp5-prompt-controls/gemma3_1b_plt_94_base/perf_gemma3_1b_plt_94_base/artifacts",
+      "result_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/sp5-prompt-controls/gemma3_1b_plt_94_base/perf_gemma3_1b_plt_94_base/result.json",
+      "scenario_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/sp5-prompt-controls/gemma3_1b_plt_94_base/perf_gemma3_1b_plt_94_base/scenario.json",
+      "scenario_sha256": "29941b2deffe791763c91d4571556e2ae75b00072bac297e6b401704095b53ca",
+      "duration_seconds": 164.58,
+      "expected_status": "success",
+      "baseline_pins": {
+        "exact_trace_internal_dtype": "fp32",
+        "decoder_chunk_size": 4096
+      },
+      "artifact_sha256": {
+        "artifacts/prompt_000/completion_000/step_000.npz": "efd575c8565b67199bfd0effaa71bb4ec6d22d591ab03f75274e5fb65352a3c4",
+        "artifacts/prompt_000/completion_000/completion.json": "fce639a7117780941cbd2245f3d52d3d304be0f4581d56d29faa2e844d8c763f",
+        "result.json": "89d834e43070340e672ae250f3b30a6c99c37e576f99bcd351c1a9894a26a816"
+      },
+      "source_provenance": {
+        "run_id": "sp5-prompt-control-1b-94",
+        "allocation": "Slurm 1685189 on grn029, NVIDIA H200",
+        "workspace_snapshot": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/workspace_snapshots/workspace_20260731_175923_sp5-exact-finalist-v1",
+        "project_commit": "afee5eb8b29d015f8ef80695cc711a7049e11270",
+        "sibling_commit": "2f637797bd099d2aa10177912674f1d879e73866",
+        "cache_state": "warm uncontrolled shared offline Hugging Face cache",
+        "role": "SP5 prompt-breadth mapped-row mechanism control"
+      }
+    },
     "performance/gemma3_4b_plt/361_base": {
       "scope": "same_regime_mechanism",
       "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/perf-plt-4b-active-rows-c4096-20260726-04/candidates/gemma3_4b_plt_361_base/perf_gemma3_4b_plt_361_base/artifacts",
@@ -39,6 +93,33 @@
         "artifacts/prompt_000/completion_000/step_000.npz": "32a94a56e458bfd1786ddcec7855d485587fce3e33b9b9b57417c38940b80217",
         "artifacts/prompt_000/completion_000/completion.json": "285223c5b8afa3a61ccc95920d0e09b952608ba0e53ad6f9e7483b01488f5937",
         "result.json": "2c3f416330dfeddf749e4ee9f5ab5810be63d2cfafc15b3d417c308153792b0a"
+      }
+    },
+    "performance/gemma3_4b_plt/828_base": {
+      "scope": "same_regime_mechanism",
+      "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/sp5-prompt-controls/gemma3_4b_plt_828_base/perf_gemma3_4b_plt_828_base/artifacts",
+      "result_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/sp5-prompt-controls/gemma3_4b_plt_828_base/perf_gemma3_4b_plt_828_base/result.json",
+      "scenario_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/sp5-prompt-controls/gemma3_4b_plt_828_base/perf_gemma3_4b_plt_828_base/scenario.json",
+      "scenario_sha256": "71304eece06bb39fa9ee67d54fb712831af9d64f6c96b02daad958be95212357",
+      "duration_seconds": 489.4,
+      "expected_status": "success",
+      "baseline_pins": {
+        "exact_trace_internal_dtype": "fp32",
+        "decoder_chunk_size": 4096
+      },
+      "artifact_sha256": {
+        "artifacts/prompt_000/completion_000/step_000.npz": "4c091022f8d3d7a9d5b333e0b729c480f00ff426669f8e167c9203872b337a30",
+        "artifacts/prompt_000/completion_000/completion.json": "d06e627232eba9e9243423803068cc58f8c9fb99440cc7e74a88dba5801afda4",
+        "result.json": "ba066d60098733ee8dbc59df366396cf55316f54da6e4d5d409252f018345a33"
+      },
+      "source_provenance": {
+        "run_id": "sp5-prompt-control-4b-828",
+        "allocation": "Slurm 1685189 on grn029, NVIDIA H200",
+        "workspace_snapshot": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/workspace_snapshots/workspace_20260731_175923_sp5-exact-finalist-v1",
+        "project_commit": "afee5eb8b29d015f8ef80695cc711a7049e11270",
+        "sibling_commit": "2f637797bd099d2aa10177912674f1d879e73866",
+        "cache_state": "warm uncontrolled shared offline Hugging Face cache",
+        "role": "SP5 4B holdout mapped-row mechanism control"
       }
     },
     "performance/gemma3_12b_plt/361_base": {

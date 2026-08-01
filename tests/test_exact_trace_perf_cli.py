@@ -57,11 +57,18 @@ def test_suites_have_fixed_requested_cases() -> None:
     assert [(case.variant, case.fixture) for case in perf_cli.SUITES["plt-hard"]] == [
         ("gemma3_1b_plt", "361_base")
     ]
+    assert perf_cli.SUITES["plt-breadth"] == (
+        perf_cli.Case("gemma3_1b_plt", "828_base"),
+        perf_cli.Case("gemma3_1b_plt", "94_base"),
+    )
     assert perf_cli.SUITES["all"] == (
         *perf_cli.SUITES["clt-pair"],
         *perf_cli.SUITES["plt-hard"],
     )
     assert perf_cli.SUITES["plt-4b"] == (perf_cli.Case("gemma3_4b_plt", "361_base"),)
+    assert perf_cli.SUITES["plt-4b-holdout"] == (
+        perf_cli.Case("gemma3_4b_plt", "828_base"),
+    )
     assert perf_cli.SUITES["plt-12b"] == (perf_cli.Case("gemma3_12b_plt", "361_base"),)
     assert perf_cli.SUITES["plt-large"] == (
         *perf_cli.SUITES["plt-4b"],
@@ -796,7 +803,13 @@ def test_merged_performance_registry_maps_all_suite_case_keys() -> None:
     registry = json.loads(perf_cli.DEFAULT_BASELINE_REGISTRY.read_text())
     entries = registry["entries"]
     provenance = registry["source_provenance"]
-    expected = {case.key for suite in perf_cli.SUITES.values() for case in suite}
+    mechanism_only_suites = {"plt-breadth", "plt-4b-holdout"}
+    expected = {
+        case.key
+        for suite_name, suite in perf_cli.SUITES.items()
+        if suite_name not in mechanism_only_suites
+        for case in suite
+    }
 
     assert registry["registry_id"] == "exact-trace-performance-granite-20260726"
     assert expected <= entries.keys()
