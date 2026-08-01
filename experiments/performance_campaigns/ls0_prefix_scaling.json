@@ -1,19 +1,19 @@
 {
   "schema_version": 1,
   "campaign_id": "ls0-361-length-scaling-v1",
-  "description": "Typed scaffold for one frozen Gemma 3 PLT development trajectory at four exact prefix lengths. Fingerprints are populated after model generation.",
+  "description": "One frozen Gemma 3 1B PLT development trajectory at four exact prefix lengths, generated greedily from a declared long-form GSM8K prompt.",
   "workloads": [
     {
       "workload_id": "ls0-361-dev-124",
       "preparation_status": "planned",
-      "fixture": {"catalog": "experiments/generated/weekend_exact_chunked_fixtures/fixture_catalog.json", "catalog_sha256": null, "fixture_name": "361_base", "prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/361_base/prompt.txt", "prompt_sha256": null},
+      "fixture": {"catalog": "experiments/generated/performance_campaigns/ls0/fixture_catalog.json", "catalog_sha256": null, "fixture_name": "361_length_v1", "prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt", "prompt_sha256": null},
       "model": {"variant": "gemma3_1b", "provider": "plt"},
       "prompt": {"family": "gsm8k_361_length_v1", "role": "development"},
       "trajectory": {"trajectory_id": "ls0-gemma3-1b-361-greedy-v1", "path": "experiments/generated/performance_campaigns/ls0/361_trajectory.json", "sha256": null},
       "prefix": {"requested_tokens": 124, "actual_tokens": null, "token_ids_sha256": null},
       "target": {"absolute_position": null, "token_id": null, "token_text": null},
       "operational_class": "sweep",
-      "profiles": {"control": "plt-selective-mapped-rows-large-v1", "candidate": "sp5-exact-finalist-pending"},
+      "profiles": {"control": "sp5-exact-finalist-plt-v1", "candidate": "sp5-exact-finalist-plt-v1"},
       "run_disposition": "full_reference",
       "resource_envelope": {"gpu": "NVIDIA H200", "gpu_count": 1, "host_memory_stop_gib": 200, "host_rss_stop_gib": 64, "hbm_peak_fraction_max": 0.9, "walltime_seconds": 3600},
       "comparison_policy": {"fidelity": "exact_and_bounded_reported_separately", "mechanism_control": "mapped_lazy_cpu_exact", "probe_before_full": false}
@@ -21,14 +21,14 @@
     {
       "workload_id": "ls0-361-dev-256",
       "preparation_status": "planned",
-      "fixture": {"catalog": "experiments/generated/weekend_exact_chunked_fixtures/fixture_catalog.json", "catalog_sha256": null, "fixture_name": "361_base", "prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/361_base/prompt.txt", "prompt_sha256": null},
+      "fixture": {"catalog": "experiments/generated/performance_campaigns/ls0/fixture_catalog.json", "catalog_sha256": null, "fixture_name": "361_length_v1", "prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt", "prompt_sha256": null},
       "model": {"variant": "gemma3_1b", "provider": "plt"},
       "prompt": {"family": "gsm8k_361_length_v1", "role": "development"},
       "trajectory": {"trajectory_id": "ls0-gemma3-1b-361-greedy-v1", "path": "experiments/generated/performance_campaigns/ls0/361_trajectory.json", "sha256": null},
       "prefix": {"requested_tokens": 256, "actual_tokens": null, "token_ids_sha256": null},
       "target": {"absolute_position": null, "token_id": null, "token_text": null},
       "operational_class": "sweep",
-      "profiles": {"control": "plt-selective-mapped-rows-large-v1", "candidate": "sp5-exact-finalist-pending"},
+      "profiles": {"control": "sp5-exact-finalist-plt-v1", "candidate": "sp5-exact-finalist-plt-v1"},
       "run_disposition": "full_reference",
       "resource_envelope": {"gpu": "NVIDIA H200", "gpu_count": 1, "host_memory_stop_gib": 200, "host_rss_stop_gib": 64, "hbm_peak_fraction_max": 0.9, "walltime_seconds": 7200},
       "comparison_policy": {"fidelity": "exact_and_bounded_reported_separately", "mechanism_control": "mapped_lazy_cpu_exact", "probe_before_full": false}
@@ -36,14 +36,14 @@
     {
       "workload_id": "ls0-361-dev-512",
       "preparation_status": "planned",
-      "fixture": {"catalog": "experiments/generated/weekend_exact_chunked_fixtures/fixture_catalog.json", "catalog_sha256": null, "fixture_name": "361_base", "prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/361_base/prompt.txt", "prompt_sha256": null},
+      "fixture": {"catalog": "experiments/generated/performance_campaigns/ls0/fixture_catalog.json", "catalog_sha256": null, "fixture_name": "361_length_v1", "prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt", "prompt_sha256": null},
       "model": {"variant": "gemma3_1b", "provider": "plt"},
       "prompt": {"family": "gsm8k_361_length_v1", "role": "development"},
       "trajectory": {"trajectory_id": "ls0-gemma3-1b-361-greedy-v1", "path": "experiments/generated/performance_campaigns/ls0/361_trajectory.json", "sha256": null},
       "prefix": {"requested_tokens": 512, "actual_tokens": null, "token_ids_sha256": null},
       "target": {"absolute_position": null, "token_id": null, "token_text": null},
       "operational_class": "long_trace",
-      "profiles": {"control": "plt-selective-mapped-rows-large-v1", "candidate": "sp5-exact-finalist-pending"},
+      "profiles": {"control": "sp5-exact-finalist-plt-v1", "candidate": "sp5-exact-finalist-plt-v1"},
       "run_disposition": "probe_then_full",
       "resource_envelope": {"gpu": "NVIDIA H200", "gpu_count": 1, "host_memory_stop_gib": 200, "host_rss_stop_gib": 64, "hbm_peak_fraction_max": 0.9, "walltime_seconds": 14400},
       "comparison_policy": {"fidelity": "exact_and_bounded_reported_separately", "mechanism_control": "mapped_lazy_cpu_exact", "probe_before_full": true}
@@ -51,14 +51,14 @@
     {
       "workload_id": "ls0-361-dev-1024",
       "preparation_status": "planned",
-      "fixture": {"catalog": "experiments/generated/weekend_exact_chunked_fixtures/fixture_catalog.json", "catalog_sha256": null, "fixture_name": "361_base", "prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/361_base/prompt.txt", "prompt_sha256": null},
+      "fixture": {"catalog": "experiments/generated/performance_campaigns/ls0/fixture_catalog.json", "catalog_sha256": null, "fixture_name": "361_length_v1", "prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt", "prompt_sha256": null},
       "model": {"variant": "gemma3_1b", "provider": "plt"},
       "prompt": {"family": "gsm8k_361_length_v1", "role": "development"},
       "trajectory": {"trajectory_id": "ls0-gemma3-1b-361-greedy-v1", "path": "experiments/generated/performance_campaigns/ls0/361_trajectory.json", "sha256": null},
       "prefix": {"requested_tokens": 1024, "actual_tokens": null, "token_ids_sha256": null},
       "target": {"absolute_position": null, "token_id": null, "token_text": null},
       "operational_class": "long_trace",
-      "profiles": {"control": "plt-selective-mapped-rows-large-v1", "candidate": "sp5-exact-finalist-pending"},
+      "profiles": {"control": "sp5-exact-finalist-plt-v1", "candidate": "sp5-exact-finalist-plt-v1"},
       "run_disposition": "probe_then_full",
       "resource_envelope": {"gpu": "NVIDIA H200", "gpu_count": 1, "host_memory_stop_gib": 200, "host_rss_stop_gib": 64, "hbm_peak_fraction_max": 0.9, "walltime_seconds": 28800},
       "comparison_policy": {"fidelity": "exact_and_bounded_reported_separately", "mechanism_control": "mapped_lazy_cpu_exact", "probe_before_full": true}

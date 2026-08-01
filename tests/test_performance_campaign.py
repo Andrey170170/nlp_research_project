@@ -7,6 +7,7 @@ import pytest
 
 from nlp_research_project.exact_trace_bench import perf_cli
 from nlp_research_project.exact_trace_bench.performance_campaign import (
+    freeze_performance_campaign,
     validate_mechanism_claims,
     validate_performance_campaign,
 )
@@ -61,3 +62,83 @@ def test_perf_cli_campaign_and_claim_commands(capsys: pytest.CaptureFixture[str]
     output = capsys.readouterr().out
     assert "ls0-361-length-scaling-v1: 4 workloads" in output
     assert "ls0-361-dev-1024" in output
+
+
+def test_freeze_campaign_derives_prefix_and_target_fingerprints(
+    tmp_path: Path,
+) -> None:
+    prompt_path = tmp_path / "prompt.txt"
+    catalog_path = tmp_path / "catalog.json"
+    trajectory_path = tmp_path / "trajectory.json"
+    manifest_path = tmp_path / "campaign.json"
+    prompt_path.write_text("prompt", encoding="utf-8")
+    catalog_path.write_text('{"schema_version": 1}', encoding="utf-8")
+    trajectory_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "trajectory_id": "trajectory-v1",
+                "prompt_token_count": 2,
+                "prompt_token_ids": [10, 11],
+                "prompt_text": "prompt",
+                "generated_tokens": [
+                    {
+                        "generated_index": index,
+                        "absolute_token_position": index + 2,
+                        "token_id": 20 + index,
+                        "token_text": f"t{index}",
+                        "is_stop": False,
+                    }
+                    for index in range(4)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    workload = json.loads(CAMPAIGN.read_text())["workloads"][0]
+    workload["workload_id"] = "freeze-test"
+    workload["fixture"] = {
+        "catalog": "catalog.json",
+        "catalog_sha256": None,
+        "fixture_name": "test",
+        "prompt_file": "prompt.txt",
+        "prompt_sha256": None,
+    }
+    workload["trajectory"] = {
+        "trajectory_id": "trajectory-v1",
+        "path": "trajectory.json",
+        "sha256": None,
+    }
+    workload["prefix"] = {
+        "requested_tokens": 4,
+        "actual_tokens": None,
+        "token_ids_sha256": None,
+    }
+    workload["target"] = {
+        "absolute_position": None,
+        "token_id": None,
+        "token_text": None,
+    }
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "campaign_id": "freeze-test-v1",
+                "workloads": [workload],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    frozen = freeze_performance_campaign(manifest_path, repo_root=tmp_path)
+
+    frozen_workload = frozen["workloads"][0]
+    assert frozen_workload["preparation_status"] == "frozen"
+    assert frozen_workload["prefix"]["actual_tokens"] == 4
+    assert len(frozen_workload["prefix"]["token_ids_sha256"]) == 64
+    assert frozen_workload["target"] == {
+        "absolute_position": 4,
+        "token_id": 22,
+        "token_text": "t2",
+    }
+    assert validate_performance_campaign(frozen, require_frozen=True)

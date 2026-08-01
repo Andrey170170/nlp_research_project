@@ -17,6 +17,7 @@ from typing import Any, Mapping, Sequence
 from .config import DEFAULT_SCRATCH_ROOT, REPO_ROOT
 from .io_utils import read_json, write_json
 from .performance_campaign import (
+    freeze_performance_campaign,
     load_mechanism_claims,
     load_performance_campaign,
     render_campaign_workloads,
@@ -2963,6 +2964,14 @@ def _list_campaign(path: Path, *, require_frozen: bool) -> int:
     return 0
 
 
+def _freeze_campaign(path: Path, *, output: Path | None) -> int:
+    payload = freeze_performance_campaign(path, output_path=output)
+    destination = output or path
+    print(f"{payload['campaign_id']}: froze {len(payload['workloads'])} workloads")
+    print(f"Manifest: {destination}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="H200 exact-trace performance and graph-parity loop"
@@ -2984,6 +2993,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Fail when any workload or immutable fingerprint remains planned",
     )
+    freeze_campaign = subparsers.add_parser(
+        "freeze-campaign",
+        help="Freeze campaign prefix and target fingerprints from trajectories",
+    )
+    freeze_campaign.add_argument("manifest", type=Path)
+    freeze_campaign.add_argument("--output", type=Path)
     run = subparsers.add_parser("run", help="Run one suite and enforce parity")
     run.add_argument("suite", choices=tuple(SUITES))
     run.add_argument(
@@ -3039,6 +3054,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _validate_claims(args.path)
     if args.command == "list-campaign":
         return _list_campaign(args.manifest, require_frozen=args.require_frozen)
+    if args.command == "freeze-campaign":
+        return _freeze_campaign(args.manifest, output=args.output)
     if args.host_memory_stop_gib is not None and args.host_memory_stop_gib <= 0:
         raise ValueError("--host-memory-stop-gib must be positive")
     if args.host_rss_stop_gib is not None and args.host_rss_stop_gib <= 0:

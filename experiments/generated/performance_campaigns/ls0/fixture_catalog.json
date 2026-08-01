@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "catalog_id": "ls0-length-scaling-fixtures-v1",
+  "fixtures": [
+    {
+      "fixture_name": "361_length_v1",
+      "fixture_kind": "long_form_generation_prompt",
+      "prompt_source": "gsm8k_361_declared_long_form",
+      "gsm8k_index": 361,
+      "prompt_text_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt",
+      "prepared_prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt",
+      "prepared_prompt_meta_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/fixture_meta.json"
+    }
+  ]
+}

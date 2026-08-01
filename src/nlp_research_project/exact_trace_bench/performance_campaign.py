@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from .io_utils import read_json
+from .config import REPO_ROOT
+from .full_answer.schemas import load_trajectory
+from .io_utils import read_json, write_json
 
 
 class MechanismDisposition(str, Enum):
@@ -271,3 +275,103 @@ def render_campaign_workloads(workloads: Sequence[CampaignWorkload]) -> list[str
         )
         for workload in workloads
     ]
+
+
+def _resolve_campaign_path(value: Any, *, repo_root: Path, label: str) -> Path:
+    path = Path(_require_nonempty_string(value, label=label))
+    return path if path.is_absolute() else repo_root / path
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _token_ids_sha256(token_ids: Sequence[int]) -> str:
+    payload = json.dumps(list(token_ids), separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def freeze_performance_campaign(
+    manifest_path: Path,
+    *,
+    output_path: Path | None = None,
+    repo_root: Path = REPO_ROOT,
+) -> dict[str, Any]:
+    """Populate immutable workload fingerprints from generated trajectories."""
+    payload = read_json(manifest_path)
+    if not isinstance(payload, dict):
+        raise ValueError(f"performance campaign must be an object: {manifest_path}")
+    validate_performance_campaign(payload)
+    trajectory_cache: dict[Path, tuple[dict[str, Any], str]] = {}
+    for index, raw_workload in enumerate(payload["workloads"]):
+        workload = _require_mapping(raw_workload, label=f"workloads[{index}]")
+        fixture = _require_mapping(
+            workload["fixture"], label=f"workloads[{index}].fixture"
+        )
+        trajectory_ref = _require_mapping(
+            workload["trajectory"], label=f"workloads[{index}].trajectory"
+        )
+        prefix = _require_mapping(
+            workload["prefix"], label=f"workloads[{index}].prefix"
+        )
+        target = _require_mapping(
+            workload["target"], label=f"workloads[{index}].target"
+        )
+        catalog_path = _resolve_campaign_path(
+            fixture.get("catalog"),
+            repo_root=repo_root,
+            label=f"workloads[{index}].fixture.catalog",
+        )
+        prompt_path = _resolve_campaign_path(
+            fixture.get("prompt_file"),
+            repo_root=repo_root,
+            label=f"workloads[{index}].fixture.prompt_file",
+        )
+        trajectory_path = _resolve_campaign_path(
+            trajectory_ref.get("path"),
+            repo_root=repo_root,
+            label=f"workloads[{index}].trajectory.path",
+        )
+        if trajectory_path not in trajectory_cache:
+            trajectory_cache[trajectory_path] = (
+                dict(load_trajectory(trajectory_path)),
+                _file_sha256(trajectory_path),
+            )
+        trajectory, trajectory_sha256 = trajectory_cache[trajectory_path]
+        prompt_text = prompt_path.read_text(encoding="utf-8")
+        if trajectory.get("prompt_text") != prompt_text:
+            raise ValueError(
+                f"{workload['workload_id']} trajectory prompt_text does not match "
+                f"{prompt_path}"
+            )
+        prompt_token_ids = list(trajectory["prompt_token_ids"])
+        generated_tokens = list(trajectory["generated_tokens"])
+        generated_token_ids = [int(row["token_id"]) for row in generated_tokens]
+        full_token_ids = [*prompt_token_ids, *generated_token_ids]
+        requested_tokens = int(prefix["requested_tokens"])
+        if requested_tokens < len(prompt_token_ids):
+            raise ValueError(
+                f"{workload['workload_id']} requested prefix precedes generated text"
+            )
+        if requested_tokens >= len(full_token_ids):
+            raise ValueError(
+                f"{workload['workload_id']} needs a target token at position "
+                f"{requested_tokens}, but trajectory has only {len(full_token_ids)} tokens"
+            )
+        generated_index = requested_tokens - len(prompt_token_ids)
+        target_row = generated_tokens[generated_index]
+        fixture["catalog_sha256"] = _file_sha256(catalog_path)
+        fixture["prompt_sha256"] = _file_sha256(prompt_path)
+        trajectory_ref["sha256"] = trajectory_sha256
+        prefix["actual_tokens"] = requested_tokens
+        prefix["token_ids_sha256"] = _token_ids_sha256(
+            full_token_ids[:requested_tokens]
+        )
+        target["absolute_position"] = requested_tokens
+        target["token_id"] = int(target_row["token_id"])
+        target["token_text"] = str(target_row["token_text"])
+        workload["preparation_status"] = WorkloadPreparationStatus.FROZEN.value
+    validate_performance_campaign(payload, require_frozen=True)
+    destination = output_path or manifest_path
+    write_json(destination, payload)
+    return payload
