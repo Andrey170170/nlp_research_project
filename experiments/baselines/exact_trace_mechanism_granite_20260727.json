@@ -52,29 +52,29 @@
     },
     "performance/gemma3_1b_plt/94_base": {
       "scope": "same_regime_mechanism",
-      "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/sp5-prompt-controls/gemma3_1b_plt_94_base/perf_gemma3_1b_plt_94_base/artifacts",
-      "result_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/sp5-prompt-controls/gemma3_1b_plt_94_base/perf_gemma3_1b_plt_94_base/result.json",
-      "scenario_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/sp5-prompt-controls/gemma3_1b_plt_94_base/perf_gemma3_1b_plt_94_base/scenario.json",
-      "scenario_sha256": "29941b2deffe791763c91d4571556e2ae75b00072bac297e6b401704095b53ca",
-      "duration_seconds": 164.58,
+      "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/sp5-exact-1b-plt-breadth-strict-r1/candidates/gemma3_1b_plt_94_base/perf_gemma3_1b_plt_94_base/artifacts",
+      "result_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/sp5-exact-1b-plt-breadth-strict-r1/candidates/gemma3_1b_plt_94_base/perf_gemma3_1b_plt_94_base/result.json",
+      "scenario_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/sweep/performance_optimization/sp5-exact-1b-plt-breadth-strict-r1/candidates/gemma3_1b_plt_94_base/perf_gemma3_1b_plt_94_base/scenario.json",
+      "scenario_sha256": "e29cdaea158d85bf493b10cc2c2ac38d935fdb9ce1dc77632dfa6544ae844aab",
+      "duration_seconds": 113.72,
       "expected_status": "success",
       "baseline_pins": {
         "exact_trace_internal_dtype": "fp32",
         "decoder_chunk_size": 4096
       },
       "artifact_sha256": {
-        "artifacts/prompt_000/completion_000/step_000.npz": "efd575c8565b67199bfd0effaa71bb4ec6d22d591ab03f75274e5fb65352a3c4",
-        "artifacts/prompt_000/completion_000/completion.json": "fce639a7117780941cbd2245f3d52d3d304be0f4581d56d29faa2e844d8c763f",
-        "result.json": "89d834e43070340e672ae250f3b30a6c99c37e576f99bcd351c1a9894a26a816"
+        "artifacts/prompt_000/completion_000/step_000.npz": "8d6903258207ebe6da6991e76283ab9ea40acce5af838b0241082eb1c0cef38e",
+        "artifacts/prompt_000/completion_000/completion.json": "69740de7ec5d4ddb541075fb901be71162362b4390618e8839646bbb509e7103",
+        "result.json": "61e3743ec00a840d5212415a41600113395928ef9c3404621a9bef6c6e5d8c28"
       },
       "source_provenance": {
-        "run_id": "sp5-prompt-control-1b-94",
+        "run_id": "sp5-exact-1b-plt-breadth-strict-r1",
         "allocation": "Slurm 1685189 on grn029, NVIDIA H200",
-        "workspace_snapshot": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/workspace_snapshots/workspace_20260731_175923_sp5-exact-finalist-v1",
-        "project_commit": "afee5eb8b29d015f8ef80695cc711a7049e11270",
-        "sibling_commit": "2f637797bd099d2aa10177912674f1d879e73866",
+        "workspace_snapshot": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/workspace_snapshots/workspace_20260731_194111_sp5-strict-exact-v4",
+        "project_commit": "f09d6c506668ac87c38a22ad93e4078544c151ee",
+        "sibling_commit": "bfd804287d46a90cabd054d4da1732a6947703f8",
         "cache_state": "warm uncontrolled shared offline Hugging Face cache",
-        "role": "SP5 prompt-breadth mapped-row mechanism control"
+        "role": "SP5 current-source canonical Phase-0 mechanism control; refreshed after two byte-identical repetitions exposed two isolated zero-edge feature ties in the prior control"
       }
     },
     "performance/gemma3_4b_plt/361_base": {
