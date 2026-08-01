@@ -695,14 +695,14 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
             _candidate_variant(
                 {
                     **_LEGACY_CANDIDATE_OVERRIDES["plt-active-rows-v1"],
-                    "phase0_decoder_row_ranges": True,
+                    "phase0_decoder_row_ranges": False,
                     "checkpoint_asset_scope": "shared",
                     "exact_encoder_residency": "lazy",
                     "feature_row_influence_mode": "cpu_exact",
                 },
                 CapabilityRequirements(
                     **{
-                        **_PLT_MAPPED_DECODER_ROWS.__dict__,
+                        **_PLT_SAME_LAYER.__dict__,
                         "maximum_layer_count": 26,
                     }
                 ),
@@ -712,14 +712,14 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
                     **_LEGACY_CANDIDATE_OVERRIDES[
                         "plt-active-rows-4b-c4096-v1"
                     ],
-                    "phase0_decoder_row_ranges": True,
+                    "phase0_decoder_row_ranges": False,
                     "checkpoint_asset_scope": "shared",
                     "exact_encoder_residency": "lazy",
                     "feature_row_influence_mode": "cpu_exact",
                 },
                 CapabilityRequirements(
                     **{
-                        **_PLT_MAPPED_DECODER_ROWS.__dict__,
+                        **_PLT_SAME_LAYER.__dict__,
                         "minimum_layer_count": 27,
                         "maximum_layer_count": 34,
                     }
@@ -730,20 +730,44 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
                     **_LEGACY_CANDIDATE_OVERRIDES[
                         "plt-active-rows-12b-c4096-v1"
                     ],
-                    "phase0_decoder_row_ranges": True,
+                    "phase0_decoder_row_ranges": False,
                     "checkpoint_asset_scope": "shared",
                     "exact_encoder_residency": "lazy",
                     "feature_row_influence_mode": "cpu_exact",
                 },
                 CapabilityRequirements(
                     **{
-                        **_PLT_MAPPED_DECODER_ROWS.__dict__,
+                        **_PLT_SAME_LAYER.__dict__,
                         "minimum_layer_count": 35,
                     }
                 ),
             ),
         ),
         evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
+    )
+    contracts["sp5-bounded-phase0-finalist-plt-v1"] = CandidateProfile(
+        name="sp5-bounded-phase0-finalist-plt-v1",
+        variants=tuple(
+            _candidate_variant(
+                {
+                    **dict(variant.compatibility_controls),
+                    **variant.physical.as_overrides(),
+                    "phase0_decoder_row_ranges": True,
+                },
+                CapabilityRequirements(
+                    **{
+                        **_PLT_MAPPED_DECODER_ROWS.__dict__,
+                        "minimum_layer_count": variant.requires.minimum_layer_count,
+                        "maximum_layer_count": variant.requires.maximum_layer_count,
+                    }
+                ),
+            )
+            for variant in contracts["sp5-exact-finalist-plt-v1"].variants
+        ),
+        evidence_scope=EvidenceScope(
+            BaselineScope.MECHANISM,
+            bounded_baseline=BaselineScope.MECHANISM,
+        ),
     )
     mapped_4b_requirements = CapabilityRequirements(
         **{

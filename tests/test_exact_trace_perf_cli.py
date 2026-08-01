@@ -131,7 +131,7 @@ def test_mapped_decoder_row_profile_refuses_provider_without_row_source() -> Non
         ("gemma3_12b_plt", 64, 8),
     ],
 )
-def test_sp5_exact_finalist_is_safe_mapped_lazy_cpu_exact(
+def test_sp5_exact_finalist_uses_canonical_phase0_mapped_lazy_cpu_exact(
     variant: str,
     batch_rows: int,
     active_row_gib: int,
@@ -143,12 +143,32 @@ def test_sp5_exact_finalist_is_safe_mapped_lazy_cpu_exact(
     assert profile.variant_for(case.provider_capabilities()) is not None
     assert profile.evidence_scope.exact_baseline is perf_cli.BaselineScope.MECHANISM
     assert overrides["decoder_chunk_size"] == 4096
-    assert overrides["phase0_decoder_row_ranges"] is True
+    assert overrides["phase0_decoder_row_ranges"] is False
     assert overrides["checkpoint_asset_scope"] == "shared"
     assert overrides["exact_encoder_residency"] == "lazy"
     assert overrides["feature_row_influence_mode"] == "cpu_exact"
     assert overrides["phase4_execution_batch_max_rows"] == batch_rows
     assert overrides["decoder_active_row_max_bytes"] == active_row_gib * 1024**3
+
+
+@pytest.mark.parametrize(
+    "variant", ["gemma3_1b_plt", "gemma3_4b_plt", "gemma3_12b_plt"]
+)
+def test_sp5_bounded_phase0_finalist_is_explicitly_selectable(variant: str) -> None:
+    case = perf_cli.Case(variant, "361_base")
+    profile = perf_cli.CANDIDATE_PROFILES[
+        "sp5-bounded-phase0-finalist-plt-v1"
+    ]
+    overrides = perf_cli._candidate_overrides(case, profile.name)
+
+    assert profile.variant_for(case.provider_capabilities()) is not None
+    assert profile.evidence_scope.for_fidelity("bounded") is (
+        perf_cli.BaselineScope.MECHANISM
+    )
+    assert overrides["phase0_decoder_row_ranges"] is True
+    assert overrides["checkpoint_asset_scope"] == "shared"
+    assert overrides["exact_encoder_residency"] == "lazy"
+    assert overrides["feature_row_influence_mode"] == "cpu_exact"
 
 
 def test_sp5_exact_finalist_refuses_cross_layer_provider() -> None:
