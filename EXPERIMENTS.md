@@ -110,6 +110,18 @@ Phase-3 feature rows to seed-influence reduction. Keep mapped lazy in the SP5
 exact finalist and retain direct active CPU as a default-off bounded option.
 See `reports/2026-07-31_exact_trace_sp1_results.md`.
 
+SP5 is fully characterized but not promoted. Selective mapped Phase-0 rows
+produced two exact-on-workload 12B `361_base` runs at 471.38s and 470.14s, but
+failed held-out 1B `94_base` (feature/edge/weighted Jaccard
+`0.999756/0.997004/0.996279`, signed L1 `0.003728`). Canonical full-page Phase
+0 restored held-out exactness but took 1,905.57s completion at 12B, including
+1,370.02s in Phase 0, and current canonical 4B `361_base` disagreed with the
+older mechanism control. Keep selective rows as an explicit bounded opt-in,
+make no default or scientific-baseline change, and resolve the source-invariant
+Phase-0 reduction boundary before LS1. LS0 itself is complete with frozen
+129/256/512/1,024-token development workloads and two 256-token holdouts. See
+`reports/2026-07-31_short_prefix_performance_results.md`.
+
 Governor Wave A completed on Granite H200 and was analyzed on 2026-07-19. The
 provider-local CLT/PLT references match the original corrected-hook Granite
 `361_base` artifacts. CLT has a useful `c10080` fetch candidate at 1.43x warm

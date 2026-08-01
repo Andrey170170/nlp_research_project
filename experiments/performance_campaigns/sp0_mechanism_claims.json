@@ -5,7 +5,8 @@
   "source_reports": [
     "reports/2026-07-27_large_model_optimization_results.md",
     "reports/2026-07-29_exact_trace_sp2_row_tier_results.md",
-    "reports/2026-07-29_exact_trace_sp2_2_selectable_modes_results.md"
+    "reports/2026-07-29_exact_trace_sp2_2_selectable_modes_results.md",
+    "reports/2026-07-31_short_prefix_performance_results.md"
   ],
   "same_regime_controls": [
     {
@@ -46,16 +47,14 @@
     }
   ],
   "unresolved_formal_gates": [
-    "SP4.1 paired 4B telemetry overhead below 2%",
-    "SP4.2 attributable cold checkpoint lifecycle over three Phase-4 batches",
-    "SP1 active-CPU first-divergence localization and exact disposition"
+    "SP5 source-invariant Phase-0 exactness contract before LS1"
   ],
   "claims": [
     {
       "identity": {
         "mechanism_id": "mapped-selective-decoder-rows-v1",
-        "implementation_commit": "circuit-tracer:a648e5f",
-        "candidate_profile": "plt-selective-mapped-rows-large-v1"
+        "implementation_commit": "circuit-tracer:bfd8042",
+        "candidate_profile": "sp5-bounded-phase0-finalist-plt-v1"
       },
       "applicability": {
         "provider_capabilities": ["selective mapped decoder-row source"],
@@ -72,14 +71,14 @@
       "correctness": {
         "raw_order": "byte-exact values and duplicate-aware caller order",
         "execution": "zero Phase-4 decoder loads",
-        "signed_graph": "two repeated 4B compact-strict passes",
-        "compact_comparison": "pass"
+        "signed_graph": "exact on repeated 361_base runs but failed held-out 94_base",
+        "compact_comparison": "bounded: 94_base feature/edge/weighted Jaccard 0.999756/0.997004/0.996279 and signed L1 0.003728"
       },
       "performance": {
-        "paired_timings": "4B repeats 345.39s and 234.46s subprocess; cache-sensitive",
-        "repeat_count": 2,
+        "paired_timings": "12B 361_base 471.38s and 470.14s harness; 1B held-out 94_base 104.13s",
+        "repeat_count": 3,
         "cache_state": "warm_or_uncontrolled",
-        "speedup": "12B accounted raw checkpoint bytes 95.316 GB to 0.910 GB"
+        "speedup": "12B below ten minutes; 1B held-out 94_base 1.581x versus canonical control"
       },
       "resources": {
         "host_hbm_peaks": "4B 26.24 GiB CUDA reserved",
@@ -87,12 +86,12 @@
         "fallback_admission": "capability and checkpoint identity gated"
       },
       "disposition": {
-        "status": "exact_promotion_candidate",
-        "rationale": "accepted exact physical mechanism",
-        "remaining_evidence": ["SP4.2 lifecycle gate", "SP5 composed matrix"]
+        "status": "bounded_research",
+        "rationale": "prompt breadth disproved mechanism-level exactness despite exact canonical-prompt repeats",
+        "remaining_evidence": ["new source-invariant Phase-0 arithmetic contract"]
       },
       "promotion_separation": {
-        "mechanism": "candidate",
+        "mechanism": "bounded opt-in",
         "baseline": "unchanged",
         "default": "unchanged",
         "governor": "unchanged"
@@ -109,7 +108,7 @@
       "correctness": {"raw_order": "accepted mapped-row contract", "execution": "129 repeated Phase-4 batches", "signed_graph": "repeat comparison exact", "compact_comparison": "pass"},
       "performance": {"paired_timings": "12B subprocess 586.30s and 563.27s", "repeat_count": 2, "cache_state": "warm_or_uncontrolled", "speedup": "reference"},
       "resources": {"host_hbm_peaks": "38.82 GiB CUDA reserved", "owned_bytes": "mapped row source", "fallback_admission": "exact fallback"},
-      "disposition": {"status": "exact_opt_in", "rationale": "reproducible exact incumbent", "remaining_evidence": ["SP5 formal repetitions"]},
+      "disposition": {"status": "exact_opt_in", "rationale": "canonical current-source reference; not a promoted fast finalist", "remaining_evidence": ["source-invariant 4B Phase-0 contract"]},
       "promotion_separation": {"mechanism": "accepted opt-in", "baseline": "same-regime control only", "default": "unchanged", "governor": "unchanged"}
     },
     {

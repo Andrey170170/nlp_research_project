@@ -1,10 +1,9 @@
 # Exact-trace performance optimization loop: short-prefix promotion and scaling
 
-Status: in progress; SP0 ledger and LS0 login-safe scaffold complete; SP1
-closed with active CPU retained as bounded/research; SP2.2 selectable CPU/CUDA
-row execution and bounded-HBM scaling complete; SP3 re-profile closed with no
-qualifying non-batch target; SP4 telemetry and lifecycle gates passed; SP5 and
-LS0 trajectory generation are next
+Status: in progress; SP0-SP4 closed; LS0 frozen and complete; SP5 formal matrix
+executed but promotion gate failed because selective Phase 0 is prompt-bounded
+and canonical Phase 0 is both slow at 12B and inconsistent with the older 4B
+mechanism control; LS1 awaits a source-invariant exact Phase-0 contract
 
 Date: 2026-07-29
 
@@ -36,8 +35,8 @@ The stage prefixes are descriptive:
 
 | Prefix | Meaning | Current state |
 |---|---|---|
-| `SP` | canonical short-prefix completion and promotion evidence | SP0-SP4 closed; SP5 next |
-| `LS` | prefix-length, prompt, and model-size scaling | blocked on the SP5 finalist, except login-safe harness/fixture planning |
+| `SP` | canonical short-prefix completion and promotion evidence | SP0-SP4 closed; SP5 matrix complete, promotion failed |
+| `LS` | prefix-length, prompt, and model-size scaling | LS0 complete; LS1 blocked on exact Phase-0 contract |
 
 Within each campaign the number is execution order, not a governor phase or
 calibration wave.
@@ -1024,13 +1023,14 @@ Start here:
        user's direction rather than the planned 1B entry case).
 9. [x] Re-profile before selecting any SP3 work.
 10. [x] Close SP4 telemetry-overhead and cold-transition evidence.
-11. [ ] Compose and run the SP5 formal short-prefix matrix.
-12. [ ] Extend the harness with the LS0 campaign manifest and dry-run listing.
-13. [ ] Prepare deterministic 256/512/1,024-token trajectories in SLURM.
+11. [x] Compose and run the SP5 formal short-prefix matrix (promotion gate
+        failed; bounded and canonical paths separated).
+12. [x] Extend the harness with the LS0 campaign manifest and dry-run listing.
+13. [x] Prepare deterministic 256/512/1,024-token trajectories in SLURM.
 14. [ ] Run the LS1 1B reference/probe ladder.
 15. [ ] Optimize only the measured 1B scaling bottleneck, then freeze it.
 16. [ ] Validate held-out prompts before 4B/12B transfer.
-17. [ ] Publish the short-prefix and scaling reports separately.
+17. [x] Publish the short-prefix report; scaling report remains an LS deliverable.
 
 The immediate coding task is item 2, followed by the SP1 diagnostic boundary.
 The immediate performance mechanism is SP2, the exact full-residency GPU
@@ -1151,3 +1151,36 @@ reduction (maximum absolute delta `9.0245e-7`). Because support and semantic
 batches still differ, `active_cpu` remains a fast default-off bounded/research
 placement and mapped lazy remains the exact SP5 input. See
 `reports/2026-07-31_exact_trace_sp1_results.md`.
+
+### 2026-07-31 SP5 and LS0 execution update
+
+LS0 is complete. One deterministic 1,329-token trajectory supplies frozen
+development prefixes at 129/256/512/1,024 tokens, and two held-out prompt
+families supply frozen 256-token workloads. All six workloads have immutable
+prompt, trajectory, prefix, and target fingerprints, and the strict login-safe
+campaign listing passes.
+
+The SP5 formal matrix is also executed, but the promotion gate did not pass:
+
+- [x] Run three 1B and two 4B/12B canonical-prompt repetitions of the composed
+      selective profile; all were exact on `361_base`, and 12B completed in
+      443.99s and 443.27s (471.38s and 470.14s harness wall).
+- [x] Add 1B prompt breadth, a 4B holdout, and CLT regression evidence.
+- [x] Disprove mechanism-level exactness on held-out 1B `94_base`: feature,
+      edge, and weighted-edge Jaccard were 0.999756, 0.997004, and 0.996279,
+      with signed L1 0.003728.
+- [x] Split the profiles so canonical full-page Phase 0 remains the provisional
+      exact reference and selective Phase 0 is an explicit bounded opt-in.
+- [x] Measure the strict cost: 12B completion 1905.57s, Phase 0 1370.02s,
+      Phase 4 476.53s, peak CUDA reservation 38.82 GiB, exact compact graph.
+- [x] Record the remaining 4B source-regime conflict: current canonical
+      `361_base` versus the older mechanism control has feature/edge/weighted
+      Jaccard 0.999024/0.998401/0.998881 and signed L1 0.001119.
+- [x] Publish
+      `reports/2026-07-31_short_prefix_performance_results.md` and update the
+      mechanism ledger without changing launch defaults or the frozen
+      scientific baseline.
+
+SP5 is closed as a completed characterization with no promoted finalist. LS1
+must not start until the Phase-0 reconstruction/seed/reduction boundary is
+source-invariant across at least 1B `94_base` and 4B `361_base`.
