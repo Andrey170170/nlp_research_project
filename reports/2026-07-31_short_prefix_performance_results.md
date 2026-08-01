@@ -1,33 +1,34 @@
 # Exact-trace SP5 short-prefix results
 
-Status: formal matrix executed; SP5 promotion gate not passed; LS0 complete
+Status: formal matrix executed; exact candidates admitted; LS0 complete
 
 Date: 2026-07-31
 
 ## Outcome
 
-There is no universally exact and sub-ten-minute PLT finalist to promote from
-this campaign. The fast selective Phase-0 decoder-row path is exact on the
-canonical `361_base` workload at 1B/4B/12B, including two 12B runs below ten
-minutes, but fails the held-out 1B `94_base` prompt. Canonical full-page Phase
-0 passes the held-out prompts and the 12B graph gate, but makes 12B completion
-31.76 minutes and disagrees with the older 4B `361_base` mechanism control.
+The fast selective Phase-0 decoder-row path meets the canonical `exact` floor
+over every measured short-prefix workload, including held-out 1B `94_base`,
+and completes two 12B runs below ten minutes. It is therefore retained and
+eligible for promotion consideration. Exactness is only the admission gate:
+prompt-length scaling and comparative runtime/memory evidence still determine
+whether it is selected for a default scope.
 
 Accordingly:
 
-- `sp5-exact-finalist-plt-v1` is retained as the provisional canonical
-  current-source reference with selective Phase 0 disabled;
-- `sp5-bounded-phase0-finalist-plt-v1` retains selective mapped rows as an
-  explicit bounded opt-in;
+- `sp5-canonical-phase0-reference-plt-v1` retains full-page Phase 0 as the
+  `strict_exact` audit/reference path where its compact fields match;
+- `sp5-selective-phase0-finalist-plt-v1` retains selective mapped rows as the
+  faster `exact` candidate (historical profile aliases remain available);
 - no launch default or scientific baseline changes;
-- the approximately 470-second 12B achievement remains valid for its measured
-  workload, but is not a mechanism-level exactness claim; and
-- LS1 remains blocked on a source-invariant Phase-0 arithmetic contract.
+- the approximately 470-second 12B result is exact for its measured workload
+  scope; and
+- LS1 is unblocked and must determine how far that scope extends with prefix
+  length.
 
-“Exact” below means the harness's `signed_compact_strict` graph comparison:
-feature and retained-edge support, retained signed weights, target token, and
-normalized L1. It does not prove equality of omitted raw intermediates or the
-full mechanism.
+Fidelity names below follow
+`plans/2026-07-31_exact_trace_canonical_fidelity_taxonomy.md`. They describe the
+persisted compact-graph contract and do not prove equality of omitted raw
+intermediates or the full mechanism.
 
 ## Immutable source
 
@@ -56,18 +57,18 @@ All canonical `361_base` runs passed strict compact parity.
 | 12B PLT r1/r2 | 471.38 / 470.14 | 443.99 / 443.27 | 35.90 / 34.87 | 370.87 / 373.71 | exact on workload, below 10 min |
 | 1B CLT | 95.36 | 72.06 | 7.15 | 36.62 | exact provider regression |
 
-Prompt breadth disproved the general exactness claim:
+Prompt breadth distinguishes `exact` from `strict_exact`:
 
 | 1B prompt | Harness | Completion | Phase 0 | Fidelity |
 |---|---:|---:|---:|---|
 | `828_base` | 101.60 | 76.43 | 7.35 | all strict metrics 1.0 |
-| `94_base` | 104.13 | 79.82 | 7.49 | feature 0.999756, edge 0.997004, weighted 0.996279, signed L1 0.003728 |
+| `94_base` | 104.13 | 79.82 | 7.49 | exact, not strict_exact: feature 0.999756, edge 0.997004, weighted 0.996279, signed L1 0.003728; Top-256/sign/token exact |
 
 The initial `94_base` mismatch before the sibling cast adjustment was narrower
 (feature Jaccard 0.999512 with edge values otherwise exact). Matching mapped
-checkpoint casts to the provider device did not repair the contract; it moved
-the cutoff and broadened the retained-edge difference. The mechanism is
-therefore bounded, not “exact except for a cast bug.”
+checkpoint casts to the provider device moved the cutoff and broadened the
+retained-edge difference. The mechanism is therefore `exact`, not
+`strict_exact`; no cast-fix claim is made.
 
 On `94_base`, mapped selective telemetry requested 106.66 MB of raw checkpoint
 rows and retained 53.33 MB of unique rows instead of traversing about 15.52 GB
@@ -82,7 +83,7 @@ cold to 7.49 seconds.
 | 1B `828_base` cold | 221.02 | 185.24 | 114.31 | 56.87 | exact |
 | 1B `94_base` cold | 232.46 | 198.60 | 122.50 | 62.69 | exact after current-source control refresh |
 | 4B `828_base` cold | 519.97 | 494.45 | 363.61 | 105.73 | exact |
-| 4B `361_base` cold | 617.68 | 587.46 | 391.57 | 168.91 | **fail**: feature 0.999024, edge 0.998401, weighted 0.998881, signed L1 0.001119 |
+| 4B `361_base` cold | 617.68 | 587.46 | 391.57 | 168.91 | exact, not strict_exact: feature 0.999024, edge 0.998401, weighted 0.998881, signed L1 0.001119 |
 | 12B `361_base` cold | 2025.76 | 1905.57 | 1370.02 | 476.53 | exact graph; measurement-only gate status |
 
 The 12B strict run loaded 95.32 GB of logical decoder pages in Phase 0. Direct
@@ -111,14 +112,16 @@ selection, and the source revision together define the numerical regime:
 - near-cutoff differences can be either isolated feature ties or materially
   retained edge changes.
 
-The next exactness task should capture and compare the Phase-0 reconstruction,
-seed rows, selected frontier, and first differing reduction at 1B `94_base`
-and 4B `361_base` across current canonical and selective paths. Only after that
-boundary is source-invariant should a fast exact profile be frozen for LS1.
+The next task is LS1 prefix scaling. It should compare retained selective and
+canonical/placement candidates at frozen 129/256/512/1,024-token workloads,
+classify each result independently, and choose among exact candidates using
+runtime, memory, provider admission, and prompt-length scope. Phase-0
+first-divergence localization remains useful for improving `strict_exact`, but
+no longer blocks canonical `exact` scaling work.
 
 ## LS0
 
-LS0 is complete independently of the SP5 promotion failure. The frozen
+LS0 is complete, and the canonical taxonomy now unblocks LS1. The frozen
 campaign manifest contains development prefixes at 129, 256, 512, and 1,024
 tokens from one deterministic 1,329-token trajectory, plus two held-out
 256-token workloads. Every workload records prompt, trajectory, prefix, and

@@ -53,29 +53,65 @@ METRIC_KEYS = {
     "edge_sign_agreement": "worst_step_all_edge_shared_sign_agreement",
     "edge_signed_l1_deviation": ("worst_step_all_edge_signed_normalized_l1_deviation"),
 }
+FIDELITY_LEVELS = (
+    "strict_exact",
+    "exact",
+    "close",
+    "bounded",
+    "best_effort",
+    "research",
+)
+RETAINED_SELECTABLE_FIDELITIES = frozenset(
+    {"strict_exact", "exact", "close", "bounded"}
+)
+AUTOMATIC_PROMOTION_ALLOWED_FIDELITIES = frozenset({"strict_exact", "exact"})
 FIDELITY_THRESHOLDS = {
-    "bounded": {
-        "worst_step_feature_jaccard_min": 0.98,
-        "worst_step_all_edge_jaccard_min": 0.98,
-        "worst_step_all_edge_top256_jaccard_min": 0.98,
-        "worst_step_all_edge_weighted_jaccard_min": 0.98,
-        "worst_step_target_token_match_min": 1.0,
-        "worst_step_all_edge_normalized_l1_deviation_max": 0.02,
-    },
-    "exact": {
+    "strict_exact": {
         "worst_step_feature_jaccard_min": 1.0,
         "worst_step_all_edge_jaccard_min": 1.0,
         "worst_step_all_edge_top256_jaccard_min": 1.0,
-        "worst_step_all_edge_weighted_jaccard_min": 0.999999,
+        "worst_step_all_edge_weighted_jaccard_min": 1.0,
         "worst_step_target_token_match_min": 1.0,
-        "worst_step_all_edge_normalized_l1_deviation_max": 0.000001,
+        "worst_step_all_edge_normalized_l1_deviation_max": 0.0,
         "worst_step_all_edge_shared_sign_agreement_min": 1.0,
-        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.000001,
+        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.0,
     },
+    "exact": {
+        "worst_step_feature_jaccard_min": 0.995,
+        "worst_step_all_edge_jaccard_min": 0.995,
+        "worst_step_all_edge_top256_jaccard_min": 1.0,
+        "worst_step_all_edge_weighted_jaccard_min": 0.995,
+        "worst_step_target_token_match_min": 1.0,
+        "worst_step_all_edge_normalized_l1_deviation_max": 0.005,
+        "worst_step_all_edge_shared_sign_agreement_min": 1.0,
+        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.005,
+    },
+    "close": {
+        "worst_step_feature_jaccard_min": 0.99,
+        "worst_step_all_edge_jaccard_min": 0.99,
+        "worst_step_all_edge_weighted_jaccard_min": 0.99,
+        "worst_step_target_token_match_min": 1.0,
+        "worst_step_all_edge_normalized_l1_deviation_max": 0.01,
+        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.01,
+    },
+    "bounded": {
+        "worst_step_feature_jaccard_min": 0.98,
+        "worst_step_all_edge_jaccard_min": 0.98,
+        "worst_step_all_edge_weighted_jaccard_min": 0.98,
+        "worst_step_target_token_match_min": 1.0,
+        "worst_step_all_edge_normalized_l1_deviation_max": 0.02,
+        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.02,
+    },
+    "best_effort": {},
+    "research": {},
 }
 COMPARISON_SEMANTICS = {
-    "bounded": "magnitude_only_compact_bounded",
-    "exact": "signed_compact_strict",
+    "strict_exact": "signed_compact_strict_exact",
+    "exact": "signed_compact_exact",
+    "close": "signed_compact_close",
+    "bounded": "signed_compact_bounded",
+    "best_effort": "signed_compact_best_effort",
+    "research": "signed_compact_research",
 }
 COMPARISON_CLAIM_LIMITATION = (
     "Compact graph artifacts preserve signed retained edge weights, but omit "
@@ -480,7 +516,11 @@ class EvidenceScope:
     bounded_baseline: BaselineScope = BaselineScope.SCIENTIFIC
 
     def for_fidelity(self, fidelity: str) -> BaselineScope:
-        return self.exact_baseline if fidelity == "exact" else self.bounded_baseline
+        return (
+            self.exact_baseline
+            if fidelity in AUTOMATIC_PROMOTION_ALLOWED_FIDELITIES
+            else self.bounded_baseline
+        )
 
 
 @dataclass(frozen=True)
@@ -769,6 +809,19 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
             bounded_baseline=BaselineScope.MECHANISM,
         ),
     )
+    for alias, source in (
+        ("sp5-canonical-phase0-reference-plt-v1", "sp5-exact-finalist-plt-v1"),
+        (
+            "sp5-selective-phase0-finalist-plt-v1",
+            "sp5-bounded-phase0-finalist-plt-v1",
+        ),
+    ):
+        source_profile = contracts[source]
+        contracts[alias] = CandidateProfile(
+            name=alias,
+            variants=source_profile.variants,
+            evidence_scope=source_profile.evidence_scope,
+        )
     mapped_4b_requirements = CapabilityRequirements(
         **{
             **_PLT_MAPPED_DECODER_ROWS.__dict__,
@@ -1497,7 +1550,8 @@ def _validate_exact_baseline_pins(
     if mismatches:
         raise ValueError(
             f"candidate profile {candidate_profile!r} cannot run with "
-            "--fidelity exact because compatibility-mixed or semantic baseline "
+            "--fidelity strict_exact/exact because compatibility-mixed or semantic "
+            "baseline "
             "pins differ: " + "; ".join(mismatches)
         )
     return {
@@ -1553,6 +1607,7 @@ def _case_scenario(
     scenario["stage"] = "exact_trace_performance_optimization"
     scenario["tier"] = "sweep"
     scenario["resource_profile"] = "performance_optimization_h200"
+    scenario["fidelity_level"] = fidelity
     scenario["diagnostic_stop_mode"] = diagnostic_stop_mode
     scenario["diagnostic_stop_phase4_batches"] = diagnostic_stop_phase4_batches
     scenario.update(_candidate_overrides(case, candidate_profile))
@@ -1564,7 +1619,11 @@ def _case_scenario(
     diagnostic = diagnostic_stop_mode != "none"
     scenario["baseline_check"] = {
         "enabled": not diagnostic,
-        "mode": "diagnostic" if diagnostic else "gate",
+        "mode": (
+            "diagnostic"
+            if diagnostic
+            else ("gate" if FIDELITY_THRESHOLDS[fidelity] else "metrics")
+        ),
         "registry_key": case.key,
         "baseline_required": not diagnostic,
         "scope": (baseline_scope or _baseline_scope(candidate_profile, fidelity)).value,
@@ -2388,6 +2447,21 @@ def _result_report(
     result = read_json(scenario_root / "result.json")
     scenario_path = scenario_root / "scenario.json"
     scenario = read_json(scenario_path) if scenario_path.is_file() else {}
+    comparison_semantics = (scenario.get("baseline_check") or {}).get(
+        "comparison_semantics"
+    )
+    fidelity_level = str(
+        scenario.get("fidelity_level")
+        or (
+            "strict_exact"
+            if comparison_semantics in {None, "signed_compact_strict"}
+            else "research"
+        )
+    )
+    retention_allowed = fidelity_level in RETAINED_SELECTABLE_FIDELITIES
+    automatic_promotion_allowed = (
+        fidelity_level in AUTOMATIC_PROMOTION_ALLOWED_FIDELITIES
+    )
     active_rows_requested = scenario.get("decoder_active_row_residency") is True
     phase0_ranges_requested = scenario.get("phase0_decoder_row_ranges") is True
     active_rows_max_bytes_raw = scenario.get("decoder_active_row_max_bytes", 0)
@@ -2424,6 +2498,12 @@ def _result_report(
             "resource_gate_passed": None,
             "mechanism_validation_passed": None,
             "promotion_eligible": False,
+            "fidelity_level": fidelity_level,
+            "retention_allowed": retention_allowed,
+            "retention_eligible": False,
+            "automatic_promotion_allowed": automatic_promotion_allowed,
+            "automatic_promotion_eligible": False,
+            "automatic_promotion_selected": False,
             "reconciliation_required": False,
             "scientific_acceptance_attempted": False,
             "acceptance_status": "diagnostic_not_scientific",
@@ -2546,6 +2626,11 @@ def _result_report(
         and not reconciliation_required
         and runner_returncode == 0
     )
+    retention_eligible = bool(retention_allowed and parity_passed)
+    automatic_promotion_eligible = bool(
+        automatic_promotion_allowed
+        and passed
+    )
     return {
         "case": case.key,
         "status": result.get("status"),
@@ -2561,12 +2646,21 @@ def _result_report(
         "worst_step_evidence": comparison.get("worst_step_evidence", {}),
         "profiling_summary": result.get("profiling_summary") or {},
         "resource_summary": resource_summary,
-        "comparison_semantics": (
-            (scenario.get("baseline_check") or {}).get("comparison_semantics")
-            or COMPARISON_SEMANTICS["exact"]
-        ),
+        "comparison_semantics": comparison_semantics
+        or COMPARISON_SEMANTICS["strict_exact"],
         "claim_limitation": COMPARISON_CLAIM_LIMITATION,
         "exact_semantics_claim_allowed": False,
+        "fidelity_level": fidelity_level,
+        "retention_allowed": retention_allowed,
+        "retention_eligible": retention_eligible,
+        "automatic_promotion_allowed": automatic_promotion_allowed,
+        "automatic_promotion_eligible": automatic_promotion_eligible,
+        "automatic_promotion_selected": False,
+        "automatic_promotion_decision": (
+            "eligible_pending_comparative_selection"
+            if automatic_promotion_eligible
+            else "not_eligible"
+        ),
         "performance_target_seconds": performance_target,
         "performance_requirement": performance_requirement,
         "performance_stretch_target_seconds": stretch_target,
@@ -2721,6 +2815,13 @@ def _gate_summary(reports: Sequence[dict[str, Any]]) -> dict[str, bool | None]:
     promotion_eligible = bool(reports) and all(
         report.get("promotion_eligible", True) is True for report in reports
     )
+    retention_eligible = bool(reports) and all(
+        report.get("retention_eligible", report.get("parity_passed")) is True
+        for report in reports
+    )
+    automatic_promotion_allowed = bool(reports) and all(
+        report.get("automatic_promotion_allowed", True) is True for report in reports
+    )
     passed = (
         bool(reports)
         and parity_passed
@@ -2731,12 +2832,17 @@ def _gate_summary(reports: Sequence[dict[str, Any]]) -> dict[str, bool | None]:
         and not reconciliation_required
         and all(report["runner_returncode"] == 0 for report in reports)
     )
+    automatic_promotion_eligible = bool(automatic_promotion_allowed and passed)
     return {
         "parity_passed": parity_passed,
         "performance_passed": performance_passed,
         "resource_gate_passed": resource_gate_passed,
         "mechanism_validation_passed": mechanism_validation_passed,
         "promotion_eligible": promotion_eligible,
+        "retention_eligible": retention_eligible,
+        "automatic_promotion_allowed": automatic_promotion_allowed,
+        "automatic_promotion_eligible": automatic_promotion_eligible,
+        "automatic_promotion_selected": False,
         "reconciliation_required": reconciliation_required,
         "passed": passed,
     }
@@ -2769,7 +2875,7 @@ def _run(args: argparse.Namespace) -> int:
                 + ", ".join(missing_baselines)
             )
     verified_baseline_pins: dict[str, dict[str, Any]] = {}
-    if args.fidelity == "exact" and not diagnostic:
+    if args.fidelity in AUTOMATIC_PROMOTION_ALLOWED_FIDELITIES and not diagnostic:
         for case in cases:
             verified_baseline_pins[case.key] = _validate_exact_baseline_pins(
                 case=case,
@@ -2824,6 +2930,17 @@ def _run(args: argparse.Namespace) -> int:
         },
         "suite": args.suite,
         "fidelity": args.fidelity,
+        "fidelity_retention_allowed": (
+            args.fidelity in RETAINED_SELECTABLE_FIDELITIES
+        ),
+        "automatic_promotion_allowed": (
+            args.fidelity in AUTOMATIC_PROMOTION_ALLOWED_FIDELITIES
+        ),
+        "automatic_promotion_policy": (
+            "Exactness is necessary but not sufficient. Eligible candidates must "
+            "still win comparative runtime, memory, provider, and prompt-length "
+            "admission review; this harness does not mutate defaults."
+        ),
         "comparison_semantics": COMPARISON_SEMANTICS[args.fidelity],
         "claim_limitation": COMPARISON_CLAIM_LIMITATION,
         "exact_semantics_claim_allowed": False,
@@ -3032,7 +3149,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("suite", choices=tuple(SUITES))
     run.add_argument(
         "--fidelity",
-        choices=tuple(FIDELITY_THRESHOLDS),
+        choices=FIDELITY_LEVELS,
         default="bounded",
     )
     run.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)

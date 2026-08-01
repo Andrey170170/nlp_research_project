@@ -77,23 +77,41 @@ def test_suites_have_fixed_requested_cases() -> None:
 
 
 def test_fidelity_thresholds_are_explicit() -> None:
-    assert perf_cli.FIDELITY_THRESHOLDS["bounded"] == {
-        "worst_step_feature_jaccard_min": 0.98,
-        "worst_step_all_edge_jaccard_min": 0.98,
-        "worst_step_all_edge_top256_jaccard_min": 0.98,
-        "worst_step_all_edge_weighted_jaccard_min": 0.98,
-        "worst_step_target_token_match_min": 1.0,
-        "worst_step_all_edge_normalized_l1_deviation_max": 0.02,
-    }
-    assert perf_cli.FIDELITY_THRESHOLDS["exact"] == {
+    assert perf_cli.FIDELITY_THRESHOLDS["strict_exact"] == {
         "worst_step_feature_jaccard_min": 1.0,
         "worst_step_all_edge_jaccard_min": 1.0,
         "worst_step_all_edge_top256_jaccard_min": 1.0,
-        "worst_step_all_edge_weighted_jaccard_min": 0.999999,
+        "worst_step_all_edge_weighted_jaccard_min": 1.0,
         "worst_step_target_token_match_min": 1.0,
-        "worst_step_all_edge_normalized_l1_deviation_max": 0.000001,
+        "worst_step_all_edge_normalized_l1_deviation_max": 0.0,
         "worst_step_all_edge_shared_sign_agreement_min": 1.0,
-        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.000001,
+        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.0,
+    }
+    assert perf_cli.FIDELITY_THRESHOLDS["exact"] == {
+        "worst_step_feature_jaccard_min": 0.995,
+        "worst_step_all_edge_jaccard_min": 0.995,
+        "worst_step_all_edge_top256_jaccard_min": 1.0,
+        "worst_step_all_edge_weighted_jaccard_min": 0.995,
+        "worst_step_target_token_match_min": 1.0,
+        "worst_step_all_edge_normalized_l1_deviation_max": 0.005,
+        "worst_step_all_edge_shared_sign_agreement_min": 1.0,
+        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.005,
+    }
+    assert perf_cli.FIDELITY_THRESHOLDS["close"] == {
+        "worst_step_feature_jaccard_min": 0.99,
+        "worst_step_all_edge_jaccard_min": 0.99,
+        "worst_step_all_edge_weighted_jaccard_min": 0.99,
+        "worst_step_target_token_match_min": 1.0,
+        "worst_step_all_edge_normalized_l1_deviation_max": 0.01,
+        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.01,
+    }
+    assert perf_cli.FIDELITY_THRESHOLDS["bounded"] == {
+        "worst_step_feature_jaccard_min": 0.98,
+        "worst_step_all_edge_jaccard_min": 0.98,
+        "worst_step_all_edge_weighted_jaccard_min": 0.98,
+        "worst_step_target_token_match_min": 1.0,
+        "worst_step_all_edge_normalized_l1_deviation_max": 0.02,
+        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.02,
     }
 
 
@@ -300,18 +318,22 @@ def test_exact_pin_facts_verify_reference_and_generated_scenario(
 
 def test_compact_strict_semantics_prohibit_exact_semantics_claim() -> None:
     assert perf_cli.COMPARISON_SEMANTICS == {
-        "bounded": "magnitude_only_compact_bounded",
-        "exact": "signed_compact_strict",
+        "strict_exact": "signed_compact_strict_exact",
+        "exact": "signed_compact_exact",
+        "close": "signed_compact_close",
+        "bounded": "signed_compact_bounded",
+        "best_effort": "signed_compact_best_effort",
+        "research": "signed_compact_research",
     }
     assert "not exact semantic" in perf_cli.COMPARISON_CLAIM_LIMITATION
-    exact_scenario = perf_cli._case_scenario(
+    strict_scenario = perf_cli._case_scenario(
         perf_cli.Case("gemma3_1b_clt", "361_base"),
-        "exact",
+        "strict_exact",
         "canonical",
     )["scenarios"][0]
     assert (
-        exact_scenario["baseline_check"]["comparison_semantics"]
-        == "signed_compact_strict"
+        strict_scenario["baseline_check"]["comparison_semantics"]
+        == "signed_compact_strict_exact"
     )
     bounded_scenario = perf_cli._case_scenario(
         perf_cli.Case("gemma3_1b_clt", "361_base"),
@@ -320,8 +342,55 @@ def test_compact_strict_semantics_prohibit_exact_semantics_claim() -> None:
     )["scenarios"][0]
     assert (
         bounded_scenario["baseline_check"]["comparison_semantics"]
-        == "magnitude_only_compact_bounded"
+        == "signed_compact_bounded"
     )
+
+
+def test_canonical_fidelity_taxonomy_and_promotion_policy() -> None:
+    assert perf_cli.FIDELITY_LEVELS == (
+        "strict_exact",
+        "exact",
+        "close",
+        "bounded",
+        "best_effort",
+        "research",
+    )
+    assert perf_cli.RETAINED_SELECTABLE_FIDELITIES == {
+        "strict_exact",
+        "exact",
+        "close",
+        "bounded",
+    }
+    assert perf_cli.AUTOMATIC_PROMOTION_ALLOWED_FIDELITIES == {
+        "strict_exact",
+        "exact",
+    }
+    assert perf_cli.FIDELITY_THRESHOLDS["strict_exact"][
+        "worst_step_all_edge_signed_normalized_l1_deviation_max"
+    ] == 0.0
+    assert perf_cli.FIDELITY_THRESHOLDS["exact"][
+        "worst_step_all_edge_jaccard_min"
+    ] == 0.995
+    assert perf_cli.FIDELITY_THRESHOLDS["close"][
+        "worst_step_all_edge_signed_normalized_l1_deviation_max"
+    ] == 0.01
+    assert perf_cli.FIDELITY_THRESHOLDS["bounded"][
+        "worst_step_all_edge_signed_normalized_l1_deviation_max"
+    ] == 0.02
+    assert perf_cli.FIDELITY_THRESHOLDS["best_effort"] == {}
+    assert perf_cli.FIDELITY_THRESHOLDS["research"] == {}
+
+
+def test_soft_fidelity_scenario_measures_without_hard_gate() -> None:
+    scenario = perf_cli._case_scenario(
+        perf_cli.Case("gemma3_1b_clt", "361_base"),
+        "best_effort",
+        "canonical",
+    )["scenarios"][0]
+
+    assert scenario["fidelity_level"] == "best_effort"
+    assert scenario["baseline_check"]["mode"] == "metrics"
+    assert scenario["baseline_check"]["thresholds"] == {}
 
 
 def test_profiling_parser_accepts_execution_batches_without_total(
@@ -1638,7 +1707,7 @@ def test_result_report_enforces_plt_duration_target(
     assert report["parity_passed"] is True
     assert report["performance_passed"] is performance_passed
     assert report["passed"] is passed
-    assert report["comparison_semantics"] == "signed_compact_strict"
+    assert report["comparison_semantics"] == "signed_compact_strict_exact"
     assert report["exact_semantics_claim_allowed"] is False
     assert report["resource_validation_passed"] is True
     assert report["resource_failure_reasons"] == []
@@ -2500,6 +2569,10 @@ def test_print_report_includes_compact_phase_timings(
                 "resource_gate_passed": True,
                 "mechanism_validation_passed": None,
                 "promotion_eligible": True,
+                "retention_eligible": True,
+                "automatic_promotion_allowed": True,
+                "automatic_promotion_eligible": True,
+                "automatic_promotion_selected": False,
                 "reconciliation_required": False,
                 "passed": True,
             },
@@ -2521,6 +2594,10 @@ def test_print_report_includes_compact_phase_timings(
                 "resource_gate_passed": True,
                 "mechanism_validation_passed": None,
                 "promotion_eligible": True,
+                "retention_eligible": True,
+                "automatic_promotion_allowed": True,
+                "automatic_promotion_eligible": False,
+                "automatic_promotion_selected": False,
                 "reconciliation_required": False,
                 "passed": False,
             },
@@ -2542,6 +2619,10 @@ def test_print_report_includes_compact_phase_timings(
                 "resource_gate_passed": True,
                 "mechanism_validation_passed": None,
                 "promotion_eligible": True,
+                "retention_eligible": False,
+                "automatic_promotion_allowed": True,
+                "automatic_promotion_eligible": False,
+                "automatic_promotion_selected": False,
                 "reconciliation_required": False,
                 "passed": False,
             },

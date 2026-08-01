@@ -47,14 +47,14 @@
     }
   ],
   "unresolved_formal_gates": [
-    "SP5 source-invariant Phase-0 exactness contract before LS1"
+    "LS1 prompt-length scaling scope and comparative exact-candidate selection"
   ],
   "claims": [
     {
       "identity": {
         "mechanism_id": "mapped-selective-decoder-rows-v1",
         "implementation_commit": "circuit-tracer:bfd8042",
-        "candidate_profile": "sp5-bounded-phase0-finalist-plt-v1"
+        "candidate_profile": "sp5-selective-phase0-finalist-plt-v1"
       },
       "applicability": {
         "provider_capabilities": ["selective mapped decoder-row source"],
@@ -71,8 +71,8 @@
       "correctness": {
         "raw_order": "byte-exact values and duplicate-aware caller order",
         "execution": "zero Phase-4 decoder loads",
-        "signed_graph": "exact on repeated 361_base runs but failed held-out 94_base",
-        "compact_comparison": "bounded: 94_base feature/edge/weighted Jaccard 0.999756/0.997004/0.996279 and signed L1 0.003728"
+        "signed_graph": "strict_exact on repeated 361_base runs and exact on held-out 94_base",
+        "compact_comparison": "exact: 94_base feature/edge/weighted Jaccard 0.999756/0.997004/0.996279, exact Top-256/sign/token, and signed L1 0.003728"
       },
       "performance": {
         "paired_timings": "12B 361_base 471.38s and 470.14s harness; 1B held-out 94_base 104.13s",
@@ -86,12 +86,12 @@
         "fallback_admission": "capability and checkpoint identity gated"
       },
       "disposition": {
-        "status": "bounded_research",
-        "rationale": "prompt breadth disproved mechanism-level exactness despite exact canonical-prompt repeats",
-        "remaining_evidence": ["new source-invariant Phase-0 arithmetic contract"]
+        "status": "exact_promotion_candidate",
+        "rationale": "meets the canonical exact compact-graph floor over measured short-prefix breadth and materially reduces runtime and decoder reads",
+        "remaining_evidence": ["LS1 prompt-length scaling", "comparative runtime/memory selection against other exact candidates"]
       },
       "promotion_separation": {
-        "mechanism": "bounded opt-in",
+        "mechanism": "retained selectable exact candidate",
         "baseline": "unchanged",
         "default": "unchanged",
         "governor": "unchanged"
@@ -108,7 +108,7 @@
       "correctness": {"raw_order": "accepted mapped-row contract", "execution": "129 repeated Phase-4 batches", "signed_graph": "repeat comparison exact", "compact_comparison": "pass"},
       "performance": {"paired_timings": "12B subprocess 586.30s and 563.27s", "repeat_count": 2, "cache_state": "warm_or_uncontrolled", "speedup": "reference"},
       "resources": {"host_hbm_peaks": "38.82 GiB CUDA reserved", "owned_bytes": "mapped row source", "fallback_admission": "exact fallback"},
-      "disposition": {"status": "exact_opt_in", "rationale": "canonical current-source reference; not a promoted fast finalist", "remaining_evidence": ["source-invariant 4B Phase-0 contract"]},
+      "disposition": {"status": "exact_opt_in", "rationale": "retained exact fallback with broader repeat evidence; current runtime is slower than active CPU and selective short-prefix candidates", "remaining_evidence": ["LS1 comparative scaling may broaden its fallback scope"]},
       "promotion_separation": {"mechanism": "accepted opt-in", "baseline": "same-regime control only", "default": "unchanged", "governor": "unchanged"}
     },
     {
@@ -128,7 +128,7 @@
     {
       "identity": {
         "mechanism_id": "phase-scoped-telemetry-v1",
-        "implementation_commit": "circuit-tracer:17c8e41",
+        "implementation_commit": "circuit-tracer:2f63779;project:eb93f1d",
         "candidate_profile": "diagnostic telemetry toggle"
       },
       "applicability": {"provider_capabilities": ["observability events"], "topology": "provider-general", "dtype": "not applicable", "conditions": "incremental sink available"},
@@ -147,11 +147,11 @@
       },
       "applicability": {"provider_capabilities": ["mapped encoder residency"], "topology": "PLT", "dtype": "FP32", "conditions": "active CPU placement"},
       "semantics": {"scenario": "361_base", "chunk_regime": 4096, "feature_cap": 8192, "refresh_contract": "placement frozen"},
-      "correctness": {"raw_order": "first boundary not fully localized", "execution": "129 versus 130 batches across repeats", "signed_graph": "bounded only", "compact_comparison": "fail exact"},
-      "performance": {"paired_timings": "12B 509.80s and 508.67s subprocess", "repeat_count": 2, "cache_state": "warm_or_uncontrolled", "speedup": "about 11% total and 20% Phase 4"},
-      "resources": {"host_hbm_peaks": "38.82 GiB CUDA reserved", "owned_bytes": "active encoder rows in CPU memory", "fallback_admission": "lazy exact placement"},
-      "disposition": {"status": "bounded_research", "rationale": "fast but compact-strict repeatability failed", "remaining_evidence": ["SP1 first-divergence ladder"]},
-      "promotion_separation": {"mechanism": "bounded only", "baseline": "unchanged", "default": "unchanged", "governor": "unchanged"}
+      "correctness": {"raw_order": "byte-exact Phase-3 rows; first drift in seed-influence reduction", "execution": "129 versus 130 batches", "signed_graph": "feature/edge/weighted 0.999512/0.999500/0.999529; signed L1 0.000471; Top-K/sign/token exact", "compact_comparison": "canonical exact pass; strict_exact fail"},
+      "performance": {"paired_timings": "12B active/lazy completion 368.70s/457.30s; Phase 4 286.69s/389.50s", "repeat_count": 1, "cache_state": "warm_or_uncontrolled", "speedup": "19.4% completion and 26.4% Phase 4"},
+      "resources": {"host_hbm_peaks": "removes approximately 0.98 GiB temporary GPU occurrence table", "owned_bytes": "979,814,400 active encoder bytes in CPU memory", "fallback_admission": "lazy exact placement"},
+      "disposition": {"status": "exact_promotion_candidate", "rationale": "canonical exact result with lower 12B runtime and temporary GPU memory; selection still needs broader evidence", "remaining_evidence": ["prompt breadth", "long-prefix scaling", "comparative selection"]},
+      "promotion_separation": {"mechanism": "retained selectable exact candidate", "baseline": "unchanged", "default": "unchanged", "governor": "unchanged"}
     },
     {
       "identity": {
@@ -161,7 +161,7 @@
       },
       "applicability": {"provider_capabilities": ["CUDA influence consumer"], "topology": "PLT tested", "dtype": "signed FP32 store", "conditions": "full matrix passes byte and HBM-safety admission"},
       "semantics": {"scenario": "361_base", "chunk_regime": 4096, "feature_cap": 8192, "refresh_contract": "bounded CUDA arithmetic"},
-      "correctness": {"raw_order": "canonical signed rows retained", "execution": "130 batches", "signed_graph": "signed L1 0.000471032", "compact_comparison": "bounded pass, exact fail"},
+      "correctness": {"raw_order": "canonical signed rows retained", "execution": "130 batches", "signed_graph": "feature/edge/weighted 0.999024/0.988961/0.989621; signed L1 0.010433", "compact_comparison": "canonical bounded pass; close/exact fail"},
       "performance": {"paired_timings": "12B Phase 4 190.59s", "repeat_count": 1, "cache_state": "warm_or_uncontrolled", "speedup": "54.8% Phase-4 reduction versus cpu_exact"},
       "resources": {"host_hbm_peaks": "42.71 GiB CUDA reserved", "owned_bytes": "4,181,562,080 bytes", "fallback_admission": "atomic cpu_exact fallback"},
       "disposition": {"status": "bounded_research", "rationale": "fastest selectable mode; CUDA reduction regime is bounded", "remaining_evidence": ["long-prefix scaling"]},

@@ -1,9 +1,8 @@
 # Exact-trace performance optimization loop: short-prefix promotion and scaling
 
-Status: in progress; SP0-SP4 closed; LS0 frozen and complete; SP5 formal matrix
-executed but promotion gate failed because selective Phase 0 is prompt-bounded
-and canonical Phase 0 is both slow at 12B and inconsistent with the older 4B
-mechanism control; LS1 awaits a source-invariant exact Phase-0 contract
+Status: in progress; SP0-SP5 and LS0 complete; canonical taxonomy admits the
+selective and active-CPU results as exact promotion candidates; LS1 is unblocked
+and must establish prompt-length scope before comparative selection
 
 Date: 2026-07-29
 
@@ -12,6 +11,13 @@ Branches: `perf/exact-trace-loop` in the project and sibling worktrees
 Scope: exact-trace runtime performance only. Governor calibration, response
 models, plan fitting, fidelity-scope authorization, baseline-registry changes,
 and launch-default promotion are explicitly out of scope.
+
+The canonical fidelity definitions and retention/promotion policy are in
+`plans/2026-07-31_exact_trace_canonical_fidelity_taxonomy.md`. They supersede
+older binary exact/bounded wording retained in the historical execution notes
+below. In particular, `exact` permits promotion consideration but does not
+select or mutate a default without comparative runtime, memory, compatibility,
+and prompt-length evidence.
 
 Predecessor plan: `plans/2026-07-27_large_model_optimizations.md`
 
@@ -35,8 +41,8 @@ The stage prefixes are descriptive:
 
 | Prefix | Meaning | Current state |
 |---|---|---|
-| `SP` | canonical short-prefix completion and promotion evidence | SP0-SP4 closed; SP5 matrix complete, promotion failed |
-| `LS` | prefix-length, prompt, and model-size scaling | LS0 complete; LS1 blocked on exact Phase-0 contract |
+| `SP` | canonical short-prefix completion and promotion evidence | SP0-SP5 complete; exact candidates admitted, selection deferred |
+| `LS` | prefix-length, prompt, and model-size scaling | LS0 complete; LS1 ready |
 
 Within each campaign the number is execution order, not a governor phase or
 calibration wave.
@@ -109,7 +115,7 @@ exact-range LRU under a new name.
 | Checkpoint page/working-set lifecycle | first 12B Phase-4 transition stall removed | strong engineering evidence; formal matched cold three-batch gate remains |
 | Phase-scoped telemetry | detailed attribution available | implemented; paired `<2%` overhead gate remains |
 | Lazy mapped b64/c4096 | repeated 12B reference | reproducible exact reference |
-| Active-CPU encoder residency | fastest 12B candidate | bounded/research only until repeatable exactness is established |
+| Active-CPU encoder residency | fastest measured 12B exact candidate; not strict_exact | retained/selectable; eligible for comparative promotion after broader evidence |
 | Active pinned CPU | slower than active CPU | rejected |
 | b128/b256 execution envelopes | slower and substantially more HBM than active CPU | rejected for the short-prefix finalist |
 | Larger FP32 contraction tiles | no wall-time improvement | rejected |
@@ -1131,7 +1137,7 @@ in `reports/2026-07-29_exact_trace_sp4_intermediate_results.md` and
 user-selected order: open-ended SP1, then SP5/LS0 including deterministic
 trajectory generation.
 
-SP1 is now closed at its bounded/research branch. Direct duplicate-aware host
+SP1 is closed. Direct duplicate-aware host
 materialization removed the old approximately 0.98 GiB GPU occurrence table
 and bulk per-layer gather removed the pathological tiny host reads. A matched
 12B full pair measured:
@@ -1145,11 +1151,13 @@ and bulk per-layer gather removed the pathological tiny host reads. A matched
 The matched graphs shared 8,190/8,192 features, with feature Jaccard
 0.999511838, all-edge Jaccard 0.999500125, signed normalized L1 0.000471032,
 exact Top-64 through Top-1024 support, exact sign agreement, and exact target
-token. Persisted diagnostic sidecars localized the first numerical difference
+token. This meets canonical `exact` but not `strict_exact`. Persisted diagnostic
+sidecars localized the first numerical difference
 after byte-exact Phase-3 feature rows, in the placement-specific seed-influence
-reduction (maximum absolute delta `9.0245e-7`). Because support and semantic
-batches still differ, `active_cpu` remains a fast default-off bounded/research
-placement and mapped lazy remains the exact SP5 input. See
+reduction (maximum absolute delta `9.0245e-7`). `active_cpu` and mapped lazy are
+both retained exact candidates; the former has the stronger measured
+runtime/memory result and the latter has broader repeat/prompt evidence. No
+default is selected until LS1 compares their scope. See
 `reports/2026-07-31_exact_trace_sp1_results.md`.
 
 ### 2026-07-31 SP5 and LS0 execution update
@@ -1160,17 +1168,19 @@ families supply frozen 256-token workloads. All six workloads have immutable
 prompt, trajectory, prefix, and target fingerprints, and the strict login-safe
 campaign listing passes.
 
-The SP5 formal matrix is also executed, but the promotion gate did not pass:
+The SP5 formal matrix is executed and admits exact candidates without selecting
+a default:
 
 - [x] Run three 1B and two 4B/12B canonical-prompt repetitions of the composed
       selective profile; all were exact on `361_base`, and 12B completed in
       443.99s and 443.27s (471.38s and 470.14s harness wall).
 - [x] Add 1B prompt breadth, a 4B holdout, and CLT regression evidence.
-- [x] Disprove mechanism-level exactness on held-out 1B `94_base`: feature,
+- [x] Classify held-out 1B `94_base` as exact but not strict_exact: feature,
       edge, and weighted-edge Jaccard were 0.999756, 0.997004, and 0.996279,
       with signed L1 0.003728.
-- [x] Split the profiles so canonical full-page Phase 0 remains the provisional
-      exact reference and selective Phase 0 is an explicit bounded opt-in.
+- [x] Retain canonical full-page Phase 0 as the strict audit/reference path and
+      selective Phase 0 as the faster exact candidate; preserve historical
+      profile aliases.
 - [x] Measure the strict cost: 12B completion 1905.57s, Phase 0 1370.02s,
       Phase 4 476.53s, peak CUDA reservation 38.82 GiB, exact compact graph.
 - [x] Record the remaining 4B source-regime conflict: current canonical
@@ -1181,6 +1191,8 @@ The SP5 formal matrix is also executed, but the promotion gate did not pass:
       mechanism ledger without changing launch defaults or the frozen
       scientific baseline.
 
-SP5 is closed as a completed characterization with no promoted finalist. LS1
-must not start until the Phase-0 reconstruction/seed/reduction boundary is
-source-invariant across at least 1B `94_base` and 4B `361_base`.
+SP5 is closed as a completed characterization. Selective Phase 0 and active CPU
+are allowed into comparative promotion selection because both meet `exact` on
+their measured scope. LS1 is the next step: broaden that scope, measure resource
+scaling, then select or decline a default candidate. Source-invariant Phase-0
+localization remains a `strict_exact` improvement objective, not an LS1 blocker.

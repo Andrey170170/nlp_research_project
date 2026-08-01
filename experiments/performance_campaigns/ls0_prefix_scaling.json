@@ -38,8 +38,8 @@
       },
       "operational_class": "sweep",
       "profiles": {
-        "control": "sp5-exact-finalist-plt-v1",
-        "candidate": "sp5-exact-finalist-plt-v1"
+        "control": "sp5-canonical-phase0-reference-plt-v1",
+        "candidate": "sp5-selective-phase0-finalist-plt-v1"
       },
       "run_disposition": "full_reference",
       "resource_envelope": {
@@ -51,7 +51,7 @@
         "walltime_seconds": 3600
       },
       "comparison_policy": {
-        "fidelity": "exact_and_bounded_reported_separately",
+        "fidelity": "canonical_taxonomy_classified_separately",
         "mechanism_control": "mapped_lazy_cpu_exact",
         "probe_before_full": false
       }
@@ -91,8 +91,8 @@
       },
       "operational_class": "sweep",
       "profiles": {
-        "control": "sp5-exact-finalist-plt-v1",
-        "candidate": "sp5-exact-finalist-plt-v1"
+        "control": "sp5-canonical-phase0-reference-plt-v1",
+        "candidate": "sp5-selective-phase0-finalist-plt-v1"
       },
       "run_disposition": "full_reference",
       "resource_envelope": {
@@ -104,7 +104,7 @@
         "walltime_seconds": 7200
       },
       "comparison_policy": {
-        "fidelity": "exact_and_bounded_reported_separately",
+        "fidelity": "canonical_taxonomy_classified_separately",
         "mechanism_control": "mapped_lazy_cpu_exact",
         "probe_before_full": false
       }
@@ -144,8 +144,8 @@
       },
       "operational_class": "long_trace",
       "profiles": {
-        "control": "sp5-exact-finalist-plt-v1",
-        "candidate": "sp5-exact-finalist-plt-v1"
+        "control": "sp5-canonical-phase0-reference-plt-v1",
+        "candidate": "sp5-selective-phase0-finalist-plt-v1"
       },
       "run_disposition": "probe_then_full",
       "resource_envelope": {
@@ -157,7 +157,7 @@
         "walltime_seconds": 14400
       },
       "comparison_policy": {
-        "fidelity": "exact_and_bounded_reported_separately",
+        "fidelity": "canonical_taxonomy_classified_separately",
         "mechanism_control": "mapped_lazy_cpu_exact",
         "probe_before_full": true
       }
@@ -197,8 +197,8 @@
       },
       "operational_class": "long_trace",
       "profiles": {
-        "control": "sp5-exact-finalist-plt-v1",
-        "candidate": "sp5-exact-finalist-plt-v1"
+        "control": "sp5-canonical-phase0-reference-plt-v1",
+        "candidate": "sp5-selective-phase0-finalist-plt-v1"
       },
       "run_disposition": "probe_then_full",
       "resource_envelope": {
@@ -210,7 +210,7 @@
         "walltime_seconds": 28800
       },
       "comparison_policy": {
-        "fidelity": "exact_and_bounded_reported_separately",
+        "fidelity": "canonical_taxonomy_classified_separately",
         "mechanism_control": "mapped_lazy_cpu_exact",
         "probe_before_full": true
       }
@@ -250,8 +250,8 @@
       },
       "operational_class": "sweep",
       "profiles": {
-        "control": "sp5-exact-finalist-plt-v1",
-        "candidate": "sp5-exact-finalist-plt-v1"
+        "control": "sp5-canonical-phase0-reference-plt-v1",
+        "candidate": "sp5-selective-phase0-finalist-plt-v1"
       },
       "run_disposition": "heldout_reference",
       "resource_envelope": {
@@ -263,7 +263,7 @@
         "walltime_seconds": 7200
       },
       "comparison_policy": {
-        "fidelity": "exact_and_bounded_reported_separately",
+        "fidelity": "canonical_taxonomy_classified_separately",
         "mechanism_control": "mapped_lazy_cpu_exact",
         "probe_before_full": false
       }
@@ -303,8 +303,8 @@
       },
       "operational_class": "sweep",
       "profiles": {
-        "control": "sp5-exact-finalist-plt-v1",
-        "candidate": "sp5-exact-finalist-plt-v1"
+        "control": "sp5-canonical-phase0-reference-plt-v1",
+        "candidate": "sp5-selective-phase0-finalist-plt-v1"
       },
       "run_disposition": "heldout_reference",
       "resource_envelope": {
@@ -316,7 +316,7 @@
         "walltime_seconds": 7200
       },
       "comparison_policy": {
-        "fidelity": "exact_and_bounded_reported_separately",
+        "fidelity": "canonical_taxonomy_classified_separately",
         "mechanism_control": "mapped_lazy_cpu_exact",
         "probe_before_full": false
       }

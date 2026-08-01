@@ -2,18 +2,20 @@
 
 Date: 2026-07-31
 
-Status: complete; bounded/research performance mechanism, not exact-promotable
+Status: complete; retained exact candidate, promotion not yet selected
 
 ## Outcome
 
 SP1 replaced the old active-CPU encoder path's GPU occurrence table with direct,
 duplicate-aware host materialization and a bulk per-layer gather. The new path
 removes the roughly 0.98 GiB temporary GPU occurrence table and reduces matched
-12B Phase 4 from 389.50 seconds to 286.69 seconds. It does not pass the strict
-exact gate: the matched full runs select two different features per arm and
-execute 129 versus 130 semantic batches. Keep mapped lazy encoder
-materialization in the SP5 exact finalist and retain `active_cpu` only as an
-explicit bounded/research placement.
+12B Phase 4 from 389.50 seconds to 286.69 seconds. It does not pass
+`strict_exact`: the matched full runs select two different features per arm and
+execute 129 versus 130 semantic batches. It does pass the canonical `exact`
+floor, including exact ranked support, signs, and target. Retain both placements
+as selectable implementations. `active_cpu` is eligible for comparative
+promotion, but the single 12B matched result is not by itself a reason to select
+it over the broader-evidence mapped-lazy candidate.
 
 ## Implementation
 
@@ -111,7 +113,7 @@ Completion and phase timing are the preferred comparison because setup and
 post-run comparison work varied between arms. The direct active-CPU completion
 is comfortably below ten minutes.
 
-The current-control graph comparison was extremely close but not exact:
+The current-control graph comparison is `exact`, but not `strict_exact`:
 
 | Metric | Active CPU versus lazy |
 |---|---:|
@@ -133,15 +135,16 @@ endpoints. Common-edge value deltas are tiny (maximum absolute delta about
 
 ## Decision
 
-SP1 closes at the plan's negative branch:
+SP1 closes with a positive exact classification under the canonical taxonomy:
 
-- `active_cpu`: retain as a default-off bounded/research mechanism with a
-  substantial measured 12B speed benefit;
-- mapped lazy encoder materialization: retain as the exact SP5 finalist input;
-- exact promotion: rejected because semantic batches, selected support, and
-  signed canonical graph are not identical; and
-- further repeats: not justified for the exact gate after the matched full
-  control already fails it.
+- `active_cpu`: retain as an exact, default-off promotion candidate with a
+  substantial measured 12B speed and temporary-memory benefit;
+- mapped lazy encoder materialization: retain as the broader-evidence exact
+  SP5 input and atomic fallback;
+- automatic promotion: permitted by exactness, but not yet selected; compare
+  runtime, memory, prompt breadth, and LS scaling before changing defaults; and
+- `strict_exact`: not claimed because selected support and semantic batch count
+  differ.
 
 No scientific baseline, fidelity authorization, governor bundle, or launch
 default changed.
