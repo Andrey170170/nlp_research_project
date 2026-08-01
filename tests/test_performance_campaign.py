@@ -34,23 +34,35 @@ def test_committed_ls0_scaffold_lists_without_model_loading() -> None:
     payload = json.loads(CAMPAIGN.read_text())
     workloads = validate_performance_campaign(payload)
     assert [workload.requested_prefix_tokens for workload in workloads] == [
-        124,
+        129,
         256,
         512,
         1024,
+        256,
+        256,
     ]
-    assert all(workload.prompt_role == "development" for workload in workloads)
+    assert [workload.prompt_role for workload in workloads] == [
+        "development",
+        "development",
+        "development",
+        "development",
+        "holdout",
+        "holdout",
+    ]
 
 
-def test_ls0_frozen_gate_fails_closed_while_trajectory_is_planned() -> None:
+def test_ls0_development_and_holdout_workloads_are_frozen() -> None:
     payload = json.loads(CAMPAIGN.read_text())
-    with pytest.raises(ValueError, match="is not frozen"):
-        validate_performance_campaign(payload, require_frozen=True)
+    workloads = validate_performance_campaign(payload, require_frozen=True)
+    assert {workload.prompt_role for workload in workloads} == {
+        "development",
+        "holdout",
+    }
 
 
 def test_frozen_workload_requires_immutable_hashes() -> None:
     payload = json.loads(CAMPAIGN.read_text())
-    payload["workloads"][0]["preparation_status"] = "frozen"
+    payload["workloads"][0]["fixture"]["catalog_sha256"] = None
     with pytest.raises(ValueError, match="catalog_sha256"):
         validate_performance_campaign(payload)
 
@@ -60,7 +72,7 @@ def test_perf_cli_campaign_and_claim_commands(capsys: pytest.CaptureFixture[str]
     assert "validated mechanism claims" in capsys.readouterr().out
     assert perf_cli.main(["list-campaign", str(CAMPAIGN)]) == 0
     output = capsys.readouterr().out
-    assert "ls0-361-length-scaling-v1: 4 workloads" in output
+    assert "ls0-361-length-scaling-v1: 6 workloads" in output
     assert "ls0-361-dev-1024" in output
 
 
@@ -97,6 +109,7 @@ def test_freeze_campaign_derives_prefix_and_target_fingerprints(
     )
     workload = json.loads(CAMPAIGN.read_text())["workloads"][0]
     workload["workload_id"] = "freeze-test"
+    workload["preparation_status"] = "planned"
     workload["fixture"] = {
         "catalog": "catalog.json",
         "catalog_sha256": None,
