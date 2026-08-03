@@ -832,6 +832,23 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
             variants=source_profile.variants,
             evidence_scope=source_profile.evidence_scope,
         )
+    source_profile = contracts["sp5-selective-phase0-finalist-plt-v1"]
+    contracts["ls2-1b-long-prefix-active-rows-1536mib-v1"] = CandidateProfile(
+        name="ls2-1b-long-prefix-active-rows-1536mib-v1",
+        variants=tuple(
+            _candidate_variant(
+                {
+                    **dict(variant.compatibility_controls),
+                    **variant.physical.as_overrides(),
+                    "decoder_active_row_max_bytes": 1536 * 1024**2,
+                },
+                variant.requires,
+            )
+            for variant in source_profile.variants
+            if variant.requires.maximum_layer_count == 26
+        ),
+        evidence_scope=source_profile.evidence_scope,
+    )
     mapped_4b_requirements = CapabilityRequirements(
         **{
             **_PLT_MAPPED_DECODER_ROWS.__dict__,
@@ -3204,7 +3221,7 @@ def _prepare_campaign_workload(args: argparse.Namespace) -> int:
     profiles = workload.get("profiles")
     if not isinstance(profiles, Mapping):
         raise ValueError("campaign workload profiles must be an object")
-    profile_name = profiles.get(args.profile_role)
+    profile_name = args.profile_name or profiles.get(args.profile_role)
     if not isinstance(profile_name, str) or not profile_name:
         raise ValueError(
             f"campaign workload lacks a {args.profile_role!r} profile name"
@@ -3320,6 +3337,9 @@ def _prepare_campaign_workload(args: argparse.Namespace) -> int:
             "launcher_variant": launcher_variant,
             "profile_role": args.profile_role,
             "profile_name": profile_name,
+            "profile_selection_source": (
+                "explicit_override" if args.profile_name is not None else "campaign_role"
+            ),
             "profile_contract": {
                 "requires": profile_variant.requires.__dict__,
                 "baseline_pins": profile_variant.baseline_pins.as_overrides(),
@@ -3382,6 +3402,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--profile-role",
         choices=("control", "candidate"),
         required=True,
+    )
+    prepare_campaign.add_argument(
+        "--profile-name",
+        choices=tuple(CANDIDATE_PROFILES),
+        help=(
+            "Use an explicit registered profile while preserving the campaign "
+            "role and frozen workload"
+        ),
     )
     prepare_campaign.add_argument(
         "--execution-mode",

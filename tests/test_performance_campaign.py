@@ -119,6 +119,40 @@ def test_prepare_campaign_workload_uses_existing_full_answer_runner(
     )
 
 
+def test_prepare_campaign_workload_accepts_registered_profile_override(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "prepared"
+    profile_name = "ls2-1b-long-prefix-active-rows-1536mib-v1"
+    assert (
+        perf_cli.main(
+            [
+                "prepare-campaign-workload",
+                str(CAMPAIGN),
+                "ls0-361-dev-1024",
+                "--profile-role",
+                "candidate",
+                "--profile-name",
+                profile_name,
+                "--execution-mode",
+                "transition-probe",
+                "--output-dir",
+                str(output_dir),
+            ]
+        )
+        == 0
+    )
+    prepared = json.loads((output_dir / "prepared_workload.json").read_text())
+    trace_spec = json.loads((output_dir / "trace_specs.jsonl").read_text())
+    assert prepared["profile_role"] == "candidate"
+    assert prepared["profile_name"] == profile_name
+    assert prepared["profile_selection_source"] == "explicit_override"
+    assert prepared["profile_contract"]["physical"][
+        "decoder_active_row_max_bytes"
+    ] == 1536 * 1024**2
+    assert trace_spec["graph_knobs"]["decoder_active_row_max_bytes"] == 1536 * 1024**2
+
+
 def test_frozen_workload_requires_immutable_hashes() -> None:
     payload = json.loads(CAMPAIGN.read_text())
     payload["workloads"][0]["fixture"]["catalog_sha256"] = None
