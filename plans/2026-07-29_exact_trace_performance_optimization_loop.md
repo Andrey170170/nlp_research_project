@@ -1510,3 +1510,16 @@ Use the existing per-trace launch machinery with a RAM request sized for the
 workload. The interactive node remains appropriate for guarded probes and full
 runs that fit comfortably; a guard refusal is a capacity result, not a reason
 to squeeze a larger trace into the node.
+
+The 4B/512 candidate transition probe has therefore moved to the ordinary
+immutable-snapshot full-answer job path. Job `1703320_0` requests one H200,
+400 GiB host memory, 32 CPUs, and two hours on `rai-gpu-grn`; it runs only four
+Phase-4 executions from the frozen `ls4-4b-361-dev-512` workload. The submitted
+snapshot pins project commit `15e537c` and sibling commit `aec77af`, after the
+dominated file-window family was removed. Admit no 512 full trace until this
+job completes and its provider resolution, active-row residency, HBM usage,
+host usage, and probe runtime are inspected. A scheduler-validation attempt on
+the 250 GiB short QOS was refused before submission; switching to the normal
+QOS was the intended high-memory route. Slurm did not honor the environment-form
+test-only flag on the accepted request and created `1703320`; treat it as the
+single real probe and do not submit a duplicate.
