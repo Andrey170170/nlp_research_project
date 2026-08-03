@@ -167,7 +167,7 @@ def test_list_mode_returns_specs_without_writing_token_dirs(tmp_path: Path) -> N
     assert not (tmp_path / "shards").exists()
 
 
-def test_trace_request_builds_canonical_domain_policies() -> None:
+def test_trace_request_builds_canonical_domain_policies(tmp_path: Path) -> None:
     from circuit_tracer import TraceRequest
 
     spec = cast(
@@ -233,6 +233,7 @@ def test_trace_request_builds_canonical_domain_policies() -> None:
         spec=spec,
         prefix_metadata={"mode": "independent_prefix"},
         full_sequence_mode=False,
+        telemetry_jsonl_path=tmp_path / "telemetry_live.jsonl",
     )
 
     assert isinstance(request, TraceRequest)
@@ -259,6 +260,9 @@ def test_trace_request_builds_canonical_domain_policies() -> None:
     assert request.execution.observability.telemetry_max_events == 500
     assert request.execution.diagnostic_stop.mode == "transition_probe"
     assert request.execution.diagnostic_stop.phase4_batches == 2
+    assert request.execution.observability.telemetry_jsonl_path == (
+        tmp_path / "telemetry_live.jsonl"
+    )
     assert request.evidence.metadata["prefix_view_metadata"] == {}
 
 

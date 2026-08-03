@@ -559,6 +559,7 @@ def _trace_request(
     spec: TraceSpec,
     prefix_metadata: Mapping[str, Any],
     full_sequence_mode: bool,
+    telemetry_jsonl_path: Path | None = None,
 ) -> Any:
     """Translate one harness spec into canonical, subsystem-owned policies."""
     from circuit_tracer import (
@@ -734,6 +735,7 @@ def _trace_request(
             profile=bool(knobs.get("profile_attribution", True)),
             profile_log_interval=int(knobs.get("profile_log_interval", 1)),
             telemetry_max_events=knobs.get("telemetry_max_events"),
+            telemetry_jsonl_path=telemetry_jsonl_path,
             phase4_anomaly_debug=bool(knobs.get("phase4_anomaly_debug", False)),
             cross_cluster_debug=bool(knobs.get("cross_cluster_debug", False)),
             capture_phase0_donor_bundle=bool(
@@ -1107,6 +1109,11 @@ def run_real_shard(
                         spec=spec,
                         prefix_metadata=prefix_metadata,
                         full_sequence_mode=full_sequence_mode,
+                        telemetry_jsonl_path=(
+                            token_dir / "telemetry_live.jsonl"
+                            if knobs.get("incremental_telemetry_jsonl", False)
+                            else None
+                        ),
                     )
                     if mode == "window_reuse_v1":
                         if window_session is None:
