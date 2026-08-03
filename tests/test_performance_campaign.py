@@ -238,6 +238,22 @@ def test_ls4_transfer_profiles_are_matched_and_4b_only() -> None:
         is perf_cli.BaselineScope.MECHANISM
     )
 
+    file_candidate = perf_cli.CANDIDATE_PROFILES[
+        "ls4-4b-transfer-cuda-file-windowed-512mib-b128-v1"
+    ]
+    assert len(file_candidate.variants) == 1
+    assert file_candidate.variants[0].requires == candidate.variants[0].requires
+    assert file_candidate.variants[0].physical.as_overrides() == {
+        **control_physical,
+        "feature_row_influence_mode": "cuda_file_windowed",
+        "feature_row_gpu_window_max_bytes": 512 * 1024**2,
+        "feature_row_gpu_resident_safety_margin_bytes": 16 * 1024**3,
+    }
+    assert (
+        file_candidate.evidence_scope.bounded_baseline
+        is perf_cli.BaselineScope.MECHANISM
+    )
+
 
 def test_frozen_workload_requires_immutable_hashes() -> None:
     payload = json.loads(CAMPAIGN.read_text())
