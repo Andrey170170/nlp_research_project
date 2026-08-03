@@ -1329,3 +1329,17 @@ end-to-end time, while feature-batch work took about 45 seconds. Prove the
 128-row physical split against an earlier 512 artifact, then evaluate the
 existing exact windowed/GPU feature-row influence modes within the measured
 1024 HBM headroom.
+
+The 512-token physical-split proof completed before that bounded experiment.
+The 128-row execution profile produced a 189.137-second runner trace and a
+163.73-second Phase 4, compared with 179.265 and 153.44 seconds for the matched
+256-row physical execution. The split doubled physical executions from 33 to
+65 while preserving all 33 semantic batches. It was `strict_exact`: feature,
+edge, weighted-edge, and all-edge Jaccard were 1.0; normalized and signed
+normalized L1 deviation were 0.0; signs, Top-64 through Top-1024 support, and
+target token matched exactly. This is a 5.5% runner regression, so b128 is not
+an exact performance promotion. Retain it only as an explicit HBM-safety
+envelope for combinations such as bounded windowed CUDA that need more device
+headroom. The next experiment must use the existing full-answer launch path:
+first admit `cuda_windowed` with a short transition probe, then run the complete
+1024 trace because the exact reference itself finishes in about five minutes.
