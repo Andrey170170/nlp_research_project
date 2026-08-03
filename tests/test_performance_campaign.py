@@ -17,6 +17,7 @@ from nlp_research_project.exact_trace_bench.performance_campaign import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CLAIMS = REPO_ROOT / "experiments/performance_campaigns/sp0_mechanism_claims.json"
 CAMPAIGN = REPO_ROOT / "experiments/performance_campaigns/ls0_prefix_scaling.json"
+LS4_CAMPAIGN = REPO_ROOT / "experiments/performance_campaigns/ls4_4b_transfer.json"
 
 
 def test_committed_sp0_claims_validate() -> None:
@@ -63,6 +64,26 @@ def test_ls0_development_and_holdout_workloads_are_frozen() -> None:
         "development",
         "holdout",
     }
+
+
+def test_ls4_transfer_manifest_is_frozen_and_4b_only() -> None:
+    payload = json.loads(LS4_CAMPAIGN.read_text())
+    workloads = validate_performance_campaign(payload, require_frozen=True)
+    assert [workload.requested_prefix_tokens for workload in workloads] == [
+        129,
+        256,
+        512,
+        1024,
+        512,
+    ]
+    assert {workload.model_variant for workload in workloads} == {"gemma3_4b"}
+    assert [workload.prompt_role for workload in workloads] == [
+        "development",
+        "development",
+        "development",
+        "development",
+        "holdout",
+    ]
 
 
 def test_resolve_frozen_campaign_workload_rechecks_prefix_and_target() -> None:
@@ -188,6 +209,34 @@ def test_long_prefix_control_matches_physical_stack_with_canonical_phase0() -> N
     assert physical["phase0_decoder_row_ranges"] is False
     assert physical["decoder_active_row_max_bytes"] == 1536 * 1024**2
     assert physical["phase4_execution_batch_max_rows"] == 128
+
+
+def test_ls4_transfer_profiles_are_matched_and_4b_only() -> None:
+    control = perf_cli.CANDIDATE_PROFILES[
+        "ls4-4b-transfer-cpu-exact-b128-v1"
+    ]
+    candidate = perf_cli.CANDIDATE_PROFILES[
+        "ls4-4b-transfer-cuda-windowed-512mib-b128-v1"
+    ]
+    assert len(control.variants) == len(candidate.variants) == 1
+    assert control.variants[0].requires.minimum_layer_count == 27
+    assert control.variants[0].requires.maximum_layer_count == 34
+    control_physical = control.variants[0].physical.as_overrides()
+    candidate_physical = candidate.variants[0].physical.as_overrides()
+    assert control_physical["phase0_decoder_row_ranges"] is True
+    assert control_physical["decoder_active_row_max_bytes"] == 4 * 1024**3
+    assert control_physical["phase4_execution_batch_max_rows"] == 128
+    assert control_physical["feature_row_influence_mode"] == "cpu_exact"
+    assert candidate_physical == {
+        **control_physical,
+        "feature_row_influence_mode": "cuda_windowed",
+        "feature_row_gpu_window_max_bytes": 512 * 1024**2,
+        "feature_row_gpu_resident_safety_margin_bytes": 16 * 1024**3,
+    }
+    assert (
+        candidate.evidence_scope.bounded_baseline
+        is perf_cli.BaselineScope.MECHANISM
+    )
 
 
 def test_frozen_workload_requires_immutable_hashes() -> None:

@@ -909,6 +909,41 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
             evidence_scope=source_profile.evidence_scope,
         )
     )
+    source_profile = contracts["sp5-selective-phase0-finalist-plt-v1"]
+    ls4_4b_variants = tuple(
+        variant
+        for variant in source_profile.variants
+        if variant.requires.minimum_layer_count == 27
+        and variant.requires.maximum_layer_count == 34
+    )
+    contracts["ls4-4b-transfer-cpu-exact-b128-v1"] = CandidateProfile(
+        name="ls4-4b-transfer-cpu-exact-b128-v1",
+        variants=ls4_4b_variants,
+        evidence_scope=source_profile.evidence_scope,
+    )
+    contracts["ls4-4b-transfer-cuda-windowed-512mib-b128-v1"] = (
+        CandidateProfile(
+            name="ls4-4b-transfer-cuda-windowed-512mib-b128-v1",
+            variants=tuple(
+                _candidate_variant(
+                    {
+                        **dict(variant.compatibility_controls),
+                        **variant.physical.as_overrides(),
+                        "feature_row_influence_mode": "cuda_windowed",
+                        "feature_row_gpu_window_max_bytes": 512 * 1024**2,
+                        "feature_row_gpu_resident_safety_margin_bytes": 16
+                        * 1024**3,
+                    },
+                    variant.requires,
+                )
+                for variant in ls4_4b_variants
+            ),
+            evidence_scope=EvidenceScope(
+                BaselineScope.MECHANISM,
+                bounded_baseline=BaselineScope.MECHANISM,
+            ),
+        )
+    )
     mapped_4b_requirements = CapabilityRequirements(
         **{
             **_PLT_MAPPED_DECODER_ROWS.__dict__,

@@ -1417,3 +1417,17 @@ development scope and individually measured exact holdout points remain valid;
 an arbitrary exact request continues to use `cpu_exact`. LS3 is complete by an
 evidence-backed applicability boundary, and LS4 may now test 4B transfer without
 reopening or tuning the frozen 1B holdouts.
+
+LS4 preparation is implemented without a new launch path. The frozen
+`ls4-gemma3-4b-transfer-v1` manifest reuses the LS0 prompt, prefix, and target
+token sequences while changing only the traced model/provider to Gemma 3 4B
+PLT; this isolates model-size transfer from response-generation differences.
+It declares development rungs at 129, 256, 512, and 1024 tokens plus the
+828/512 holdout, all behind early probes. The matched registered profiles share
+selective Phase 0, exact final-token logits where supported, b128 physical
+execution, a 4 GiB active-decoder-row cap, and all remaining controls. Their
+only row-influence difference is `cpu_exact` versus a 512 MiB double-buffered
+`cuda_windowed` provider with a 16 GiB HBM safety margin. The existing
+preparation helper resolves the candidate to `gemma3_4b_plt` and the ordinary
+full-answer shard runner. Begin with the 129-token candidate transition probe;
+do not admit longer rungs until the preceding complete pair is classified.
