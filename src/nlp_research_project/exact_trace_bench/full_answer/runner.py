@@ -1047,6 +1047,7 @@ def run_real_shard(
         try:
             for spec in window_specs:
                 token_dir = root / f"token_{spec['generated_index']:06d}"
+                ensure_dir(token_dir)
                 graph_path = token_dir / "graph.npz"
                 trace = _trace_runtime_payload(
                     spec=spec, shard_id=shard_id, metadata=metadata
