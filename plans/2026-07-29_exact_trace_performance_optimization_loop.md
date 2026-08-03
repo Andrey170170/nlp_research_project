@@ -1466,3 +1466,19 @@ already allocated 6,186,403,212-byte logical host mirror. Maximum sampled
 cgroup current was 182.14 GiB and CUDA reservation was 49.72 GiB. Admit the
 complete 256-token matched pair under the same warm control-then-candidate
 protocol; classify it before probing 512.
+
+The complete 256-token LS4 pair is `exact` and exposes a host-capacity boundary.
+Runner wall fell from 204.179 to 129.403 seconds (36.6%), Phase 4 from 162.783
+to 84.898 seconds (47.8%), and refresh from 114.343 to 34.264 seconds (70.0%).
+Feature-batch work was 44.990 versus 47.273 seconds. The graphs shared
+8,191/8,192 features (Jaccard 0.999756); all 20,000 edge identities and weights,
+normalized and signed L1, shared signs, target, and Top-64 through Top-1024 were
+exact, so the point meets canonical `exact`. The candidate streamed
+147,711,797,332 bytes through 1,312 reads from a 6,186,403,212-byte host mirror.
+CUDA reservation remained 49.72 GiB, but maximum sampled cgroup current reached
+196.52 GiB, only 3.48 GiB below the declared host envelope. Do not launch the
+current mirrored profile at 512: its mirror alone would add roughly another 6
+GB before other prefix growth. Reopen only the newly exposed host-residency
+boundary. Evaluate whether the existing exact file-backed row store can feed
+the same bounded CUDA windows without a second full signed RAM mirror; retain
+the current mode regardless because it is non-dominated on admitted 4B/129--256.
