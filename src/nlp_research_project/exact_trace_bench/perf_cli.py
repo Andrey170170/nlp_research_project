@@ -865,6 +865,30 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
         ),
         evidence_scope=source_profile.evidence_scope,
     )
+    source_profile = contracts["ls2-1b-long-prefix-active-rows-1536mib-b128-v1"]
+    contracts["ls2-1b-long-prefix-cuda-windowed-512mib-b128-v1"] = (
+        CandidateProfile(
+            name="ls2-1b-long-prefix-cuda-windowed-512mib-b128-v1",
+            variants=tuple(
+                _candidate_variant(
+                    {
+                        **dict(variant.compatibility_controls),
+                        **variant.physical.as_overrides(),
+                        "feature_row_influence_mode": "cuda_windowed",
+                        "feature_row_gpu_window_max_bytes": 512 * 1024**2,
+                        "feature_row_gpu_resident_safety_margin_bytes": 16
+                        * 1024**3,
+                    },
+                    variant.requires,
+                )
+                for variant in source_profile.variants
+            ),
+            evidence_scope=EvidenceScope(
+                BaselineScope.MECHANISM,
+                bounded_baseline=BaselineScope.MECHANISM,
+            ),
+        )
+    )
     source_profile = contracts["sp5-canonical-phase0-reference-plt-v1"]
     contracts["ls2-1b-long-prefix-canonical-active-rows-1536mib-b128-v1"] = (
         CandidateProfile(
