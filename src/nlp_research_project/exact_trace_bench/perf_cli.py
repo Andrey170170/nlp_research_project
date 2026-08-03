@@ -944,29 +944,6 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
             ),
         )
     )
-    contracts["ls4-4b-transfer-cuda-file-windowed-512mib-b128-v1"] = (
-        CandidateProfile(
-            name="ls4-4b-transfer-cuda-file-windowed-512mib-b128-v1",
-            variants=tuple(
-                _candidate_variant(
-                    {
-                        **dict(variant.compatibility_controls),
-                        **variant.physical.as_overrides(),
-                        "feature_row_influence_mode": "cuda_file_windowed",
-                        "feature_row_gpu_window_max_bytes": 512 * 1024**2,
-                        "feature_row_gpu_resident_safety_margin_bytes": 16
-                        * 1024**3,
-                    },
-                    variant.requires,
-                )
-                for variant in ls4_4b_variants
-            ),
-            evidence_scope=EvidenceScope(
-                BaselineScope.MECHANISM,
-                bounded_baseline=BaselineScope.MECHANISM,
-            ),
-        )
-    )
     mapped_4b_requirements = CapabilityRequirements(
         **{
             **_PLT_MAPPED_DECODER_ROWS.__dict__,
