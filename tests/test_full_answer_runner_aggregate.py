@@ -1156,6 +1156,30 @@ def test_cli_real_shard_exits_nonzero_on_error_status(
         raise AssertionError("expected non-ok shard status to fail the CLI")
 
 
+def test_cli_real_shard_accepts_terminal_probe_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    monkeypatch.setattr(
+        "nlp_research_project.exact_trace_bench.full_answer.runner.run_real_shard",
+        lambda **kwargs: {"status": "probe_completed", "shard_dir": "x"},
+    )
+    args = argparse.Namespace(
+        trajectory=trajectory_path,
+        trace_specs=specs_path,
+        shards=shards_path,
+        shard_id=0,
+        output_root=tmp_path / "run",
+        list=False,
+        dry_run=False,
+        run_id=None,
+        run_name=None,
+        run_description=None,
+        run_goal=None,
+    )
+    full_answer_cli._cmd_run_full_answer_shard(args)
+
+
 def test_real_shard_requires_slurm_before_heavy_imports(
     tmp_path: Path, monkeypatch
 ) -> None:

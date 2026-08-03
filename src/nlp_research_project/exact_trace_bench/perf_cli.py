@@ -14,15 +14,25 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from .config import DEFAULT_SCRATCH_ROOT, REPO_ROOT
+from .config import DEFAULT_SCRATCH_ROOT, REPO_ROOT, base_trace_defaults
+from .full_answer.schemas import (
+    build_trace_specs,
+    write_shards,
+    write_trace_selection,
+    write_trace_specs,
+)
+from .full_answer.selection import select_tokens
+from .full_answer.sharding import build_lpt_shards
 from .io_utils import read_json, write_json
 from .performance_campaign import (
     freeze_performance_campaign,
     load_mechanism_claims,
     load_performance_campaign,
     render_campaign_workloads,
+    resolve_frozen_campaign_workload,
 )
 from .scenarios.chpc_baseline import build_chpc_baseline_config
+from .transcoder_config import PUBLIC_TRANSCODER_KNOB_KEYS
 
 
 DEFAULT_OUTPUT_ROOT = (
@@ -1102,25 +1112,28 @@ class Case:
         return f"performance/{self.variant}/{self.fixture}"
 
     def provider_capabilities(self) -> ProviderCapabilities:
-        payload = build_chpc_baseline_config(variant=self.variant, cluster="granite")
-        scenario = next(
-            row for row in payload["scenarios"] if row["fixture_name"] == self.fixture
-        )
-        architecture = str(scenario["transcoder_architecture"])
-        layer_count_raw = scenario.get("layer_count")
-        layer_count = int(layer_count_raw) if isinstance(layer_count_raw, int) else None
-        same_layer = architecture == "plt"
-        supports_mapped_rows = _supports_mapped_decoder_row_source(scenario)
-        return ProviderCapabilities(
-            architecture=architecture,
-            decoder_output_topology=("same_layer" if same_layer else "cross_layer"),
-            layer_count=layer_count,
-            supports_exact_chunked_provider=True,
-            supports_exact_encoder_residency=True,
-            supports_active_decoder_row_residency=same_layer,
-            supports_phase0_decoder_row_ranges=same_layer,
-            supports_decoder_row_source=supports_mapped_rows,
-        )
+        return _provider_capabilities_for_variant(self.variant)
+
+
+def _provider_capabilities_for_variant(variant: str) -> ProviderCapabilities:
+    """Derive provider capabilities independently of a particular fixture."""
+    payload = build_chpc_baseline_config(variant=variant, cluster="granite")
+    scenario = payload["scenarios"][0]
+    architecture = str(scenario["transcoder_architecture"])
+    layer_count_raw = scenario.get("layer_count")
+    layer_count = int(layer_count_raw) if isinstance(layer_count_raw, int) else None
+    same_layer = architecture == "plt"
+    supports_mapped_rows = _supports_mapped_decoder_row_source(scenario)
+    return ProviderCapabilities(
+        architecture=architecture,
+        decoder_output_topology=("same_layer" if same_layer else "cross_layer"),
+        layer_count=layer_count,
+        supports_exact_chunked_provider=True,
+        supports_exact_encoder_residency=True,
+        supports_active_decoder_row_residency=same_layer,
+        supports_phase0_decoder_row_ranges=same_layer,
+        supports_decoder_row_source=supports_mapped_rows,
+    )
 
 
 SUITES: dict[str, tuple[Case, ...]] = {
@@ -3133,6 +3146,202 @@ def _freeze_campaign(path: Path, *, output: Path | None) -> int:
     return 0
 
 
+def _campaign_launcher_variant(workload: Mapping[str, Any]) -> str:
+    model = workload.get("model")
+    if not isinstance(model, Mapping):
+        raise ValueError("campaign workload model must be an object")
+    variant = model.get("variant")
+    provider = model.get("provider")
+    if not isinstance(variant, str) or not isinstance(provider, str):
+        raise ValueError("campaign workload model variant/provider must be strings")
+    launcher_variant = f"{variant}_{provider}"
+    # This validation also keeps profile capability selection aligned with the
+    # existing performance launcher rather than inventing a campaign-only map.
+    build_chpc_baseline_config(variant=launcher_variant, cluster="granite")
+    return launcher_variant
+
+
+def _full_answer_shard_command(
+    *,
+    trajectory_path: Path,
+    trace_specs_path: Path,
+    shards_path: Path,
+    output_root: Path,
+    run_id: str,
+    workload_id: str,
+    profile_role: str,
+    execution_mode: str,
+) -> list[str]:
+    return [
+        "uv",
+        "run",
+        "exact-trace-bench",
+        "run-full-answer-shard",
+        "--trajectory",
+        str(trajectory_path),
+        "--trace-specs",
+        str(trace_specs_path),
+        "--shards",
+        str(shards_path),
+        "--shard-id",
+        "0",
+        "--output-root",
+        str(output_root),
+        "--run-id",
+        run_id,
+        "--run-name",
+        "Exact-trace long-prefix scaling",
+        "--run-description",
+        f"{workload_id} {profile_role} {execution_mode}",
+        "--run-goal",
+        "Establish and optimize the exact-trace long-prefix scaling envelope.",
+    ]
+
+
+def _prepare_campaign_workload(args: argparse.Namespace) -> int:
+    resolved = resolve_frozen_campaign_workload(args.manifest, args.workload_id)
+    workload = resolved.workload
+    profiles = workload.get("profiles")
+    if not isinstance(profiles, Mapping):
+        raise ValueError("campaign workload profiles must be an object")
+    profile_name = profiles.get(args.profile_role)
+    if not isinstance(profile_name, str) or not profile_name:
+        raise ValueError(
+            f"campaign workload lacks a {args.profile_role!r} profile name"
+        )
+    launcher_variant = _campaign_launcher_variant(workload)
+    fixture = workload.get("fixture")
+    fixture_name = (
+        str(fixture.get("fixture_name"))
+        if isinstance(fixture, Mapping)
+        else args.workload_id
+    )
+    case = Case(launcher_variant, fixture_name)
+    profile_variant = _profile_variant(case, profile_name)
+
+    template = build_chpc_baseline_config(
+        variant=launcher_variant,
+        cluster="granite",
+    )["scenarios"][0]
+    allowed_template_keys = set(base_trace_defaults()) | set(
+        PUBLIC_TRANSCODER_KNOB_KEYS
+    )
+    graph_overrides = {
+        key: value for key, value in template.items() if key in allowed_template_keys
+    }
+    graph_overrides.update(profile_variant.overrides())
+    if args.execution_mode == "full":
+        diagnostic_stop_mode = "none"
+        diagnostic_stop_phase4_batches = None
+    elif args.execution_mode == "phase0-probe":
+        diagnostic_stop_mode = "phase0_probe"
+        diagnostic_stop_phase4_batches = None
+    else:
+        diagnostic_stop_mode = "transition_probe"
+        diagnostic_stop_phase4_batches = args.probe_batches
+    graph_overrides.update(
+        {
+            "diagnostic_stop_mode": diagnostic_stop_mode,
+            "diagnostic_stop_phase4_batches": diagnostic_stop_phase4_batches,
+            "incremental_telemetry_jsonl": True,
+            "profile_attribution": True,
+            "profile_log_interval": 1,
+        }
+    )
+    selection = select_tokens(
+        dict(resolved.trajectory),
+        explicit_indices=[resolved.generated_index],
+    )
+    specs = build_trace_specs(
+        dict(resolved.trajectory),
+        selection,
+        graph_knob_overrides=graph_overrides,
+    )
+    if len(specs) != 1:
+        raise RuntimeError("campaign workload preparation must produce one trace spec")
+    spec = specs[0]
+    prefix = workload["prefix"]
+    target = workload["target"]
+    if (
+        spec["prefix_token_count"] != prefix["actual_tokens"]
+        or spec["target_position"] != target["absolute_position"]
+        or spec["target_token_id"] != target["token_id"]
+    ):
+        raise RuntimeError("prepared trace spec diverges from frozen campaign target")
+
+    output_dir = args.output_dir.resolve()
+    output_dir.mkdir(parents=True, exist_ok=False)
+    selection_path = output_dir / "trace_selection.json"
+    specs_path = output_dir / "trace_specs.jsonl"
+    shards_path = output_dir / "shards.json"
+    write_trace_selection(selection_path, selection)
+    write_trace_specs(specs_path, specs)
+    write_shards(
+        shards_path,
+        build_lpt_shards(specs, shard_count=1, trace_specs_file=specs_path),
+    )
+    run_id = args.run_id or (
+        f"{resolved.campaign_id}-{args.workload_id}-{args.profile_role}-"
+        f"{args.execution_mode}"
+    )
+    launch_output_root = (
+        args.launch_output_root.resolve()
+        if args.launch_output_root is not None
+        else output_dir / "output"
+    )
+    command = _full_answer_shard_command(
+        trajectory_path=resolved.trajectory_path,
+        trace_specs_path=specs_path,
+        shards_path=shards_path,
+        output_root=launch_output_root,
+        run_id=run_id,
+        workload_id=args.workload_id,
+        profile_role=args.profile_role,
+        execution_mode=args.execution_mode,
+    )
+    write_json(
+        output_dir / "prepared_workload.json",
+        {
+            "schema_version": 1,
+            "campaign_id": resolved.campaign_id,
+            "workload_id": args.workload_id,
+            "manifest_path": str(resolved.manifest_path.resolve()),
+            "manifest_sha256": resolved.manifest_sha256,
+            "trajectory_path": str(resolved.trajectory_path.resolve()),
+            "fixture_catalog_path": str(resolved.fixture_catalog_path.resolve()),
+            "prompt_path": str(resolved.prompt_path.resolve()),
+            "prefix_token_count": len(resolved.prefix_token_ids),
+            "prefix_token_ids_sha256": prefix["token_ids_sha256"],
+            "generated_index": resolved.generated_index,
+            "target_position": target["absolute_position"],
+            "target_token_id": target["token_id"],
+            "target_token_text": target["token_text"],
+            "launcher": "existing_full_answer_shard_runner",
+            "launcher_variant": launcher_variant,
+            "profile_role": args.profile_role,
+            "profile_name": profile_name,
+            "profile_contract": {
+                "requires": profile_variant.requires.__dict__,
+                "baseline_pins": profile_variant.baseline_pins.as_overrides(),
+                "physical": profile_variant.physical.as_overrides(),
+            },
+            "execution_mode": args.execution_mode,
+            "diagnostic_stop_mode": diagnostic_stop_mode,
+            "diagnostic_stop_phase4_batches": diagnostic_stop_phase4_batches,
+            "resource_envelope": workload["resource_envelope"],
+            "comparison_policy": workload["comparison_policy"],
+            "trace_specs_path": str(specs_path),
+            "shards_path": str(shards_path),
+            "launch_output_root": str(launch_output_root),
+            "launch_command": command,
+        },
+    )
+    print(f"Prepared {args.workload_id} {args.profile_role} {args.execution_mode}")
+    print(f"Bundle: {output_dir}")
+    print(f"Launch: {shlex.join(command)}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="H200 exact-trace performance and graph-parity loop"
@@ -3160,6 +3369,34 @@ def build_parser() -> argparse.ArgumentParser:
     )
     freeze_campaign.add_argument("manifest", type=Path)
     freeze_campaign.add_argument("--output", type=Path)
+    prepare_campaign = subparsers.add_parser(
+        "prepare-campaign-workload",
+        help=(
+            "Verify one frozen workload and prepare it for the existing "
+            "full-answer shard runner"
+        ),
+    )
+    prepare_campaign.add_argument("manifest", type=Path)
+    prepare_campaign.add_argument("workload_id")
+    prepare_campaign.add_argument(
+        "--profile-role",
+        choices=("control", "candidate"),
+        required=True,
+    )
+    prepare_campaign.add_argument(
+        "--execution-mode",
+        choices=("full", "phase0-probe", "transition-probe"),
+        default="full",
+    )
+    prepare_campaign.add_argument(
+        "--probe-batches",
+        type=int,
+        default=4,
+        help="Phase-4 batches for transition-probe mode (default: 4)",
+    )
+    prepare_campaign.add_argument("--output-dir", type=Path, required=True)
+    prepare_campaign.add_argument("--launch-output-root", type=Path)
+    prepare_campaign.add_argument("--run-id")
     run = subparsers.add_parser("run", help="Run one suite and enforce parity")
     run.add_argument("suite", choices=tuple(SUITES))
     run.add_argument(
@@ -3217,6 +3454,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _list_campaign(args.manifest, require_frozen=args.require_frozen)
     if args.command == "freeze-campaign":
         return _freeze_campaign(args.manifest, output=args.output)
+    if args.command == "prepare-campaign-workload":
+        if args.probe_batches <= 0:
+            raise ValueError("--probe-batches must be positive")
+        return _prepare_campaign_workload(args)
     if args.host_memory_stop_gib is not None and args.host_memory_stop_gib <= 0:
         raise ValueError("--host-memory-stop-gib must be positive")
     if args.host_rss_stop_gib is not None and args.host_rss_stop_gib <= 0:

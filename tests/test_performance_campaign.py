@@ -8,6 +8,7 @@ import pytest
 from nlp_research_project.exact_trace_bench import perf_cli
 from nlp_research_project.exact_trace_bench.performance_campaign import (
     freeze_performance_campaign,
+    resolve_frozen_campaign_workload,
     validate_mechanism_claims,
     validate_performance_campaign,
 )
@@ -62,6 +63,60 @@ def test_ls0_development_and_holdout_workloads_are_frozen() -> None:
         "development",
         "holdout",
     }
+
+
+def test_resolve_frozen_campaign_workload_rechecks_prefix_and_target() -> None:
+    resolved = resolve_frozen_campaign_workload(CAMPAIGN, "ls0-361-dev-512")
+    assert len(resolved.prefix_token_ids) == 512
+    assert resolved.generated_index == 383
+    assert resolved.workload["target"]["token_id"] == 33036
+    assert resolved.trajectory_path.name == "361_trajectory.json"
+
+
+def test_prepare_campaign_workload_uses_existing_full_answer_runner(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output_dir = tmp_path / "prepared"
+    assert (
+        perf_cli.main(
+            [
+                "prepare-campaign-workload",
+                str(CAMPAIGN),
+                "ls0-361-dev-512",
+                "--profile-role",
+                "candidate",
+                "--execution-mode",
+                "transition-probe",
+                "--probe-batches",
+                "4",
+                "--output-dir",
+                str(output_dir),
+            ]
+        )
+        == 0
+    )
+    prepared = json.loads((output_dir / "prepared_workload.json").read_text())
+    trace_spec = json.loads((output_dir / "trace_specs.jsonl").read_text())
+    shards = json.loads((output_dir / "shards.json").read_text())
+    assert prepared["launcher"] == "existing_full_answer_shard_runner"
+    assert prepared["profile_name"] == "sp5-selective-phase0-finalist-plt-v1"
+    assert prepared["prefix_token_count"] == 512
+    assert prepared["launch_command"][:4] == [
+        "uv",
+        "run",
+        "exact-trace-bench",
+        "run-full-answer-shard",
+    ]
+    assert trace_spec["prefix_token_count"] == 512
+    assert trace_spec["target_token_id"] == 33036
+    assert trace_spec["graph_knobs"]["phase0_decoder_row_ranges"] is True
+    assert trace_spec["graph_knobs"]["diagnostic_stop_mode"] == "transition_probe"
+    assert trace_spec["graph_knobs"]["diagnostic_stop_phase4_batches"] == 4
+    assert shards["shards"][0]["spec_indices"] == [0]
+    assert "Launch: uv run exact-trace-bench run-full-answer-shard" in (
+        capsys.readouterr().out
+    )
 
 
 def test_frozen_workload_requires_immutable_hashes() -> None:

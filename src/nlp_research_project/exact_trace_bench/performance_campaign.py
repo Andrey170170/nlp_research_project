@@ -39,6 +39,22 @@ class CampaignWorkload:
     run_disposition: str
 
 
+@dataclass(frozen=True)
+class ResolvedCampaignWorkload:
+    """Frozen campaign workload verified against its source files."""
+
+    campaign_id: str
+    workload: Mapping[str, Any]
+    manifest_path: Path
+    manifest_sha256: str
+    fixture_catalog_path: Path
+    prompt_path: Path
+    trajectory_path: Path
+    trajectory: Mapping[str, Any]
+    generated_index: int
+    prefix_token_ids: tuple[int, ...]
+
+
 _MECHANISM_REQUIRED_SECTIONS = (
     "identity",
     "applicability",
@@ -260,6 +276,119 @@ def load_performance_campaign(
         raise ValueError(f"performance campaign must be an object: {path}")
     workloads = validate_performance_campaign(payload, require_frozen=require_frozen)
     return payload, workloads
+
+
+def resolve_frozen_campaign_workload(
+    manifest_path: Path,
+    workload_id: str,
+    *,
+    repo_root: Path = REPO_ROOT,
+) -> ResolvedCampaignWorkload:
+    """Resolve one workload and recheck every frozen input fingerprint.
+
+    This is deliberately preparation-only. Execution remains owned by the
+    ordinary full-answer shard runner.
+    """
+    payload, _ = load_performance_campaign(manifest_path, require_frozen=True)
+    workload = next(
+        (
+            row
+            for row in payload["workloads"]
+            if isinstance(row, Mapping) and row.get("workload_id") == workload_id
+        ),
+        None,
+    )
+    if workload is None:
+        raise ValueError(f"campaign workload not found: {workload_id}")
+    fixture = _require_mapping(workload["fixture"], label=f"{workload_id}.fixture")
+    trajectory_ref = _require_mapping(
+        workload["trajectory"], label=f"{workload_id}.trajectory"
+    )
+    prefix = _require_mapping(workload["prefix"], label=f"{workload_id}.prefix")
+    target = _require_mapping(workload["target"], label=f"{workload_id}.target")
+    catalog_path = _resolve_campaign_path(
+        fixture.get("catalog"),
+        repo_root=repo_root,
+        label=f"{workload_id}.fixture.catalog",
+    )
+    prompt_path = _resolve_campaign_path(
+        fixture.get("prompt_file"),
+        repo_root=repo_root,
+        label=f"{workload_id}.fixture.prompt_file",
+    )
+    trajectory_path = _resolve_campaign_path(
+        trajectory_ref.get("path"),
+        repo_root=repo_root,
+        label=f"{workload_id}.trajectory.path",
+    )
+    expected_files = (
+        (catalog_path, fixture["catalog_sha256"], "fixture catalog"),
+        (prompt_path, fixture["prompt_sha256"], "prompt"),
+        (trajectory_path, trajectory_ref["sha256"], "trajectory"),
+    )
+    for path, expected_sha256, label in expected_files:
+        observed_sha256 = _file_sha256(path)
+        if observed_sha256 != expected_sha256:
+            raise ValueError(
+                f"{workload_id} {label} fingerprint mismatch: "
+                f"expected {expected_sha256}, observed {observed_sha256}"
+            )
+
+    trajectory = dict(load_trajectory(trajectory_path))
+    prompt_text = prompt_path.read_text(encoding="utf-8")
+    if trajectory.get("prompt_text") != prompt_text:
+        raise ValueError(
+            f"{workload_id} trajectory prompt_text does not match {prompt_path}"
+        )
+    prompt_token_ids = [int(token_id) for token_id in trajectory["prompt_token_ids"]]
+    generated_tokens = list(trajectory["generated_tokens"])
+    full_token_ids = [
+        *prompt_token_ids,
+        *(int(row["token_id"]) for row in generated_tokens),
+    ]
+    actual_tokens = int(prefix["actual_tokens"])
+    if actual_tokens >= len(full_token_ids):
+        raise ValueError(
+            f"{workload_id} has no target token after its {actual_tokens}-token prefix"
+        )
+    prefix_token_ids = tuple(full_token_ids[:actual_tokens])
+    observed_prefix_sha256 = _token_ids_sha256(prefix_token_ids)
+    if observed_prefix_sha256 != prefix["token_ids_sha256"]:
+        raise ValueError(
+            f"{workload_id} prefix token fingerprint mismatch: expected "
+            f"{prefix['token_ids_sha256']}, observed {observed_prefix_sha256}"
+        )
+    generated_index = actual_tokens - len(prompt_token_ids)
+    if generated_index < 0 or generated_index >= len(generated_tokens):
+        raise ValueError(f"{workload_id} target generated index is out of bounds")
+    target_row = generated_tokens[generated_index]
+    expected_target = {
+        "absolute_position": actual_tokens,
+        "token_id": int(target_row["token_id"]),
+        "token_text": str(target_row["token_text"]),
+    }
+    observed_target = {
+        "absolute_position": target.get("absolute_position"),
+        "token_id": target.get("token_id"),
+        "token_text": target.get("token_text"),
+    }
+    if observed_target != expected_target:
+        raise ValueError(
+            f"{workload_id} frozen target mismatch: expected {expected_target!r}, "
+            f"observed {observed_target!r}"
+        )
+    return ResolvedCampaignWorkload(
+        campaign_id=str(payload["campaign_id"]),
+        workload=workload,
+        manifest_path=manifest_path,
+        manifest_sha256=_file_sha256(manifest_path),
+        fixture_catalog_path=catalog_path,
+        prompt_path=prompt_path,
+        trajectory_path=trajectory_path,
+        trajectory=trajectory,
+        generated_index=generated_index,
+        prefix_token_ids=prefix_token_ids,
+    )
 
 
 def render_campaign_workloads(workloads: Sequence[CampaignWorkload]) -> list[str]:

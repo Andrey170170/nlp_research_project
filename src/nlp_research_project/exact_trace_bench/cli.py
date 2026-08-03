@@ -879,7 +879,12 @@ def _cmd_run_full_answer_shard(args: argparse.Namespace) -> None:
         run_description=args.run_description,
         run_goal=args.run_goal,
     )
-    if result.get("status") not in {"complete", "ok"}:
+    if result.get("status") not in {
+        "complete",
+        "ok",
+        "probe_completed",
+        "complete_with_diagnostics",
+    }:
         raise RuntimeError(f"full-answer shard failed: {result}")
     print(json.dumps(result, indent=2))
 
