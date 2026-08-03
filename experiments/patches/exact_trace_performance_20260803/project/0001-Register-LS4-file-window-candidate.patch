@@ -1,0 +1,74 @@
+From 3b0e75cd58b1feb3761def32122471ac57811e21 Mon Sep 17 00:00:00 2001
+From: Andrey170170 <andrey24122004@gmail.com>
+Date: Mon, 3 Aug 2026 14:24:19 -0600
+Subject: [PATCH] Register LS4 file-window candidate
+
+---
+ .../exact_trace_bench/perf_cli.py             | 23 +++++++++++++++++++
+ tests/test_performance_campaign.py            | 16 +++++++++++++
+ 2 files changed, 39 insertions(+)
+
+diff --git a/src/nlp_research_project/exact_trace_bench/perf_cli.py b/src/nlp_research_project/exact_trace_bench/perf_cli.py
+index d5e2241..17b3761 100644
+--- a/src/nlp_research_project/exact_trace_bench/perf_cli.py
++++ b/src/nlp_research_project/exact_trace_bench/perf_cli.py
+@@ -944,6 +944,29 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
+             ),
+         )
+     )
++    contracts["ls4-4b-transfer-cuda-file-windowed-512mib-b128-v1"] = (
++        CandidateProfile(
++            name="ls4-4b-transfer-cuda-file-windowed-512mib-b128-v1",
++            variants=tuple(
++                _candidate_variant(
++                    {
++                        **dict(variant.compatibility_controls),
++                        **variant.physical.as_overrides(),
++                        "feature_row_influence_mode": "cuda_file_windowed",
++                        "feature_row_gpu_window_max_bytes": 512 * 1024**2,
++                        "feature_row_gpu_resident_safety_margin_bytes": 16
++                        * 1024**3,
++                    },
++                    variant.requires,
++                )
++                for variant in ls4_4b_variants
++            ),
++            evidence_scope=EvidenceScope(
++                BaselineScope.MECHANISM,
++                bounded_baseline=BaselineScope.MECHANISM,
++            ),
++        )
++    )
+     mapped_4b_requirements = CapabilityRequirements(
+         **{
+             **_PLT_MAPPED_DECODER_ROWS.__dict__,
+diff --git a/tests/test_performance_campaign.py b/tests/test_performance_campaign.py
+index d00a0f9..408b5c1 100644
+--- a/tests/test_performance_campaign.py
++++ b/tests/test_performance_campaign.py
+@@ -238,6 +238,22 @@ def test_ls4_transfer_profiles_are_matched_and_4b_only() -> None:
+         is perf_cli.BaselineScope.MECHANISM
+     )
+ 
++    file_candidate = perf_cli.CANDIDATE_PROFILES[
++        "ls4-4b-transfer-cuda-file-windowed-512mib-b128-v1"
++    ]
++    assert len(file_candidate.variants) == 1
++    assert file_candidate.variants[0].requires == candidate.variants[0].requires
++    assert file_candidate.variants[0].physical.as_overrides() == {
++        **control_physical,
++        "feature_row_influence_mode": "cuda_file_windowed",
++        "feature_row_gpu_window_max_bytes": 512 * 1024**2,
++        "feature_row_gpu_resident_safety_margin_bytes": 16 * 1024**3,
++    }
++    assert (
++        file_candidate.evidence_scope.bounded_baseline
++        is perf_cli.BaselineScope.MECHANISM
++    )
++
+ 
+ def test_frozen_workload_requires_immutable_hashes() -> None:
+     payload = json.loads(CAMPAIGN.read_text())
+-- 
+2.43.7
+

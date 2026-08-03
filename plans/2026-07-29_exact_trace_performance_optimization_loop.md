@@ -1482,3 +1482,31 @@ GB before other prefix growth. Reopen only the newly exposed host-residency
 boundary. Evaluate whether the existing exact file-backed row store can feed
 the same bounded CUDA windows without a second full signed RAM mirror; retain
 the current mode regardless because it is non-dominated on admitted 4B/129--256.
+
+The LS4 file-backed CUDA-window experiment closes that boundary as a rejected
+implementation family. Version 1 streamed the canonical memmap through bounded
+pinned-host and CUDA windows and completed the 4B/256 trace with `strict_exact`
+fidelity: all 8,192 features, 20,000 retained edges and weights, signs, target,
+and Top-64 through Top-1024 matched. It removed ownership of the
+6,186,403,212-byte signed host mirror, but repeated mapped reads accumulated in
+the cgroup file cache. Trace wall was 189.640 seconds and Phase 4 was 158.212
+seconds, versus 129.403 and 84.898 seconds for mirrored `cuda_windowed`; wrapper
+wall was 225.399 seconds and peak cgroup usage was 198.542 GiB. The candidate
+was therefore slower without a meaningful measured total-memory win.
+
+Version 2 read directly from the canonical file into the pinned buffer and
+discarded each bounded range afterward. This reduced mapped-file process RSS,
+but made refresh storage-bound: Phase 4 reached 371.35 seconds versus 162.783
+seconds for `cpu_exact`. The resource wrapper reached 201.053 GiB and the 200
+GiB guard stopped the run before packaging, leaving zero trace-result rows.
+Both variants are dominated and have been removed from live runtime/profile
+selection. Their sibling implementation series and project registration are
+preserved in `experiments/patches/exact_trace_performance_20260803/` with an
+indexed restoration guide. The independently useful prepared-workload resource
+guard helper remains active.
+
+Do not force the next 4B/512 or any 12B trace into this interactive allocation.
+Use the existing per-trace launch machinery with a RAM request sized for the
+workload. The interactive node remains appropriate for guarded probes and full
+runs that fit comfortably; a guard refusal is a capacity result, not a reason
+to squeeze a larger trace into the node.

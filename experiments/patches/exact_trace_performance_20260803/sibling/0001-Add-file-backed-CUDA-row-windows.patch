@@ -1,0 +1,541 @@
+From 74e058f29b6aede3d5ab03ba275968628084f534 Mon Sep 17 00:00:00 2001
+From: Andrey170170 <andrey24122004@gmail.com>
+Date: Mon, 3 Aug 2026 14:24:15 -0600
+Subject: [PATCH 1/2] Add file-backed CUDA row windows
+
+---
+ .../nnsight/phases/phase2_storage.py          |   2 +
+ .../nnsight/phases/phase4_influence.py        |   2 +-
+ .../attribution/nnsight/row_store.py          | 126 +++++++++++++-----
+ .../attribution/nnsight/telemetry.py          |   3 +
+ circuit_tracer/tracing/plan.py                |  12 +-
+ tests/test_attribute_nnsight_telemetry.py     |   2 +
+ tests/test_gpu_resident_row_store.py          |  65 +++++++--
+ 7 files changed, 170 insertions(+), 42 deletions(-)
+
+diff --git a/circuit_tracer/attribution/nnsight/phases/phase2_storage.py b/circuit_tracer/attribution/nnsight/phases/phase2_storage.py
+index ca79981..18a0f76 100644
+--- a/circuit_tracer/attribution/nnsight/phases/phase2_storage.py
++++ b/circuit_tracer/attribution/nnsight/phases/phase2_storage.py
+@@ -90,6 +90,7 @@ class RowStoreRuntime:
+         "cpu_prepared",
+         "cuda_full",
+         "cuda_windowed",
++        "cuda_file_windowed",
+         "auto",
+     ] = "cpu_exact"
+     gpu_resident_max_bytes: int = 0
+@@ -103,6 +104,7 @@ class RowStoreRuntime:
+             "cpu_prepared",
+             "cuda_full",
+             "cuda_windowed",
++            "cuda_file_windowed",
+             "auto",
+         }:
+             raise ValueError("invalid feature-row influence mode")
+diff --git a/circuit_tracer/attribution/nnsight/phases/phase4_influence.py b/circuit_tracer/attribution/nnsight/phases/phase4_influence.py
+index e1264de..8316c11 100644
+--- a/circuit_tracer/attribution/nnsight/phases/phase4_influence.py
++++ b/circuit_tracer/attribution/nnsight/phases/phase4_influence.py
+@@ -89,7 +89,7 @@ def recompute_feature_influences(state):
+                 "resolved_influence_mode",
+                 None,
+             )
+-            == "cuda_windowed"
++            in {"cuda_windowed", "cuda_file_windowed"}
+             else None
+         )
+         if state.refresh_prepared_row_reader:
+diff --git a/circuit_tracer/attribution/nnsight/row_store.py b/circuit_tracer/attribution/nnsight/row_store.py
+index df40487..af8671f 100644
+--- a/circuit_tracer/attribution/nnsight/row_store.py
++++ b/circuit_tracer/attribution/nnsight/row_store.py
+@@ -958,6 +958,7 @@ _FeatureRowInfluenceMode = Literal[
+     "cpu_prepared",
+     "cuda_full",
+     "cuda_windowed",
++    "cuda_file_windowed",
+     "auto",
+ ]
+ _FEATURE_ROW_INFLUENCE_MODES = {
+@@ -965,6 +966,7 @@ _FEATURE_ROW_INFLUENCE_MODES = {
+     "cpu_prepared",
+     "cuda_full",
+     "cuda_windowed",
++    "cuda_file_windowed",
+     "auto",
+ }
+ 
+@@ -974,9 +976,10 @@ class _GpuResidentFeatureRowStore:
+ 
+     ``cuda_full`` retains the complete signed matrix on CUDA. ``cuda_windowed``
+     retains signed rows on the host and copies bounded row windows into a reusable
+-    CUDA buffer. ``cpu_prepared`` retains an absolute-value host mirror. Any
+-    admission or append failure resolves atomically to the canonical ``cpu_exact``
+-    file-backed path.
++    CUDA buffer. ``cuda_file_windowed`` instead streams the canonical signed
++    memmap directly through bounded pinned-host and CUDA windows. ``cpu_prepared``
++    retains an absolute-value host mirror. Any admission or append failure resolves
++    atomically to the canonical ``cpu_exact`` file-backed path.
+     """
+ 
+     def __init__(
+@@ -1023,7 +1026,9 @@ class _GpuResidentFeatureRowStore:
+         self._diagnostic_stats: dict[str, object] = {
+             "feature_row_influence_mode_requested": mode,
+             "feature_row_influence_mode_resolved": "cpu_exact",
+-            "gpu_row_tier_requested": int(mode in {"cuda_full", "cuda_windowed", "auto"}),
++            "gpu_row_tier_requested": int(
++                mode in {"cuda_full", "cuda_windowed", "cuda_file_windowed", "auto"}
++            ),
+             "gpu_row_tier_admitted": 0,
+             "gpu_row_tier_reason": "not_evaluated",
+             "gpu_row_tier_budget_bytes": int(max_bytes),
+@@ -1060,6 +1065,7 @@ class _GpuResidentFeatureRowStore:
+             "gpu_row_tier_h2d_bytes": 0,
+             "gpu_row_tier_d2h_bytes": 0,
+             "gpu_row_tier_host_mirror_read_bytes": 0,
++            "gpu_row_tier_file_window_read_bytes": 0,
+             "gpu_row_tier_prepared_host_mirror_read_bytes": 0,
+             "gpu_row_tier_window_read_calls": 0,
+             "gpu_row_tier_window_read_rows": 0,
+@@ -1100,13 +1106,13 @@ class _GpuResidentFeatureRowStore:
+ 
+     @property
+     def influence_device(self) -> torch.device:
+-        if self._resolved_mode in {"cuda_full", "cuda_windowed"}:
++        if self._resolved_mode in {"cuda_full", "cuda_windowed", "cuda_file_windowed"}:
+             return self._device
+         return self.row_abs_max.device
+ 
+     @property
+     def influence_row_chunk_size(self) -> int:
+-        if self._resolved_mode == "cuda_windowed":
++        if self._resolved_mode in {"cuda_windowed", "cuda_file_windowed"}:
+             return self._window_row_capacity
+         return 4096
+ 
+@@ -1208,7 +1214,9 @@ class _GpuResidentFeatureRowStore:
+             else:
+                 reason = f"cuda_full_{refusal}"
+ 
+-        if mode == "cuda_windowed" or (mode == "auto" and self._resolved_mode == "cpu_exact"):
++        if mode in {"cuda_windowed", "cuda_file_windowed"} or (
++            mode == "auto" and self._resolved_mode == "cpu_exact"
++        ):
+             row_bytes = int(self.n_feature_columns * capacity.element_size)
+             total_window_rows = min(
+                 self.n_rows * 2,
+@@ -1228,11 +1236,12 @@ class _GpuResidentFeatureRowStore:
+                 refusal = "window_budget_below_two_buffers"
+             if refusal is None:
+                 try:
+-                    self._host_rows = torch.empty(
+-                        (self.n_rows, self.n_feature_columns),
+-                        dtype=self._dtype,
+-                        device="cpu",
+-                    )
++                    if mode != "cuda_file_windowed":
++                        self._host_rows = torch.empty(
++                            (self.n_rows, self.n_feature_columns),
++                            dtype=self._dtype,
++                            device="cpu",
++                        )
+                     self._window_rows = self._allocate_cuda_rows(allocated_window_rows)
+                     self._pinned_window_rows = torch.empty(
+                         (allocated_window_rows, self.n_feature_columns),
+@@ -1253,8 +1262,10 @@ class _GpuResidentFeatureRowStore:
+                             for _ in range(self._window_buffer_count)
+                         ]
+                     self._window_slot_initialized = [False] * self._window_buffer_count
+-                    self._resolved_mode = "cuda_windowed"
+-                    reason = "admitted_cuda_windowed"
++                    self._resolved_mode = (
++                        "cuda_file_windowed" if mode == "cuda_file_windowed" else "cuda_windowed"
++                    )
++                    reason = f"admitted_{self._resolved_mode}"
+                 except (RuntimeError, torch.cuda.OutOfMemoryError) as exc:
+                     self._host_rows = None
+                     self._window_rows = None
+@@ -1265,9 +1276,9 @@ class _GpuResidentFeatureRowStore:
+                     self._window_copy_ready_events = []
+                     self._window_compute_done_events = []
+                     self._window_slot_initialized = []
+-                    reason = f"cuda_windowed_allocation_failed:{type(exc).__name__}"
++                    reason = f"{mode}_allocation_failed:{type(exc).__name__}"
+             else:
+-                reason = f"cuda_windowed_{refusal}"
++                reason = f"{mode}_{refusal}"
+ 
+         _, _, allocated_after, reserved_after = self._cuda_memory_snapshot()
+         allocated_delta = max(0, allocated_after - allocated_before)
+@@ -1374,6 +1385,8 @@ class _GpuResidentFeatureRowStore:
+             return self._resident_rows is not None
+         if self._resolved_mode == "cuda_windowed":
+             return self._host_rows is not None and self._window_rows is not None
++        if self._resolved_mode == "cuda_file_windowed":
++            return self._window_rows is not None
+         if self._resolved_mode == "cpu_prepared":
+             return self._prepared_host_rows is not None
+         return False
+@@ -1394,7 +1407,6 @@ class _GpuResidentFeatureRowStore:
+         row_start: int,
+         row_end: int,
+     ) -> torch.Tensor:
+-        assert self._host_rows is not None
+         assert self._window_rows is not None
+         assert self._pinned_window_rows is not None
+         assert self._window_copy_stream is not None
+@@ -1409,7 +1421,21 @@ class _GpuResidentFeatureRowStore:
+             sync_elapsed_ms = (time.perf_counter() - sync_start) * 1000.0
+         pinned = self._window_slot(self._pinned_window_rows, slot, row_count)
+         host_stage_start = time.perf_counter()
+-        pinned.copy_(self._host_rows[row_start:row_end], non_blocking=False)
++        if self._resolved_mode == "cuda_file_windowed":
++            host_source = self._backing_store.read_feature_rows(
++                row_start,
++                row_end,
++                phase="phase4",
++            )
++        else:
++            assert self._host_rows is not None
++            host_source = self._host_rows[row_start:row_end]
++        pinned.copy_(host_source, non_blocking=False)
++        if self._resolved_mode == "cuda_file_windowed":
++            self._backing_store._apply_row_store_cache_control_after_safe_read(
++                row_start=row_start,
++                row_end=row_end,
++            )
+         host_stage_elapsed_ms = (time.perf_counter() - host_stage_start) * 1000.0
+         result = self._window_slot(self._window_rows, slot, row_count)
+         dispatch_start = time.perf_counter()
+@@ -1425,16 +1451,24 @@ class _GpuResidentFeatureRowStore:
+             source_device=torch.device("cpu"),
+             destination_device=self._device,
+             transfer_elapsed_ms=host_stage_elapsed_ms + dispatch_elapsed_ms,
++            avoided_file_read=self._resolved_mode != "cuda_file_windowed",
+         )
+         nbytes = int(row_count * self.n_feature_columns * self._dtype.itemsize)
+         for key, delta in (
+             ("gpu_row_tier_window_read_calls", 1),
+             ("gpu_row_tier_window_read_rows", row_count),
+             ("gpu_row_tier_window_read_bytes", nbytes),
+-            ("gpu_row_tier_host_mirror_read_bytes", nbytes),
+             ("gpu_row_tier_window_prefetch_calls", 1),
+         ):
+             self._diagnostic_stats[key] = int(self._diagnostic_stats[key]) + delta
++        source_counter = (
++            "gpu_row_tier_file_window_read_bytes"
++            if self._resolved_mode == "cuda_file_windowed"
++            else "gpu_row_tier_host_mirror_read_bytes"
++        )
++        self._diagnostic_stats[source_counter] = (
++            int(self._diagnostic_stats[source_counter]) + nbytes
++        )
+         self._diagnostic_stats["gpu_row_tier_window_sync_elapsed_ms"] = (
+             float(self._diagnostic_stats["gpu_row_tier_window_sync_elapsed_ms"]) + sync_elapsed_ms
+         )
+@@ -1451,7 +1485,7 @@ class _GpuResidentFeatureRowStore:
+         """Yield ordered CUDA windows with one-range-ahead transfer overlap."""
+ 
+         self._require_open()
+-        if self._resolved_mode != "cuda_windowed":
++        if self._resolved_mode not in {"cuda_windowed", "cuda_file_windowed"}:
+             for row_start, row_end in ranges:
+                 yield self.read_feature_rows(row_start, row_end, phase="phase4")
+             return
+@@ -1483,15 +1517,19 @@ class _GpuResidentFeatureRowStore:
+         source_device: torch.device,
+         destination_device: torch.device,
+         transfer_elapsed_ms: float,
++        avoided_file_read: bool = True,
+     ) -> None:
+         nbytes = int(row_count * self.n_feature_columns * self._dtype.itemsize)
+         for key, delta in (
+             ("gpu_row_tier_read_hits", 1),
+             ("gpu_row_tier_read_hit_rows", row_count),
+             ("gpu_row_tier_read_hit_bytes", nbytes),
+-            ("gpu_row_tier_avoided_file_read_bytes", nbytes),
+         ):
+             self._diagnostic_stats[key] = int(self._diagnostic_stats[key]) + delta
++        if avoided_file_read:
++            self._diagnostic_stats["gpu_row_tier_avoided_file_read_bytes"] = (
++                int(self._diagnostic_stats["gpu_row_tier_avoided_file_read_bytes"]) + nbytes
++            )
+         if source_device == self._device and destination_device == self._device:
+             self._diagnostic_stats["gpu_row_tier_avoided_h2d_bytes"] = (
+                 int(self._diagnostic_stats["gpu_row_tier_avoided_h2d_bytes"]) + nbytes
+@@ -1557,6 +1595,8 @@ class _GpuResidentFeatureRowStore:
+                     feature_rows.detach().to(device="cpu", dtype=self._dtype),
+                     non_blocking=False,
+                 )
++            elif self._resolved_mode == "cuda_file_windowed":
++                pass
+             elif self._resolved_mode == "cpu_prepared":
+                 assert self._prepared_host_rows is not None
+                 canonical_host = feature_rows.detach().to(device="cpu", dtype=self._dtype)
+@@ -1574,7 +1614,11 @@ class _GpuResidentFeatureRowStore:
+         elapsed_ms = (time.perf_counter() - copy_start) * 1000.0
+         self._committed_rows[row_start:row_end] = b"\x01" * row_count
+         self._high_water_row = max(self._high_water_row, row_end)
+-        append_bytes = int(row_count * self.n_feature_columns * self._dtype.itemsize)
++        append_bytes = (
++            0
++            if self._resolved_mode == "cuda_file_windowed"
++            else int(row_count * self.n_feature_columns * self._dtype.itemsize)
++        )
+         for key, delta in (
+             ("gpu_row_tier_append_calls", 1),
+             ("gpu_row_tier_append_rows", row_count),
+@@ -1621,8 +1665,7 @@ class _GpuResidentFeatureRowStore:
+                     transfer_elapsed_ms=0.0,
+                 )
+                 return result
+-            if self._resolved_mode == "cuda_windowed":
+-                assert self._host_rows is not None
++            if self._resolved_mode in {"cuda_windowed", "cuda_file_windowed"}:
+                 assert self._window_rows is not None
+                 assert self._pinned_window_rows is not None
+                 if row_count > self._window_row_capacity:
+@@ -1636,10 +1679,21 @@ class _GpuResidentFeatureRowStore:
+                     row_count,
+                 )
+                 transfer_start = time.perf_counter()
+-                pinned.copy_(
+-                    self._host_rows[row_start:row_end],
+-                    non_blocking=False,
+-                )
++                if self._resolved_mode == "cuda_file_windowed":
++                    host_source = self._backing_store.read_feature_rows(
++                        row_start,
++                        row_end,
++                        phase=phase,
++                    )
++                else:
++                    assert self._host_rows is not None
++                    host_source = self._host_rows[row_start:row_end]
++                pinned.copy_(host_source, non_blocking=False)
++                if self._resolved_mode == "cuda_file_windowed":
++                    self._backing_store._apply_row_store_cache_control_after_safe_read(
++                        row_start=row_start,
++                        row_end=row_end,
++                    )
+                 result = self._window_slot(self._window_rows, 0, row_count)
+                 result.copy_(pinned, non_blocking=False)
+                 transfer_elapsed_ms = (time.perf_counter() - transfer_start) * 1000.0
+@@ -1648,15 +1702,23 @@ class _GpuResidentFeatureRowStore:
+                     source_device=torch.device("cpu"),
+                     destination_device=self._device,
+                     transfer_elapsed_ms=transfer_elapsed_ms,
++                    avoided_file_read=self._resolved_mode != "cuda_file_windowed",
+                 )
+                 nbytes = int(row_count * self.n_feature_columns * self._dtype.itemsize)
+                 for key, delta in (
+                     ("gpu_row_tier_window_read_calls", 1),
+                     ("gpu_row_tier_window_read_rows", row_count),
+                     ("gpu_row_tier_window_read_bytes", nbytes),
+-                    ("gpu_row_tier_host_mirror_read_bytes", nbytes),
+                 ):
+                     self._diagnostic_stats[key] = int(self._diagnostic_stats[key]) + delta
++                source_counter = (
++                    "gpu_row_tier_file_window_read_bytes"
++                    if self._resolved_mode == "cuda_file_windowed"
++                    else "gpu_row_tier_host_mirror_read_bytes"
++                )
++                self._diagnostic_stats[source_counter] = (
++                    int(self._diagnostic_stats[source_counter]) + nbytes
++                )
+                 return result
+         if phase == "phase4":
+             self._record_fallback_read(row_count)
+@@ -1700,7 +1762,11 @@ class _GpuResidentFeatureRowStore:
+                 int(self._diagnostic_stats["gpu_row_tier_prepared_host_mirror_read_bytes"]) + nbytes
+             )
+             return result
+-        if phase == "phase4" and self._resolved_mode in {"cuda_full", "cuda_windowed"}:
++        if phase == "phase4" and self._resolved_mode in {
++            "cuda_full",
++            "cuda_windowed",
++            "cuda_file_windowed",
++        }:
+             return self.read_feature_rows(row_start, row_end, phase=phase).to(dtype=dtype).abs()
+         if phase == "phase4":
+             self._record_fallback_read(row_count)
+diff --git a/circuit_tracer/attribution/nnsight/telemetry.py b/circuit_tracer/attribution/nnsight/telemetry.py
+index 66013ec..3fae61b 100644
+--- a/circuit_tracer/attribution/nnsight/telemetry.py
++++ b/circuit_tracer/attribution/nnsight/telemetry.py
+@@ -231,6 +231,9 @@ def _build_phase4_refresh_substage_telemetry(
+                 "gpu_row_tier_host_mirror_read_bytes": (
+                     "feature_row_store_gpu_tier_host_mirror_read_bytes"
+                 ),
++                "gpu_row_tier_file_window_read_bytes": (
++                    "feature_row_store_gpu_tier_file_window_read_bytes"
++                ),
+                 "gpu_row_tier_copy_failures": "feature_row_store_gpu_tier_copy_failures",
+                 "gpu_row_tier_append_calls": "feature_row_store_gpu_tier_append_calls",
+                 "gpu_row_tier_append_rows": "feature_row_store_gpu_tier_append_rows",
+diff --git a/circuit_tracer/tracing/plan.py b/circuit_tracer/tracing/plan.py
+index d94b281..b612df7 100644
+--- a/circuit_tracer/tracing/plan.py
++++ b/circuit_tracer/tracing/plan.py
+@@ -108,6 +108,7 @@ class RowStoragePlan:
+         "cpu_prepared",
+         "cuda_full",
+         "cuda_windowed",
++        "cuda_file_windowed",
+         "auto",
+     ] = "cpu_exact"
+     gpu_resident_max_bytes: int = 0
+@@ -122,6 +123,7 @@ class RowStoragePlan:
+             "cpu_prepared",
+             "cuda_full",
+             "cuda_windowed",
++            "cuda_file_windowed",
+             "auto",
+         }
+         if self.feature_row_influence_mode not in allowed_influence_modes:
+@@ -142,8 +144,14 @@ class RowStoragePlan:
+         )
+         if self.feature_row_influence_mode == "cuda_full" and self.gpu_resident_max_bytes == 0:
+             raise ValueError("cuda_full feature-row influence requires gpu_resident_max_bytes")
+-        if self.feature_row_influence_mode == "cuda_windowed" and self.gpu_window_max_bytes == 0:
+-            raise ValueError("cuda_windowed feature-row influence requires gpu_window_max_bytes")
++        if (
++            self.feature_row_influence_mode in {"cuda_windowed", "cuda_file_windowed"}
++            and self.gpu_window_max_bytes == 0
++        ):
++            raise ValueError(
++                f"{self.feature_row_influence_mode} feature-row influence requires "
++                "gpu_window_max_bytes"
++            )
+         if self.feature_row_influence_mode == "auto" and (
+             self.gpu_resident_max_bytes == 0 or self.gpu_window_max_bytes == 0
+         ):
+diff --git a/tests/test_attribute_nnsight_telemetry.py b/tests/test_attribute_nnsight_telemetry.py
+index 5c38559..171cbc5 100644
+--- a/tests/test_attribute_nnsight_telemetry.py
++++ b/tests/test_attribute_nnsight_telemetry.py
+@@ -203,6 +203,7 @@ def test_phase4_refresh_telemetry_exports_gpu_row_tier_counters() -> None:
+             "gpu_row_tier_h2d_bytes": 25,
+             "gpu_row_tier_d2h_bytes": 21,
+             "gpu_row_tier_host_mirror_read_bytes": 23,
++            "gpu_row_tier_file_window_read_bytes": 42,
+             "gpu_row_tier_read_transfer_elapsed_ms": 22.5,
+             "gpu_row_tier_copy_failures": 0,
+             "gpu_row_tier_append_calls": 16,
+@@ -243,6 +244,7 @@ def test_phase4_refresh_telemetry_exports_gpu_row_tier_counters() -> None:
+     assert payload["feature_row_store_gpu_tier_h2d_bytes"] == 25
+     assert payload["feature_row_store_gpu_tier_d2h_bytes"] == 21
+     assert payload["feature_row_store_gpu_tier_host_mirror_read_bytes"] == 23
++    assert payload["feature_row_store_gpu_tier_file_window_read_bytes"] == 42
+     assert payload["feature_row_store_gpu_tier_read_transfer_elapsed_ms"] == 22.5
+     assert payload["feature_row_store_gpu_tier_copy_failures"] == 0
+     assert payload["feature_row_store_gpu_tier_append_bytes"] == 18
+diff --git a/tests/test_gpu_resident_row_store.py b/tests/test_gpu_resident_row_store.py
+index 3499068..ccb74ef 100644
+--- a/tests/test_gpu_resident_row_store.py
++++ b/tests/test_gpu_resident_row_store.py
+@@ -52,6 +52,8 @@ def test_feature_row_influence_modes_require_their_byte_budgets() -> None:
+         RowStoragePlan(feature_row_influence_mode="cuda_full")
+     with pytest.raises(ValueError, match="cuda_windowed"):
+         RowStoragePlan(feature_row_influence_mode="cuda_windowed")
++    with pytest.raises(ValueError, match="cuda_file_windowed"):
++        RowStoragePlan(feature_row_influence_mode="cuda_file_windowed")
+     with pytest.raises(ValueError, match="full-resident and window"):
+         RowStoragePlan(
+             feature_row_influence_mode="auto",
+@@ -329,6 +331,47 @@ def test_cuda_windowed_mode_bounds_hbm_and_streams_host_rows() -> None:
+         store.cleanup()
+ 
+ 
++@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
++def test_cuda_file_windowed_mode_streams_backing_without_full_host_mirror() -> None:
++    device = torch.device("cuda", torch.cuda.current_device())
++    backing = _FileBackedFeatureRowStore(
++        n_rows=5,
++        n_feature_columns=4,
++        dtype=torch.float32,
++        row_store_cache_control_mode="fadvise_dontneed_after_append_and_read_v1",
++    )
++    store = _GpuResidentFeatureRowStore(
++        backing_store=backing,
++        mode="cuda_file_windowed",
++        max_bytes=0,
++        window_max_bytes=4 * 4 * 4,
++        safety_margin_bytes=0,
++        device=device,
++    )
++    rows = torch.arange(16, dtype=torch.float32, device=device).reshape(4, 4) - 8
++    try:
++        assert store.resolved_influence_mode == "cuda_file_windowed"
++        assert store.influence_row_chunk_size == 2
++        _append(store, rows)
++
++        streamed = store.read_feature_rows(1, 3, phase="phase4")
++        assert streamed.device.type == "cuda"
++        assert torch.equal(streamed, rows[1:3])
++
++        stats = store.get_diagnostic_snapshot()
++        assert stats["gpu_row_tier_owned_bytes"] == 4 * 4 * 4
++        assert stats["gpu_row_tier_pinned_host_bytes"] == 4 * 4 * 4
++        assert stats["gpu_row_tier_host_mirror_owned_bytes"] == 0
++        assert stats["gpu_row_tier_host_mirror_read_bytes"] == 0
++        assert stats["gpu_row_tier_file_window_read_bytes"] == 2 * 4 * 4
++        assert stats["gpu_row_tier_avoided_file_read_bytes"] == 0
++        assert stats["gpu_row_tier_append_bytes"] == 0
++        assert stats["read_call_count"] == 1
++        assert stats["row_store_cache_control_read_advisory_call_count"] == 1
++    finally:
++        store.cleanup()
++
++
+ @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+ def test_auto_mode_falls_from_full_residency_to_cuda_window() -> None:
+     device = torch.device("cuda", torch.cuda.current_device())
+@@ -375,6 +418,7 @@ def test_cuda_windowed_solver_matches_cuda_full_with_fixed_chunk_geometry() -> N
+         for mode, full_bytes, window_bytes in (
+             ("cuda_full", 1024, 0),
+             ("cuda_windowed", 0, 4 * 4 * 4),
++            ("cuda_file_windowed", 0, 4 * 4 * 4),
+         ):
+             backing = _FileBackedFeatureRowStore(
+                 n_rows=3,
+@@ -411,7 +455,8 @@ def test_cuda_windowed_solver_matches_cuda_full_with_fixed_chunk_geometry() -> N
+                 active_row_accumulation="direct_v1",
+                 row_batch_reader=(
+                     store.iter_phase4_feature_rows
+-                    if store.resolved_influence_mode == "cuda_windowed"
++                    if store.resolved_influence_mode
++                    in {"cuda_windowed", "cuda_file_windowed"}
+                     else None
+                 ),
+             )
+@@ -419,14 +464,16 @@ def test_cuda_windowed_solver_matches_cuda_full_with_fixed_chunk_geometry() -> N
+         ]
+ 
+         assert torch.equal(results[0], results[1])
+-        window_stats = stores[1].get_diagnostic_snapshot()
+-        assert window_stats["gpu_row_tier_h2d_bytes"] > 0
+-        assert window_stats["gpu_row_tier_window_read_calls"] > 1
+-        assert window_stats["gpu_row_tier_window_prefetch_calls"] > 1
+-        assert (
+-            window_stats["gpu_row_tier_window_stream_wait_count"]
+-            == window_stats["gpu_row_tier_window_prefetch_calls"]
+-        )
++        assert torch.equal(results[0], results[2])
++        for window_store in stores[1:]:
++            window_stats = window_store.get_diagnostic_snapshot()
++            assert window_stats["gpu_row_tier_h2d_bytes"] > 0
++            assert window_stats["gpu_row_tier_window_read_calls"] > 1
++            assert window_stats["gpu_row_tier_window_prefetch_calls"] > 1
++            assert (
++                window_stats["gpu_row_tier_window_stream_wait_count"]
++                == window_stats["gpu_row_tier_window_prefetch_calls"]
++            )
+     finally:
+         for store in stores:
+             store.cleanup()
+-- 
+2.43.7
+
