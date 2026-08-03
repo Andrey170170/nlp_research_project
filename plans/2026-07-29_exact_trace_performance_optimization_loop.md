@@ -1343,3 +1343,29 @@ envelope for combinations such as bounded windowed CUDA that need more device
 headroom. The next experiment must use the existing full-answer launch path:
 first admit `cuda_windowed` with a short transition probe, then run the complete
 1024 trace because the exact reference itself finishes in about five minutes.
+
+That experiment exposed and repaired a general full-answer integration gap.
+The prepared trace spec contained the row-influence mode and budgets, but the
+canonical full-answer `TraceRequest` bridge did not copy them into
+`RowStoragePlan`; the first probe/full diagnostic therefore resolved to
+`cpu_exact` despite the requested graph knobs. Project commit `dd8ac10` wires
+all four controls and adds focused regression coverage. The corrected probe
+resolved `cuda_windowed`, admitted a 119-row double-buffer window with
+536,239,704 bytes each of HBM and pinned staging, and owned an 18,459,713,844-
+byte signed host mirror without fallback.
+
+The mandatory corrected 1024-token full trace is a large, exact win. Runner
+wall fell from 316.037 to 164.218 seconds, attribution core from 301.75 to
+149.33 seconds, and Phase 4 from 282.75 to 129.62 seconds. Refresh fell from
+234.704 to 79.404 seconds (66.2%), while feature-batch work was effectively
+flat at 45.40 versus 47.56 seconds. The provider streamed 362,207,388,972 bytes
+through 1,643 window reads/prefetches; host staging consumed 9.57 seconds and
+stream synchronization 0.008 seconds. CUDA reservation remained 111.49 GiB.
+The host mirror increased late cgroup charge to 102.46 GiB, including 21.11
+GiB anonymous and 81.07 GiB file memory, safely inside the 200 GiB allocation.
+The compact graph was `strict_exact` against the matched `cpu_exact` artifact
+at every canonical field and Top-64 through Top-1024. The 1B/1024 profile is
+therefore non-dominated and retained. Its measured scope is this development
+workload until shorter-length crossover and prompt holdouts are completed; the
+historically bounded CUDA family must not be relabeled globally from one exact
+point.
