@@ -1,7 +1,8 @@
 # Exact-trace performance optimization loop: short-prefix promotion and scaling
 
-Status: in progress; SP0-SP5 and LS0-LS2 complete; the exact 1B length finalist
-is frozen for LS3 prompt holdouts
+Status: in progress; SP0-SP5 and LS0-LS3 complete; LS3 retained the windowed
+CUDA finalist as a selectable close-or-better 1B mode but rejected broad exact
+auto-promotion; LS4 4B transfer is next
 
 Date: 2026-07-29
 
@@ -43,7 +44,7 @@ The stage prefixes are descriptive:
 | Prefix | Meaning | Current state |
 |---|---|---|
 | `SP` | canonical short-prefix completion and promotion evidence | SP0-SP5 complete; exact candidates admitted, selection deferred |
-| `LS` | prefix-length, prompt, and model-size scaling | LS0-LS2 complete; LS3 next |
+| `LS` | prefix-length, prompt, and model-size scaling | LS0-LS3 complete; LS4 next |
 
 Within each campaign the number is execution order, not a governor phase or
 calibration wave.
@@ -1392,3 +1393,27 @@ development finalist. This is an automatic promotion within its demonstrated
 non-dominated on runtime and admitted resources. It is not a global default or
 a global fidelity reclassification. Do not tune it after seeing LS3 holdouts;
 holdout evidence may accept it, reject it, or narrow its applicability.
+
+LS3 ran the frozen profile without post-holdout tuning on prompts 828 and 94 at
+256 and 512 tokens, with matched `cpu_exact` controls and reversed pair order.
+All eight traces completed and all telemetry sinks closed cleanly. Windowed
+CUDA reduced runner wall by 36.7%, 38.9%, 46.0%, and 47.8%, respectively, and
+reduced Phase-4 refresh by 69.7--71.1%. The mode resolved as requested without
+fallback; logical row stores ranged from 4.88 to 10.00 GB, fixed windows stayed
+near 535--537 MB, maximum observed CUDA reservation was 47.53 GiB, and maximum
+observed cgroup current was 87.36 GiB.
+
+Fidelity was prompt-dependent at 256 tokens. Prompt 828/256 was `exact`
+(feature/edge/weighted Jaccard 0.999512/0.999900/0.999946, normalized and signed
+L1 0.0000544, exact signs, target, and Top-64 through Top-1024). Prompt 94/256
+was only `close` (0.993672/0.992528/0.991711 Jaccard, 0.008323 normalized and
+signed L1, exact signs and target, but 63/64 through 1019/1024 Top-K overlap).
+Both 512-token holdouts were `strict_exact`. Because the same prompt is close
+at 256 and strict-exact at 512, prompt and length alone do not provide a safe
+pre-run exact selector. LS3 therefore rejects broad automatic exact promotion
+for unseen prompts while retaining the profile as a non-dominated selectable
+close-or-better 1B mode with atomic `cpu_exact` fallback. The earlier LS2 exact
+development scope and individually measured exact holdout points remain valid;
+an arbitrary exact request continues to use `cpu_exact`. LS3 is complete by an
+evidence-backed applicability boundary, and LS4 may now test 4B transfer without
+reopening or tuning the frozen 1B holdouts.
