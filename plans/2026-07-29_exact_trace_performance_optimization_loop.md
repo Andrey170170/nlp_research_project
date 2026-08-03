@@ -1457,3 +1457,12 @@ seconds of host staging and 0.0024 seconds of synchronization. Maximum sampled
 cgroup current was 183.21 GiB and CUDA reservation remained 35.91 GiB. This is
 a non-dominated exact point, but it is only the 4B/129 development scope. Admit
 the 256-token candidate transition probe; do not skip its host-capacity gate.
+
+The warm 256-token LS4 transition probe passed that gate in 44.750 seconds.
+Phase 0 took 29.277 seconds and four physical Phase-4 executions took 3.150
+seconds. All 188,771 active decoder rows (966,507,520 bytes) were resident
+without fallback. `cuda_windowed` admitted a roughly 536 MB window over the
+already allocated 6,186,403,212-byte logical host mirror. Maximum sampled
+cgroup current was 182.14 GiB and CUDA reservation was 49.72 GiB. Admit the
+complete 256-token matched pair under the same warm control-then-candidate
+protocol; classify it before probing 512.
