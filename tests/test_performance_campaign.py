@@ -174,6 +174,58 @@ def test_prepare_campaign_workload_accepts_registered_profile_override(
     assert trace_spec["graph_knobs"]["decoder_active_row_max_bytes"] == 1536 * 1024**2
 
 
+def test_run_prepared_campaign_workload_reuses_recorded_command_and_resource_guard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_root = tmp_path / "run"
+    prepared_path = tmp_path / "prepared_workload.json"
+    command = [
+        "uv",
+        "run",
+        "exact-trace-bench",
+        "run-full-answer-shard",
+        "--output-root",
+        str(output_root),
+    ]
+    prepared_path.write_text(
+        json.dumps(
+            {
+                "launcher": "existing_full_answer_shard_runner",
+                "launch_command": command,
+                "launch_output_root": str(output_root),
+                "resource_envelope": {
+                    "host_memory_stop_gib": 200,
+                    "host_rss_stop_gib": 64,
+                },
+            }
+        )
+    )
+    calls: list[tuple[object, ...]] = []
+
+    def fake_stream_runner(recorded_command, **kwargs):
+        calls.append((recorded_command, kwargs))
+        return 0
+
+    monkeypatch.setattr(perf_cli, "_stream_runner", fake_stream_runner)
+    assert (
+        perf_cli.main(
+            ["run-prepared-campaign-workload", str(prepared_path)]
+        )
+        == 0
+    )
+    assert calls == [
+        (
+            command,
+            {
+                "output_root": output_root,
+                "host_memory_stop_gib": 200.0,
+                "host_rss_stop_gib": 64.0,
+            },
+        )
+    ]
+
+
 def test_long_prefix_b128_profile_splits_only_physical_phase4_execution() -> None:
     profile = perf_cli.CANDIDATE_PROFILES[
         "ls2-1b-long-prefix-active-rows-1536mib-b128-v1"

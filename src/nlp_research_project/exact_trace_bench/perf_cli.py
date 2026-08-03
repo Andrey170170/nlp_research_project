@@ -3480,6 +3480,55 @@ def _prepare_campaign_workload(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_prepared_campaign_workload(args: argparse.Namespace) -> int:
+    """Run one immutable prepared command through the existing resource guard."""
+
+    prepared_path = args.prepared_workload.resolve()
+    prepared = read_json(prepared_path)
+    if prepared.get("launcher") != "existing_full_answer_shard_runner":
+        raise ValueError("prepared workload must use the existing full-answer shard runner")
+    command = prepared.get("launch_command")
+    if (
+        not isinstance(command, list)
+        or not command
+        or not all(isinstance(item, str) and item for item in command)
+        or command[:4]
+        != ["uv", "run", "exact-trace-bench", "run-full-answer-shard"]
+    ):
+        raise ValueError("prepared workload has an invalid recorded launch command")
+    output_root_raw = prepared.get("launch_output_root")
+    if not isinstance(output_root_raw, str) or not output_root_raw:
+        raise ValueError("prepared workload lacks launch_output_root")
+    resource_envelope = prepared.get("resource_envelope")
+    if not isinstance(resource_envelope, Mapping):
+        raise ValueError("prepared workload lacks a resource envelope")
+    host_memory_stop_gib = (
+        args.host_memory_stop_gib
+        if args.host_memory_stop_gib is not None
+        else float(resource_envelope["host_memory_stop_gib"])
+    )
+    host_rss_stop_gib = (
+        args.host_rss_stop_gib
+        if args.host_rss_stop_gib is not None
+        else float(resource_envelope["host_rss_stop_gib"])
+    )
+    if host_memory_stop_gib <= 0 or host_rss_stop_gib <= 0:
+        raise ValueError("prepared workload host-memory guard thresholds must be positive")
+    output_root = Path(output_root_raw).resolve()
+    print(f"Running prepared workload: {prepared_path}")
+    print(f"Launch output: {output_root}")
+    print(
+        "Host guards: "
+        f"cgroup={host_memory_stop_gib:g} GiB, rss={host_rss_stop_gib:g} GiB"
+    )
+    return _stream_runner(
+        command,
+        output_root=output_root,
+        host_memory_stop_gib=host_memory_stop_gib,
+        host_rss_stop_gib=host_rss_stop_gib,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="H200 exact-trace performance and graph-parity loop"
@@ -3543,6 +3592,16 @@ def build_parser() -> argparse.ArgumentParser:
     prepare_campaign.add_argument("--output-dir", type=Path, required=True)
     prepare_campaign.add_argument("--launch-output-root", type=Path)
     prepare_campaign.add_argument("--run-id")
+    run_prepared = subparsers.add_parser(
+        "run-prepared-campaign-workload",
+        help=(
+            "Execute a prepared full-answer command unchanged through the existing "
+            "GPU sampler and host-memory guard"
+        ),
+    )
+    run_prepared.add_argument("prepared_workload", type=Path)
+    run_prepared.add_argument("--host-memory-stop-gib", type=float)
+    run_prepared.add_argument("--host-rss-stop-gib", type=float)
     run = subparsers.add_parser("run", help="Run one suite and enforce parity")
     run.add_argument("suite", choices=tuple(SUITES))
     run.add_argument(
@@ -3604,6 +3663,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.probe_batches <= 0:
             raise ValueError("--probe-batches must be positive")
         return _prepare_campaign_workload(args)
+    if args.command == "run-prepared-campaign-workload":
+        return _run_prepared_campaign_workload(args)
     if args.host_memory_stop_gib is not None and args.host_memory_stop_gib <= 0:
         raise ValueError("--host-memory-stop-gib must be positive")
     if args.host_rss_stop_gib is not None and args.host_rss_stop_gib <= 0:
