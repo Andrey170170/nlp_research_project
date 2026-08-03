@@ -1226,3 +1226,14 @@ The formal pair each closed 3,188 telemetry events without sink errors. The
 first cache-misconfigured attempt failed before model load and is not scientific
 evidence; earlier completed controls from pre-telemetry-fix source revisions are
 timing evidence only, not members of the formal pair.
+
+The reversed-order 256-token pair also completed strict-exact. Candidate then
+control trace wall times were 108.443 and 116.092 seconds, a 6.6% candidate
+improvement. Selective Phase 0 took 7.56 seconds versus 15.42 seconds for the
+canonical control, while Phase 4 was flat at 85.83 versus 85.71 seconds. Active
+features increased to 136,997 and the logical feature-row store to 4.490 GB.
+Peak CUDA reservation increased materially from 25.95 GiB at 129 tokens to
+50.73 GiB at 256 tokens. Therefore 512 remains a probe-then-full rung for HBM
+admission even though adjacent runtime scaling projects it inside the normal
+direct-run time regime. The admitted 512 probe must still be followed by the
+full control/candidate pair to capture late memory and file-cache behavior.
