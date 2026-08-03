@@ -1431,3 +1431,17 @@ only row-influence difference is `cpu_exact` versus a 512 MiB double-buffered
 preparation helper resolves the candidate to `gemma3_4b_plt` and the ordinary
 full-answer shard runner. Begin with the 129-token candidate transition probe;
 do not admit longer rungs until the preceding complete pair is classified.
+
+The cache-corrected 129-token LS4 candidate transition probe passed admission.
+It completed in 220.740 seconds, dominated by 203.817 seconds of Phase-0 4B
+checkpoint traversal. The requested `cuda_windowed` provider resolved without
+fallback, admitted a 536,411,344-byte / 722-row window over a 3,043,502,868-byte
+logical host mirror, and held all 92,869 active decoder rows (475,489,280 bytes)
+under the 4 GiB cap. Four physical Phase-4 executions covering 511 selected
+features took 4.307 seconds. Maximum observed CUDA reservation was 35.91 GiB;
+cgroup current reached 174.46 GiB, including about 161.49 GiB of warm checkpoint
+file cache, inside the declared 200 GiB envelope. Admit the complete matched
+129-token pair under the warm sequential control-then-candidate protocol. The
+first attempt that pointed `HF_HUB_CACHE` at the nested 1B-only `/hub` directory
+failed before model load and wrote no token result; it is environment diagnostics,
+not scientific evidence.
