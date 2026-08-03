@@ -1,7 +1,7 @@
 # Exact-trace performance optimization loop: short-prefix promotion and scaling
 
-Status: in progress; SP0-SP5 and LS0 complete; LS1 execution is underway and
-the 1B 129-token current-source control/candidate pair is strict-exact
+Status: in progress; SP0-SP5, LS0, and LS1 complete; LS2 implementation is
+underway after the 1B 1024-token probe localized the first scaling boundary
 
 Date: 2026-07-29
 
@@ -43,7 +43,7 @@ The stage prefixes are descriptive:
 | Prefix | Meaning | Current state |
 |---|---|---|
 | `SP` | canonical short-prefix completion and promotion evidence | SP0-SP5 complete; exact candidates admitted, selection deferred |
-| `LS` | prefix-length, prompt, and model-size scaling | LS0 complete; LS1 ready |
+| `LS` | prefix-length, prompt, and model-size scaling | LS0-LS1 complete; LS2 underway |
 
 Within each campaign the number is execution order, not a governor phase or
 calibration wave.
@@ -1034,15 +1034,14 @@ Start here:
         failed; bounded and canonical paths separated).
 12. [x] Extend the harness with the LS0 campaign manifest and dry-run listing.
 13. [x] Prepare deterministic 256/512/1,024-token trajectories in SLURM.
-14. [ ] Run the LS1 1B reference/probe ladder.
+14. [x] Run the LS1 1B reference/probe ladder.
 15. [ ] Optimize only the measured 1B scaling bottleneck, then freeze it.
 16. [ ] Validate held-out prompts before 4B/12B transfer.
 17. [x] Publish the short-prefix report; scaling report remains an LS deliverable.
 
-The immediate coding task is item 2, followed by the SP1 diagnostic boundary.
-The immediate performance mechanism is SP2, the exact full-residency GPU
-feature-row tier. No new 12B full run is justified until those smaller gates
-pass.
+The immediate scaling task is item 15. The first LS2 mechanism is an exact
+Phase-1 physical fix for the 1024-token LM-head allocation localized by LS1;
+holdouts and larger-model transfer remain behind the LS2 gate.
 
 ### 2026-07-29 execution update
 
@@ -1255,3 +1254,16 @@ L1 deviation 0.0; exact signs and Top-64 through Top-1024 support; and exact
 target token. At 1024 tokens, naive adjacent HBM scaling exceeds device
 capacity, so that rung remains probe-only until its governor/fallback behavior
 is observed.
+
+The declared 1024-token candidate probe refused capacity in Phase 1 and no full
+run was launched. Phase 0 completed in 18.46 seconds with 563,277 active
+features, then the model LM head attempted a 128.00 GiB CUDA allocation while
+95.12 GiB was already in use (91.42 GiB PyTorch allocated); the H200 had only
+44.67 GiB free. The failure artifact preserves the wrapped NNsight exception
+and original PyTorch `OutOfMemoryError`, and its telemetry sink closed all seven
+events without errors. This makes the LS1 envelope explicit: 129, 256, and 512
+tokens have completed strict-exact pairs, while 1024 is refused by Phase-1
+full-position logit materialization. LS1 is complete. LS2 starts by retaining
+only the already-declared final-token logits physically during Phase 1, without
+changing semantic source batching or graph construction, then repeating this
+same 1024-token transition probe.
