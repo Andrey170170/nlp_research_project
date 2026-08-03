@@ -219,6 +219,10 @@ def test_trace_request_builds_canonical_domain_policies(tmp_path: Path) -> None:
             "phase1_trace_batch_size_max": 16,
             "feature_row_retention": "none_recompute",
             "full_retention_backend": "column_tiled_v1",
+            "feature_row_influence_mode": "cuda_windowed",
+            "feature_row_gpu_resident_max_bytes": 1024,
+            "feature_row_gpu_window_max_bytes": 2048,
+            "feature_row_gpu_resident_safety_margin_bytes": 4096,
             "nnsight_session_capacity": 64,
             "telemetry_max_events": 500,
             "diagnostic_stop_mode": "transition_probe",
@@ -247,6 +251,10 @@ def test_trace_request_builds_canonical_domain_policies(tmp_path: Path) -> None:
     assert request.execution.session.phase1_trace_batch_size_max == 16
     assert request.execution.storage.retention == "none_recompute"
     assert request.execution.storage.full_retention_backend == "column_tiled_v1"
+    assert request.execution.storage.feature_row_influence_mode == "cuda_windowed"
+    assert request.execution.storage.gpu_resident_max_bytes == 1024
+    assert request.execution.storage.gpu_window_max_bytes == 2048
+    assert request.execution.storage.gpu_resident_safety_margin_bytes == 4096
     assert request.execution.replay.decoder_contraction_tile == 128
     assert request.execution.frontier.feature_vjp_tape_batch_window == 2
     assert request.execution.frontier.feature_vjp_tape_max_bytes == 4096

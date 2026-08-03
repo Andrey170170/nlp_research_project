@@ -657,6 +657,18 @@ def _trace_request(
             temp_root=knobs.get("row_store_temp_root"),
             preallocate=bool(knobs.get("row_store_preallocate", True)),
             replay_tile_cache_bytes=knobs.get("replay_tile_cache_bytes"),
+            feature_row_influence_mode=str(
+                knobs.get("feature_row_influence_mode", "cpu_exact")
+            ),
+            gpu_resident_max_bytes=int(
+                knobs.get("feature_row_gpu_resident_max_bytes", 0)
+            ),
+            gpu_window_max_bytes=int(
+                knobs.get("feature_row_gpu_window_max_bytes", 0)
+            ),
+            gpu_resident_safety_margin_bytes=int(
+                knobs.get("feature_row_gpu_resident_safety_margin_bytes", 0)
+            ),
             exact_encoder_residency=str(
                 knobs.get("exact_encoder_residency", "lazy")
             ),
