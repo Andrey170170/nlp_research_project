@@ -1,8 +1,7 @@
 # Exact-trace performance optimization loop: short-prefix promotion and scaling
 
-Status: in progress; SP0-SP5 and LS0 complete; canonical taxonomy admits the
-selective and active-CPU results as exact promotion candidates; LS1 is unblocked
-and must establish prompt-length scope before comparative selection
+Status: in progress; SP0-SP5 and LS0 complete; LS1 execution is underway and
+the 1B 129-token current-source control/candidate pair is strict-exact
 
 Date: 2026-07-29
 
@@ -1198,3 +1197,32 @@ are allowed into comparative promotion selection because both meet `exact` on
 their measured scope. LS1 is the next step: broaden that scope, measure resource
 scaling, then select or decline a default candidate. Source-invariant Phase-0
 localization remains a `strict_exact` improvement objective, not an LS1 blocker.
+
+### 2026-08-03 LS1 execution update
+
+LS1 now uses a thin preparation helper over the existing full-answer shard
+runner. The helper revalidates the frozen campaign file, prompt, trajectory,
+prefix-token, and target fingerprints; materializes one ordinary trace spec and
+one ordinary shard; applies the selected performance profile; and prints the
+existing runner command. It does not introduce another trace execution path.
+
+The first same-source 1B pair completed for `ls0-361-dev-129` on H200 from
+project commit `3899d8e` and sibling commit `f7b657b` under a warm sequential
+control-then-candidate cache protocol:
+
+- canonical full-Phase-0 control: 70.546-second trace wall time,
+  15.91-second Phase 0, and 40.20-second Phase 4;
+- selective-Phase-0 candidate: 61.185-second trace wall time,
+  6.97-second Phase 0, and 39.76-second Phase 4;
+- candidate improvement: 13.3% trace wall time and 56.2% Phase 0;
+- both: 70,084 active features, 8,192 retained features, 33 Phase-4 semantic
+  batches, and a 2,296,792,848-byte logical feature-row store; and
+- compact graph: `strict_exact` with feature/edge/weighted-edge Jaccard 1.0,
+  signed and magnitude normalized L1 0.0, exact signs, exact Top-64 through
+  Top-1024 support, and exact target token.
+
+Incremental full-answer telemetry is now persisted beside each token artifact.
+The formal pair each closed 3,188 telemetry events without sink errors. The
+first cache-misconfigured attempt failed before model load and is not scientific
+evidence; earlier completed controls from pre-telemetry-fix source revisions are
+timing evidence only, not members of the formal pair.
