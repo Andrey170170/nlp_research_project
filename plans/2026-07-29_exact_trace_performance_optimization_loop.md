@@ -1445,3 +1445,15 @@ file cache, inside the declared 200 GiB envelope. Admit the complete matched
 first attempt that pointed `HF_HUB_CACHE` at the nested 1B-only `/hub` directory
 failed before model load and wrote no token result; it is environment diagnostics,
 not scientific evidence.
+
+The warm sequential 129-token LS4 full pair is `strict_exact` and advances the
+4B ladder. Matched `cpu_exact` and `cuda_windowed` runner wall was 125.835 and
+98.511 seconds (21.7% reduction); Phase 4 was 83.426 and 58.267 seconds (30.2%),
+and refresh was 40.951 and 15.391 seconds (62.4%). Feature-batch work was flat
+at 38.910 versus 39.359 seconds. All 8,192 feature IDs, 20,000 retained edges
+and weights, signs, target, and Top-64 through Top-1024 matched field for field.
+The candidate streamed 67,130,542,388 bytes through 497 window reads, with 1.73
+seconds of host staging and 0.0024 seconds of synchronization. Maximum sampled
+cgroup current was 183.21 GiB and CUDA reservation remained 35.91 GiB. This is
+a non-dominated exact point, but it is only the 4B/129 development scope. Admit
+the 256-token candidate transition probe; do not skip its host-capacity gate.
