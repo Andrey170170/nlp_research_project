@@ -849,6 +849,22 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
         ),
         evidence_scope=source_profile.evidence_scope,
     )
+    source_profile = contracts["ls2-1b-long-prefix-active-rows-1536mib-v1"]
+    contracts["ls2-1b-long-prefix-active-rows-1536mib-b128-v1"] = CandidateProfile(
+        name="ls2-1b-long-prefix-active-rows-1536mib-b128-v1",
+        variants=tuple(
+            _candidate_variant(
+                {
+                    **dict(variant.compatibility_controls),
+                    **variant.physical.as_overrides(),
+                    "phase4_execution_batch_max_rows": 128,
+                },
+                variant.requires,
+            )
+            for variant in source_profile.variants
+        ),
+        evidence_scope=source_profile.evidence_scope,
+    )
     mapped_4b_requirements = CapabilityRequirements(
         **{
             **_PLT_MAPPED_DECODER_ROWS.__dict__,

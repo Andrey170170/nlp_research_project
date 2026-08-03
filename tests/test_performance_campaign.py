@@ -153,6 +153,17 @@ def test_prepare_campaign_workload_accepts_registered_profile_override(
     assert trace_spec["graph_knobs"]["decoder_active_row_max_bytes"] == 1536 * 1024**2
 
 
+def test_long_prefix_b128_profile_splits_only_physical_phase4_execution() -> None:
+    profile = perf_cli.CANDIDATE_PROFILES[
+        "ls2-1b-long-prefix-active-rows-1536mib-b128-v1"
+    ]
+    assert len(profile.variants) == 1
+    physical = profile.variants[0].physical.as_overrides()
+    assert physical["decoder_active_row_max_bytes"] == 1536 * 1024**2
+    assert physical["phase4_execution_batch_max_rows"] == 128
+    assert physical["nnsight_session_capacity"] == 256
+
+
 def test_frozen_workload_requires_immutable_hashes() -> None:
     payload = json.loads(CAMPAIGN.read_text())
     payload["workloads"][0]["fixture"]["catalog_sha256"] = None
