@@ -1290,3 +1290,42 @@ store preallocation was 18,459,713,844 bytes. Do not launch the full 1024 trace
 from this profile. LS2 should next expose a dedicated long-prefix profile with
 a narrowly raised active-row cap, repeat the transition probe, and admit a full
 trace only if fused rows both remove the scan growth and remain inside HBM.
+
+The active-row follow-up and HBM-safe split are now implemented as explicit,
+1B-only registered profiles. The preparation helper accepts a registered
+`--profile-name` override while preserving the frozen workload and declared
+campaign role. The 1536 MiB active-row probe admitted all 563,277 exact rows
+(1,297,790,208 bytes) from the Phase-0 fused seed and reduced the same first
+four Phase-4 batches from 212.63 to 7.33 seconds, but a 256-row execution caused
+CUDA reservation to reach 124.90 GiB (89.35% of H200). The follow-up profile
+preserved 256-row semantic batches while splitting physical execution at 128
+rows. Its probe completed in 18.795 seconds, reduced four physical Phase-4
+executions to 2.77 seconds, and held peak reservation to the Phase-1 level of
+111.49 GiB (79.75%).
+
+Before using the automatic final-token logit path at 1024, a complete 512-token
+same-profile proof compared sibling commit `c685713` with the earlier full-logit
+artifact. The graphs were `strict_exact`: all 8,192 features and 20,000 edges,
+weights, signs, normalized L1 metrics, Top-64 through Top-1024, and target token
+matched exactly. Runner time changed from 182.257 to 179.265 seconds (1.64%,
+within noise), while Phase-1 peak CUDA allocation fell from 97.67 to 40.95 GiB
+and reservation from 107.06 to 43.06 GiB. The exact path is therefore
+automatically promoted on supported models based on the large memory win; full
+logits and explicit unsupported-model fallbacks remain in code.
+
+The admitted reversed-order 1024 full pair completed from project commit
+`385cac4` and sibling commit `c685713`. The selective candidate took 316.037
+seconds runner wall and 301.75 seconds attribution core; the matched canonical-
+Phase-0 control took 319.062 and 304.89 seconds. Selective Phase 0 was 8.73
+versus 15.61 seconds (44.1% faster), but Phase 4 was flat/reversed within noise
+at 282.75 versus 279.24 seconds, leaving only a 0.95% runner-level candidate
+win. Both completed 65 physical executions for the same 33 semantic batches,
+used an 18,459,713,844-byte logical row store, held CUDA reservation at 111.49
+GiB, closed 5,231 telemetry events without sink errors, and remained stable as
+late file charge reached 80.25 GiB and cgroup peak reached 92.94 GiB. The full
+graphs were `strict_exact` at every canonical metric. The next LS2 target is
+not decoder replay: Phase-4 refresh consumed 231.7--234.7 seconds, about 74% of
+end-to-end time, while feature-batch work took about 45 seconds. Prove the
+128-row physical split against an earlier 512 artifact, then evaluate the
+existing exact windowed/GPU feature-row influence modes within the measured
+1024 HBM headroom.
