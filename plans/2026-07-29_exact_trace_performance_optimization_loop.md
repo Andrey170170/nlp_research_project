@@ -1267,3 +1267,26 @@ full-position logit materialization. LS1 is complete. LS2 starts by retaining
 only the already-declared final-token logits physically during Phase 1, without
 changing semantic source batching or graph construction, then repeating this
 same 1024-token transition probe.
+
+LS2 Phase-1 final-token logit materialization is implemented in sibling commit
+`c685713`. When Phase 0 declares `last_token`, supported Hugging Face causal-LM
+forwards receive their exact one-token logit-slice argument; full-logit requests
+and unsupported models preserve the old path with explicit fallback metadata.
+Focused tests and lint passed, and the broader replay/Phase-4/governor set had
+84 passes plus one unrelated pre-existing 187-line architecture-guard failure
+in untouched Phase-4 operation functions.
+
+The frozen 1024-token transition probe then completed as `probe_completed` in
+334.015 seconds. Phase 1 used `logits_to_keep=1`, completed in 1.86 seconds, and
+measured 106.48 GiB peak CUDA allocation plus 111.49 GiB reservation instead
+of attempting the former 128 GiB output allocation. The full probe reached
+124.77 GiB maximum observed CUDA reservation, 89.25% of H200 capacity and close
+to the 90% envelope. Phase 3 took 100.61 seconds and the first four Phase-4
+batches took 4.89, 37.32, 65.60, and 104.25 seconds (212.63 seconds total).
+Telemetry localized that next boundary: the 1,297,790,208-byte exact active
+decoder-row set exceeded the profile's 1 GiB admission cap, refused fused row
+residency, and fell back to repeated 64-chunk decoder scans. The logical row
+store preallocation was 18,459,713,844 bytes. Do not launch the full 1024 trace
+from this profile. LS2 should next expose a dedicated long-prefix profile with
+a narrowly raised active-row cap, repeat the transition probe, and admit a full
+trace only if fused rows both remove the scan growth and remain inside HBM.
