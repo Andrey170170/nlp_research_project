@@ -1,7 +1,7 @@
 # Exact-trace performance optimization loop: short-prefix promotion and scaling
 
-Status: in progress; SP0-SP5, LS0, and LS1 complete; LS2 implementation is
-underway after the 1B 1024-token probe localized the first scaling boundary
+Status: in progress; SP0-SP5 and LS0-LS2 complete; the exact 1B length finalist
+is frozen for LS3 prompt holdouts
 
 Date: 2026-07-29
 
@@ -43,7 +43,7 @@ The stage prefixes are descriptive:
 | Prefix | Meaning | Current state |
 |---|---|---|
 | `SP` | canonical short-prefix completion and promotion evidence | SP0-SP5 complete; exact candidates admitted, selection deferred |
-| `LS` | prefix-length, prompt, and model-size scaling | LS0-LS1 complete; LS2 underway |
+| `LS` | prefix-length, prompt, and model-size scaling | LS0-LS2 complete; LS3 next |
 
 Within each campaign the number is execution order, not a governor phase or
 calibration wave.
@@ -1369,3 +1369,26 @@ therefore non-dominated and retained. Its measured scope is this development
 workload until shorter-length crossover and prompt holdouts are completed; the
 historically bounded CUDA family must not be relabeled globally from one exact
 point.
+
+The same corrected profile completed the remaining admitted development
+lengths and closes LS2. Against the fastest previously measured exact candidate
+at each length, runner wall changed as follows: 61.185 to 56.485 seconds at 129
+tokens (7.7%), 108.443 to 73.584 at 256 (32.1%), 179.265 to 104.163 at 512
+(41.9%), and 316.037 to 164.218 at 1024 (48.0%). Phase-4 wall was 33.600,
+47.957, 75.005, and 129.723 seconds, respectively. The 129, 512, and 1024
+graphs were `strict_exact`. The 256 graph was `exact`: feature and edge support,
+shared signs, target, and Top-64 through Top-1024 were exact; weighted Jaccard
+was 0.999999999251 and normalized magnitude/signed L1 were
+0.000000000749. All telemetry sinks closed without errors.
+
+Windowed traffic scaled from 40.82 GB at 129 tokens through 85.54 and 168.31
+GB to 362.21 GB at 1024. The fixed owned window remained about 536 MB; the
+signed host mirror scaled with the logical row store from 2.30 GB to 18.46 GB.
+Maximum observed cgroup charge remained below 104 GiB and CUDA reservation
+remained 111.49 GiB at the largest rung. The explicit profile
+`ls2-1b-long-prefix-cuda-windowed-512mib-b128-v1` is now the frozen LS2 1B
+development finalist. This is an automatic promotion within its demonstrated
+1B length scope: it is exact at every admitted development length and
+non-dominated on runtime and admitted resources. It is not a global default or
+a global fidelity reclassification. Do not tune it after seeing LS3 holdouts;
+holdout evidence may accept it, reject it, or narrow its applicability.
