@@ -1237,3 +1237,21 @@ Peak CUDA reservation increased materially from 25.95 GiB at 129 tokens to
 admission even though adjacent runtime scaling projects it inside the normal
 direct-run time regime. The admitted 512 probe must still be followed by the
 full control/candidate pair to capture late memory and file-cache behavior.
+
+The 512-token four-batch candidate probe then completed as `probe_completed`
+in 18.604 seconds and admitted the full pair. It observed 276,667 active
+features, a 9,066,930,924-byte logical row store, 97.67 GiB peak CUDA
+allocation, and 107.06 GiB peak CUDA reservation (74.5% of the H200), while
+closing all 521 incremental telemetry events without errors. The complete
+control-then-candidate pair subsequently finished with runner trace times of
+190.142 and 182.257 seconds, respectively: a 4.15% candidate improvement.
+Selective Phase 0 took 7.95 seconds versus 16.37 seconds for canonical Phase 0;
+Phase 4 was flat at 156.76 versus 156.19 seconds. Both runs sustained all 33
+Phase-4 batches after the probe boundary. Late file charge reached about 70.45
+GiB and cgroup memory peak reached 78.75 GiB without a late-run slowdown or
+resource refusal. The compact graphs were `strict_exact`: feature, retained-
+edge, all-edge, and weighted-edge Jaccard 1.0; normalized and signed normalized
+L1 deviation 0.0; exact signs and Top-64 through Top-1024 support; and exact
+target token. At 1024 tokens, naive adjacent HBM scaling exceeds device
+capacity, so that rung remains probe-only until its governor/fallback behavior
+is observed.
