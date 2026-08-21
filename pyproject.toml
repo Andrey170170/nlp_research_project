@@ -26,7 +26,15 @@ packages = ["src/nlp_research_project"]
 
 [project.scripts]
 exact-trace-bench = "nlp_research_project.exact_trace_bench.cli:main"
+exact-trace-perf = "nlp_research_project.exact_trace_bench.perf_cli:main"
 circuit-stability-analysis = "nlp_research_project.circuit_stability_analysis.cli:main"
 
 [tool.uv.sources]
 circuit-tracer = { path = "../circuit-tracer_chunked", editable = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.15.21",
+    "ty>=0.0.58",
+]

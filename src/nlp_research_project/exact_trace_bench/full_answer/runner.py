@@ -5,16 +5,34 @@ import json
 import os
 import time
 import traceback
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping, cast
+from typing import Any, Literal, cast
 
+from ..backward_selection import build_backward_plan
 from ..io_utils import ensure_dir, write_json, write_jsonl
+from ..trace_runtime.artifacts import (
+    legacy_capture_artifact_status,
+    require_complete_capture_artifacts,
+    write_capture_artifacts,
+)
 from ..transcoder_config import (
     PUBLIC_TRANSCODER_KNOB_KEYS,
     resolve_transcoder_load_config,
     transcoder_config_to_json,
 )
+from .execution_control import (
+    RuntimeResourcePolicy,
+    execution_resolution,
+    resource_sample,
+    selected_execution_record,
+    validate_resource_policy,
+)
 from .schemas import TraceSpec, load_shards, load_trace_specs, load_trajectory
+
+
+class _DiagnosticProbeCompleted(Exception):
+    """Internal non-error control flow after a terminal diagnostic trace."""
 
 
 def _shard_dir(output_root: Path, shard_id: int) -> Path:
@@ -124,6 +142,39 @@ def dry_run_shard(
     )
     root = _shard_dir(output_root, shard_id)
     ensure_dir(root)
+    selected_execution = selected_execution_record(
+        trajectory_path=trajectory_path,
+        trace_specs_path=trace_specs_path,
+        shards_path=shards_path,
+        specs=specs,
+        shard=shard,
+        metadata=_runtime_metadata(
+            run_id=None,
+            run_name="dry run",
+            run_description=None,
+            run_goal=None,
+        ),
+    )
+    write_json(root / "selected_execution.json", selected_execution)
+    print(
+        json.dumps(
+            {
+                "event": "selected_execution",
+                "selection_fingerprint": selected_execution["selection_fingerprint"],
+                "feature_row_influence": selected_execution["mechanism_selection"],
+                "backward_engine_mode": (
+                    selected_execution["mechanism_selection"].get(
+                        "backward_engine_mode"
+                    )
+                    if isinstance(selected_execution["mechanism_selection"], Mapping)
+                    else None
+                ),
+                "resources": selected_execution["resources"],
+            },
+            sort_keys=True,
+        ),
+        flush=True,
+    )
     shard_payload = {
         "schema_version": 1,
         "status": "dry_run",
@@ -277,79 +328,6 @@ def session_reuse_metadata(spec: TraceSpec) -> dict[str, Any]:
     }
 
 
-def _decoder_cache_fingerprint(
-    model: Any, model_load_knobs: Mapping[str, Any]
-) -> tuple[Any, ...]:
-    provider = getattr(model, "transcoders", None)
-    return (
-        "full_answer_runner_decoder_cache_v1",
-        id(provider),
-        type(provider).__name__ if provider is not None else None,
-        str(getattr(model, "device", None)),
-        str(getattr(provider, "dtype", None)),
-        int(getattr(provider, "n_layers", 0) or 0),
-        int(getattr(provider, "d_transcoder", 0) or 0),
-        int(getattr(provider, "d_model", 0) or 0),
-        int(model_load_knobs.get("decoder_chunk_size", 0) or 0),
-        int(model_load_knobs.get("cross_batch_decoder_cache_bytes", 0) or 0),
-    )
-
-
-def prepare_trajectory_session_cache(
-    model: Any,
-    specs: list[TraceSpec],
-    model_load_knobs: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Prepare opt-in per-shard session reuse state.
-
-    Stage 3 is intentionally conservative: the only effective reuse today is a
-    shared immutable decoder chunk cache.  Broader NNSight/Phase-0 reuse remains
-    a later validation-gated path.
-    """
-    requested = any(
-        spec.get("graph_knobs", {}).get("trajectory_session_mode")
-        in {"experimental_reuse", "window_reuse_v1"}
-        and spec.get("graph_knobs", {}).get("input_context_mode") == "full_sequence"
-        for spec in specs
-    )
-    result: dict[str, Any] = {
-        "requested": requested,
-        "effective": False,
-        "fallback": "per_token_path" if requested else None,
-        "decoder_chunk_cache": None,
-        "decoder_cache_fingerprint": None,
-    }
-    if not requested:
-        return result
-    provider = getattr(model, "transcoders", None)
-    create_cache = getattr(provider, "create_decoder_block_cache", None)
-    if not callable(create_cache):
-        result["fallback"] = "decoder_cache_unavailable"
-        return result
-    fingerprint = _decoder_cache_fingerprint(model, model_load_knobs)
-    try:
-        cache = create_cache(fingerprint=fingerprint)
-    except TypeError:
-        cache = create_cache()
-        try:
-            setattr(cache, "fingerprint", fingerprint)
-        except Exception:
-            result["fallback"] = "decoder_cache_fingerprint_unavailable"
-            return result
-    if cache is None:
-        result["fallback"] = "decoder_cache_disabled"
-        return result
-    result.update(
-        {
-            "effective": True,
-            "fallback": None,
-            "decoder_chunk_cache": cache,
-            "decoder_cache_fingerprint": fingerprint,
-        }
-    )
-    return result
-
-
 def _shard_windows(
     specs: list[TraceSpec], shard: Mapping[str, Any]
 ) -> list[dict[str, Any]]:
@@ -399,22 +377,6 @@ def _shard_windows(
             "specs": specs,
         }
     ]
-
-
-def _window_session_setup_kwargs(knobs: Mapping[str, Any]) -> dict[str, Any]:
-    mapping = {
-        "chunked_feature_replay_window": "chunked_feature_replay_window",
-        "error_vector_prefetch_lookahead": "error_vector_prefetch_lookahead",
-        "stage_encoder_vecs_on_cpu": "stage_encoder_vecs_on_cpu",
-        "stage_error_vectors_on_cpu": "stage_error_vectors_on_cpu",
-        "row_subchunk_size": "row_subchunk_size",
-        "exact_encoder_residency": "exact_encoder_residency",
-    }
-    return {
-        target: knobs[source]
-        for source, target in mapping.items()
-        if source in knobs and knobs[source] is not None
-    }
 
 
 def _validate_window_session_specs(window_specs: list[TraceSpec]) -> None:
@@ -585,6 +547,66 @@ def _model_load_knobs(specs: list[TraceSpec]) -> dict[str, Any]:
             raise ValueError(
                 "cross_batch_decoder_cache_bytes must be a non-negative int"
             )
+        active_row_residency = knobs.get("decoder_active_row_residency", False)
+        if not isinstance(active_row_residency, bool):
+            raise ValueError("decoder_active_row_residency must be a bool")
+        phase0_decoder_row_ranges = knobs.get("phase0_decoder_row_ranges", False)
+        if not isinstance(phase0_decoder_row_ranges, bool):
+            raise ValueError("phase0_decoder_row_ranges must be a bool")
+        active_row_max_bytes = knobs.get("decoder_active_row_max_bytes", 0)
+        if (
+            isinstance(active_row_max_bytes, bool)
+            or not isinstance(active_row_max_bytes, int)
+            or active_row_max_bytes < 0
+        ):
+            raise ValueError("decoder_active_row_max_bytes must be a non-negative int")
+        active_row_safety_margin_bytes = knobs.get(
+            "decoder_active_row_safety_margin_bytes", 0
+        )
+        if (
+            isinstance(active_row_safety_margin_bytes, bool)
+            or not isinstance(active_row_safety_margin_bytes, int)
+            or active_row_safety_margin_bytes < 0
+        ):
+            raise ValueError(
+                "decoder_active_row_safety_margin_bytes must be a non-negative int"
+            )
+        active_row_requirement = knobs.get(
+            "decoder_active_row_residency_requirement", "preferred"
+        )
+        if active_row_requirement not in {"preferred", "required"}:
+            raise ValueError(
+                "decoder_active_row_residency_requirement must be preferred or required"
+            )
+        if active_row_requirement == "required" and not active_row_residency:
+            raise ValueError(
+                "required decoder active-row residency requires "
+                "decoder_active_row_residency=true"
+            )
+        if (
+            active_row_residency
+            and active_row_max_bytes == 0
+            and active_row_safety_margin_bytes == 0
+        ):
+            raise ValueError(
+                "dynamic decoder active-row residency requires a positive "
+                "decoder_active_row_safety_margin_bytes"
+            )
+        if phase0_decoder_row_ranges:
+            if config["transcoder_architecture"] != "plt":
+                raise ValueError(
+                    "phase0_decoder_row_ranges requires a PLT-compatible provider"
+                )
+            if not active_row_residency:
+                raise ValueError(
+                    "phase0_decoder_row_ranges requires "
+                    "decoder_active_row_residency=true"
+                )
+            if knobs.get("reuse_phase0_window_state", False):
+                raise ValueError(
+                    "phase0_decoder_row_ranges is incompatible with "
+                    "reuse_phase0_window_state until forward-session policy is shared"
+                )
         if resolved is not None and any(
             config[k] != resolved[k] for k in PUBLIC_TRANSCODER_KNOB_KEYS
         ):
@@ -595,63 +617,266 @@ def _model_load_knobs(specs: list[TraceSpec]) -> dict[str, Any]:
     return resolved or transcoder_config_to_json(resolve_transcoder_load_config())
 
 
-def _attribute_performance_kwargs(knobs: Mapping[str, Any]) -> dict[str, Any]:
-    keys = (
-        "cross_cluster_debug",
-        "capture_phase0_donor_bundle",
-        "capture_phase3_seed_bundle",
-        "capture_phase3_gradient_bundle",
-        "capture_phase3_row_bundle",
-        "capture_feature_semantic_descriptors",
-        "semantic_descriptor_top_k",
-        "semantic_descriptor_dim",
-        "row_subchunk_size",
-        "phase1_trace_batch_policy",
-        "phase1_trace_batch_size_max",
-        "plan_feature_batch_size",
-        "feature_batch_size_max",
-        "feature_batch_target_reserved_fraction",
-        "feature_batch_min_free_fraction",
-        "feature_batch_probe_batches",
-        "chunked_feature_replay_window",
-        "error_vector_prefetch_lookahead",
-        "stage_encoder_vecs_on_cpu",
-        "stage_error_vectors_on_cpu",
-        "exact_encoder_residency",
-        "phase4_scheduler_mode",
-        "phase4_scheduler_telemetry_detail",
-        "phase4_refresh_optimization",
-        "phase4_refresh_prepared_chunk_cache_bytes",
-        "phase4_refresh_active_row_accumulation",
-        "phase4_row_executor",
-        "phase4_row_reduction",
-        "phase3_frontier_buffer_relative_epsilon",
-        "phase3_frontier_buffer_max_extra",
-        "phase4_frontier_buffer_relative_epsilon",
-        "phase4_frontier_buffer_max_extra_per_refresh",
-        "phase4_frontier_buffer_max_extra_total",
-        "row_store_cache_control",
-        "row_store_preallocate",
+def _compact_result_to_bucketed_compact(*args: Any, **kwargs: Any) -> Any:
+    """Load the canonical compact packager only on the SLURM execution path."""
+    from nlp_research_project.exact_trace_bench.trace_runtime.compact_graph import (
+        compact_result_to_bucketed_compact,
     )
-    return {key: knobs[key] for key in keys if key in knobs and knobs[key] is not None}
+
+    return compact_result_to_bucketed_compact(*args, **kwargs)
 
 
-def _npz_ready(value: Any) -> Any:
-    import numpy as np
+def _trace_request(
+    *,
+    model: Any,
+    prompt_token_ids: list[int],
+    spec: TraceSpec,
+    prefix_metadata: Mapping[str, Any],
+    full_sequence_mode: bool,
+    telemetry_jsonl_path: Path | None = None,
+) -> Any:
+    """Translate one harness spec into canonical, subsystem-owned policies."""
     import torch
+    from circuit_tracer import (
+        AttributionProblem,
+        DecoderCachePolicy,
+        DiagnosticStopPolicy,
+        ExecutionConstraints,
+        FrontierExpansionPlan,
+        FrontierSemantics,
+        ObservabilityPolicy,
+        PrefixViewTarget,
+        ReplayPlan,
+        RowStoragePlan,
+        SessionPlan,
+        TraceEvidence,
+        TraceRequest,
+        TraceSemantics,
+    )
 
-    if isinstance(value, torch.Tensor):
-        tensor = value.detach().cpu()
-        if tensor.dtype == torch.bfloat16:
-            tensor = tensor.to(dtype=torch.float32)
-        return tensor.numpy()
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return np.asarray(value)
-    if isinstance(value, (list, tuple)) and all(
-        item is None or isinstance(item, (str, int, float, bool)) for item in value
-    ):
-        return np.asarray(value)
-    return np.asarray(json.dumps(_json_ready(value), sort_keys=True))
+    knobs = spec["graph_knobs"]
+    semantics = TraceSemantics(
+        source_batch_size=int(knobs.get("attribution_batch_size", 256)),
+        feature_batch_size=knobs.get("feature_batch_size"),
+        logit_batch_size=knobs.get("logit_batch_size"),
+        max_feature_nodes=int(knobs.get("max_feature_nodes", 8192)),
+        diagnostic_feature_cap=knobs.get("diagnostic_feature_cap"),
+        update_interval=int(knobs.get("attribution_update_interval", 4)),
+        exact_trace_internal_dtype=str(knobs.get("exact_trace_internal_dtype", "fp32")),
+        phase0_activation_threshold_compare_mode=str(
+            knobs.get("phase0_activation_threshold_compare_mode", "baseline")
+        ),
+        frontier=FrontierSemantics(
+            scheduler=str(knobs.get("phase4_scheduler_mode", "locality")),
+            refresh_policy=str(knobs.get("phase4_refresh_policy", "standard")),
+            refresh_interval_multiplier=int(
+                knobs.get("phase4_refresh_interval_multiplier", 1)
+            ),
+            ranker=str(knobs.get("phase4_ranker", "argsort")),
+            phase3_buffer_relative_epsilon=knobs.get(
+                "phase3_frontier_buffer_relative_epsilon"
+            ),
+            phase3_buffer_max_extra=int(
+                knobs.get("phase3_frontier_buffer_max_extra", 0)
+            ),
+            phase4_buffer_relative_epsilon=knobs.get(
+                "phase4_frontier_buffer_relative_epsilon"
+            ),
+            phase4_buffer_max_extra_per_refresh=int(
+                knobs.get("phase4_frontier_buffer_max_extra_per_refresh", 0)
+            ),
+            phase4_buffer_max_extra_total=int(
+                knobs.get("phase4_frontier_buffer_max_extra_total", 0)
+            ),
+        ),
+    )
+    decoder_cache_bytes = int(knobs.get("cross_batch_decoder_cache_bytes", 0))
+    execution = ExecutionConstraints(
+        session=SessionPlan(
+            capacity=knobs.get("nnsight_session_capacity"),
+            phase3_microbatch_max_rows=knobs.get("phase3_compute_microbatch_max_rows"),
+            phase4_execution_batch_max_rows=(
+                knobs["phase4_execution_batch_max_rows"]
+                if knobs.get("phase4_execution_batch_max_rows") is not None
+                else knobs.get("phase4_compute_microbatch_max_rows")
+            ),
+            phase1_trace_batch_policy=str(
+                knobs.get("phase1_trace_batch_policy", "legacy")
+            ),
+            phase1_trace_batch_size_max=knobs.get("phase1_trace_batch_size_max"),
+            decoder_cache=DecoderCachePolicy(
+                enabled=decoder_cache_bytes > 0,
+                max_bytes=decoder_cache_bytes or None,
+            ),
+        ),
+        backward=build_backward_plan(knobs),
+        storage=RowStoragePlan(
+            retention=str(knobs.get("feature_row_retention", "full_file")),
+            full_retention_backend=str(
+                knobs.get("full_retention_backend", "full_file")
+            ),
+            feature_column_tile_size=int(
+                knobs.get("feature_row_column_tile_size", 2048)
+            ),
+            influence_row_tile_size=int(knobs.get("influence_row_tile_size", 4096)),
+            influence_column_tile_size=int(
+                knobs.get("influence_column_tile_size", 2048)
+            ),
+            cache_control=str(knobs.get("row_store_cache_control", "off")),
+            temp_root_policy=str(knobs.get("row_store_temp_root_policy", "default")),
+            temp_root=knobs.get("row_store_temp_root"),
+            preallocate=bool(knobs.get("row_store_preallocate", True)),
+            replay_tile_cache_bytes=knobs.get("replay_tile_cache_bytes"),
+            feature_row_influence_mode=str(
+                knobs.get("feature_row_influence_mode", "cpu_exact")
+            ),
+            feature_row_influence_requirement=cast(
+                Literal["preferred", "required"],
+                str(knobs.get("feature_row_influence_requirement", "preferred")),
+            ),
+            gpu_resident_max_bytes=int(
+                knobs.get("feature_row_gpu_resident_max_bytes", 0)
+            ),
+            gpu_window_max_bytes=int(knobs.get("feature_row_gpu_window_max_bytes", 0)),
+            gpu_resident_safety_margin_bytes=int(
+                knobs.get("feature_row_gpu_resident_safety_margin_bytes", 0)
+            ),
+            exact_encoder_residency=str(knobs.get("exact_encoder_residency", "lazy")),
+        ),
+        replay=ReplayPlan(
+            feature_window=int(knobs.get("chunked_feature_replay_window") or 4),
+            error_vector_prefetch_lookahead=int(
+                knobs.get("error_vector_prefetch_lookahead") or 2
+            ),
+            stage_encoder_vecs_on_cpu=knobs.get("stage_encoder_vecs_on_cpu"),
+            stage_error_vectors_on_cpu=knobs.get("stage_error_vectors_on_cpu"),
+            decoder_contraction_tile=knobs.get("row_subchunk_size"),
+            phase0_donor_bundle=knobs.get("phase0_donor_bundle"),
+            phase0_mode=str(knobs.get("phase0_replay_mode", "disabled")),
+            phase0_donor_context_policy=str(
+                knobs.get("phase0_donor_context_policy", "strict")
+            ),
+            phase3_gradient_donor_bundle=knobs.get("phase3_gradient_donor_bundle"),
+            phase3_gradient_mode=str(
+                knobs.get("phase3_gradient_replay_mode", "disabled")
+            ),
+            phase3_row_donor_bundle=knobs.get("phase3_row_donor_bundle"),
+            phase3_row_mode=str(knobs.get("phase3_row_replay_mode", "disabled")),
+            phase3_validation_policy=str(
+                knobs.get("phase3_replay_validation_policy", "strict")
+            ),
+        ),
+        frontier=FrontierExpansionPlan(
+            scheduler_debug=bool(knobs.get("phase4_scheduler_debug", False)),
+            scheduler_telemetry_detail=str(
+                knobs.get("phase4_scheduler_telemetry_detail", "normal")
+            ),
+            refresh_optimization=str(knobs.get("phase4_refresh_optimization", "v1")),
+            refresh_prepared_chunk_cache_bytes=int(
+                knobs.get("phase4_refresh_prepared_chunk_cache_bytes", 0)
+            ),
+            refresh_active_row_accumulation=str(
+                knobs.get("phase4_refresh_active_row_accumulation", "direct_v1")
+            ),
+            row_executor=str(knobs.get("phase4_row_executor", "batched")),
+            row_reduction=str(knobs.get("phase4_row_reduction", "gpu_v1")),
+            feature_batch_planning=bool(knobs.get("plan_feature_batch_size", False)),
+            feature_batch_size_max=knobs.get("feature_batch_size_max"),
+            feature_batch_target_reserved_fraction=float(
+                knobs.get("feature_batch_target_reserved_fraction", 0.9)
+            ),
+            feature_batch_min_free_fraction=float(
+                knobs.get("feature_batch_min_free_fraction", 0.05)
+            ),
+            feature_batch_probe_batches=int(
+                knobs.get("feature_batch_probe_batches", 1)
+            ),
+            feature_vjp_tape_batch_window=int(
+                knobs.get("feature_vjp_tape_batch_window", 1)
+            ),
+            feature_vjp_tape_max_bytes=int(knobs.get("feature_vjp_tape_max_bytes", 0)),
+            decoder_page_prefetch_depth=int(
+                knobs.get("decoder_page_prefetch_depth", 0)
+            ),
+            decoder_active_row_residency=bool(
+                knobs.get("decoder_active_row_residency", False)
+            ),
+            decoder_active_row_residency_requirement=str(
+                knobs.get("decoder_active_row_residency_requirement", "preferred")
+            ),
+            decoder_active_row_max_bytes=int(
+                knobs.get("decoder_active_row_max_bytes", 0)
+            ),
+            decoder_active_row_safety_margin_bytes=int(
+                knobs.get("decoder_active_row_safety_margin_bytes", 0)
+            ),
+            phase0_decoder_row_ranges=bool(
+                knobs.get("phase0_decoder_row_ranges", False)
+            ),
+        ),
+        observability=ObservabilityPolicy(
+            verbose=bool(knobs.get("verbose_attribution", True)),
+            profile=bool(knobs.get("profile_attribution", True)),
+            profile_log_interval=int(knobs.get("profile_log_interval", 1)),
+            telemetry_max_events=knobs.get("telemetry_max_events"),
+            telemetry_jsonl_path=telemetry_jsonl_path,
+            phase4_anomaly_debug=bool(knobs.get("phase4_anomaly_debug", False)),
+            cross_cluster_debug=bool(knobs.get("cross_cluster_debug", False)),
+            capture_phase0_donor_bundle=bool(
+                knobs.get("capture_phase0_donor_bundle", False)
+            ),
+            capture_phase3_seed_bundle=bool(
+                knobs.get("capture_phase3_seed_bundle", False)
+            ),
+            capture_phase3_gradient_bundle=bool(
+                knobs.get("capture_phase3_gradient_bundle", False)
+            ),
+            capture_phase3_row_bundle=bool(
+                knobs.get("capture_phase3_row_bundle", False)
+            ),
+            capture_feature_semantic_descriptors=bool(
+                knobs.get("capture_feature_semantic_descriptors", False)
+            ),
+            semantic_descriptor_top_k=int(knobs.get("semantic_descriptor_top_k", 2048)),
+            semantic_descriptor_dim=int(knobs.get("semantic_descriptor_dim", 64)),
+        ),
+        diagnostic_stop=DiagnosticStopPolicy(
+            mode=str(knobs.get("diagnostic_stop_mode", "none")),
+            phase4_batches=knobs.get("diagnostic_stop_phase4_batches"),
+        ),
+        offload="cpu",
+        compact_output=not bool(knobs.get("save_raw_graph", False)),
+    )
+    prefix_evidence = {
+        key: value
+        for key, value in prefix_metadata.items()
+        if key not in {"mode", "target_position"}
+    }
+    return TraceRequest(
+        problem=AttributionProblem(
+            model=model,
+            prompt=torch.tensor(prompt_token_ids, dtype=torch.long),
+            targets=torch.tensor([spec["target_token_id"]], dtype=torch.long),
+            max_n_logits=1,
+            desired_logit_prob=1.0,
+            output_position=spec["target_position"] - 1 if full_sequence_mode else None,
+            prefix_view=PrefixViewTarget(
+                mode=(
+                    "full_sequence_target_position"
+                    if full_sequence_mode
+                    else "independent_prefix"
+                ),
+                target_position=int(spec["target_position"]),
+            ),
+        ),
+        semantics=semantics,
+        execution=execution,
+        evidence=TraceEvidence(
+            name="full_answer_runner",
+            version="1",
+            metadata={"prefix_view_metadata": prefix_evidence},
+        ),
+    )
 
 
 def _json_ready(value: Any) -> Any:
@@ -675,14 +900,7 @@ def _json_ready(value: Any) -> Any:
 def _save_compact_debug_sidecars(
     token_dir: Path, compact_result: Mapping[str, Any]
 ) -> dict[str, str]:
-    import numpy as np
-
     sidecar_keys = (
-        "phase0_donor_bundle",
-        "phase3_seed_bundle",
-        "phase3_gradient_bundle",
-        "phase3_row_bundle",
-        "feature_semantic_descriptors",
         "cross_cluster_debug_summary",
         "cross_cluster_debug_checkpoints",
         "cross_cluster_debug_batches",
@@ -693,20 +911,8 @@ def _save_compact_debug_sidecars(
         if payload is None:
             continue
         ensure_dir(token_dir)
-        if key.startswith("cross_cluster_debug"):
-            path = token_dir / f"{key}.json"
-            write_json(path, _json_ready(payload))
-        else:
-            path = token_dir / f"{key}.npz"
-            if not isinstance(payload, Mapping):
-                raise TypeError(f"compact debug sidecar {key} must be a mapping")
-            np.savez_compressed(
-                path,
-                **{
-                    str(item_key): _npz_ready(item)
-                    for item_key, item in payload.items()
-                },
-            )
+        path = token_dir / f"{key}.json"
+        write_json(path, _json_ready(payload))
         sidecars[key] = str(path)
     return sidecars
 
@@ -745,6 +951,103 @@ def _persist_compact_telemetry_events(
         )
     write_jsonl(path, rows)
     return {"telemetry_event_count": len(rows), "telemetry_events_path": str(path)}
+
+
+_CAPTURE_SIDECAR_KNOBS = {
+    "phase0_donor_bundle": "capture_phase0_donor_bundle",
+    "phase3_seed_bundle": "capture_phase3_seed_bundle",
+    "phase3_gradient_bundle": "capture_phase3_gradient_bundle",
+    "phase3_row_bundle": "capture_phase3_row_bundle",
+    "feature_semantic_descriptors": "capture_feature_semantic_descriptors",
+}
+
+
+def _persist_successful_result_artifacts(
+    *,
+    token_dir: Path,
+    trace_result: Any,
+    selected_config: Mapping[str, Any],
+    trace: dict[str, Any],
+) -> Mapping[str, Any] | None:
+    """Persist result evidence before branching on full versus probe completion.
+
+    A successful trace result has one artifact contract regardless of whether it
+    reached graph assembly.  In particular, a transition probe returns its
+    bounded captures through ``TraceResult.output`` even though it has no graph.
+    """
+    output = getattr(trace_result, "output", None)
+    compact_output = output if isinstance(output, Mapping) else None
+
+    telemetry_events = getattr(trace_result, "telemetry_events", None)
+    if not telemetry_events and compact_output is not None:
+        telemetry_events = compact_output.get("telemetry_events")
+    if not telemetry_events:
+        normalized_events: list[Any] = []
+    elif isinstance(telemetry_events, Mapping):
+        normalized_events = [telemetry_events]
+    else:
+        normalized_events = list(telemetry_events)
+    telemetry_payload = {"telemetry_events": normalized_events}
+    trace.update(
+        _persist_compact_telemetry_events(
+            token_dir=token_dir,
+            compact_result=telemetry_payload,
+            trace=trace,
+        )
+    )
+
+    debug_sidecars = (
+        _save_compact_debug_sidecars(token_dir, compact_output)
+        if compact_output is not None
+        else {}
+    )
+    capture_artifacts = write_capture_artifacts(
+        requested={
+            sidecar_key: bool(selected_config.get(knob_key, False))
+            for sidecar_key, knob_key in _CAPTURE_SIDECAR_KNOBS.items()
+        },
+        payloads=compact_output or {},
+        path_for=lambda name: token_dir / f"{name}.npz",
+    )
+    trace["capture_artifact_status"] = capture_artifacts
+    trace["sidecar_status"] = legacy_capture_artifact_status(capture_artifacts)
+    debug_sidecars.update(capture_artifacts["paths"])
+    if debug_sidecars:
+        trace["debug_sidecars"] = debug_sidecars
+    if compact_output is not None and "decoder_active_row_residency" in compact_output:
+        trace["decoder_active_row_residency"] = _json_ready(
+            compact_output["decoder_active_row_residency"]
+        )
+    require_complete_capture_artifacts(capture_artifacts)
+    return compact_output
+
+
+def _execution_result_payload(
+    trace_result: Any,
+    *,
+    selected_config: Mapping[str, Any],
+) -> dict[str, Any]:
+    descriptor = getattr(trace_result, "effective_execution", None)
+    if descriptor is None:
+        effective = None
+    elif isinstance(descriptor, Mapping):
+        effective = dict(descriptor)
+    else:
+        effective = descriptor.to_dict()
+    return {
+        "requested_execution_fingerprint": getattr(
+            trace_result, "requested_execution_fingerprint", None
+        ),
+        "effective_execution_fingerprint": getattr(
+            trace_result, "effective_execution_fingerprint", None
+        ),
+        "execution_fingerprint": getattr(trace_result, "execution_fingerprint", None),
+        "effective_execution": effective,
+        "execution_resolution": execution_resolution(
+            selected_config=selected_config,
+            effective_execution=effective,
+        ),
+    }
 
 
 _TELEMETRY_EXCEPTION_SUMMARY_ATTR = "circuit_tracer_telemetry_summary"
@@ -826,6 +1129,51 @@ def run_real_shard(
     ensure_dir(root)
     trace_results_path = root / "trace_results.jsonl"
     trace_results_path.write_text("", encoding="utf-8")
+    selected_execution = selected_execution_record(
+        trajectory_path=trajectory_path,
+        trace_specs_path=trace_specs_path,
+        shards_path=shards_path,
+        specs=specs,
+        shard=shard,
+        metadata=metadata,
+    )
+    write_json(root / "selected_execution.json", selected_execution)
+    resource_payload = cast(dict[str, Any], selected_execution["resources"])
+    print(
+        json.dumps(
+            {
+                "event": "selected_execution",
+                "selection_fingerprint": selected_execution["selection_fingerprint"],
+                "feature_row_influence": selected_execution["mechanism_selection"],
+                "backward_engine_mode": (
+                    selected_execution["mechanism_selection"].get(
+                        "backward_engine_mode"
+                    )
+                    if isinstance(selected_execution["mechanism_selection"], Mapping)
+                    else None
+                ),
+                "resources": resource_payload,
+            },
+            sort_keys=True,
+        ),
+        flush=True,
+    )
+    resource_policy = RuntimeResourcePolicy(resource_payload["runtime_policy"])
+    planning_envelope = cast(dict[str, Any], resource_payload["planning_envelope"])
+    resource_started = time.monotonic()
+    resource_samples_path = root / "resource_samples.jsonl"
+    if resource_policy is not RuntimeResourcePolicy.OFF:
+        initial_sample = resource_sample(
+            boundary="shard_start", started_monotonic=resource_started
+        )
+        validate_resource_policy(
+            policy=resource_policy,
+            envelope=planning_envelope,
+            sample=initial_sample,
+        )
+        resource_samples_path.write_text(
+            json.dumps(initial_sample, sort_keys=True) + "\n", encoding="utf-8"
+        )
     write_json(
         root / "shard.json",
         _shard_record(
@@ -840,55 +1188,45 @@ def run_real_shard(
         ),
     )
 
-    import importlib
+    from circuit_tracer import SessionWindow, open_session, trace_one
 
-    import torch
-
-    import circuit_utils
-    import trace_pipeline as base
-    from trace_pipeline_chunked import (
-        compact_result_to_bucketed_compact,
-        resolve_internal_precision,
+    from nlp_research_project.exact_trace_bench import compact_io as circuit_utils
+    from nlp_research_project.exact_trace_bench.trace_runtime.provider import (
+        get_model_transcoder_metadata,
+        load_model,
     )
 
-    attribute_module = importlib.import_module(
-        "circuit_tracer.attribution.attribute_nnsight"
-    )
-    attribute_nnsight = getattr(attribute_module, "attribute")
-    window_session_cls = getattr(
-        attribute_module, "FullSequenceWindowAttributionSession", None
-    )
     model_load_knobs = _model_load_knobs(specs)
-    model = base.load_model(
+    model = load_model(
         exact_chunked_decoder=True,
         **model_load_knobs,
     )
-    get_metadata = getattr(base, "get_model_transcoder_metadata", None)
-    transcoder_metadata = (get_metadata(model) if callable(get_metadata) else None) or {
+    transcoder_metadata = get_model_transcoder_metadata(model) or {
         "requested": model_load_knobs
     }
     metadata = {**metadata, "transcoder": transcoder_metadata}
-    offload = "cpu"
+    if resource_policy is not RuntimeResourcePolicy.OFF:
+        loaded_sample = resource_sample(
+            boundary="model_loaded", started_monotonic=resource_started
+        )
+        validate_resource_policy(
+            policy=resource_policy,
+            envelope=planning_envelope,
+            sample=loaded_sample,
+        )
+        with resource_samples_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(loaded_sample, sort_keys=True) + "\n")
     rows: list[dict[str, Any]] = []
     full_sequence_cache = prepare_full_sequence_cache(trajectory, specs)
-    trajectory_session_cache = prepare_trajectory_session_cache(
-        model, specs, model_load_knobs
-    )
     for window in _shard_windows(specs, shard):
         window_specs = cast(list[TraceSpec], window["specs"])
         _validate_window_session_specs(window_specs)
         window_session = None
-        window_session_knobs: Mapping[str, Any] | None = None
         if any(
             spec.get("graph_knobs", {}).get("trajectory_session_mode")
             == "window_reuse_v1"
             for spec in window_specs
         ):
-            if window_session_cls is None:
-                raise RuntimeError(
-                    "window_reuse_v1 requested but sibling FullSequenceWindowAttributionSession "
-                    "is unavailable"
-                )
             if full_sequence_cache is None:
                 raise ValueError("window_reuse_v1 requires full_sequence cache")
             window_session_knobs = next(
@@ -897,41 +1235,17 @@ def run_real_shard(
                 if spec.get("graph_knobs", {}).get("trajectory_session_mode")
                 == "window_reuse_v1"
             )
-            window_session = window_session_cls(
-                model=model,
-                full_token_ids=torch.tensor(
-                    full_sequence_cache["token_ids"], dtype=torch.long
-                ),
-                window_max_prefix_len=int(window["window_max_target_position"]),
-                decoder_chunk_cache=trajectory_session_cache["decoder_chunk_cache"],
-                decoder_cache_fingerprint=trajectory_session_cache[
-                    "decoder_cache_fingerprint"
-                ],
-                reuse_phase0_window_state=bool(
-                    window_session_knobs.get("reuse_phase0_window_state", False)
-                ),
-                reuse_target_logits=bool(
-                    window_session_knobs.get("reuse_target_logits", False)
-                ),
-                reference_check_metadata={
-                    "phase0_window_reference_checks": window_session_knobs.get(
-                        "phase0_window_reference_checks", "off"
-                    ),
-                    "phase0_window_scope": window_session_knobs.get(
-                        "phase0_window_scope", "shard_window"
-                    ),
-                    "phase0_window_max_prefix_policy": window_session_knobs.get(
-                        "phase0_window_max_prefix_policy", "max_target_position"
-                    ),
-                    "window": {
-                        key: value for key, value in window.items() if key != "specs"
-                    },
-                },
-                **_window_session_setup_kwargs(window_session_knobs),
-            )
+            if bool(
+                window_session_knobs.get("reuse_phase0_window_state", False)
+            ) != bool(window_session_knobs.get("reuse_target_logits", False)):
+                raise ValueError(
+                    "canonical window sessions require phase-0 and target-logit reuse "
+                    "to be enabled or disabled together"
+                )
         try:
             for spec in window_specs:
                 token_dir = root / f"token_{spec['generated_index']:06d}"
+                ensure_dir(token_dir)
                 graph_path = token_dir / "graph.npz"
                 trace = _trace_runtime_payload(
                     spec=spec, shard_id=shard_id, metadata=metadata
@@ -962,20 +1276,12 @@ def run_real_shard(
                     mode = spec.get("graph_knobs", {}).get(
                         "trajectory_session_mode", "per_token"
                     )
-                    spec_reuse_requested = mode in {
-                        "experimental_reuse",
-                        "window_reuse_v1",
-                    }
-                    spec_cache_effective = bool(
-                        spec_reuse_requested and trajectory_session_cache["effective"]
-                    )
                     trace["trajectory_session"] = {
                         **session_reuse_metadata(spec),
-                        "session_reuse_effective": spec_cache_effective,
-                        "session_reuse_fallback": trajectory_session_cache["fallback"]
-                        if spec_reuse_requested and mode != "window_reuse_v1"
-                        else None,
-                        "decoder_cache_reuse_effective": spec_cache_effective,
+                        "session_reuse_fallback": None
+                        if mode == "window_reuse_v1"
+                        else session_reuse_metadata(spec)["session_reuse_fallback"],
+                        "decoder_cache_reuse_effective": False,
                     }
                     knobs = spec["graph_knobs"]
                     save_raw_graph = bool(knobs.get("save_raw_graph", False))
@@ -983,7 +1289,6 @@ def run_real_shard(
                     trace["graph_path"] = str(
                         raw_graph_path if save_raw_graph else graph_path
                     )
-                    debug_sidecars: dict[str, str] = {}
                     full_sequence_mode = (
                         knobs.get("input_context_mode") == "full_sequence"
                     )
@@ -996,66 +1301,93 @@ def run_real_shard(
                         prompt_token_ids = full_sequence_cache["token_ids"]
                     else:
                         prompt_token_ids = prefix_token_ids
-                    attribute_kwargs = {
-                        "attribution_targets": torch.tensor(
-                            [spec["target_token_id"]], dtype=torch.long
+                    request = _trace_request(
+                        model=model,
+                        prompt_token_ids=prompt_token_ids,
+                        spec=spec,
+                        prefix_metadata=prefix_metadata,
+                        full_sequence_mode=full_sequence_mode,
+                        telemetry_jsonl_path=(
+                            token_dir / "telemetry_live.jsonl"
+                            if knobs.get("incremental_telemetry_jsonl", False)
+                            else None
                         ),
-                        "prefix_view_metadata": prefix_metadata,
-                        "output_position": spec["target_position"] - 1
-                        if full_sequence_mode
-                        else None,
-                        "max_n_logits": 1,
-                        "desired_logit_prob": 1.0,
-                        "batch_size": int(knobs.get("attribution_batch_size", 256)),
-                        "feature_batch_size": knobs.get("feature_batch_size"),
-                        "logit_batch_size": knobs.get("logit_batch_size"),
-                        "max_feature_nodes": int(knobs.get("max_feature_nodes", 8192)),
-                        "offload": offload,
-                        "verbose": bool(knobs.get("verbose_attribution", True)),
-                        "update_interval": int(
-                            knobs.get("attribution_update_interval", 4)
-                        ),
-                        "profile": bool(knobs.get("profile_attribution", True)),
-                        "profile_log_interval": int(
-                            knobs.get("profile_log_interval", 1)
-                        ),
-                        "internal_precision": resolve_internal_precision(
-                            str(knobs.get("exact_trace_internal_dtype", "fp32"))
-                        ),
-                        "exact_trace_internal_dtype": str(
-                            knobs.get("exact_trace_internal_dtype", "fp32")
-                        ),
-                        **_attribute_performance_kwargs(knobs),
-                        "decoder_chunk_cache": trajectory_session_cache[
-                            "decoder_chunk_cache"
-                        ]
-                        if full_sequence_mode
-                        and spec_cache_effective
-                        and mode != "window_reuse_v1"
-                        else None,
-                        "decoder_cache_fingerprint": trajectory_session_cache[
-                            "decoder_cache_fingerprint"
-                        ]
-                        if full_sequence_mode
-                        and spec_cache_effective
-                        and mode != "window_reuse_v1"
-                        else None,
-                        "compact_output": not save_raw_graph,
-                    }
+                    )
                     if mode == "window_reuse_v1":
                         if window_session is None:
-                            raise RuntimeError(
-                                "window_reuse_v1 session was not initialized"
+                            window_session = open_session(
+                                request,
+                                window=SessionWindow(
+                                    max_prefix_len=int(
+                                        window["window_max_target_position"]
+                                    )
+                                ),
                             )
-                        graph_result = window_session.attribute_target_position(
+                        trace_result = window_session.trace_window(
                             int(spec["target_position"]),
-                            **attribute_kwargs,
+                            reuse=bool(knobs.get("reuse_phase0_window_state", False)),
+                            request=request,
                         )
+                    elif request.execution.session.decoder_cache.enabled:
+                        if window_session is None:
+                            window_session = open_session(request)
+                        trace_result = window_session.trace(request)
                     else:
-                        graph_result = attribute_nnsight(
-                            prompt=torch.tensor(prompt_token_ids, dtype=torch.long),
-                            model=model,
-                            **attribute_kwargs,
+                        trace_result = trace_one(request)
+                    trace.update(
+                        _execution_result_payload(
+                            trace_result,
+                            selected_config=spec["graph_knobs"],
+                        )
+                    )
+                    compact_result = _persist_successful_result_artifacts(
+                        token_dir=token_dir,
+                        trace_result=trace_result,
+                        selected_config=spec["graph_knobs"],
+                        trace=trace,
+                    )
+                    trace["trajectory_session"]["decoder_cache_reuse_effective"] = bool(
+                        request.execution.session.decoder_cache.enabled
+                        and window_session is not None
+                    )
+                    trace_status = (
+                        getattr(trace_result.status, "value", trace_result.status)
+                        if hasattr(trace_result, "status")
+                        else "succeeded"
+                    )
+                    if trace_status == "probe_completed":
+                        trace.update(
+                            {
+                                "status": "probe_completed",
+                                "error": None,
+                                "graph_path": None,
+                                "graph_summary": None,
+                                "diagnostic_stop_mode": (
+                                    trace_result.telemetry_summary.get(
+                                        "diagnostic_stop_mode"
+                                    )
+                                ),
+                                "phase4_batches_completed": (
+                                    trace_result.telemetry_summary.get(
+                                        "phase4_batches_completed", 0
+                                    )
+                                ),
+                                "semantic_fingerprint": (
+                                    trace_result.semantic_fingerprint
+                                ),
+                                "telemetry_summary": _json_ready(
+                                    trace_result.telemetry_summary
+                                ),
+                                "timings": {
+                                    "trace_seconds": (time.perf_counter() - started),
+                                },
+                            }
+                        )
+                        raise _DiagnosticProbeCompleted
+                    graph_result = trace_result.output
+                    if trace_result.telemetry_summary:
+                        trace["telemetry_summary"] = _json_ready(
+                            trace_result.telemetry_summary
                         )
                     if save_raw_graph:
                         raw_graph_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1083,11 +1415,12 @@ def run_real_shard(
                                 selected_features.numel()
                             )
                     else:
-                        compact_result = graph_result
-                        debug_sidecars = _save_compact_debug_sidecars(
-                            token_dir, compact_result
-                        )
-                        bucketed = compact_result_to_bucketed_compact(
+                        if compact_result is None:
+                            raise TypeError(
+                                "compact trace output must be a mapping, got "
+                                f"{type(graph_result).__name__}"
+                            )
+                        bucketed = _compact_result_to_bucketed_compact(
                             compact_result,
                             spec["generated_index"],
                             token_text=spec["target_token_text"],
@@ -1097,13 +1430,6 @@ def run_real_shard(
                         step = bucketed.step
                         graph_summary = _graph_summary(step, graph_path)
                         graph_summary["format"] = "typed_bucketed"
-                        trace.update(
-                            _persist_compact_telemetry_events(
-                                token_dir=token_dir,
-                                compact_result=compact_result,
-                                trace=trace,
-                            )
-                        )
                     trace.update(
                         {
                             "status": "ok",
@@ -1114,8 +1440,6 @@ def run_real_shard(
                             "graph_summary": graph_summary,
                         }
                     )
-                    if debug_sidecars:
-                        trace["debug_sidecars"] = debug_sidecars
                     if not save_raw_graph:
                         for key in (
                             "phase0_window_state_reuse_requested",
@@ -1159,14 +1483,19 @@ def run_real_shard(
                         trace["phase3_frontier_buffer_metadata"] = _json_ready(
                             compact_result.get("phase3_frontier_buffer_metadata")
                         )
-                    if "phase4_frontier_buffer_metadata" in compact_result:
+                    if (
+                        not save_raw_graph
+                    ) and "phase4_frontier_buffer_metadata" in compact_result:
                         trace["phase4_frontier_buffer_metadata"] = _json_ready(
                             compact_result.get("phase4_frontier_buffer_metadata")
                         )
+                except _DiagnosticProbeCompleted:
+                    pass
                 except (
                     Exception
                 ) as exc:  # pragma: no cover - exercised only in SLURM real mode
-                    trace.update(_exception_payload(exc))
+                    exception_payload = _exception_payload(exc)
+                    trace.update(exception_payload)
                     exception_telemetry = _exception_telemetry_payload(exc)
                     if exception_telemetry is not None:
                         trace["telemetry_summary"] = exception_telemetry[
@@ -1185,41 +1514,91 @@ def run_real_shard(
                     trace.update(
                         {
                             "status": "error",
-                            "error": repr(exc),
-                            "error_traceback": traceback.format_exc(),
+                            "error_traceback": exception_payload["traceback"],
                             "timings": {
                                 "trace_seconds": time.perf_counter() - started,
                             },
                         }
                     )
+                if resource_policy is not RuntimeResourcePolicy.OFF:
+                    token_sample = resource_sample(
+                        boundary=f"token_{spec['generated_index']:06d}_terminal",
+                        started_monotonic=resource_started,
+                    )
+                    try:
+                        validate_resource_policy(
+                            policy=resource_policy,
+                            envelope=planning_envelope,
+                            sample=token_sample,
+                        )
+                    except RuntimeError as resource_error:
+                        trace.update(
+                            {
+                                "status": "error",
+                                "resource_policy_error": str(resource_error),
+                                "error": repr(resource_error),
+                                "error_type": type(resource_error).__name__,
+                            }
+                        )
+                    trace["resource_sample"] = token_sample
+                    with resource_samples_path.open("a", encoding="utf-8") as handle:
+                        handle.write(json.dumps(token_sample, sort_keys=True) + "\n")
                 write_json(token_dir / "trace.json", trace)
                 rows.append(trace)
                 with trace_results_path.open("a", encoding="utf-8") as handle:
                     handle.write(json.dumps(trace, sort_keys=True) + "\n")
         finally:
             if window_session is not None:
-                cleanup = getattr(window_session, "cleanup", None)
-                if callable(cleanup):
-                    cleanup()
-    final_status = "complete" if all(r["status"] == "ok" for r in rows) else "error"
-    provider = getattr(model, "transcoders", None)
-    clear_cache = getattr(provider, "clear_decoder_block_cache", None)
-    if trajectory_session_cache["decoder_chunk_cache"] is not None and callable(
-        clear_cache
-    ):
-        clear_cache(trajectory_session_cache["decoder_chunk_cache"])
+                window_session.close()
+    row_statuses = {str(row.get("status")) for row in rows}
+    if row_statuses == {"probe_completed"}:
+        final_status = "probe_completed"
+    elif row_statuses == {"ok"}:
+        final_status = "complete"
+    elif row_statuses.issubset({"ok", "probe_completed"}):
+        final_status = "complete_with_diagnostics"
+    else:
+        final_status = "error"
     token_seconds = [
         float(r.get("timings", {}).get("trace_seconds", 0.0)) for r in rows
     ]
     health = {
         "actual_total_seconds": sum(token_seconds),
         "max_token_seconds": max(token_seconds) if token_seconds else 0.0,
-        "failed_token_count": sum(1 for r in rows if r.get("status") != "ok"),
+        "failed_token_count": sum(
+            1 for r in rows if r.get("status") not in {"ok", "probe_completed"}
+        ),
+        "diagnostic_token_count": sum(
+            1 for r in rows if r.get("status") == "probe_completed"
+        ),
         "predicted_cost_sum": int(
             shard.get("estimated_cost_sum", sum(s["estimated_cost"] for s in specs))
         ),
-        "retry_recommended": any(r.get("status") != "ok" for r in rows),
+        "retry_recommended": any(
+            r.get("status") not in {"ok", "probe_completed"} for r in rows
+        ),
     }
+    terminal_resource = None
+    if resource_policy is not RuntimeResourcePolicy.OFF:
+        terminal_resource = resource_sample(
+            boundary="shard_terminal", started_monotonic=resource_started
+        )
+        with resource_samples_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(terminal_resource, sort_keys=True) + "\n")
+        write_json(
+            root / "resource_summary.json",
+            {
+                "schema_version": 1,
+                "runtime_policy": resource_policy.value,
+                "planning_envelope": planning_envelope,
+                "scheduler_request": resource_payload["scheduler_request"],
+                "scheduler_allocation": resource_payload["scheduler_allocation"],
+                "terminal_sample": terminal_resource,
+                "trace_telemetry_summaries": [
+                    row.get("telemetry_summary") for row in rows
+                ],
+            },
+        )
     write_json(
         root / "shard.json",
         _shard_record(
@@ -1261,31 +1640,56 @@ def _exception_payload(exc: Exception) -> dict[str, Any]:
     the token trace JSON instead of only storing ``repr(exc)``.
     """
 
+    from circuit_tracer.observability.errors import safe_exception_attrs
+
+    primary = safe_exception_attrs(exc)
+    try:
+        formatted_traceback = traceback.format_exc()
+    except BaseException as formatting_error:  # pragma: no cover - adversarial
+        formatted_traceback = (
+            "<traceback unavailable: "
+            f"{type(formatting_error).__module__}."
+            f"{type(formatting_error).__qualname__}>"
+        )
     payload: dict[str, Any] = {
-        "error": repr(exc),
-        "error_type": type(exc).__name__,
+        "error": primary["error_repr"],
+        "error_type": primary["error_type"],
         "error_module": type(exc).__module__,
-        "error_message": str(exc),
-        "traceback": traceback.format_exc(),
+        "error_message": primary["error_message"],
+        "traceback": formatted_traceback,
     }
-    original = getattr(exc, "original", None)
+    if "error_details" in primary:
+        payload["error_details"] = primary["error_details"]
+    try:
+        original = getattr(exc, "original", None)
+    except BaseException:  # pragma: no cover - adversarial wrappers
+        original = None
     if original is not None:
+        original_attrs = safe_exception_attrs(original)
         payload.update(
             {
-                "original_error_type": type(original).__name__,
+                "original_error_type": original_attrs["error_type"],
                 "original_error_module": type(original).__module__,
-                "original_error": repr(original),
-                "original_error_message": str(original),
+                "original_error": original_attrs["error_repr"],
+                "original_error_message": original_attrs["error_message"],
             }
         )
     cause = exc.__cause__
     if cause is not None:
-        payload["cause_error"] = repr(cause)
-        payload["cause_error_type"] = type(cause).__name__
+        cause_attrs = safe_exception_attrs(cause)
+        payload["cause_error"] = cause_attrs["error_repr"]
+        payload["cause_error_type"] = cause_attrs["error_type"]
     context = exc.__context__
     if context is not None:
-        payload["context_error"] = repr(context)
-        payload["context_error_type"] = type(context).__name__
+        context_attrs = safe_exception_attrs(context)
+        payload["context_error"] = context_attrs["error_repr"]
+        payload["context_error_type"] = context_attrs["error_type"]
+    if "error_details" not in payload:
+        for candidate in _iter_exception_chain(exc)[1:]:
+            candidate_attrs = safe_exception_attrs(candidate)
+            if "error_details" in candidate_attrs:
+                payload["error_details"] = candidate_attrs["error_details"]
+                break
     return payload
 
 

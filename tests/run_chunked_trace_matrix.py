@@ -5,10 +5,11 @@ import json
 import os
 import shlex
 import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import Any
+
+from experiments.run_sparsification_experiment import build_command as build_campaign_command
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -17,55 +18,7 @@ DEFAULT_OUTPUT_ROOT = Path("/fs/scratch/PAS2836/kopanev.1/trace_chunked_test_mat
 
 
 def build_command(output_dir: Path, scenario: dict[str, Any]) -> list[str]:
-    cmd = [
-        sys.executable,
-        str(REPO_ROOT / "trace_pipeline_chunked.py"),
-        "--prompts",
-        str(scenario["prompts"]),
-        "--completions",
-        str(scenario["completions"]),
-        "--temperature",
-        str(scenario["temperature"]),
-        "--output-dir",
-        str(output_dir),
-        "--max-feature-nodes",
-        str(scenario["max_feature_nodes"]),
-        "--max-edges",
-        str(scenario["max_edges"]),
-        "--max-steps",
-        str(scenario["max_steps"]),
-        "--attribution-batch-size",
-        str(scenario["attribution_batch_size"]),
-        "--max-n-logits",
-        str(scenario["max_n_logits"]),
-        "--desired-logit-prob",
-        str(scenario["desired_logit_prob"]),
-        "--attribution-update-interval",
-        str(scenario["attribution_update_interval"]),
-        "--decoder-chunk-size",
-        str(scenario["decoder_chunk_size"]),
-    ]
-
-    if scenario.get("verbose_attribution", False):
-        cmd.append("--verbose-attribution")
-    if scenario.get("profile_attribution", False):
-        cmd.append("--profile-attribution")
-    if "profile_log_interval" in scenario:
-        cmd.extend(["--profile-log-interval", str(scenario["profile_log_interval"])])
-    if scenario.get("diagnostic_feature_cap") is not None:
-        cmd.extend(
-            ["--diagnostic-feature-cap", str(scenario["diagnostic_feature_cap"])]
-        )
-    if scenario.get("save_raw", False):
-        cmd.append("--save-raw")
-    if scenario.get("no_offload", False):
-        cmd.append("--no-offload")
-    if scenario.get("no_lazy_encoder", False):
-        cmd.append("--no-lazy-encoder")
-    if scenario.get("no_lazy_decoder", False):
-        cmd.append("--no-lazy-decoder")
-
-    return cmd
+    return build_campaign_command(output_dir, scenario)
 
 
 def run_scenario(
@@ -79,6 +32,7 @@ def run_scenario(
     run_output_dir = scenario_root / "artifacts"
     scenario_root.mkdir(parents=True, exist_ok=True)
     run_output_dir.mkdir(parents=True, exist_ok=True)
+    (scenario_root / "scenario.json").write_text(json.dumps(scenario, indent=2))
 
     log_path = scenario_root / "run.log"
     cmd = build_command(run_output_dir, scenario)

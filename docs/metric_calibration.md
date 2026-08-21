@@ -1,7 +1,7 @@
 # Metric calibration toolset
 
 Status: Current workflow reference
-Last updated: 2026-06-12
+Last updated: 2026-07-10
 
 This page describes the Phase-0/Phase-1 analysis tooling for calibrated temporal
 graph metrics. It is login-node safe except for the one-time decoder-signature
@@ -11,7 +11,7 @@ not already present.
 ## Phase 0: decoder-signature cache
 
 Soft feature matching uses normalized GemmaScope-2 CLT downstream decoder
-signatures. The canonical cache built for current work is:
+signatures. The existing OSC cache is:
 
 ```text
 /fs/scratch/PAS2836/kopanev.1/exact_trace_bench/decoder_signature_cache/
@@ -26,6 +26,10 @@ w_dec[feature_id, source_layer:, :].reshape(-1) / ||...||_2
 
 The cache is chunked by source layer and feature row. Analysis code reads it via
 `DecoderSignatureStore`; metric runs do not load the model or raw transcoders.
+
+The `/fs/scratch/PAS2836/...` paths below are historical OSC examples. New CHPC
+outputs belong under `$EXACT_TRACE_BENCH_SCRATCH_ROOT` (normally
+`/scratch/general/vast/$USER/nlp_research_project/exact_trace_bench`).
 
 Rebuild command template:
 

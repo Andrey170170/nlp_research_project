@@ -33,6 +33,7 @@ from .base import (
     PRIVATE_INTERNAL_KEYS as PRIVATE_INTERNAL_KEYS,
     EXACT_MODE_KNOB_KEYS as EXACT_MODE_KNOB_KEYS,
     CLUSTER_SETTINGS as CLUSTER_SETTINGS,
+    SUPPORTED_CLUSTERS as SUPPORTED_CLUSTERS,
     _select_exact_mode_knobs as _select_exact_mode_knobs,
 )
 
@@ -47,6 +48,24 @@ from .tier_api import (
     scenario_file_name as scenario_file_name,
     write_tier_config as write_tier_config,
     write_all_tiers as write_all_tiers,
+)
+
+from .chpc_baseline import (
+    CHPC_BASELINE_FIXTURES as CHPC_BASELINE_FIXTURES,
+    CHPC_BASELINE_RESOURCE_PROFILE as CHPC_BASELINE_RESOURCE_PROFILE,
+    CHPC_BASELINE_VARIANTS as CHPC_BASELINE_VARIANTS,
+    build_chpc_baseline_config as build_chpc_baseline_config,
+    chpc_baseline_scenario_file_name as chpc_baseline_scenario_file_name,
+    write_chpc_baseline_config as write_chpc_baseline_config,
+)
+
+from .governor_calibration import (
+    GOVERNOR_CALIBRATION_FIXTURE as GOVERNOR_CALIBRATION_FIXTURE,
+    GOVERNOR_CALIBRATION_PROVIDERS as GOVERNOR_CALIBRATION_PROVIDERS,
+    build_governor_calibration_config as build_governor_calibration_config,
+    governor_calibration_scenario_file_name as governor_calibration_scenario_file_name,
+    write_all_governor_calibration_configs as write_all_governor_calibration_configs,
+    write_governor_calibration_config as write_governor_calibration_config,
 )
 
 from .wave0 import (
@@ -76,14 +95,20 @@ from .waves import (
 __all__ = [
     "ADVANCED_PUBLIC_TUNING_KEYS",
     "CLUSTER_SETTINGS",
+    "CHPC_BASELINE_FIXTURES",
+    "CHPC_BASELINE_RESOURCE_PROFILE",
+    "CHPC_BASELINE_VARIANTS",
     "DEBUG_REPLAY_PUBLIC_KEYS",
     "DEPRECATED_COMPAT_KEYS",
     "EXACT_MODE_KNOB_KEYS",
+    "GOVERNOR_CALIBRATION_FIXTURE",
+    "GOVERNOR_CALIBRATION_PROVIDERS",
     "PRIVATE_INTERNAL_KEYS",
     "RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM",
     "RESOURCE_PROFILE_STANDARD",
     "SCENARIO_TIERS",
     "STABLE_PUBLIC_SCENARIO_KEYS",
+    "SUPPORTED_CLUSTERS",
     "TELEMETRY_KEYS",
     "WAVE0_CANONICAL_ANOMALY_FIXTURES",
     "WAVE0_CANONICAL_FAST_FIXTURES",
@@ -107,7 +132,9 @@ __all__ = [
     "WAVE4_GENERALIZATION_TIERS",
     "WAVE4_GENERALIZATION_VARIANTS",
     "build_anomaly_tier",
+    "build_chpc_baseline_config",
     "build_fast_tier",
+    "build_governor_calibration_config",
     "build_long_eval_tier",
     "build_tier_config",
     "build_wave0_baseline_config",
@@ -117,6 +144,8 @@ __all__ = [
     "build_wave3_interaction_confirmation_config",
     "build_wave4_generalization_config",
     "scenario_file_name",
+    "chpc_baseline_scenario_file_name",
+    "governor_calibration_scenario_file_name",
     "wave0_scenario_file_name",
     "wave2a_phase1_scenario_file_name",
     "wave2b_phase4_scenario_file_name",
@@ -124,6 +153,9 @@ __all__ = [
     "wave3_interaction_confirmation_scenario_file_name",
     "wave4_generalization_scenario_file_name",
     "write_all_tiers",
+    "write_chpc_baseline_config",
+    "write_all_governor_calibration_configs",
+    "write_governor_calibration_config",
     "write_tier_config",
     "write_wave0_baseline_config",
     "write_wave2a_phase1_config",

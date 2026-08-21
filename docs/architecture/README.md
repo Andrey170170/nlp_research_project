@@ -1,10 +1,13 @@
 # Architecture docs index
 
 Status: Current-state code maps
-Last updated: 2026-07-01
+Last updated: 2026-07-13
 
 These pages describe the current workspace and code layout. They are
 descriptive references, not target architecture rules or implementation plans.
+The normative Phase C2 contract is `../tracing_runtime_rewrite_spec.md`.
+These maps describe the landed implementation while its immutable Granite gate
+is still pending.
 
 ## Maps
 

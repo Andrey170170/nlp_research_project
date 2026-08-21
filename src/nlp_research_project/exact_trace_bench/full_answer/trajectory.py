@@ -163,7 +163,6 @@ def _set_generation_seed(seed: int | None) -> None:
 def _generate_trajectory_with_model(
     *,
     model: Any,
-    base_module: Any,
     prompt_text: str,
     metadata: dict[str, Any],
     max_new_tokens: int,
@@ -172,6 +171,8 @@ def _generate_trajectory_with_model(
     include_prompt_text: bool,
     trajectory_id: str,
 ) -> Trajectory:
+    from ..trace_runtime.support import generate_next_token
+
     _set_generation_seed(seed)
     tokenizer = model.tokenizer
     stop_token_ids = get_stop_token_ids(tokenizer)
@@ -181,7 +182,7 @@ def _generate_trajectory_with_model(
     token_texts: list[str] = []
     token_logprobs: list[float | None] = []
     for _ in range(max_new_tokens):
-        token_result = base_module.generate_next_token(
+        token_result = generate_next_token(
             model,
             input_ids,
             temperature=temperature,
@@ -226,20 +227,19 @@ def generate_trajectory(
         raise ValueError("max_new_tokens must be positive")
     if temperature < 0:
         raise ValueError("temperature must be non-negative")
-    import trace_pipeline as base
+    from ..trace_runtime.provider import load_model
 
     prompt_text, metadata = load_fixture_prompt(
         prompt_path=prompt_path,
         fixture_catalog=fixture_catalog,
         fixture_name=fixture_name,
     )
-    model: Any = base.load_model(exact_chunked_decoder=True)
+    model: Any = load_model(exact_chunked_decoder=True)
     resolved_id = trajectory_id or str(
         metadata.get("fixture_name") or output.with_suffix("").name
     )
     trajectory = _generate_trajectory_with_model(
         model=model,
-        base_module=base,
         prompt_text=prompt_text,
         metadata=metadata,
         trajectory_id=resolved_id,
@@ -284,9 +284,9 @@ def sample_trajectories_until_success(
         fixture_catalog=fixture_catalog,
         fixture_name=fixture_name,
     )
-    import trace_pipeline as base
+    from ..trace_runtime.provider import load_model
 
-    model: Any = base.load_model(exact_chunked_decoder=True)
+    model: Any = load_model(exact_chunked_decoder=True)
     started = time.monotonic()
     attempts: list[dict[str, Any]] = []
     manifest: dict[str, Any] = {
@@ -320,7 +320,6 @@ def sample_trajectories_until_success(
         output = output_dir / f"attempt_{attempt_number:06d}.json"
         trajectory = _generate_trajectory_with_model(
             model=model,
-            base_module=base,
             prompt_text=prompt_text,
             metadata=metadata,
             max_new_tokens=max_new_tokens,

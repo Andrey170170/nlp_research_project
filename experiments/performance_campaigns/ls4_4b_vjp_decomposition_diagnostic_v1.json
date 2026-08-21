@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "campaign_id": "ls4-gemma3-4b-vjp-decomposition-diagnostic-v1",
+  "description": "Frozen three-arm 4B/256 nested diagnostic comparing replicated-forward injected backward, single-forward serial autograd, and single-forward batched autograd. Serial versus batched isolates vmap batching within the shared single-lane direct-autograd stack; control versus serial remains composite. Every arm requires cuda_windowed and captures the transition evidence needed to locate the earliest Phase-3 divergence before any return to the scaling ladder.",
+  "execution_policy": {
+    "ordered_profile_roles": ["control", "serial", "batched"],
+    "advance_only_after_classification": true,
+    "transition_probe_required": true,
+    "phase4_execution_batch_limit": 1,
+    "scheduler_walltime_ceiling_seconds": 3600,
+    "stop_on_required_mode_mismatch": true,
+    "stop_on_fidelity_failure": false,
+    "full_scaling_blocked_until_localized": true
+  },
+  "workloads": [
+    {
+      "workload_id": "ls4-vjp-decomposition-4b-361-dev-256",
+      "preparation_status": "frozen",
+      "fixture": {
+        "catalog": "experiments/generated/performance_campaigns/ls0/fixture_catalog.json",
+        "catalog_sha256": "4ba856c8f0964a06834343990d905413f16f56b8331c29b5bb6ebc7aed758fb7",
+        "fixture_name": "361_length_v1",
+        "prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt",
+        "prompt_sha256": "938319d4a0c5740d60f31ec015bdba975e7952670a3d94e5b7438f7fff7648ee"
+      },
+      "model": {"variant": "gemma3_4b", "provider": "plt"},
+      "prompt": {"family": "gsm8k_361_length_v1", "role": "development"},
+      "trajectory": {
+        "trajectory_id": "ls0-gemma3-1b-361-greedy-v1",
+        "path": "experiments/generated/performance_campaigns/ls0/361_trajectory.json",
+        "sha256": "fc59c4512187a8b40fbfc62c5fadf0d0b5c2228ff35890a30b567fa9e64e158e"
+      },
+      "prefix": {
+        "requested_tokens": 256,
+        "actual_tokens": 256,
+        "token_ids_sha256": "cfee207d0bce712e77190bcf4a7dbc4a0c69e410602a89bd5c5462794fa1d983"
+      },
+      "target": {"absolute_position": 256, "token_id": 236751, "token_text": "s"},
+      "operational_class": "sweep",
+      "profiles": {
+        "control": "ls4-4b-vjp-diagnostic-duplicated-lanes-v1",
+        "candidate": "ls4-4b-vjp-diagnostic-single-forward-batched-vjp-v1",
+        "serial": "ls4-4b-vjp-diagnostic-single-forward-serial-vjp-v1",
+        "batched": "ls4-4b-vjp-diagnostic-single-forward-batched-vjp-v1"
+      },
+      "run_disposition": "three_arm_preheated_transition_probe_before_full_scaling",
+      "resource_envelope": {
+        "gpu": "NVIDIA H200",
+        "gpu_count": 1,
+        "host_memory_stop_gib": 400,
+        "host_rss_stop_gib": 300,
+        "hbm_peak_fraction_max": 0.9,
+        "walltime_seconds": 3600
+      },
+      "comparison_policy": {
+        "diagnostic_model": "nested_serial_vs_batched_with_composite_control",
+        "claim_boundary": "serial_vs_batched isolates vmap batching conditional on single_lane direct autograd; control_vs_serial does not distinguish forward width from NNSight injection",
+        "required_feature_row_influence_mode": "cuda_windowed",
+        "feature_row_influence_requirement": "required",
+        "runtime_resource_policy": "measure_only",
+        "arms": {
+          "control": {
+            "backward_engine_mode": "duplicated_lanes",
+            "forward_graph_mode": "logical_capacity",
+            "vjp_kernel_mode": "nnsight_injected",
+            "forward_lane_count": 128
+          },
+          "serial": {
+            "backward_engine_mode": "single_forward_serial_vjp",
+            "forward_graph_mode": "single_lane",
+            "vjp_kernel_mode": "autograd_serial",
+            "forward_lane_count": 1
+          },
+          "batched": {
+            "backward_engine_mode": "single_forward_batched_vjp",
+            "forward_graph_mode": "single_lane",
+            "vjp_kernel_mode": "autograd_batched",
+            "forward_lane_count": 1
+          }
+        },
+        "required_capture_flags": [
+          "cross_cluster_debug",
+          "capture_phase0_donor_bundle",
+          "capture_phase3_gradient_bundle",
+          "capture_phase3_row_bundle",
+          "capture_phase3_seed_bundle"
+        ],
+        "comparison_order": [
+          "phase0_support_and_activations",
+          "phase1_target_state",
+          "phase3_raw_gradients",
+          "phase3_normalized_row_and_denominator",
+          "phase3_seed_influences_and_frontier",
+          "first_phase4_batch"
+        ],
+        "fidelity": "diagnostic_localization_then_bounded_requalification"
+      }
+    }
+  ]
+}

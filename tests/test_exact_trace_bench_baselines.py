@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
+import inspect
 import sys
+import types
 from pathlib import Path
+
+import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -10,8 +14,131 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from nlp_research_project.exact_trace_bench import baselines  # noqa: E402
 from nlp_research_project.exact_trace_bench.config import base_trace_defaults  # noqa: E402
-from nlp_research_project.exact_trace_bench.jobs import render_fixture_prep_plan  # noqa: E402
-from experiments.run_sparsification_experiment import run_scenario  # noqa: E402
+from nlp_research_project.exact_trace_bench.jobs import (  # noqa: E402
+    render_fixture_prep_plan,
+    render_launch_plan,
+)
+from experiments import run_sparsification_experiment as experiment_runner  # noqa: E402
+from experiments.run_sparsification_experiment import main, run_scenario  # noqa: E402
+
+
+def test_baseline_check_preserves_typed_comparison_scope() -> None:
+    scientific = baselines.normalize_baseline_check(
+        {"baseline_check": {"enabled": True, "mode": "gate"}}
+    )
+    mechanism = baselines.normalize_baseline_check(
+        {
+            "baseline_check": {
+                "enabled": True,
+                "mode": "gate",
+                "scope": "same_regime_mechanism",
+            }
+        }
+    )
+
+    assert scientific["scope"] == "frozen_scientific"
+    assert mechanism["scope"] == "same_regime_mechanism"
+    with pytest.raises(ValueError, match="scope"):
+        baselines.normalize_baseline_check(
+            {
+                "baseline_check": {
+                    "enabled": True,
+                    "scope": "mixed_or_unknown",
+                }
+            }
+        )
+
+
+def test_registry_loader_and_resolver_enforce_scope_at_shared_boundary(
+    tmp_path: Path,
+) -> None:
+    scientific_path = tmp_path / "legacy-scientific.json"
+    scientific_path.write_text(
+        json.dumps({"registry_id": "legacy", "entries": {"case": {}}})
+    )
+    scientific = baselines.load_baseline_registry(scientific_path)
+    assert scientific.scope == "frozen_scientific"
+    assert scientific.scope_declared is False
+    status, entry = baselines.resolve_baseline_entry(
+        {
+            "enabled": True,
+            "scope": "frozen_scientific",
+            "registry_key": "case",
+            "failure_reasons": [],
+        },
+        registry=scientific,
+        registry_path=scientific_path,
+    )
+    assert status["registry_scope"] == "frozen_scientific"
+    assert entry == {}
+
+    mechanism_missing_entry_scope = tmp_path / "bad-mechanism.json"
+    mechanism_missing_entry_scope.write_text(
+        json.dumps(
+            {
+                "registry_id": "bad",
+                "scope": "same_regime_mechanism",
+                "entries": {"case": {}},
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="must declare scope"):
+        baselines.load_baseline_registry(mechanism_missing_entry_scope)
+
+    status, entry = baselines.resolve_baseline_entry(
+        {
+            "enabled": True,
+            "scope": "same_regime_mechanism",
+            "registry_key": "case",
+            "failure_reasons": [],
+        },
+        registry={"case": {"scope": "same_regime_mechanism"}},
+        registry_path=None,
+    )
+    assert entry is None
+    assert status["status"] == "baseline_invalid"
+    assert "explicitly scoped" in " ".join(status["failure_reasons"])
+
+
+def test_run_scenario_rejects_unscoped_mechanism_registry(tmp_path: Path) -> None:
+    scenario = {
+        **base_trace_defaults(),
+        "name": "mechanism_scope_smoke",
+        "stage": "test",
+        "method": "exact",
+        "gsm8k_indices": [828],
+        "attribution_batch_size": 1,
+        "feature_batch_size": 1,
+        "logit_batch_size": 1,
+        "decoder_chunk_size": 256,
+        "cross_batch_decoder_cache_bytes": 0,
+        "baseline_check": {
+            "enabled": True,
+            "mode": "gate",
+            "scope": "same_regime_mechanism",
+            "registry_key": "case",
+            "baseline_required": True,
+        },
+    }
+    result = run_scenario(
+        tmp_path,
+        scenario,
+        env={},
+        run_metadata={
+            "run_id": "run",
+            "run_name": "test",
+            "run_description": None,
+            "run_goal": None,
+        },
+        baseline_registry={"case": {"scope": "same_regime_mechanism"}},
+    )
+
+    assert result["status"] == "baseline_invalid"
+    assert result["returncode"] is None
+    assert "explicitly scoped" in " ".join(
+        result["baseline_check"]["failure_reasons"]
+    )
+    assert not (tmp_path / "mechanism_scope_smoke" / "run.log").exists()
 
 
 def test_baseline_comparison_writes_metrics(monkeypatch, tmp_path: Path) -> None:
@@ -28,11 +155,15 @@ def test_baseline_comparison_writes_metrics(monkeypatch, tmp_path: Path) -> None
         assert right == current_artifacts
         return {
             "shared_completion_count": 1,
+            "aligned_completion_count": 1,
+            "aligned_step_count": 1,
+            "comparison_complete": True,
             "left_only_completion_count": 0,
             "right_only_completion_count": 0,
             "overall_mean_feature_jaccard": 1.0,
             "overall_mean_edge_jaccard": 0.99,
             "overall_mean_weighted_edge_jaccard": 0.98,
+            "overall_mean_top256_edge_jaccard": 0.97,
         }
 
     monkeypatch.setattr(baselines, "compare_artifact_dirs", fake_compare)
@@ -54,7 +185,60 @@ def test_baseline_comparison_writes_metrics(monkeypatch, tmp_path: Path) -> None
     assert status["status"] == "gate_pass"
     assert status["passed"] is True
     assert metrics["overall_mean_weighted_edge_jaccard"] == 0.98
+    assert metrics["overall_mean_top256_edge_jaccard"] == 0.97
     assert (scenario_root / "baseline_compare.json").exists()
+
+    row = baselines.build_scenario_metrics_row(
+        scenario={"name": "current"},
+        result={"status": "success"},
+        baseline_status=status,
+        comparison_metrics=metrics,
+    )
+    baselines.write_scenario_metrics(scenario_root, row, baseline_status=status)
+    persisted = json.loads(
+        (scenario_root / "scenario_metrics.json").read_text(encoding="utf-8")
+    )
+    assert persisted["metrics"]["overall_mean_top256_edge_jaccard"] == 0.97
+
+
+def test_baseline_comparison_rejects_incomplete_alignment(
+    monkeypatch, tmp_path: Path
+) -> None:
+    baseline_artifacts = tmp_path / "baseline" / "artifacts"
+    current_artifacts = tmp_path / "current" / "artifacts"
+    baseline_artifacts.mkdir(parents=True)
+    current_artifacts.mkdir(parents=True)
+    baseline_result = tmp_path / "baseline" / "result.json"
+    baseline_result.write_text(json.dumps({"status": "success"}))
+    monkeypatch.setattr(
+        baselines,
+        "compare_artifact_dirs",
+        lambda _left, _right: {
+            "shared_completion_count": 1,
+            "aligned_completion_count": 0,
+            "aligned_step_count": 0,
+            "comparison_complete": False,
+        },
+    )
+
+    status, _metrics = baselines.run_baseline_comparison(
+        scenario_root=tmp_path / "current",
+        current_artifacts=current_artifacts,
+        baseline_check={
+            "enabled": True,
+            "mode": "metrics",
+            "thresholds": {},
+            "failure_reasons": [],
+        },
+        baseline_entry={
+            "artifacts_dir": str(baseline_artifacts),
+            "result_json": str(baseline_result),
+        },
+    )
+
+    assert status["status"] == "compare_error"
+    assert status["passed"] is False
+    assert "no aligned steps" in " ".join(status["failure_reasons"])
 
 
 def test_threshold_evaluation_reports_failures() -> None:
@@ -106,6 +290,115 @@ def test_run_scenario_skips_required_missing_baseline(tmp_path: Path) -> None:
     assert not (scenario_root / "run.log").exists()
 
 
+def test_run_scenario_preserves_probe_and_explicitly_skips_baseline(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    scenario = {
+        **base_trace_defaults(),
+        "name": "transition_probe",
+        "stage": "diagnostic",
+        "method": "exact",
+        "baseline_check": {"enabled": True, "mode": "metrics"},
+        "diagnostic_stop_mode": "transition_probe",
+        "diagnostic_stop_phase4_batches": 2,
+    }
+
+    monkeypatch.setattr(
+        experiment_runner,
+        "resolve_baseline_entry",
+        lambda status, **_kwargs: (status, {"registry_key": "unused"}),
+    )
+    monkeypatch.setattr(
+        experiment_runner,
+        "validate_baseline_entry",
+        lambda _entry, *, status: status,
+    )
+    monkeypatch.setattr(
+        experiment_runner,
+        "run_baseline_comparison",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("diagnostic probes must not enter baseline comparison")
+        ),
+    )
+
+    def fake_run(cmd, **_kwargs):
+        artifacts = Path(cmd[-1])
+        completion = artifacts / "prompt_000" / "completion_000"
+        completion.mkdir(parents=True)
+        (completion / "completion.json").write_text(
+            json.dumps(
+                {
+                    "status": "probe_completed",
+                    "diagnostic_stop_mode": "transition_probe",
+                    "phase4_batches_completed": 2,
+                    "steps": [],
+                }
+            )
+        )
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(experiment_runner.subprocess, "run", fake_run)
+    result = run_scenario(
+        tmp_path,
+        scenario,
+        env={},
+        run_metadata={
+            "run_id": "probe-run",
+            "run_name": None,
+            "run_description": None,
+            "run_goal": None,
+        },
+    )
+
+    assert result["status"] == "probe_completed"
+    assert result["artifact_summary"]["completion_statuses"] == ["probe_completed"]
+    assert result["baseline_check"]["status"] == "skipped_diagnostic_probe"
+    assert result["baseline_check"]["passed"] is None
+
+
+def test_runner_honors_metadata_failure_policy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    scenarios_file = tmp_path / "scenarios.json"
+    scenarios_file.write_text(
+        json.dumps(
+            {
+                "metadata": {"fail_on_baseline_missing": True},
+                "defaults": base_trace_defaults(),
+                "scenarios": [
+                    {
+                        "name": "required_baseline",
+                        "stage": "test",
+                        "method": "exact",
+                        "gsm8k_indices": [828],
+                        "baseline_check": {
+                            "enabled": True,
+                            "mode": "metrics",
+                            "registry_key": "missing/key",
+                            "baseline_required": True,
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_sparsification_experiment.py",
+            "--scenarios-file",
+            str(scenarios_file),
+            "--output-root",
+            str(tmp_path / "results"),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="Required baseline invalid"):
+        main()
+
+
 def test_fixture_prep_plan_uses_cluster_script_and_exports(tmp_path: Path) -> None:
     plan = render_fixture_prep_plan(
         cluster="cardinal",
@@ -114,6 +407,7 @@ def test_fixture_prep_plan_uses_cluster_script_and_exports(tmp_path: Path) -> No
         / "exact_trace_wave0_fixture_targets.json",
         output_dir=tmp_path / "fixtures",
         immutable_workspace=False,
+        live_workspace_rationale="bounded fixture debugging",
         decoder_chunk_size=512,
         cross_batch_decoder_cache_bytes=1024,
         run_name="wave0 fixture smoke",
@@ -125,6 +419,148 @@ def test_fixture_prep_plan_uses_cluster_script_and_exports(tmp_path: Path) -> No
     assert "TARGET_SPEC_FILE=" in plan["sbatch_command"]
     assert "OUTPUT_DIR=" in plan["sbatch_command"]
     assert "CROSS_BATCH_DECODER_CACHE_BYTES=1024" in plan["sbatch_command"]
+    assert "EXACT_TRACE_WORKSPACE_MODE=live" in plan["sbatch_command"]
+    assert "EXACT_TRACE_ALLOW_LIVE_WORKSPACE=1" in plan["sbatch_command"]
+    assert "UV_PROJECT_ENVIRONMENT=" in plan["sbatch_command"]
+    assert "ENV_FILE=" in plan["sbatch_command"]
+    assert plan["workspace_provenance"]["project_repo_state"]["commit"]
+    assert plan["workspace_provenance"]["library_repo_state"]["commit"]
+
+
+def test_fixture_prep_plan_rejects_live_workspace_without_rationale() -> None:
+    try:
+        render_fixture_prep_plan(cluster="cardinal", immutable_workspace=False)
+    except ValueError as exc:
+        assert "non-empty rationale" in str(exc)
+    else:
+        raise AssertionError("Expected live workspace without rationale to fail")
+
+
+def test_launch_renderers_default_immutable_and_require_live_rationale(
+    tmp_path: Path,
+) -> None:
+    assert (
+        inspect.signature(render_launch_plan)
+        .parameters["immutable_workspace"]
+        .default
+        is True
+    )
+    assert (
+        inspect.signature(render_fixture_prep_plan)
+        .parameters["immutable_workspace"]
+        .default
+        is True
+    )
+    try:
+        render_launch_plan(
+            cluster="granite",
+            scenarios_file=tmp_path / "missing.json",
+            immutable_workspace=False,
+        )
+    except ValueError as exc:
+        assert "non-empty rationale" in str(exc)
+    else:
+        raise AssertionError("Expected live launch plan without rationale to fail")
+
+    try:
+        render_launch_plan(
+            cluster="granite",
+            scenarios_file=tmp_path / "missing.json",
+            immutable_workspace=False,
+            existing_workspace=tmp_path / "snapshot",
+            live_workspace_rationale="invalid mixed mode",
+        )
+    except ValueError as exc:
+        assert "existing_workspace requires immutable_workspace" in str(exc)
+    else:
+        raise AssertionError("Expected existing snapshot in live mode to fail")
+
+
+def test_launch_plan_supports_sbatch_memory_override(tmp_path: Path) -> None:
+    scenarios_file = tmp_path / "scenarios.json"
+    scenarios_file.write_text(
+        json.dumps(
+            {
+                "metadata": {"resource_profile": "standard"},
+                "scenarios": [{"name": "smoke"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    plan = render_launch_plan(
+        cluster="granite",
+        scenarios_file=scenarios_file,
+        output_root=tmp_path / "runs",
+        run_id="memory-override",
+        immutable_workspace=False,
+        live_workspace_rationale="test memory override rendering",
+        walltime="01:00:00",
+        mem="600G",
+    )
+
+    assert plan["mem"] == "600G"
+    assert "--time=01:00:00" in plan["sbatch_argv"]
+    assert "--mem=600G" in plan["sbatch_argv"]
+
+
+def test_launch_plan_honors_scenario_array_concurrency(tmp_path: Path) -> None:
+    scenarios_file = tmp_path / "scenarios.json"
+    scenarios_file.write_text(
+        json.dumps(
+            {
+                "metadata": {
+                    "resource_profile": "standard",
+                    "array_concurrency": 2,
+                    "fail_on_baseline_missing": True,
+                    "fail_on_validation_fail": True,
+                    "slurm": {
+                        "account": "rai",
+                        "partition": "rai-gpu-grn",
+                        "qos": "rai-gpu-grn-short",
+                        "gres": "gpu:h200:1",
+                        "cpus_per_task": 12,
+                        "mem": "200G",
+                        "time": "02:00:00",
+                    },
+                },
+                "scenarios": [{"name": f"row-{index}"} for index in range(5)],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    plan = render_launch_plan(
+        cluster="granite",
+        scenarios_file=scenarios_file,
+        output_root=tmp_path / "runs",
+        run_id="throttled-array",
+        immutable_workspace=False,
+        live_workspace_rationale="test array rendering",
+    )
+
+    assert plan["array_range"] == "0-4%2"
+    assert "--array=0-4%2" in plan["sbatch_argv"]
+    assert "--account=rai" in plan["sbatch_argv"]
+    assert "--partition=rai-gpu-grn" in plan["sbatch_argv"]
+    assert "--qos=rai-gpu-grn-short" in plan["sbatch_argv"]
+    assert "--gres=gpu:h200:1" in plan["sbatch_argv"]
+    assert "--cpus-per-task=12" in plan["sbatch_argv"]
+    assert "--mem=200G" in plan["sbatch_argv"]
+    assert "--time=02:00:00" in plan["sbatch_argv"]
+    assert "FAIL_ON_BASELINE_MISSING=1" in plan["sbatch_command"]
+    assert "FAIL_ON_VALIDATION_FAIL=1" in plan["sbatch_command"]
+
+
+def test_granite_h200_script_forwards_baseline_controls() -> None:
+    script = (
+        PROJECT_ROOT / "slurm/exact_trace_bench/trace_baseline_h200.granite.sbatch"
+    ).read_text(encoding="utf-8")
+
+    assert 'BASELINE_ARGS+=(--baseline-registry "${BASELINE_REGISTRY}")' in script
+    assert "BASELINE_ARGS+=(--fail-on-baseline-missing)" in script
+    assert "BASELINE_ARGS+=(--fail-on-validation-fail)" in script
+    assert '"${BASELINE_ARGS[@]}"' in script
 
 
 def test_build_baseline_registry_from_wave0_roots(tmp_path: Path) -> None:

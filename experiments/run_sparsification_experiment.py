@@ -27,33 +27,42 @@ from nlp_research_project.exact_trace_bench.baselines import (  # noqa: E402
     validate_baseline_entry,
     write_scenario_metrics,
 )
-from nlp_research_project.exact_trace_bench.io_utils import write_csv  # noqa: E402
-from nlp_research_project.exact_trace_bench.transcoder_config import (  # noqa: E402
-    PUBLIC_TRANSCODER_KNOB_KEYS,
-    TranscoderLoadConfig,
-    resolve_transcoder_load_config,
-    transcoder_config_to_json,
+from nlp_research_project.exact_trace_bench.calibration_observations import (  # noqa: E402
+    apply_campaign_reference_to_baseline_check,
+    build_calibration_observation,
+    write_calibration_observation,
 )
+from nlp_research_project.exact_trace_bench.config import (  # noqa: E402
+    DEFAULT_SCRATCH_ROOT,
+)
+from nlp_research_project.exact_trace_bench.io_utils import write_csv  # noqa: E402
 
 
 DEFAULT_SCENARIOS = (
     Path(__file__).with_name("generated") / "sparsification_calibration_scenarios.json"
 )
-DEFAULT_OUTPUT_ROOT = Path("/fs/scratch/PAS2836/kopanev.1/sparsification_experiment")
+DEFAULT_OUTPUT_ROOT = DEFAULT_SCRATCH_ROOT / "baseline" / "sparsification_experiment"
 _EXPLICIT_SCENARIO_KEYS = "_explicit_scenario_keys"
 
 PHASE_DURATION_RE = re.compile(r"completed in (?P<seconds>\d+(?:\.\d+)?)s")
 PHASE4_BATCH_RE = re.compile(
-    r"Phase 4 batch (?P<batch_idx>\d+)/(?P<total_batches>\d+) in (?P<seconds>\d+(?:\.\d+)?)s"
+    r"Phase 4 batch (?P<batch_idx>\d+)"
+    r"(?:/(?P<total_batches>\d+))?"
+    r" in (?P<seconds>\d+(?:\.\d+)?)s"
 )
-MEMORY_RE = re.compile(
-    r"rss=(?P<rss>n/a|\d+(?:\.\d+)?(?: GiB)?), "
-    r"(?:rss_current=(?P<rss_current>n/a|\d+(?:\.\d+)?(?: GiB)?), )?"
-    r"cuda_alloc=(?P<cuda_alloc>n/a|\d+(?:\.\d+)?(?: GiB)?), "
-    r"cuda_reserved=(?P<cuda_reserved>n/a|\d+(?:\.\d+)?(?: GiB)?), "
-    r"cuda_peak_alloc=(?P<cuda_peak_alloc>n/a|\d+(?:\.\d+)?(?: GiB)?), "
-    r"cuda_peak_reserved=(?P<cuda_peak_reserved>n/a|\d+(?:\.\d+)?(?: GiB)?)"
+PHASE4_EXECUTION_BATCH_COUNT_RE = re.compile(
+    r"phase4_execution_batch_count=(?P<total_batches>\d+)"
 )
+MEMORY_VALUE_RES = {
+    key: re.compile(rf"\b{key}=(?P<value>n/a|\d+(?:\.\d+)?(?: GiB)?)")
+    for key in (
+        "rss_current",
+        "cuda_alloc",
+        "cuda_reserved",
+        "cuda_peak_alloc",
+        "cuda_peak_reserved",
+    )
+}
 
 
 def apply_runtime_overrides(
@@ -62,10 +71,7 @@ def apply_runtime_overrides(
     cross_batch_decoder_cache_bytes_override: int | None = None,
 ) -> dict[str, Any]:
     effective_scenario = dict(scenario)
-    if (
-        effective_scenario["method"] != "old_patch"
-        and cross_batch_decoder_cache_bytes_override is not None
-    ):
+    if cross_batch_decoder_cache_bytes_override is not None:
         effective_scenario["cross_batch_decoder_cache_bytes"] = (
             cross_batch_decoder_cache_bytes_override
         )
@@ -97,29 +103,6 @@ def _assert_fresh_scenario_root(scenario_root: Path) -> None:
             "Scenario output directory already contains artifacts; refusing to reuse it: "
             f"{scenario_root} ({joined})"
         )
-
-
-def _build_prompt_source_args(scenario: dict[str, Any]) -> list[str]:
-    prepared_prompt_file = scenario.get("prepared_prompt_file")
-    if prepared_prompt_file is not None:
-        args = ["--prepared-prompt-file", str(prepared_prompt_file)]
-        prepared_prompt_meta_file = scenario.get("prepared_prompt_meta_file")
-        if prepared_prompt_meta_file is not None:
-            args.extend(["--prepared-prompt-meta-file", str(prepared_prompt_meta_file)])
-        return args
-
-    gsm8k_indices = scenario.get("gsm8k_indices")
-    if not gsm8k_indices:
-        raise ValueError(
-            "Scenario must define either gsm8k_indices or prepared_prompt_file"
-        )
-
-    return [
-        "--prompts",
-        str(len(gsm8k_indices)),
-        "--gsm8k-indices",
-        ",".join(str(i) for i in gsm8k_indices),
-    ]
 
 
 def _parse_optional_gib(value: str) -> float | None:
@@ -172,42 +155,51 @@ def _extract_benchmark_metrics(log_path: Path) -> dict[str, Any]:
         batch_match = PHASE4_BATCH_RE.search(line)
         if batch_match:
             phase4_batch_durations.append(float(batch_match.group("seconds")))
-            phase4_total_batches = int(batch_match.group("total_batches"))
+            if batch_match.group("total_batches") is not None:
+                phase4_total_batches = int(batch_match.group("total_batches"))
 
-        memory_match = MEMORY_RE.search(line)
-        if memory_match:
-            rss_gib = _parse_optional_gib(memory_match.group("rss"))
-            cuda_alloc_gib = _parse_optional_gib(memory_match.group("cuda_alloc"))
-            cuda_reserved_gib = _parse_optional_gib(memory_match.group("cuda_reserved"))
-            cuda_peak_alloc_gib = _parse_optional_gib(
-                memory_match.group("cuda_peak_alloc")
-            )
-            cuda_peak_reserved_gib = _parse_optional_gib(
-                memory_match.group("cuda_peak_reserved")
+        execution_batch_count_match = PHASE4_EXECUTION_BATCH_COUNT_RE.search(line)
+        if execution_batch_count_match:
+            phase4_total_batches = int(
+                execution_batch_count_match.group("total_batches")
             )
 
-            if rss_gib is not None:
-                peak_rss_gib = max(peak_rss_gib or rss_gib, rss_gib)
-            if cuda_alloc_gib is not None:
-                peak_cuda_allocated_gib = max(
-                    peak_cuda_allocated_gib or cuda_alloc_gib,
-                    cuda_alloc_gib,
-                )
-            if cuda_reserved_gib is not None:
-                peak_cuda_reserved_gib = max(
-                    peak_cuda_reserved_gib or cuda_reserved_gib,
-                    cuda_reserved_gib,
-                )
-            if cuda_peak_alloc_gib is not None:
-                peak_cuda_peak_allocated_gib = max(
-                    peak_cuda_peak_allocated_gib or cuda_peak_alloc_gib,
-                    cuda_peak_alloc_gib,
-                )
-            if cuda_peak_reserved_gib is not None:
-                peak_cuda_peak_reserved_gib = max(
-                    peak_cuda_peak_reserved_gib or cuda_peak_reserved_gib,
-                    cuda_peak_reserved_gib,
-                )
+        memory_values = {
+            key: (
+                _parse_optional_gib(match.group("value"))
+                if (match := pattern.search(line))
+                else None
+            )
+            for key, pattern in MEMORY_VALUE_RES.items()
+        }
+        rss_gib = memory_values["rss_current"]
+        cuda_alloc_gib = memory_values["cuda_alloc"]
+        cuda_reserved_gib = memory_values["cuda_reserved"]
+        cuda_peak_alloc_gib = memory_values["cuda_peak_alloc"]
+        cuda_peak_reserved_gib = memory_values["cuda_peak_reserved"]
+
+        if rss_gib is not None:
+            peak_rss_gib = max(peak_rss_gib or rss_gib, rss_gib)
+        if cuda_alloc_gib is not None:
+            peak_cuda_allocated_gib = max(
+                peak_cuda_allocated_gib or cuda_alloc_gib,
+                cuda_alloc_gib,
+            )
+        if cuda_reserved_gib is not None:
+            peak_cuda_reserved_gib = max(
+                peak_cuda_reserved_gib or cuda_reserved_gib,
+                cuda_reserved_gib,
+            )
+        if cuda_peak_alloc_gib is not None:
+            peak_cuda_peak_allocated_gib = max(
+                peak_cuda_peak_allocated_gib or cuda_peak_alloc_gib,
+                cuda_peak_alloc_gib,
+            )
+        if cuda_peak_reserved_gib is not None:
+            peak_cuda_peak_reserved_gib = max(
+                peak_cuda_peak_reserved_gib or cuda_peak_reserved_gib,
+                cuda_peak_reserved_gib,
+            )
 
     phase4_avg_batch_seconds = None
     phase4_projected_total_seconds = None
@@ -282,12 +274,58 @@ def _summarize_artifacts(run_output_dir: Path) -> dict[str, Any]:
         for step in manifest.get("steps", [])
         if isinstance(step.get("feature_semantic_descriptor_path"), str)
     ]
+    active_row_diagnostics = [
+        step["decoder_active_row_residency"]
+        for manifest in completion_manifests
+        for step in manifest.get("steps", [])
+        if isinstance(step.get("decoder_active_row_residency"), dict)
+    ]
+    first_completion = completion_manifests[0] if completion_manifests else {}
+    timing_summary = first_completion.get("timing_summary")
+    if not isinstance(timing_summary, dict):
+        timing_summary = {}
+
+    telemetry_durations_seconds: dict[str, float] = {}
+    for manifest in completion_manifests:
+        for step in manifest.get("steps", []):
+            telemetry_summary = step.get("telemetry_summary")
+            if not isinstance(telemetry_summary, dict):
+                continue
+            durations_ms = telemetry_summary.get(
+                "wall_clock_elapsed_ms_by_name_top",
+                telemetry_summary.get("elapsed_ms_by_name_top"),
+            )
+            if not isinstance(durations_ms, dict):
+                continue
+            for output_name, event_name in (
+                ("attribution_duration_seconds", "attribute.done"),
+                ("phase0_duration_seconds", "phase0.precompute"),
+            ):
+                duration_ms = durations_ms.get(event_name)
+                if (
+                    isinstance(duration_ms, (int, float))
+                    and not isinstance(duration_ms, bool)
+                ):
+                    telemetry_durations_seconds[output_name] = round(
+                        float(duration_ms) / 1000.0,
+                        6,
+                    )
 
     first_prompt_meta = prompt_metas[0] if prompt_metas else {}
-    first_completion = completion_manifests[0] if completion_manifests else {}
+    completion_statuses = sorted(
+        {
+            str(manifest.get("status", "success"))
+            for manifest in completion_manifests
+        }
+    )
     return {
         "prompt_count": len(prompt_metas),
         "completion_count": len(completion_manifests),
+        "completion_statuses": completion_statuses,
+        "diagnostic_stop_mode": first_completion.get("diagnostic_stop_mode"),
+        "phase4_batches_completed": first_completion.get(
+            "phase4_batches_completed"
+        ),
         "prompt_source": first_prompt_meta.get("prompt_source"),
         "fixture_name": first_prompt_meta.get("fixture_name"),
         "fixture_kind": first_prompt_meta.get("fixture_kind"),
@@ -309,6 +347,11 @@ def _summarize_artifacts(run_output_dir: Path) -> dict[str, Any]:
         "decoder_cache_eviction_count": max(cache_evictions)
         if cache_evictions
         else None,
+        "decoder_active_row_residency": (
+            active_row_diagnostics[-1] if active_row_diagnostics else None
+        ),
+        "timing_summary": timing_summary,
+        "telemetry_durations_seconds": telemetry_durations_seconds,
         "feature_semantic_descriptor_status": (
             feature_semantic_descriptor_statuses[-1]
             if feature_semantic_descriptor_statuses
@@ -339,375 +382,24 @@ def build_command(
     output_dir: Path,
     scenario: dict[str, Any],
     *,
-    cross_batch_decoder_cache_bytes_override: int | None = None,
+    scenario_file: Path | None = None,
 ) -> list[str]:
-    scenario = apply_runtime_overrides(
-        scenario,
-        cross_batch_decoder_cache_bytes_override=cross_batch_decoder_cache_bytes_override,
-    )
-    transcoder_defaults = TranscoderLoadConfig()
-    explicit_scenario_keys = set(scenario.get(_EXPLICIT_SCENARIO_KEYS, ()))
-    provider_mapping = {}
-    for key in PUBLIC_TRANSCODER_KNOB_KEYS:
-        if key not in scenario:
-            continue
-        value = scenario[key]
-        if key in explicit_scenario_keys or value != getattr(transcoder_defaults, key):
-            provider_mapping[key] = value
-    provider_config = transcoder_config_to_json(
-        resolve_transcoder_load_config(provider_mapping, preserve_default_values=True)
-    )
-    if cross_batch_decoder_cache_bytes_override is not None:
-        provider_config["cross_batch_decoder_cache_bytes"] = (
-            cross_batch_decoder_cache_bytes_override
-        )
-    method = scenario["method"]
-    script_name = (
-        "trace_pipeline.py" if method == "old_patch" else "trace_pipeline_chunked.py"
-    )
-    cmd = [
+    """Build the isolated child command for one persisted scenario.
+
+    Exact/chunked campaigns cross the subprocess boundary with the scenario file
+    itself. The child resolves typed policies and canonical trace requests.
+    """
+
+    scenario_path = scenario_file or output_dir.parent / "scenario.json"
+    return [
         sys.executable,
-        str(REPO_ROOT / script_name),
-        "--completions",
-        str(scenario["completions"]),
-        "--temperature",
-        str(scenario["temperature"]),
+        "-m",
+        "nlp_research_project.exact_trace_bench.trace_runtime",
+        "--scenario-file",
+        str(scenario_path),
         "--output-dir",
         str(output_dir),
-        "--max-feature-nodes",
-        str(scenario["max_feature_nodes"]),
-        "--max-edges",
-        str(scenario["max_edges"]),
-        "--max-steps",
-        str(scenario["max_steps"]),
-        "--attribution-batch-size",
-        str(scenario["attribution_batch_size"]),
-        "--max-n-logits",
-        str(scenario["max_n_logits"]),
-        "--desired-logit-prob",
-        str(scenario["desired_logit_prob"]),
-        "--attribution-update-interval",
-        str(scenario["attribution_update_interval"]),
     ]
-    cmd[2:2] = _build_prompt_source_args(scenario)
-    if scenario.get("feature_batch_size") is not None:
-        cmd.extend(["--feature-batch-size", str(scenario["feature_batch_size"])])
-    if scenario.get("logit_batch_size") is not None:
-        cmd.extend(["--logit-batch-size", str(scenario["logit_batch_size"])])
-    if scenario.get("exact_trace_internal_dtype") is not None:
-        cmd.extend(
-            [
-                "--exact-trace-internal-dtype",
-                str(scenario["exact_trace_internal_dtype"]),
-            ]
-        )
-    if (
-        method != "old_patch"
-        and scenario.get("phase0_activation_threshold_compare_mode") is not None
-    ):
-        cmd.extend(
-            [
-                "--phase0-activation-threshold-compare-mode",
-                str(scenario["phase0_activation_threshold_compare_mode"]),
-            ]
-        )
-
-    if method != "old_patch":
-        if scenario.get("phase1_trace_batch_policy") is not None:
-            cmd.extend(
-                [
-                    "--phase1-trace-batch-policy",
-                    str(scenario["phase1_trace_batch_policy"]),
-                ]
-            )
-        if scenario.get("phase1_trace_batch_size_max") is not None:
-            cmd.extend(
-                [
-                    "--phase1-trace-batch-size-max",
-                    str(scenario["phase1_trace_batch_size_max"]),
-                ]
-            )
-        cmd.extend(["--decoder-chunk-size", str(provider_config["decoder_chunk_size"])])
-        cross_batch_decoder_cache_bytes = (
-            cross_batch_decoder_cache_bytes_override
-            if cross_batch_decoder_cache_bytes_override is not None
-            else provider_config.get("cross_batch_decoder_cache_bytes")
-        )
-        if cross_batch_decoder_cache_bytes is not None:
-            cmd.extend(
-                [
-                    "--cross-batch-decoder-cache-bytes",
-                    str(cross_batch_decoder_cache_bytes),
-                ]
-            )
-        for key, flag in (
-            ("transcoder_architecture", "--transcoder-architecture"),
-            ("transcoder_provider_family", "--transcoder-provider-family"),
-            ("model_name", "--model-name"),
-            ("repo_id", "--transcoder-repo-id"),
-            ("revision", "--transcoder-revision"),
-            ("clt_subfolder", "--clt-subfolder"),
-            ("plt_subfolder_template", "--plt-subfolder-template"),
-            ("layer_count", "--transcoder-layer-count"),
-            ("feature_input_hook", "--feature-input-hook"),
-            ("feature_output_hook", "--feature-output-hook"),
-            ("transcoder_cache_dir", "--transcoder-cache-dir"),
-        ):
-            if provider_config.get(key) is not None:
-                cmd.extend([flag, str(provider_config[key])])
-        if scenario.get("sparsify_per_layer_position_topk") is not None:
-            cmd.extend(
-                [
-                    "--sparsify-per-layer-position-topk",
-                    str(scenario["sparsify_per_layer_position_topk"]),
-                ]
-            )
-        if scenario.get("sparsify_global_cap") is not None:
-            cmd.extend(["--sparsify-global-cap", str(scenario["sparsify_global_cap"])])
-        if scenario.get("chunked_feature_replay_window") is not None:
-            cmd.extend(
-                [
-                    "--chunked-feature-replay-window",
-                    str(scenario["chunked_feature_replay_window"]),
-                ]
-            )
-        if scenario.get("error_vector_prefetch_lookahead") is not None:
-            cmd.extend(
-                [
-                    "--error-vector-prefetch-lookahead",
-                    str(scenario["error_vector_prefetch_lookahead"]),
-                ]
-            )
-        if scenario.get("stage_encoder_vecs_on_cpu") is not None:
-            cmd.extend(
-                [
-                    "--stage-encoder-vecs-on-cpu",
-                    _format_optional_bool_arg(scenario["stage_encoder_vecs_on_cpu"]),
-                ]
-            )
-        if scenario.get("stage_error_vectors_on_cpu") is not None:
-            cmd.extend(
-                [
-                    "--stage-error-vectors-on-cpu",
-                    _format_optional_bool_arg(scenario["stage_error_vectors_on_cpu"]),
-                ]
-            )
-        if scenario.get("row_subchunk_size") is not None:
-            cmd.extend(["--row-subchunk-size", str(scenario["row_subchunk_size"])])
-        if scenario.get("plan_feature_batch_size", False):
-            cmd.append("--plan-feature-batch-size")
-        if scenario.get("auto_scale_feature_batch_size", False):
-            cmd.append("--auto-scale-feature-batch-size")
-        if scenario.get("feature_batch_size_max") is not None:
-            cmd.extend(
-                ["--feature-batch-size-max", str(scenario["feature_batch_size_max"])]
-            )
-        if scenario.get("feature_batch_target_reserved_fraction") is not None:
-            cmd.extend(
-                [
-                    "--feature-batch-target-reserved-fraction",
-                    str(scenario["feature_batch_target_reserved_fraction"]),
-                ]
-            )
-        if scenario.get("feature_batch_min_free_fraction") is not None:
-            cmd.extend(
-                [
-                    "--feature-batch-min-free-fraction",
-                    str(scenario["feature_batch_min_free_fraction"]),
-                ]
-            )
-        if scenario.get("feature_batch_probe_batches") is not None:
-            cmd.extend(
-                [
-                    "--feature-batch-probe-batches",
-                    str(scenario["feature_batch_probe_batches"]),
-                ]
-            )
-        if scenario.get("phase4_anomaly_debug", False):
-            cmd.append("--phase4-anomaly-debug")
-        if scenario.get("phase4_refresh_policy") is not None:
-            cmd.extend(
-                [
-                    "--phase4-refresh-policy",
-                    str(scenario["phase4_refresh_policy"]),
-                ]
-            )
-        if scenario.get("phase4_refresh_interval_multiplier") is not None:
-            cmd.extend(
-                [
-                    "--phase4-refresh-interval-multiplier",
-                    str(scenario["phase4_refresh_interval_multiplier"]),
-                ]
-            )
-        if scenario.get("phase4_refresh_prepared_chunk_cache_bytes") is not None:
-            cmd.extend(
-                [
-                    "--phase4-refresh-prepared-chunk-cache-bytes",
-                    str(scenario["phase4_refresh_prepared_chunk_cache_bytes"]),
-                ]
-            )
-        if scenario.get("phase4_refresh_active_row_accumulation") is not None:
-            cmd.extend(
-                [
-                    "--phase4-refresh-active-row-accumulation",
-                    str(scenario["phase4_refresh_active_row_accumulation"]),
-                ]
-            )
-        if scenario.get("phase4_ranker") is not None:
-            cmd.extend(["--phase4-ranker", str(scenario["phase4_ranker"])])
-        if scenario.get("row_store_cache_control") is not None:
-            cmd.extend(
-                [
-                    "--row-store-cache-control",
-                    str(scenario["row_store_cache_control"]),
-                ]
-            )
-        if scenario.get("row_store_temp_root_policy") is not None:
-            cmd.extend(
-                [
-                    "--row-store-temp-root-policy",
-                    str(scenario["row_store_temp_root_policy"]),
-                ]
-            )
-        if scenario.get("row_store_temp_root") is not None:
-            cmd.extend(["--row-store-temp-root", str(scenario["row_store_temp_root"])])
-        if scenario.get("row_store_preallocate", False):
-            cmd.append("--row-store-preallocate")
-        if scenario.get("exact_encoder_residency") is not None:
-            cmd.extend(
-                [
-                    "--exact-encoder-residency",
-                    str(scenario["exact_encoder_residency"]),
-                ]
-            )
-        if scenario.get("phase4_scheduler_mode") is not None:
-            cmd.extend(
-                [
-                    "--phase4-scheduler-mode",
-                    str(scenario["phase4_scheduler_mode"]),
-                ]
-            )
-        if scenario.get("phase4_scheduler_debug", False):
-            cmd.append("--phase4-scheduler-debug")
-        if scenario.get("phase4_scheduler_telemetry_detail") is not None:
-            cmd.extend(
-                [
-                    "--phase4-scheduler-telemetry-detail",
-                    str(scenario["phase4_scheduler_telemetry_detail"]),
-                ]
-            )
-        if scenario.get("phase4_refresh_optimization") is not None:
-            cmd.extend(
-                [
-                    "--phase4-refresh-optimization",
-                    str(scenario["phase4_refresh_optimization"]),
-                ]
-            )
-        if scenario.get("phase4_row_executor") is not None:
-            cmd.extend(
-                [
-                    "--phase4-row-executor",
-                    str(scenario["phase4_row_executor"]),
-                ]
-            )
-        if scenario.get("phase4_row_reduction") is not None:
-            cmd.extend(
-                [
-                    "--phase4-row-reduction",
-                    str(scenario["phase4_row_reduction"]),
-                ]
-            )
-        if scenario.get("cross_cluster_debug", False):
-            cmd.append("--cross-cluster-debug")
-        if scenario.get("capture_phase0_donor_bundle", False):
-            cmd.append("--capture-phase0-donor-bundle")
-        if scenario.get("phase0_donor_bundle") is not None:
-            cmd.extend(["--phase0-donor-bundle", str(scenario["phase0_donor_bundle"])])
-        if scenario.get("phase0_replay_mode") is not None:
-            cmd.extend(["--phase0-replay-mode", str(scenario["phase0_replay_mode"])])
-        if scenario.get("phase0_donor_context_policy") is not None:
-            cmd.extend(
-                [
-                    "--phase0-donor-context-policy",
-                    str(scenario["phase0_donor_context_policy"]),
-                ]
-            )
-        if scenario.get("phase3_gradient_donor_bundle") is not None:
-            cmd.extend(
-                [
-                    "--phase3-gradient-donor-bundle",
-                    str(scenario["phase3_gradient_donor_bundle"]),
-                ]
-            )
-        if scenario.get("phase3_gradient_replay_mode") is not None:
-            cmd.extend(
-                [
-                    "--phase3-gradient-replay-mode",
-                    str(scenario["phase3_gradient_replay_mode"]),
-                ]
-            )
-        if scenario.get("phase3_row_donor_bundle") is not None:
-            cmd.extend(
-                ["--phase3-row-donor-bundle", str(scenario["phase3_row_donor_bundle"])]
-            )
-        if scenario.get("phase3_row_replay_mode") is not None:
-            cmd.extend(
-                ["--phase3-row-replay-mode", str(scenario["phase3_row_replay_mode"])]
-            )
-        if scenario.get("phase3_replay_validation_policy") is not None:
-            cmd.extend(
-                [
-                    "--phase3-replay-validation-policy",
-                    str(scenario["phase3_replay_validation_policy"]),
-                ]
-            )
-        if scenario.get("capture_phase3_seed_bundle", False):
-            cmd.append("--capture-phase3-seed-bundle")
-        if scenario.get("capture_phase3_gradient_bundle", False):
-            cmd.append("--capture-phase3-gradient-bundle")
-        if scenario.get("capture_phase3_row_bundle", False):
-            cmd.append("--capture-phase3-row-bundle")
-        if scenario.get("capture_feature_semantic_descriptors", False):
-            cmd.append("--capture-feature-semantic-descriptors")
-        if scenario.get("semantic_descriptor_top_k") is not None:
-            cmd.extend(
-                [
-                    "--semantic-descriptor-top-k",
-                    str(scenario["semantic_descriptor_top_k"]),
-                ]
-            )
-        if scenario.get("semantic_descriptor_dim") is not None:
-            cmd.extend(
-                [
-                    "--semantic-descriptor-dim",
-                    str(scenario["semantic_descriptor_dim"]),
-                ]
-            )
-        if scenario.get("telemetry_max_events") is not None:
-            cmd.extend(
-                ["--telemetry-max-events", str(scenario["telemetry_max_events"])]
-            )
-
-    if scenario.get("verbose_attribution", False):
-        cmd.append("--verbose-attribution")
-    if scenario.get("profile_attribution", False):
-        cmd.append("--profile-attribution")
-    if "profile_log_interval" in scenario:
-        cmd.extend(["--profile-log-interval", str(scenario["profile_log_interval"])])
-    if scenario.get("diagnostic_feature_cap") is not None:
-        cmd.extend(
-            ["--diagnostic-feature-cap", str(scenario["diagnostic_feature_cap"])]
-        )
-    if scenario.get("save_raw", False):
-        cmd.append("--save-raw")
-    if scenario.get("no_offload", False):
-        cmd.append("--no-offload")
-    if scenario.get("no_lazy_encoder", False) and method != "old_patch":
-        cmd.append("--no-lazy-encoder")
-    if scenario.get("no_lazy_decoder", False) and method != "old_patch":
-        cmd.append("--no-lazy-decoder")
-
-    return cmd
 
 
 def run_scenario(
@@ -718,6 +410,7 @@ def run_scenario(
     run_metadata: dict[str, str | None],
     baseline_registry: dict[str, dict[str, Any]] | None = None,
     baseline_registry_path: Path | None = None,
+    baseline_registry_scope: str | None = None,
     fail_on_baseline_missing: bool = False,
     fail_on_validation_fail: bool = False,
     cross_batch_decoder_cache_bytes_override: int | None = None,
@@ -732,9 +425,13 @@ def run_scenario(
     _assert_fresh_scenario_root(scenario_root)
     scenario_root.mkdir(parents=True, exist_ok=True)
     run_output_dir.mkdir(parents=True, exist_ok=True)
-    effective_scenario = apply_runtime_overrides(
-        scenario,
-        cross_batch_decoder_cache_bytes_override=cross_batch_decoder_cache_bytes_override,
+    effective_scenario = apply_campaign_reference_to_baseline_check(
+        apply_runtime_overrides(
+            scenario,
+            cross_batch_decoder_cache_bytes_override=(
+                cross_batch_decoder_cache_bytes_override
+            ),
+        )
     )
     scenario_payload = dict(effective_scenario)
     scenario_payload.pop(_EXPLICIT_SCENARIO_KEYS, None)
@@ -743,11 +440,7 @@ def run_scenario(
     (scenario_root / "scenario.json").write_text(json.dumps(scenario_payload, indent=2))
 
     log_path = scenario_root / "run.log"
-    cmd = build_command(
-        run_output_dir,
-        scenario,
-        cross_batch_decoder_cache_bytes_override=cross_batch_decoder_cache_bytes_override,
-    )
+    cmd = build_command(run_output_dir, scenario)
     timeout_minutes = scenario.get("timeout_minutes")
     timeout_seconds = None if timeout_minutes is None else int(timeout_minutes * 60)
 
@@ -773,26 +466,39 @@ def run_scenario(
 
     baseline_check = {}
     baseline_entry = None
-    try:
+    diagnostic_requested = (
+        effective_scenario.get("diagnostic_stop_mode", "none") != "none"
+    )
+    if diagnostic_requested:
         baseline_check = normalize_baseline_check(effective_scenario)
-        baseline_check, baseline_entry = resolve_baseline_entry(
-            baseline_check,
-            registry=baseline_registry,
-            registry_path=baseline_registry_path,
-        )
-        if baseline_entry is not None:
-            baseline_check = validate_baseline_entry(
-                baseline_entry,
-                status=baseline_check,
+        if baseline_check.get("enabled"):
+            baseline_check.update(
+                status="skipped_diagnostic_probe",
+                passed=None,
+                failure_reasons=[],
             )
-    except Exception as exc:  # noqa: BLE001 - keep failure in scenario artifacts
-        baseline_check = {
-            **BASELINE_DISABLED,
-            "enabled": True,
-            "status": "baseline_invalid",
-            "passed": False,
-            "failure_reasons": [str(exc)],
-        }
+    else:
+        try:
+            baseline_check = normalize_baseline_check(effective_scenario)
+            baseline_check, baseline_entry = resolve_baseline_entry(
+                baseline_check,
+                registry=baseline_registry,
+                registry_path=baseline_registry_path,
+                registry_scope=baseline_registry_scope,
+            )
+            if baseline_entry is not None:
+                baseline_check = validate_baseline_entry(
+                    baseline_entry,
+                    status=baseline_check,
+                )
+        except Exception as exc:  # noqa: BLE001 - keep failure in scenario artifacts
+            baseline_check = {
+                **BASELINE_DISABLED,
+                "enabled": True,
+                "status": "baseline_invalid",
+                "passed": False,
+                "failure_reasons": [str(exc)],
+            }
 
     if (
         baseline_check.get("enabled")
@@ -815,6 +521,13 @@ def run_scenario(
             baseline_status=baseline_check,
         )
         (scenario_root / "result.json").write_text(json.dumps(result, indent=2))
+        _write_calibration_observation(
+            scenario_root=scenario_root,
+            scenario=effective_scenario,
+            result=result,
+            baseline_entry=baseline_entry,
+            env=env,
+        )
         if fail_on_baseline_missing:
             raise RuntimeError(
                 f"Required baseline invalid for scenario {scenario_name}: "
@@ -839,6 +552,7 @@ def run_scenario(
         log_file.write(f"Command: {shlex.join(cmd)}\n\n")
         log_file.flush()
 
+        execution_error: Exception | None = None
         try:
             completed = subprocess.run(
                 cmd,
@@ -854,21 +568,52 @@ def run_scenario(
             result["status"] = "timeout"
             result["returncode"] = None
             log_file.write(f"\nTimed out after {timeout_minutes} minutes.\n")
+        except Exception as exc:  # persist a failure observation before surfacing it
+            execution_error = exc
+            result["status"] = "failed"
+            result["returncode"] = None
+            result["execution_error"] = f"{type(exc).__name__}: {exc}"
+            log_file.write(f"\nExecution failed: {result['execution_error']}\n")
         else:
             result["returncode"] = completed.returncode
 
     result["duration_seconds"] = round(time.time() - start, 2)
     result["log_path"] = str(log_path)
-    result["status"] = _classify_status(
-        log_path,
-        returncode=result.get("returncode"),
-    )
-    result["profiling_summary"] = _extract_benchmark_metrics(log_path)
-    result["artifact_summary"] = _summarize_artifacts(run_output_dir)
+    artifact_summary = _summarize_artifacts(run_output_dir)
+    if result["status"] == "unknown":
+        if artifact_summary.get("completion_statuses") == ["probe_completed"]:
+            result["status"] = "probe_completed"
+        else:
+            result["status"] = _classify_status(
+                log_path,
+                returncode=result.get("returncode"),
+            )
+    profiling_summary = _extract_benchmark_metrics(log_path)
+    timing_summary = artifact_summary.get("timing_summary")
+    if isinstance(timing_summary, dict):
+        completion_end_to_end_seconds = timing_summary.get(
+            "completion_end_to_end_seconds"
+        )
+        if (
+            isinstance(completion_end_to_end_seconds, (int, float))
+            and not isinstance(completion_end_to_end_seconds, bool)
+        ):
+            profiling_summary["completion_end_to_end_seconds"] = float(
+                completion_end_to_end_seconds
+            )
+    telemetry_durations = artifact_summary.get("telemetry_durations_seconds")
+    if isinstance(telemetry_durations, dict):
+        profiling_summary.update(telemetry_durations)
+    result["profiling_summary"] = profiling_summary
+    result["artifact_summary"] = artifact_summary
 
     comparison_metrics: dict[str, Any] = {}
     if baseline_check.get("enabled"):
-        if result["status"] != "success":
+        if result["status"] == "probe_completed":
+            baseline_check["status"] = "skipped_diagnostic_probe"
+            baseline_check["passed"] = None
+            baseline_check["failure_reasons"] = []
+        elif result["status"] != "success":
             baseline_check["status"] = "skipped_trace_failed"
             baseline_check["passed"] = False
             failure_reasons = baseline_check.setdefault("failure_reasons", [])
@@ -899,6 +644,23 @@ def run_scenario(
         baseline_status=baseline_check,
     )
     (scenario_root / "result.json").write_text(json.dumps(result, indent=2))
+    try:
+        _write_calibration_observation(
+            scenario_root=scenario_root,
+            scenario=effective_scenario,
+            result=result,
+            baseline_entry=baseline_entry,
+            env=env,
+        )
+    except Exception as observation_error:
+        result["calibration_observation_error"] = (
+            f"{type(observation_error).__name__}: {observation_error}"
+        )
+        (scenario_root / "result.json").write_text(json.dumps(result, indent=2))
+        if execution_error is None:
+            raise
+    if execution_error is not None:
+        raise execution_error
     if (
         fail_on_validation_fail
         and baseline_check.get("enabled")
@@ -910,6 +672,30 @@ def run_scenario(
             f"{baseline_check.get('failure_reasons')}"
         )
     return result
+
+
+def _write_calibration_observation(
+    *,
+    scenario_root: Path,
+    scenario: dict[str, Any],
+    result: dict[str, Any],
+    baseline_entry: dict[str, Any] | None,
+    env: dict[str, str],
+) -> None:
+    sidecar_dir = env.get("GPU_MONITOR_DIR")
+    sidecar_paths = () if sidecar_dir is None else Path(sidecar_dir).glob("*.gpulog")
+    observation = build_calibration_observation(
+        scenario_root=scenario_root,
+        scenario=scenario,
+        result=result,
+        baseline_entry=baseline_entry,
+        resource_sidecar_paths=sidecar_paths,
+        environ=env,
+    )
+    if observation is not None:
+        path = write_calibration_observation(scenario_root, observation)
+        result["calibration_observation_json"] = str(path)
+        (scenario_root / "result.json").write_text(json.dumps(result, indent=2))
 
 
 def load_scenarios(scenarios_file: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -1004,6 +790,12 @@ def main() -> None:
     args = parser.parse_args()
 
     scenarios, metadata = load_scenarios(args.scenarios_file)
+    fail_on_baseline_missing = args.fail_on_baseline_missing or bool(
+        metadata.get("fail_on_baseline_missing", False)
+    )
+    fail_on_validation_fail = args.fail_on_validation_fail or bool(
+        metadata.get("fail_on_validation_fail", False)
+    )
     baseline_registry_path = args.baseline_registry
     if baseline_registry_path is None and metadata.get("baseline_registry"):
         baseline_registry_path = Path(str(metadata["baseline_registry"]))
@@ -1064,11 +856,7 @@ def main() -> None:
         name = scenario["name"]
         scenario_root = output_root if len(scenarios) == 1 else output_root / name
         if args.dry_run:
-            cmd = build_command(
-                scenario_root / "artifacts",
-                scenario,
-                cross_batch_decoder_cache_bytes_override=args.cross_batch_decoder_cache_bytes,
-            )
+            cmd = build_command(scenario_root / "artifacts", scenario)
             print(f"DRY RUN {name}: {shlex.join(cmd)}")
             continue
         print(f"\n{'=' * 80}\nRunning scenario: {name}\n{'=' * 80}")
@@ -1079,8 +867,8 @@ def main() -> None:
             run_metadata=run_metadata,
             baseline_registry=baseline_registry,
             baseline_registry_path=baseline_registry_path,
-            fail_on_baseline_missing=args.fail_on_baseline_missing,
-            fail_on_validation_fail=args.fail_on_validation_fail,
+            fail_on_baseline_missing=fail_on_baseline_missing,
+            fail_on_validation_fail=fail_on_validation_fail,
             cross_batch_decoder_cache_bytes_override=args.cross_batch_decoder_cache_bytes,
         )
         results.append(result)
@@ -1120,6 +908,16 @@ def main() -> None:
     ):
         write_csv(output_root / "summary.csv", scenario_metric_rows)
     print(f"\nSummary written to {summary_path}")
+    failed_results = [
+        result
+        for result in results
+        if result["status"] not in {"success", "probe_completed"}
+    ]
+    if failed_results:
+        failed = ", ".join(
+            f"{result['name']} ({result['status']})" for result in failed_results
+        )
+        raise SystemExit(f"Selected scenario(s) did not succeed: {failed}")
 
 
 if __name__ == "__main__":

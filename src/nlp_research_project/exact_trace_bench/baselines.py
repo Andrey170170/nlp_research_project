@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
-import hashlib
 import subprocess
 import time
 from pathlib import Path
@@ -11,7 +11,6 @@ from typing import Any
 from .config import DEFAULT_SCRATCH_ROOT, REPO_ROOT
 from .graph_compare import compare_artifact_dirs
 from .io_utils import read_json, write_csv, write_json
-
 
 BASELINE_DISABLED = {
     "enabled": False,
@@ -23,11 +22,30 @@ BASELINE_DISABLED = {
 
 COMPARISON_SUMMARY_KEYS = (
     "shared_completion_count",
+    "aligned_completion_count",
+    "aligned_step_count",
+    "comparison_complete",
     "left_only_completion_count",
     "right_only_completion_count",
     "overall_mean_feature_jaccard",
     "overall_mean_edge_jaccard",
     "overall_mean_weighted_edge_jaccard",
+    "overall_mean_top256_edge_jaccard",
+    "overall_mean_all_edge_jaccard",
+    "overall_mean_all_edge_weighted_jaccard",
+    "overall_mean_all_edge_top256_jaccard",
+    "overall_mean_target_token_match",
+    "overall_mean_all_edge_normalized_l1_deviation",
+    "overall_mean_all_edge_shared_sign_agreement",
+    "overall_mean_all_edge_signed_normalized_l1_deviation",
+    "worst_step_feature_jaccard",
+    "worst_step_all_edge_jaccard",
+    "worst_step_all_edge_weighted_jaccard",
+    "worst_step_all_edge_top256_jaccard",
+    "worst_step_target_token_match",
+    "worst_step_all_edge_normalized_l1_deviation",
+    "worst_step_all_edge_shared_sign_agreement",
+    "worst_step_all_edge_signed_normalized_l1_deviation",
 )
 
 SCENARIO_IDENTITY_KEYS = (
@@ -41,10 +59,21 @@ SCENARIO_IDENTITY_KEYS = (
     "prepared_prompt_file",
     "prepared_prompt_meta_file",
     "method",
+    "validation_baseline_key",
+    "validation_mechanism",
 )
 
 SCENARIO_KNOB_KEYS = (
     "exact_trace_internal_dtype",
+    "governor_admission_mode",
+    "governor_profile_name",
+    "governor_resource_envelope",
+    "governor_fidelity_mode",
+    "governor_fidelity_budget",
+    "governor_fidelity_override_fields",
+    "governor_fidelity_evidence_name",
+    "governor_fidelity_evidence_version",
+    "governor_response_bundle_path",
     "attribution_batch_size",
     "feature_batch_size",
     "logit_batch_size",
@@ -52,11 +81,28 @@ SCENARIO_KNOB_KEYS = (
     "cross_batch_decoder_cache_bytes",
     "phase1_trace_batch_policy",
     "phase1_trace_batch_size_max",
+    "backward_engine_mode",
+    "forward_graph_mode",
+    "vjp_kernel_mode",
     "chunked_feature_replay_window",
     "error_vector_prefetch_lookahead",
     "stage_encoder_vecs_on_cpu",
     "stage_error_vectors_on_cpu",
     "row_subchunk_size",
+    "nnsight_session_capacity",
+    "phase3_compute_microbatch_max_rows",
+    "phase4_execution_batch_max_rows",
+    # Historical scenario JSON used this name before static coalescing.
+    "phase4_compute_microbatch_max_rows",
+    "phase0_decoder_row_ranges",
+    "diagnostic_stop_mode",
+    "diagnostic_stop_phase4_batches",
+    "full_retention_backend",
+    "feature_row_column_tile_size",
+    "influence_row_tile_size",
+    "influence_column_tile_size",
+    "feature_row_retention",
+    "replay_tile_cache_bytes",
     "plan_feature_batch_size",
     "feature_batch_size_max",
     "feature_batch_target_reserved_fraction",
@@ -98,12 +144,58 @@ METRICS_PREFERRED_HEADERS = (
 )
 
 
-def load_baseline_registry(path: Path) -> dict[str, dict[str, Any]]:
+BASELINE_SCOPES = frozenset({"frozen_scientific", "same_regime_mechanism"})
+
+
+class LoadedBaselineRegistry(dict[str, dict[str, Any]]):
+    def __init__(
+        self,
+        entries: dict[str, dict[str, Any]],
+        *,
+        scope: str,
+        scope_declared: bool,
+        registry_id: str | None,
+    ) -> None:
+        super().__init__(entries)
+        self.scope = scope
+        self.scope_declared = scope_declared
+        self.registry_id = registry_id
+
+
+def load_baseline_registry(path: Path) -> LoadedBaselineRegistry:
     payload = read_json(path)
     entries = payload.get("entries")
     if not isinstance(entries, dict):
         raise ValueError(f"Baseline registry must contain an object 'entries': {path}")
-    return {str(key): value for key, value in entries.items()}
+    declared_scope = payload.get("scope")
+    scope_declared = declared_scope is not None
+    scope = str(declared_scope or "frozen_scientific")
+    if scope not in BASELINE_SCOPES:
+        raise ValueError(f"Unsupported baseline registry scope: {scope!r}")
+    normalized: dict[str, dict[str, Any]] = {}
+    for key, value in entries.items():
+        if not isinstance(value, dict):
+            raise ValueError(f"Baseline registry entry {key!r} must be an object")
+        entry_scope_raw = value.get("scope")
+        if scope == "same_regime_mechanism" and entry_scope_raw is None:
+            raise ValueError(
+                f"Mechanism baseline registry entry {key!r} must declare "
+                "scope 'same_regime_mechanism'"
+            )
+        if entry_scope_raw is not None and str(entry_scope_raw) != scope:
+            raise ValueError(
+                f"Baseline registry entry {key!r} scope {entry_scope_raw!r} "
+                f"does not match registry scope {scope!r}"
+            )
+        normalized[str(key)] = value
+    return LoadedBaselineRegistry(
+        normalized,
+        scope=scope,
+        scope_declared=scope_declared,
+        registry_id=(
+            None if payload.get("registry_id") is None else str(payload["registry_id"])
+        ),
+    )
 
 
 def normalize_baseline_check(scenario: dict[str, Any]) -> dict[str, Any]:
@@ -118,9 +210,15 @@ def normalize_baseline_check(scenario: dict[str, Any]) -> dict[str, Any]:
     mode = str(raw.get("mode") or "metrics")
     if mode not in {"metrics", "gate"}:
         raise ValueError(f"Unsupported baseline_check mode: {mode!r}")
+    scope = str(raw.get("scope") or "frozen_scientific")
+    if scope not in {"frozen_scientific", "same_regime_mechanism"}:
+        raise ValueError(f"Unsupported baseline_check scope: {scope!r}")
     return {
         "enabled": True,
         "mode": mode,
+        "scope": scope,
+        "comparison_semantics": raw.get("comparison_semantics"),
+        "claim_limitation": raw.get("claim_limitation"),
         "registry_key": raw.get("registry_key"),
         "baseline_required": bool(raw.get("baseline_required", True)),
         "thresholds": raw.get("thresholds") or {},
@@ -141,6 +239,7 @@ def resolve_baseline_entry(
     *,
     registry: dict[str, dict[str, Any]] | None,
     registry_path: Path | None,
+    registry_scope: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     if not baseline_check.get("enabled"):
         return dict(baseline_check), None
@@ -157,10 +256,57 @@ def resolve_baseline_entry(
         status["status"] = "baseline_missing"
         _append_reason(status, "baseline registry was not provided")
         return status, None
+    expected_scope = str(status.get("scope") or "frozen_scientific")
+    if isinstance(registry, LoadedBaselineRegistry):
+        actual_scope = registry.scope
+        scope_declared = registry.scope_declared
+        if registry.registry_id is not None:
+            status["registry_id"] = registry.registry_id
+    else:
+        actual_scope = str(registry_scope or "frozen_scientific")
+        scope_declared = registry_scope is not None
+    status["registry_scope"] = actual_scope
+    status["registry_scope_declared"] = scope_declared
+    if actual_scope not in BASELINE_SCOPES:
+        status["status"] = "baseline_invalid"
+        _append_reason(status, f"unsupported baseline registry scope: {actual_scope!r}")
+        return status, None
+    if expected_scope == "same_regime_mechanism" and not scope_declared:
+        status["status"] = "baseline_invalid"
+        _append_reason(
+            status,
+            "same_regime_mechanism comparison requires an explicitly scoped "
+            "baseline registry",
+        )
+        return status, None
+    if actual_scope != expected_scope:
+        status["status"] = "baseline_invalid"
+        _append_reason(
+            status,
+            f"baseline registry scope {actual_scope!r} does not match requested "
+            f"scope {expected_scope!r}",
+        )
+        return status, None
     entry = registry.get(str(key))
     if not isinstance(entry, dict):
         status["status"] = "baseline_missing"
         _append_reason(status, f"baseline registry key not found: {key}")
+        return status, None
+    entry_scope = entry.get("scope")
+    if expected_scope == "same_regime_mechanism" and entry_scope is None:
+        status["status"] = "baseline_invalid"
+        _append_reason(
+            status,
+            "same_regime_mechanism baseline entry must explicitly declare scope",
+        )
+        return status, None
+    if entry_scope is not None and str(entry_scope) != actual_scope:
+        status["status"] = "baseline_invalid"
+        _append_reason(
+            status,
+            f"baseline entry scope {entry_scope!r} does not match registry scope "
+            f"{actual_scope!r}",
+        )
         return status, None
     return status, entry
 
@@ -205,6 +351,37 @@ def validate_baseline_entry(
                         status,
                         f"baseline result status {actual!r} != expected {expected!r}",
                     )
+
+    artifact_sha256 = entry.get("artifact_sha256")
+    if artifact_sha256 is not None:
+        if not isinstance(artifact_sha256, dict) or result_json is None:
+            _append_reason(status, "baseline artifact_sha256 must be an object")
+        else:
+            scenario_root = Path(str(result_json)).parent
+            verified_digests: dict[str, str] = {}
+            for relative_name, expected_digest in artifact_sha256.items():
+                relative_path = Path(str(relative_name))
+                if relative_path.is_absolute() or ".." in relative_path.parts:
+                    _append_reason(
+                        status,
+                        f"unsafe baseline digest path: {relative_name}",
+                    )
+                    continue
+                artifact_path = scenario_root / relative_path
+                actual_digest = _sha256_file(artifact_path)
+                if actual_digest is None:
+                    _append_reason(
+                        status,
+                        f"baseline digest artifact missing: {artifact_path}",
+                    )
+                elif actual_digest != str(expected_digest):
+                    _append_reason(
+                        status,
+                        f"baseline digest mismatch for {artifact_path}",
+                    )
+                else:
+                    verified_digests[str(relative_name)] = actual_digest
+            status["verified_artifact_sha256"] = verified_digests
 
     if status.get("failure_reasons"):
         status["status"] = "baseline_invalid"
@@ -282,11 +459,37 @@ def run_baseline_comparison(
         _append_reason(status, f"baseline comparison failed: {exc}")
         return status, {}
 
+    required_metrics = (
+        "overall_mean_feature_jaccard",
+        "overall_mean_edge_jaccard",
+        "overall_mean_weighted_edge_jaccard",
+        "overall_mean_top256_edge_jaccard",
+    )
+    structural_reasons: list[str] = []
+    if not summary.get("comparison_complete"):
+        structural_reasons.append(
+            "baseline comparison did not align all completions and steps"
+        )
+    if int(summary.get("aligned_completion_count") or 0) <= 0:
+        structural_reasons.append("baseline comparison had no aligned completions")
+    if int(summary.get("aligned_step_count") or 0) <= 0:
+        structural_reasons.append("baseline comparison had no aligned steps")
+    for key in required_metrics:
+        if _as_finite_float(summary.get(key)) is None:
+            structural_reasons.append(f"baseline comparison missing finite {key}")
+
     comparison_path = scenario_root / "baseline_compare.json"
     write_json(comparison_path, summary)
     metrics = flatten_comparison_summary(summary)
     status["comparison_json"] = str(comparison_path)
     status.update(metrics)
+
+    if structural_reasons:
+        status["status"] = "compare_error"
+        status["passed"] = False
+        for reason in structural_reasons:
+            _append_reason(status, reason)
+        return status, metrics
 
     if status.get("mode") == "gate":
         passed, reasons = evaluate_thresholds(metrics, status.get("thresholds"))
@@ -487,6 +690,8 @@ def _entry_from_scenario_root(scenario_root: Path) -> dict[str, Any]:
         "attribution_batch_size": scenario.get("attribution_batch_size"),
         "feature_batch_size": scenario.get("feature_batch_size"),
         "logit_batch_size": scenario.get("logit_batch_size"),
+        "validation_baseline_key": scenario.get("validation_baseline_key"),
+        "validation_mechanism": scenario.get("validation_mechanism"),
         "comparison_contract": _comparison_contract(scenario),
         "prompt_identity": {
             "prepared_prompt_file": str(prompt_file) if prompt_file else None,

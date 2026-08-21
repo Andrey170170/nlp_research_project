@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import shlex
 from datetime import datetime
@@ -13,16 +14,20 @@ from .config import (
     REPO_ROOT,
     recommended_output_root,
 )
-from .full_answer.schemas import load_shards
+from .full_answer.launch_spec import build_full_answer_launch_spec
+from .full_answer.schemas import load_shards, load_trace_specs
 from .io_utils import read_json
 from .scenarios import (
+    CHPC_BASELINE_RESOURCE_PROFILE,
     RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM,
     RESOURCE_PROFILE_STANDARD,
 )
 from .workspace import (
     DEFAULT_SNAPSHOT_ROOT,
+    repo_state,
     resolve_launch_workspace,
     sibling_library_root,
+    validate_launch_snapshot,
 )
 
 
@@ -43,6 +48,22 @@ SBATCH_SCRIPTS: dict[tuple[str, str], Path] = {
     / "slurm"
     / "exact_trace_bench"
     / "trace_weekend_exact_chunked_long_eval.cardinal.sbatch",
+    ("granite", RESOURCE_PROFILE_STANDARD): REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "trace_weekend_exact_chunked.granite.sbatch",
+    ("granite", RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM): REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "trace_weekend_exact_chunked_long_eval.granite.sbatch",
+    ("granite", CHPC_BASELINE_RESOURCE_PROFILE): REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "trace_baseline_h200.granite.sbatch",
+    ("granite", "governor_calibration_h200"): REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "trace_baseline_h200.granite.sbatch",
 }
 
 SBATCH_FIXTURE_PREP_SCRIPTS: dict[str, Path] = {
@@ -54,6 +75,10 @@ SBATCH_FIXTURE_PREP_SCRIPTS: dict[str, Path] = {
     / "slurm"
     / "exact_trace_bench"
     / "prepare_weekend_prefix_fixtures.cardinal.sbatch",
+    "granite": REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "prepare_weekend_prefix_fixtures.granite.sbatch",
 }
 
 SBATCH_FULL_ANSWER_TRAJECTORY_SCRIPTS: dict[str, Path] = {
@@ -65,6 +90,10 @@ SBATCH_FULL_ANSWER_TRAJECTORY_SCRIPTS: dict[str, Path] = {
     / "slurm"
     / "exact_trace_bench"
     / "full_answer_prepare.cardinal.sbatch",
+    "granite": REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "full_answer_prepare.granite.sbatch",
 }
 
 FULL_ANSWER_TRACE_RESOURCE_PROFILES: tuple[str, ...] = ("standard", "quad")
@@ -82,6 +111,10 @@ SBATCH_FULL_ANSWER_TRACE_SCRIPTS: dict[tuple[str, str], Path] = {
     / "slurm"
     / "exact_trace_bench"
     / "full_answer_trace.cardinal.sbatch",
+    ("granite", "standard"): REPO_ROOT
+    / "slurm"
+    / "exact_trace_bench"
+    / "full_answer_trace.granite.sbatch",
 }
 
 GOAL_BY_TIER: dict[str, str] = {
@@ -112,6 +145,64 @@ def _normalize_free_text(value: str | None) -> str | None:
         return None
     normalized = " ".join(value.split())
     return normalized or None
+
+
+def _external_uv_environment() -> Path:
+    configured = os.environ.get("UV_PROJECT_ENVIRONMENT")
+    return Path(configured).resolve() if configured else (REPO_ROOT / ".venv").resolve()
+
+
+def _external_env_file() -> Path:
+    configured = os.environ.get("ENV_FILE")
+    return Path(configured).resolve() if configured else (REPO_ROOT / ".env").resolve()
+
+
+def _validated_workspace_provenance(
+    *,
+    workspace: Path,
+    library_workspace: Path | None,
+    immutable_workspace: bool,
+    live_workspace_rationale: str | None,
+) -> dict[str, Any]:
+    if library_workspace is None:
+        raise ValueError(f"Sibling library workspace does not exist for {workspace}")
+    if immutable_workspace:
+        return validate_launch_snapshot(
+            workspace_root=workspace,
+            library_root=library_workspace,
+            import_roots=(workspace / "src", workspace, library_workspace),
+        )
+    rationale = _normalize_free_text(live_workspace_rationale)
+    if rationale is None:
+        raise ValueError("Live workspace launches require a non-empty rationale")
+    return {
+        "workspace_mode": "live",
+        "manifest_path": None,
+        "workspace_root": str(workspace),
+        "library_workspace_root": str(library_workspace.resolve()),
+        "live_workspace_rationale": rationale,
+        "project_repo_state": repo_state(workspace),
+        "library_repo_state": repo_state(library_workspace),
+    }
+
+
+def _append_workspace_exports(
+    export_parts: list[str], provenance: dict[str, Any]
+) -> None:
+    export_parts.extend(
+        [
+            f"EXACT_TRACE_WORKSPACE_MODE={provenance['workspace_mode']}",
+            f"EXACT_TRACE_WORKSPACE_MANIFEST={provenance['manifest_path'] or ''}",
+        ]
+    )
+    if provenance["workspace_mode"] == "live":
+        export_parts.extend(
+            [
+                "EXACT_TRACE_ALLOW_LIVE_WORKSPACE=1",
+                "EXACT_TRACE_LIVE_WORKSPACE_RATIONALE="
+                f"{provenance['live_workspace_rationale']}",
+            ]
+        )
 
 
 def _default_run_name(
@@ -262,15 +353,25 @@ def render_launch_plan(
     run_name: str | None = None,
     run_description: str | None = None,
     run_goal: str | None = None,
-    immutable_workspace: bool = False,
+    immutable_workspace: bool = True,
+    existing_workspace: Path | None = None,
     snapshot_root: Path = DEFAULT_SNAPSHOT_ROOT,
     source_root: Path = REPO_ROOT,
     workspace_label: str | None = None,
+    live_workspace_rationale: str | None = None,
+    _pending_snapshot_freeze: bool = False,
     walltime: str | None = None,
+    mem: str | None = None,
     baseline_registry: Path | None = None,
     fail_on_baseline_missing: bool = False,
     fail_on_validation_fail: bool = False,
 ) -> dict[str, Any]:
+    normalized_live_rationale = _normalize_free_text(live_workspace_rationale)
+    if existing_workspace is not None and not immutable_workspace:
+        raise ValueError("existing_workspace requires immutable_workspace")
+    if not immutable_workspace and not _pending_snapshot_freeze:
+        if normalized_live_rationale is None:
+            raise ValueError("Live workspace launches require a non-empty rationale")
     scenarios_file = scenarios_file.resolve()
     resource_profile = _resolve_resource_profile(scenarios_file)
     script_key = (cluster, resource_profile)
@@ -281,6 +382,19 @@ def render_launch_plan(
 
     scenarios_payload = read_json(scenarios_file)
     scenarios_metadata = scenarios_payload.get("metadata") or {}
+    if baseline_registry is None:
+        metadata_registry = scenarios_metadata.get("baseline_registry")
+        if isinstance(metadata_registry, str) and metadata_registry:
+            baseline_registry = Path(metadata_registry)
+    fail_on_baseline_missing = fail_on_baseline_missing or bool(
+        scenarios_metadata.get("fail_on_baseline_missing", False)
+    )
+    fail_on_validation_fail = fail_on_validation_fail or bool(
+        scenarios_metadata.get("fail_on_validation_fail", False)
+    )
+    slurm_metadata = scenarios_metadata.get("slurm") or {}
+    if not isinstance(slurm_metadata, dict):
+        raise ValueError("metadata.slurm must be an object")
 
     base_output_root = (
         output_root
@@ -316,13 +430,47 @@ def render_launch_plan(
             "Use a different --run-id or base output root to avoid mixing artifacts."
         )
 
-    workspace = resolve_launch_workspace(
-        immutable=immutable_workspace,
-        snapshot_root=snapshot_root,
-        source_root=source_root,
-        label=workspace_label,
-    ).resolve()
+    workspace = (
+        existing_workspace.resolve()
+        if existing_workspace is not None
+        else resolve_launch_workspace(
+            immutable=immutable_workspace,
+            snapshot_root=snapshot_root,
+            source_root=source_root,
+            label=workspace_label,
+        ).resolve()
+    )
     library_workspace = sibling_library_root(workspace)
+    if library_workspace is None:
+        raise ValueError(f"Sibling library workspace does not exist for {workspace}")
+
+    if immutable_workspace:
+        workspace_provenance = validate_launch_snapshot(
+            workspace_root=workspace,
+            library_root=library_workspace,
+            import_roots=(workspace / "src", workspace, library_workspace),
+        )
+    elif _pending_snapshot_freeze:
+        workspace_provenance = {
+            "workspace_mode": "immutable",
+            "manifest_path": str(
+                (workspace.parent / ".exact_trace_bench_snapshot.json").resolve()
+            ),
+            "workspace_root": str(workspace),
+            "library_workspace_root": str(library_workspace.resolve()),
+            "read_only": False,
+            "pending_freeze": True,
+        }
+    else:
+        workspace_provenance = {
+            "workspace_mode": "live",
+            "manifest_path": None,
+            "workspace_root": str(workspace),
+            "library_workspace_root": str(library_workspace.resolve()),
+            "live_workspace_rationale": normalized_live_rationale,
+            "project_repo_state": repo_state(workspace),
+            "library_repo_state": repo_state(library_workspace),
+        }
 
     script_path = SBATCH_SCRIPTS[script_key].resolve()
     launch_scenarios_file = scenarios_file
@@ -344,15 +492,38 @@ def render_launch_plan(
 
     scenario_count = _scenario_count(launch_scenarios_file)
     array_range = f"0-{scenario_count - 1}"
+    array_concurrency = scenarios_metadata.get("array_concurrency")
+    if array_concurrency is not None:
+        if not isinstance(array_concurrency, int) or array_concurrency <= 0:
+            raise ValueError("metadata.array_concurrency must be a positive integer")
+        array_range = f"{array_range}%{array_concurrency}"
     export_parts = [
         "ALL",
         f"SCENARIOS_FILE={launch_scenarios_file}",
         f"OUTPUT_ROOT={resolved_output_root}",
         f"WORKSPACE_ROOT={workspace}",
         f"LIB_WORKSPACE_ROOT={library_workspace or ''}",
+        f"UV_PROJECT_ENVIRONMENT={_external_uv_environment()}",
+        f"ENV_FILE={_external_env_file()}",
+        f"EXACT_TRACE_WORKSPACE_MODE={workspace_provenance['workspace_mode']}",
+        f"EXACT_TRACE_WORKSPACE_MANIFEST={workspace_provenance['manifest_path'] or ''}",
     ]
-    if baseline_registry is not None:
-        export_parts.append(f"BASELINE_REGISTRY={baseline_registry.resolve()}")
+    if workspace_provenance["workspace_mode"] == "live":
+        export_parts.extend(
+            [
+                "EXACT_TRACE_ALLOW_LIVE_WORKSPACE=1",
+                f"EXACT_TRACE_LIVE_WORKSPACE_RATIONALE={normalized_live_rationale}",
+            ]
+        )
+    launch_baseline_registry = (
+        None
+        if baseline_registry is None
+        else _path_in_workspace(
+            baseline_registry, workspace=workspace, source_root=source_root
+        )
+    )
+    if launch_baseline_registry is not None:
+        export_parts.append(f"BASELINE_REGISTRY={launch_baseline_registry}")
     if fail_on_baseline_missing:
         export_parts.append("FAIL_ON_BASELINE_MISSING=1")
     if fail_on_validation_fail:
@@ -369,9 +540,32 @@ def render_launch_plan(
     if resolved_run_goal is not None:
         script_args.extend(["--run-goal", resolved_run_goal])
 
+    resolved_walltime = walltime or slurm_metadata.get("time")
+    resolved_mem = mem or slurm_metadata.get("mem")
+    scheduler_args = [
+        *(
+            [f"--account={slurm_metadata['account']}"]
+            if slurm_metadata.get("account")
+            else []
+        ),
+        *(
+            [f"--partition={slurm_metadata['partition']}"]
+            if slurm_metadata.get("partition")
+            else []
+        ),
+        *([f"--qos={slurm_metadata['qos']}"] if slurm_metadata.get("qos") else []),
+        *([f"--gres={slurm_metadata['gres']}"] if slurm_metadata.get("gres") else []),
+        *(
+            [f"--cpus-per-task={slurm_metadata['cpus_per_task']}"]
+            if slurm_metadata.get("cpus_per_task")
+            else []
+        ),
+    ]
     command_parts = [
         "sbatch",
-        *([f"--time={walltime}"] if walltime else []),
+        *scheduler_args,
+        *([f"--time={resolved_walltime}"] if resolved_walltime else []),
+        *([f"--mem={resolved_mem}"] if resolved_mem else []),
         f"--array={array_range}",
         f"--export={export_blob}",
         str(launch_script_path),
@@ -385,14 +579,17 @@ def render_launch_plan(
         "output_root": str(resolved_output_root),
         "resource_profile": resource_profile,
         "scenario_count": scenario_count,
+        "array_range": array_range,
         "run_id": resolved_run_id,
         "launch_id": resolved_run_id,
         "run_name": resolved_run_name,
         "run_description": resolved_run_description,
         "run_goal": resolved_run_goal,
+        "mem": resolved_mem,
+        "walltime": resolved_walltime,
         "baseline_registry": None
-        if baseline_registry is None
-        else str(baseline_registry.resolve()),
+        if launch_baseline_registry is None
+        else str(launch_baseline_registry),
         "fail_on_baseline_missing": fail_on_baseline_missing,
         "fail_on_validation_fail": fail_on_validation_fail,
         "sbatch_argv": command_parts,
@@ -401,6 +598,7 @@ def render_launch_plan(
         if library_workspace is None
         else str(library_workspace),
         "immutable_workspace": immutable_workspace,
+        "workspace_provenance": workspace_provenance,
         "sbatch_script": str(launch_script_path),
         "sbatch_command": shlex.join(command_parts),
     }
@@ -421,13 +619,17 @@ def render_fixture_prep_plan(
     output_dir: Path = DEFAULT_WAVE0_FIXTURE_OUTPUT_DIR,
     decoder_chunk_size: int = 256,
     cross_batch_decoder_cache_bytes: int | None = None,
-    immutable_workspace: bool = False,
+    immutable_workspace: bool = True,
     snapshot_root: Path = DEFAULT_SNAPSHOT_ROOT,
     source_root: Path = REPO_ROOT,
     workspace_label: str | None = None,
+    live_workspace_rationale: str | None = None,
     walltime: str | None = None,
     run_name: str | None = None,
 ) -> dict[str, Any]:
+    normalized_live_rationale = _normalize_free_text(live_workspace_rationale)
+    if not immutable_workspace and normalized_live_rationale is None:
+        raise ValueError("Live workspace launches require a non-empty rationale")
     if cluster not in SBATCH_FIXTURE_PREP_SCRIPTS:
         raise ValueError(f"Unsupported fixture prep cluster: {cluster!r}")
     if decoder_chunk_size <= 0:
@@ -445,6 +647,24 @@ def render_fixture_prep_plan(
         label=workspace_label,
     ).resolve()
     library_workspace = sibling_library_root(workspace)
+    if library_workspace is None:
+        raise ValueError(f"Sibling library workspace does not exist for {workspace}")
+    if immutable_workspace:
+        workspace_provenance = validate_launch_snapshot(
+            workspace_root=workspace,
+            library_root=library_workspace,
+            import_roots=(workspace / "src", workspace, library_workspace),
+        )
+    else:
+        workspace_provenance = {
+            "workspace_mode": "live",
+            "manifest_path": None,
+            "workspace_root": str(workspace),
+            "library_workspace_root": str(library_workspace.resolve()),
+            "live_workspace_rationale": normalized_live_rationale,
+            "project_repo_state": repo_state(workspace),
+            "library_repo_state": repo_state(library_workspace),
+        }
 
     source_root = source_root.resolve()
     script_path = SBATCH_FIXTURE_PREP_SCRIPTS[cluster].resolve()
@@ -470,7 +690,18 @@ def render_fixture_prep_plan(
         f"DECODER_CHUNK_SIZE={decoder_chunk_size}",
         f"WORKSPACE_ROOT={workspace}",
         f"LIB_WORKSPACE_ROOT={library_workspace or ''}",
+        f"UV_PROJECT_ENVIRONMENT={_external_uv_environment()}",
+        f"ENV_FILE={_external_env_file()}",
+        f"EXACT_TRACE_WORKSPACE_MODE={workspace_provenance['workspace_mode']}",
+        f"EXACT_TRACE_WORKSPACE_MANIFEST={workspace_provenance['manifest_path'] or ''}",
     ]
+    if workspace_provenance["workspace_mode"] == "live":
+        export_parts.extend(
+            [
+                "EXACT_TRACE_ALLOW_LIVE_WORKSPACE=1",
+                f"EXACT_TRACE_LIVE_WORKSPACE_RATIONALE={normalized_live_rationale}",
+            ]
+        )
     if cross_batch_decoder_cache_bytes is not None:
         export_parts.append(
             f"CROSS_BATCH_DECODER_CACHE_BYTES={cross_batch_decoder_cache_bytes}"
@@ -494,6 +725,7 @@ def render_fixture_prep_plan(
         if library_workspace is None
         else str(library_workspace),
         "immutable_workspace": immutable_workspace,
+        "workspace_provenance": workspace_provenance,
         "sbatch_script": str(launch_script_path),
         "sbatch_argv": command_parts,
         "sbatch_command": shlex.join(command_parts),
@@ -522,6 +754,7 @@ def render_full_answer_trajectory_plan(
     snapshot_root: Path = DEFAULT_SNAPSHOT_ROOT,
     source_root: Path = REPO_ROOT,
     workspace_label: str | None = None,
+    live_workspace_rationale: str | None = None,
     walltime: str | None = None,
     run_name: str | None = None,
 ) -> dict[str, Any]:
@@ -546,6 +779,12 @@ def render_full_answer_trajectory_plan(
         label=workspace_label,
     ).resolve()
     library_workspace = sibling_library_root(workspace)
+    workspace_provenance = _validated_workspace_provenance(
+        workspace=workspace,
+        library_workspace=library_workspace,
+        immutable_workspace=immutable_workspace,
+        live_workspace_rationale=live_workspace_rationale,
+    )
     source_root = source_root.resolve()
     script_path = SBATCH_FULL_ANSWER_TRAJECTORY_SCRIPTS[cluster].resolve()
     launch_script_path = _path_in_workspace(
@@ -565,7 +804,10 @@ def render_full_answer_trajectory_plan(
         f"INCLUDE_PROMPT_TEXT={1 if include_prompt_text else 0}",
         f"WORKSPACE_ROOT={workspace}",
         f"LIB_WORKSPACE_ROOT={library_workspace or ''}",
+        f"UV_PROJECT_ENVIRONMENT={_external_uv_environment()}",
+        f"ENV_FILE={_external_env_file()}",
     ]
+    _append_workspace_exports(export_parts, workspace_provenance)
     if prompt_path is not None:
         export_parts.append(
             f"PROMPT_PATH={_path_in_workspace(prompt_path, workspace=workspace, source_root=source_root)}"
@@ -621,6 +863,7 @@ def render_full_answer_trajectory_plan(
         if library_workspace is None
         else str(library_workspace),
         "immutable_workspace": immutable_workspace,
+        "workspace_provenance": workspace_provenance,
         "sbatch_script": str(launch_script_path),
         "sbatch_argv": command_parts,
         "sbatch_command": shlex.join(command_parts),
@@ -640,6 +883,7 @@ def render_full_answer_shard_plan(
     snapshot_root: Path = DEFAULT_SNAPSHOT_ROOT,
     source_root: Path = REPO_ROOT,
     workspace_label: str | None = None,
+    live_workspace_rationale: str | None = None,
     walltime: str | None = None,
     mem: str | None = None,
     partition: str | None = None,
@@ -664,29 +908,6 @@ def render_full_answer_shard_plan(
         if array_range is not None
         else f"0-{shard_count - 1}"
     )
-
-    workspace = resolve_launch_workspace(
-        immutable=immutable_workspace,
-        snapshot_root=snapshot_root,
-        source_root=source_root,
-        label=workspace_label,
-    ).resolve()
-    library_workspace = sibling_library_root(workspace)
-    source_root = source_root.resolve()
-    script_path = SBATCH_FULL_ANSWER_TRACE_SCRIPTS[script_key].resolve()
-    launch_script_path = _path_in_workspace(
-        script_path, workspace=workspace, source_root=source_root
-    )
-    launch_trajectory = _path_in_workspace(
-        trajectory_path, workspace=workspace, source_root=source_root
-    )
-    launch_trace_specs = _path_in_workspace(
-        trace_specs_path, workspace=workspace, source_root=source_root
-    )
-    launch_shards = _path_in_workspace(
-        shards_path, workspace=workspace, source_root=source_root
-    )
-
     resolved_run_name = _normalize_free_text(run_name) or f"full answer trace {cluster}"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     resolved_run_id = (
@@ -700,6 +921,97 @@ def render_full_answer_shard_plan(
             f"Launch output root already exists: {resolved_output_root}. "
             "Resume mode is not implemented."
         )
+
+    workspace = resolve_launch_workspace(
+        immutable=immutable_workspace,
+        snapshot_root=snapshot_root,
+        source_root=source_root,
+        label=workspace_label,
+    ).resolve()
+    library_workspace = sibling_library_root(workspace)
+    workspace_provenance = _validated_workspace_provenance(
+        workspace=workspace,
+        library_workspace=library_workspace,
+        immutable_workspace=immutable_workspace,
+        live_workspace_rationale=live_workspace_rationale,
+    )
+    source_root = source_root.resolve()
+    script_path = SBATCH_FULL_ANSWER_TRACE_SCRIPTS[script_key].resolve()
+    sbatch_defaults: dict[str, str] = {}
+    for line in script_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("#SBATCH --") or "=" not in stripped:
+            continue
+        key, value = stripped.removeprefix("#SBATCH --").split("=", maxsplit=1)
+        sbatch_defaults[key] = value
+    launch_script_path = _path_in_workspace(
+        script_path, workspace=workspace, source_root=source_root
+    )
+    launch_trajectory = _path_in_workspace(
+        trajectory_path, workspace=workspace, source_root=source_root
+    )
+    launch_trace_specs = _path_in_workspace(
+        trace_specs_path, workspace=workspace, source_root=source_root
+    )
+    launch_shards = _path_in_workspace(
+        shards_path, workspace=workspace, source_root=source_root
+    )
+
+    scheduler_request = {
+        "cluster": cluster,
+        "resource_profile": resource_profile,
+        "account": sbatch_defaults.get("account"),
+        "partition": partition or sbatch_defaults.get("partition"),
+        "qos": sbatch_defaults.get("qos"),
+        "gpus_per_task": sbatch_defaults.get("gpus-per-task"),
+        "cpus_per_task": sbatch_defaults.get("cpus-per-task"),
+        "memory": mem or sbatch_defaults.get("mem"),
+        "walltime": walltime or sbatch_defaults.get("time"),
+    }
+    specs = load_trace_specs(trace_specs_path)
+    launch_spec = None
+    if specs:
+        first_knobs = specs[0]["graph_knobs"]
+        launch_spec = build_full_answer_launch_spec(
+            trajectory_path=launch_trajectory,
+            trace_specs_path=launch_trace_specs,
+            shards_path=launch_shards,
+            output_root=resolved_output_root,
+            shard_selection=resolved_array_range,
+            run={
+                "run_id": resolved_run_id,
+                "run_name": resolved_run_name,
+                "run_description": _normalize_free_text(run_description),
+                "run_goal": _normalize_free_text(run_goal),
+            },
+            specs=specs,
+            planning_envelope=first_knobs.get("resource_planning_envelope", {}),
+            scheduler_request=scheduler_request,
+            runtime_resource_policy=first_knobs.get("runtime_resource_policy", "off"),
+            runtime_resource_override_rationale=None,
+            preheat={"policy": "none", "paths": []},
+            workspace={
+                "policy": (
+                    "immutable_snapshot" if immutable_workspace else "live_override"
+                ),
+                "project_root": str(workspace),
+                "library_root": (
+                    None if library_workspace is None else str(library_workspace)
+                ),
+                "provenance": workspace_provenance,
+            },
+            monitoring={
+                "gpu_sampler": False,
+                "runtime_resource_samples": (
+                    first_knobs.get("runtime_resource_policy", "off") != "off"
+                ),
+                "incremental_trace_telemetry": bool(
+                    first_knobs.get("incremental_telemetry_jsonl", False)
+                ),
+                "postrun_mechanism_validation": True,
+            },
+        )
+
     export_parts = [
         "ALL",
         f"TRAJECTORY_PATH={launch_trajectory}",
@@ -708,7 +1020,19 @@ def render_full_answer_shard_plan(
         f"OUTPUT_ROOT={resolved_output_root}",
         f"WORKSPACE_ROOT={workspace}",
         f"LIB_WORKSPACE_ROOT={library_workspace or ''}",
+        f"UV_PROJECT_ENVIRONMENT={_external_uv_environment()}",
+        f"ENV_FILE={_external_env_file()}",
+        f"EXACT_TRACE_REQUESTED_CLUSTER={cluster}",
+        f"EXACT_TRACE_REQUESTED_RESOURCE_PROFILE={resource_profile}",
+        f"EXACT_TRACE_REQUESTED_ACCOUNT={scheduler_request['account'] or ''}",
+        f"EXACT_TRACE_REQUESTED_PARTITION={scheduler_request['partition'] or ''}",
+        f"EXACT_TRACE_REQUESTED_QOS={scheduler_request['qos'] or ''}",
+        f"EXACT_TRACE_REQUESTED_GPUS_PER_TASK={scheduler_request['gpus_per_task'] or ''}",
+        f"EXACT_TRACE_REQUESTED_CPUS={scheduler_request['cpus_per_task'] or ''}",
+        f"EXACT_TRACE_REQUESTED_MEM={scheduler_request['memory'] or ''}",
+        f"EXACT_TRACE_REQUESTED_WALLTIME={scheduler_request['walltime'] or ''}",
     ]
+    _append_workspace_exports(export_parts, workspace_provenance)
     script_args: list[str] = [
         "--run-id",
         resolved_run_id,
@@ -752,6 +1076,8 @@ def render_full_answer_shard_plan(
         if library_workspace is None
         else str(library_workspace),
         "immutable_workspace": immutable_workspace,
+        "workspace_provenance": workspace_provenance,
+        "launch_spec": None if launch_spec is None else launch_spec.to_record(),
         "sbatch_script": str(launch_script_path),
         "sbatch_argv": command_parts,
         "sbatch_command": shlex.join(command_parts),

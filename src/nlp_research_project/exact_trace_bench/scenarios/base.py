@@ -6,7 +6,6 @@ from typing import Any
 from ..config import base_trace_defaults, gib_to_bytes, recommended_output_root
 from ..fixtures import FixtureRef, resolve_fixture
 
-
 SCENARIO_TIERS = ("fast", "anomaly", "long_eval")
 WAVE2A_PHASE1_TIERS = ("fast", "anomaly")
 WAVE2B_PHASE4_TIERS = ("fast", "anomaly")
@@ -114,6 +113,7 @@ WAVE2C_ROW_ENCODER_LEGACY_DEFAULTS: dict[str, Any] = {
     "phase4_refresh_optimization": "off",
     "phase4_row_executor": "batched",
     "phase1_trace_batch_policy": "legacy",
+    "backward_engine_mode": "duplicated_lanes",
 }
 WAVE2C_ROW_ENCODER_VARIANTS: tuple[dict[str, Any], ...] = (
     {
@@ -127,10 +127,6 @@ WAVE2C_ROW_ENCODER_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         "label": "active_cpu_encoder",
         "exact_encoder_residency": "active_cpu",
-    },
-    {
-        "label": "active_pinned_cpu_encoder",
-        "exact_encoder_residency": "active_pinned_cpu",
     },
     {
         "label": "no_cpu_staging",
@@ -203,7 +199,18 @@ WAVE4_GENERALIZATION_VARIANTS: tuple[dict[str, Any], ...] = (
 RESOURCE_PROFILE_STANDARD = "standard"
 RESOURCE_PROFILE_LONG_EVAL_HIGH_MEM = "long_eval_high_mem"
 
-STABLE_PUBLIC_SCENARIO_KEYS = ("exact_trace_internal_dtype",)
+STABLE_PUBLIC_SCENARIO_KEYS = (
+    "exact_trace_internal_dtype",
+    "governor_admission_mode",
+    "governor_profile_name",
+    "governor_resource_envelope",
+    "governor_fidelity_mode",
+    "governor_fidelity_budget",
+    "governor_fidelity_override_fields",
+    "governor_fidelity_evidence_name",
+    "governor_fidelity_evidence_version",
+    "governor_response_bundle_path",
+)
 
 ADVANCED_PUBLIC_TUNING_KEYS = (
     "chunked_feature_replay_window",
@@ -211,6 +218,32 @@ ADVANCED_PUBLIC_TUNING_KEYS = (
     "stage_encoder_vecs_on_cpu",
     "stage_error_vectors_on_cpu",
     "row_subchunk_size",
+    "nnsight_session_capacity",
+    "backward_engine_mode",
+    "forward_graph_mode",
+    "vjp_kernel_mode",
+    "phase3_compute_microbatch_max_rows",
+    "phase4_execution_batch_max_rows",
+    "feature_vjp_tape_batch_window",
+    "feature_vjp_tape_max_bytes",
+    "decoder_page_prefetch_depth",
+    "decoder_active_row_residency",
+    "decoder_active_row_residency_requirement",
+    "decoder_active_row_max_bytes",
+    "decoder_active_row_safety_margin_bytes",
+    "phase0_decoder_row_ranges",
+    "diagnostic_stop_mode",
+    "diagnostic_stop_phase4_batches",
+    "full_retention_backend",
+    "feature_row_column_tile_size",
+    "influence_row_tile_size",
+    "influence_column_tile_size",
+    "feature_row_retention",
+    "replay_tile_cache_bytes",
+    "feature_row_influence_mode",
+    "feature_row_gpu_resident_max_bytes",
+    "feature_row_gpu_window_max_bytes",
+    "feature_row_gpu_resident_safety_margin_bytes",
     "phase1_trace_batch_policy",
     "phase1_trace_batch_size_max",
     "plan_feature_batch_size",
@@ -330,7 +363,39 @@ CLUSTER_SETTINGS: dict[str, dict[str, Any]] = {
             ],
         },
     },
+    "granite": {
+        "fast": {
+            "batch": 128,
+            "chunk": 4096,
+            "cache_gib": 0,
+        },
+        "anomaly": {
+            "batch": 256,
+            "chunk": 4096,
+            "cache_gib": 0,
+        },
+        "long_eval": {
+            "runs": [
+                {
+                    "label": "no_cache",
+                    "batch": 256,
+                    "chunk": 4096,
+                    "cache_gib": 0,
+                    "fixtures": ("361_late", "828_late", "94_late"),
+                },
+                {
+                    "label": "cache_probe",
+                    "batch": 256,
+                    "chunk": 4096,
+                    "cache_gib": 8,
+                    "fixtures": ("361_late",),
+                },
+            ],
+        },
+    },
 }
+
+SUPPORTED_CLUSTERS = tuple(CLUSTER_SETTINGS)
 
 
 def _require_cluster(cluster: str) -> None:

@@ -1,7 +1,12 @@
 # Phase 4 Frontier Planner / Scheduler V2 Spec
 
 Status: Proposed/deferred optimization design
-Last updated: 2026-05-16
+Last updated: 2026-07-10
+
+This remains a deferred reference design. It is not part of Phase B; any future
+runtime integration must wait for Phase D closure and use the canonical Phase
+C2 runtime plus governor contracts. Its current direct-live-path shape is
+pre-C2 evidence, not an API or module-layout constraint.
 
 ## 1. Problem statement
 

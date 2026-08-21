@@ -10,6 +10,7 @@ from nlp_research_project.exact_trace_bench.full_answer.schemas import (
     load_trace_selection,
     load_trace_specs,
     load_trajectory,
+    validate_trace_spec,
     write_trace_selection,
     write_trace_specs,
 )
@@ -163,3 +164,94 @@ def test_trace_spec_generation_rejects_mismatched_selection() -> None:
 
     with pytest.raises(ValueError, match="trajectory_id"):
         build_trace_specs(tiny_trajectory(), selection)
+
+
+def test_trace_spec_rejects_ambiguous_required_feature_row_selection() -> None:
+    selection = select_tokens(tiny_trajectory(), explicit_indices=[3])
+    spec = build_trace_specs(
+        tiny_trajectory(),
+        selection,
+        graph_knob_overrides={
+            "feature_row_influence_mode": "auto",
+            "feature_row_influence_requirement": "required",
+            "feature_row_gpu_resident_max_bytes": 1024,
+            "feature_row_gpu_window_max_bytes": 1024,
+        },
+    )[0]
+
+    with pytest.raises(
+        ValueError, match="auto feature-row influence cannot be required"
+    ):
+        validate_trace_spec(spec)
+
+
+def test_trace_spec_enforced_resource_policy_requires_enforceable_limit() -> None:
+    selection = select_tokens(tiny_trajectory(), explicit_indices=[3])
+    spec = build_trace_specs(
+        tiny_trajectory(),
+        selection,
+        graph_knob_overrides={
+            "runtime_resource_policy": "enforce",
+            "resource_planning_envelope": {"hbm_peak_fraction_max": 0.9},
+        },
+    )[0]
+
+    with pytest.raises(ValueError, match="host_rss_stop_gib or walltime_seconds"):
+        validate_trace_spec(spec)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        (
+            {
+                "phase0_decoder_row_ranges": True,
+                "decoder_active_row_residency": True,
+                "decoder_active_row_max_bytes": 1024,
+            },
+            "PLT-compatible provider",
+        ),
+        (
+            {
+                "transcoder_architecture": "plt",
+                "transcoder_provider_family": "gemmascope2-plt-1b-big-affine",
+                "phase0_decoder_row_ranges": True,
+                "decoder_active_row_max_bytes": 1024,
+            },
+            "decoder_active_row_residency=true",
+        ),
+        (
+            {
+                "transcoder_architecture": "plt",
+                "transcoder_provider_family": "gemmascope2-plt-1b-big-affine",
+                "phase0_decoder_row_ranges": True,
+                "decoder_active_row_residency": True,
+            },
+            "positive decoder_active_row_safety_margin_bytes",
+        ),
+        (
+            {
+                "transcoder_architecture": "plt",
+                "transcoder_provider_family": "gemmascope2-plt-1b-big-affine",
+                "phase0_decoder_row_ranges": True,
+                "decoder_active_row_residency": True,
+                "decoder_active_row_max_bytes": 1024,
+                "reuse_phase0_window_state": True,
+            },
+            "incompatible with reuse_phase0_window_state",
+        ),
+    ],
+)
+def test_trace_spec_rejects_invalid_phase0_range_dependencies(
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    selection = select_tokens(tiny_trajectory(), explicit_indices=[3])
+    spec = build_trace_specs(
+        tiny_trajectory(),
+        selection,
+        graph_knob_overrides=overrides,
+    )[0]
+
+    with pytest.raises(ValueError, match=message):
+        validate_trace_spec(spec)

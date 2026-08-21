@@ -1,0 +1,14 @@
+{
+  "fixture_name": "361_length_v1",
+  "fixture_kind": "long_form_generation_prompt",
+  "prompt_source": "gsm8k_361_declared_long_form",
+  "gsm8k_index": 361,
+  "prompt_family": "gsm8k_361_length_v1",
+  "role": "development",
+  "generation_policy": {
+    "model": "google/gemma-3-1b-it",
+    "temperature": 0.0,
+    "seed": 0,
+    "max_new_tokens": 1200
+  }
+}

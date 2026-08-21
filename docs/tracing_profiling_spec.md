@@ -1,7 +1,12 @@
 # Tracing Profiling Spec
 
-Status: Current profiling/telemetry design
-Last updated: 2026-05-16
+Status: Implemented telemetry/tooling reference; governor spec owns extensions
+Last updated: 2026-07-10
+
+Incremental JSONL telemetry is now implemented and validated on the Granite 12B
+baseline. Keep this document as the original event/tooling design reference;
+new governor and runtime requirements live in
+`docs/memory_governor_rearchitecture_spec.md`.
 
 ## 1. Problem statement
 

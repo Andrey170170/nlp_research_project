@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from .config import DEFAULT_FIXTURE_CATALOG, REPO_ROOT
+from .config import DEFAULT_FIXTURE_CATALOG
 from .io_utils import read_json
 
 
@@ -47,9 +47,7 @@ def load_fixture_catalog(
 
 def _fallback_fixture(fixture_name: str) -> FixtureRef:
     index_str, fixture_kind = fixture_name.split("_", maxsplit=1)
-    fixture_dir = (
-        REPO_ROOT / "experiments" / "generated" / "weekend_exact_chunked_fixtures"
-    )
+    fixture_dir = Path("experiments/generated/weekend_exact_chunked_fixtures")
     fixture_subdir = fixture_dir / fixture_name
     return FixtureRef(
         fixture_name=fixture_name,

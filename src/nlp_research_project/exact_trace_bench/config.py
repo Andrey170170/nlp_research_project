@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -8,7 +9,15 @@ from .transcoder_config import transcoder_config_to_json, TranscoderLoadConfig
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-DEFAULT_SCRATCH_ROOT = Path("/fs/scratch/PAS2836/kopanev.1/exact_trace_bench")
+DEFAULT_CHPC_SCRATCH_ROOT = (
+    Path("/scratch/general/vast")
+    / os.environ.get("USER", "u1653998")
+    / "nlp_research_project"
+    / "exact_trace_bench"
+)
+DEFAULT_SCRATCH_ROOT = Path(
+    os.environ.get("EXACT_TRACE_BENCH_SCRATCH_ROOT", DEFAULT_CHPC_SCRATCH_ROOT)
+)
 DEFAULT_GENERATED_DIR = REPO_ROOT / "experiments" / "generated" / "exact_trace_bench"
 DEFAULT_EXTRACTED_DIR = REPO_ROOT / "experiments" / "extracted" / "exact_trace_bench"
 DEFAULT_FIXTURE_CATALOG = (
@@ -59,8 +68,36 @@ def base_trace_defaults() -> dict[str, Any]:
         "stage_encoder_vecs_on_cpu": None,
         "stage_error_vectors_on_cpu": None,
         "row_subchunk_size": None,
+        "nnsight_session_capacity": None,
+        "backward_engine_mode": "duplicated_lanes",
+        "phase3_compute_microbatch_max_rows": None,
+        "phase4_execution_batch_max_rows": None,
+        "feature_vjp_tape_batch_window": 1,
+        "feature_vjp_tape_max_bytes": 0,
+        "decoder_page_prefetch_depth": 0,
+        "decoder_active_row_residency": False,
+        "decoder_active_row_residency_requirement": "preferred",
+        "decoder_active_row_max_bytes": 0,
+        "decoder_active_row_safety_margin_bytes": 0,
+        "phase0_decoder_row_ranges": False,
+        "diagnostic_stop_mode": "none",
+        "diagnostic_stop_phase4_batches": None,
+        "full_retention_backend": "full_file",
+        "feature_row_column_tile_size": 2048,
+        "influence_row_tile_size": 4096,
+        "influence_column_tile_size": 2048,
+        "feature_row_retention": "full_file",
+        "replay_tile_cache_bytes": None,
+        "feature_row_influence_mode": "cpu_exact",
+        "feature_row_influence_requirement": "preferred",
+        "feature_row_gpu_resident_max_bytes": 0,
+        "feature_row_gpu_window_max_bytes": 0,
+        "feature_row_gpu_resident_safety_margin_bytes": 0,
         "exact_encoder_residency": "lazy",
         "exact_trace_internal_dtype": "fp32",
+        "governor_admission_mode": "enforce",
+        "runtime_resource_policy": "off",
+        "resource_planning_envelope": {},
         "phase0_activation_threshold_compare_mode": "baseline",
         "plan_feature_batch_size": False,
         "auto_scale_feature_batch_size": False,
@@ -87,6 +124,7 @@ def base_trace_defaults() -> dict[str, Any]:
         "phase0_window_reference_checks": "off",
         "cross_cluster_debug": False,
         "telemetry_max_events": None,
+        "incremental_telemetry_jsonl": False,
         "max_steps": 1,
         "method": "exact",
     }

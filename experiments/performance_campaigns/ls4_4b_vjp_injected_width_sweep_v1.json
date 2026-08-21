@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "campaign_id": "ls4-gemma3-4b-vjp-injected-width-sweep-v1",
+  "description": "Frozen eight-width 4B/256 Phase-3-stop diagnostic. Every arm retains duplicated_lanes plus NNSight injection and required cuda_windowed execution while configured Phase-1, Phase-3, and unexecuted Phase-4 caps remain one. NNSight session capacity, duplicated forward-graph lane count, and injected backward capacity are structurally coupled as one width factor in the current runtime.",
+  "execution_policy": {
+    "ordered_profile_roles": [
+      "width128_caps1",
+      "width64_caps1",
+      "width32_caps1",
+      "width16_caps1",
+      "width8_caps1",
+      "width4_caps1",
+      "width2_caps1",
+      "width1_caps1"
+    ],
+    "advance_only_after_classification": true,
+    "phase3_probe_required": true,
+    "phase4_execution_forbidden": true,
+    "scheduler_walltime_ceiling_seconds": 3600,
+    "stop_on_required_mode_mismatch": true,
+    "stop_on_missing_capture": true,
+    "stop_on_fidelity_failure": false,
+    "full_scaling_blocked_until_localized": true,
+    "diagnostic_only_no_promotion": true,
+    "experimental_protocol": {
+      "single_allocation_required": true,
+      "endpoint_repeat_sequence": [
+        "width128_caps1",
+        "width1_caps1",
+        "width1_caps1",
+        "width128_caps1"
+      ],
+      "endpoint_gate": "Advance only when the within-width repeat spread is much smaller than the between-width effect and the between-width gradient effect is present in all 34 layers.",
+      "middle_width_sequence_after_gate": [
+        "width2_caps1",
+        "width64_caps1",
+        "width4_caps1",
+        "width32_caps1",
+        "width8_caps1",
+        "width16_caps1"
+      ],
+      "stop_if_endpoint_gate_fails": true
+    }
+  },
+  "workloads": [
+    {
+      "workload_id": "ls4-vjp-injected-width-sweep-4b-361-dev-256",
+      "preparation_status": "frozen",
+      "fixture": {
+        "catalog": "experiments/generated/performance_campaigns/ls0/fixture_catalog.json",
+        "catalog_sha256": "4ba856c8f0964a06834343990d905413f16f56b8331c29b5bb6ebc7aed758fb7",
+        "fixture_name": "361_length_v1",
+        "prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt",
+        "prompt_sha256": "938319d4a0c5740d60f31ec015bdba975e7952670a3d94e5b7438f7fff7648ee"
+      },
+      "model": {"variant": "gemma3_4b", "provider": "plt"},
+      "prompt": {"family": "gsm8k_361_length_v1", "role": "development"},
+      "trajectory": {
+        "trajectory_id": "ls0-gemma3-1b-361-greedy-v1",
+        "path": "experiments/generated/performance_campaigns/ls0/361_trajectory.json",
+        "sha256": "fc59c4512187a8b40fbfc62c5fadf0d0b5c2228ff35890a30b567fa9e64e158e"
+      },
+      "prefix": {
+        "requested_tokens": 256,
+        "actual_tokens": 256,
+        "token_ids_sha256": "cfee207d0bce712e77190bcf4a7dbc4a0c69e410602a89bd5c5462794fa1d983"
+      },
+      "target": {"absolute_position": 256, "token_id": 236751, "token_text": "s"},
+      "operational_class": "sweep",
+      "profiles": {
+        "width128_caps1": "ls4-4b-vjp-diagnostic-injected-width-128-caps-1-v1",
+        "width64_caps1": "ls4-4b-vjp-diagnostic-injected-width-64-caps-1-v1",
+        "width32_caps1": "ls4-4b-vjp-diagnostic-injected-width-32-caps-1-v1",
+        "width16_caps1": "ls4-4b-vjp-diagnostic-injected-width-16-caps-1-v1",
+        "width8_caps1": "ls4-4b-vjp-diagnostic-injected-width-8-caps-1-v1",
+        "width4_caps1": "ls4-4b-vjp-diagnostic-injected-width-4-caps-1-v1",
+        "width2_caps1": "ls4-4b-vjp-diagnostic-injected-width-2-caps-1-v1",
+        "width1_caps1": "ls4-4b-vjp-diagnostic-injected-width-1-caps-1-v1"
+      },
+      "run_disposition": "endpoint_repeat_gate_then_six_middle_widths_in_one_preheated_allocation",
+      "resource_envelope": {
+        "gpu": "NVIDIA H200",
+        "gpu_count": 1,
+        "host_memory_stop_gib": 400,
+        "host_rss_stop_gib": 300,
+        "hbm_peak_fraction_max": 0.9,
+        "walltime_seconds": 3600
+      },
+      "comparison_policy": {
+        "diagnostic_model": "repeated_endpoints_then_interleaved_structural_width_response",
+        "claim_boundary": "width128_caps1 through width1_caps1 keep the configured Phase-1, Phase-3, and Phase-4 caps at 1 and vary one structural width factor. That factor jointly comprises nnsight_session_capacity, duplicated forward-graph lane count, the actual Phase-1 trace width selected from it, and injected backward capacity; the runtime does not independently isolate those components. Phase-3 target count is one, so its microbatch cap is inert here, and Phase 4 is not executed. These captures localize a structural-width response but do not identify one stage or establish Phase-4 or compact-graph fidelity.",
+        "promotion_boundary": "Diagnostic results cannot promote fidelity, performance, launch defaults, or scaling readiness. Capture overhead makes timing non-comparable to ordinary traces, and any candidate mechanism requires a separate matched full-trace qualification.",
+        "required_feature_row_influence_mode": "cuda_windowed",
+        "feature_row_influence_requirement": "required",
+        "runtime_resource_policy": "measure_only",
+        "fixed_mechanism": {
+          "backward_engine_mode": "duplicated_lanes",
+          "forward_graph_mode": "logical_capacity",
+          "vjp_kernel_mode": "nnsight_injected"
+        },
+        "arms": {
+          "width128_caps1": {"backward_engine_mode": "duplicated_lanes", "forward_graph_mode": "logical_capacity", "vjp_kernel_mode": "nnsight_injected", "forward_lane_count": 128, "physical_caps": {"nnsight_session_capacity": 128, "phase1_trace_batch_size_max": 1, "phase3_compute_microbatch_max_rows": 1, "phase4_execution_batch_max_rows": 1}},
+          "width64_caps1": {"backward_engine_mode": "duplicated_lanes", "forward_graph_mode": "logical_capacity", "vjp_kernel_mode": "nnsight_injected", "forward_lane_count": 64, "physical_caps": {"nnsight_session_capacity": 64, "phase1_trace_batch_size_max": 1, "phase3_compute_microbatch_max_rows": 1, "phase4_execution_batch_max_rows": 1}},
+          "width32_caps1": {"backward_engine_mode": "duplicated_lanes", "forward_graph_mode": "logical_capacity", "vjp_kernel_mode": "nnsight_injected", "forward_lane_count": 32, "physical_caps": {"nnsight_session_capacity": 32, "phase1_trace_batch_size_max": 1, "phase3_compute_microbatch_max_rows": 1, "phase4_execution_batch_max_rows": 1}},
+          "width16_caps1": {"backward_engine_mode": "duplicated_lanes", "forward_graph_mode": "logical_capacity", "vjp_kernel_mode": "nnsight_injected", "forward_lane_count": 16, "physical_caps": {"nnsight_session_capacity": 16, "phase1_trace_batch_size_max": 1, "phase3_compute_microbatch_max_rows": 1, "phase4_execution_batch_max_rows": 1}},
+          "width8_caps1": {"backward_engine_mode": "duplicated_lanes", "forward_graph_mode": "logical_capacity", "vjp_kernel_mode": "nnsight_injected", "forward_lane_count": 8, "physical_caps": {"nnsight_session_capacity": 8, "phase1_trace_batch_size_max": 1, "phase3_compute_microbatch_max_rows": 1, "phase4_execution_batch_max_rows": 1}},
+          "width4_caps1": {"backward_engine_mode": "duplicated_lanes", "forward_graph_mode": "logical_capacity", "vjp_kernel_mode": "nnsight_injected", "forward_lane_count": 4, "physical_caps": {"nnsight_session_capacity": 4, "phase1_trace_batch_size_max": 1, "phase3_compute_microbatch_max_rows": 1, "phase4_execution_batch_max_rows": 1}},
+          "width2_caps1": {"backward_engine_mode": "duplicated_lanes", "forward_graph_mode": "logical_capacity", "vjp_kernel_mode": "nnsight_injected", "forward_lane_count": 2, "physical_caps": {"nnsight_session_capacity": 2, "phase1_trace_batch_size_max": 1, "phase3_compute_microbatch_max_rows": 1, "phase4_execution_batch_max_rows": 1}},
+          "width1_caps1": {"backward_engine_mode": "duplicated_lanes", "forward_graph_mode": "logical_capacity", "vjp_kernel_mode": "nnsight_injected", "forward_lane_count": 1, "physical_caps": {"nnsight_session_capacity": 1, "phase1_trace_batch_size_max": 1, "phase3_compute_microbatch_max_rows": 1, "phase4_execution_batch_max_rows": 1}}
+        },
+        "required_capture_flags": [
+          "capture_phase0_donor_bundle",
+          "capture_phase3_gradient_bundle",
+          "capture_phase3_row_bundle",
+          "capture_phase3_seed_bundle"
+        ],
+        "comparison_order": [
+          "phase0_active_support",
+          "phase0_activation_values",
+          "phase1_target_state",
+          "phase3_raw_gradients",
+          "phase3_normalized_feature_rows",
+          "phase3_nonfeature_error_abs_sums",
+          "phase3_total_row_denominators",
+          "phase3_seed_influences_and_frontier"
+        ],
+        "fidelity": "diagnostic_localization_only"
+      }
+    }
+  ]
+}

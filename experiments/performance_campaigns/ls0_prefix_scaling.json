@@ -1,0 +1,431 @@
+{
+  "schema_version": 1,
+  "campaign_id": "ls0-361-length-scaling-v1",
+  "description": "A frozen Gemma 3 1B PLT development length ladder plus two canonical held-out prompt families at 256 and 512 tokens, all generated greedily before LS tuning.",
+  "workloads": [
+    {
+      "workload_id": "ls0-361-dev-129",
+      "preparation_status": "frozen",
+      "fixture": {
+        "catalog": "experiments/generated/performance_campaigns/ls0/fixture_catalog.json",
+        "catalog_sha256": "4ba856c8f0964a06834343990d905413f16f56b8331c29b5bb6ebc7aed758fb7",
+        "fixture_name": "361_length_v1",
+        "prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt",
+        "prompt_sha256": "938319d4a0c5740d60f31ec015bdba975e7952670a3d94e5b7438f7fff7648ee"
+      },
+      "model": {
+        "variant": "gemma3_1b",
+        "provider": "plt"
+      },
+      "prompt": {
+        "family": "gsm8k_361_length_v1",
+        "role": "development"
+      },
+      "trajectory": {
+        "trajectory_id": "ls0-gemma3-1b-361-greedy-v1",
+        "path": "experiments/generated/performance_campaigns/ls0/361_trajectory.json",
+        "sha256": "fc59c4512187a8b40fbfc62c5fadf0d0b5c2228ff35890a30b567fa9e64e158e"
+      },
+      "prefix": {
+        "requested_tokens": 129,
+        "actual_tokens": 129,
+        "token_ids_sha256": "43544860d20d475fd848f26d50d696fa1e98b0a5d89279afae67001e9881f2d9"
+      },
+      "target": {
+        "absolute_position": 129,
+        "token_id": 19058,
+        "token_text": "Okay"
+      },
+      "operational_class": "sweep",
+      "profiles": {
+        "control": "sp5-canonical-phase0-reference-plt-v1",
+        "candidate": "sp5-selective-phase0-finalist-plt-v1"
+      },
+      "run_disposition": "full_reference",
+      "resource_envelope": {
+        "gpu": "NVIDIA H200",
+        "gpu_count": 1,
+        "host_memory_stop_gib": 200,
+        "host_rss_stop_gib": 64,
+        "hbm_peak_fraction_max": 0.9,
+        "walltime_seconds": 3600
+      },
+      "comparison_policy": {
+        "fidelity": "canonical_taxonomy_classified_separately",
+        "mechanism_control": "mapped_lazy_cpu_exact",
+        "probe_before_full": false
+      }
+    },
+    {
+      "workload_id": "ls0-361-dev-256",
+      "preparation_status": "frozen",
+      "fixture": {
+        "catalog": "experiments/generated/performance_campaigns/ls0/fixture_catalog.json",
+        "catalog_sha256": "4ba856c8f0964a06834343990d905413f16f56b8331c29b5bb6ebc7aed758fb7",
+        "fixture_name": "361_length_v1",
+        "prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt",
+        "prompt_sha256": "938319d4a0c5740d60f31ec015bdba975e7952670a3d94e5b7438f7fff7648ee"
+      },
+      "model": {
+        "variant": "gemma3_1b",
+        "provider": "plt"
+      },
+      "prompt": {
+        "family": "gsm8k_361_length_v1",
+        "role": "development"
+      },
+      "trajectory": {
+        "trajectory_id": "ls0-gemma3-1b-361-greedy-v1",
+        "path": "experiments/generated/performance_campaigns/ls0/361_trajectory.json",
+        "sha256": "fc59c4512187a8b40fbfc62c5fadf0d0b5c2228ff35890a30b567fa9e64e158e"
+      },
+      "prefix": {
+        "requested_tokens": 256,
+        "actual_tokens": 256,
+        "token_ids_sha256": "cfee207d0bce712e77190bcf4a7dbc4a0c69e410602a89bd5c5462794fa1d983"
+      },
+      "target": {
+        "absolute_position": 256,
+        "token_id": 236751,
+        "token_text": "s"
+      },
+      "operational_class": "sweep",
+      "profiles": {
+        "control": "sp5-canonical-phase0-reference-plt-v1",
+        "candidate": "sp5-selective-phase0-finalist-plt-v1"
+      },
+      "run_disposition": "full_reference",
+      "resource_envelope": {
+        "gpu": "NVIDIA H200",
+        "gpu_count": 1,
+        "host_memory_stop_gib": 200,
+        "host_rss_stop_gib": 64,
+        "hbm_peak_fraction_max": 0.9,
+        "walltime_seconds": 7200
+      },
+      "comparison_policy": {
+        "fidelity": "canonical_taxonomy_classified_separately",
+        "mechanism_control": "mapped_lazy_cpu_exact",
+        "probe_before_full": false
+      }
+    },
+    {
+      "workload_id": "ls0-361-dev-512",
+      "preparation_status": "frozen",
+      "fixture": {
+        "catalog": "experiments/generated/performance_campaigns/ls0/fixture_catalog.json",
+        "catalog_sha256": "4ba856c8f0964a06834343990d905413f16f56b8331c29b5bb6ebc7aed758fb7",
+        "fixture_name": "361_length_v1",
+        "prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt",
+        "prompt_sha256": "938319d4a0c5740d60f31ec015bdba975e7952670a3d94e5b7438f7fff7648ee"
+      },
+      "model": {
+        "variant": "gemma3_1b",
+        "provider": "plt"
+      },
+      "prompt": {
+        "family": "gsm8k_361_length_v1",
+        "role": "development"
+      },
+      "trajectory": {
+        "trajectory_id": "ls0-gemma3-1b-361-greedy-v1",
+        "path": "experiments/generated/performance_campaigns/ls0/361_trajectory.json",
+        "sha256": "fc59c4512187a8b40fbfc62c5fadf0d0b5c2228ff35890a30b567fa9e64e158e"
+      },
+      "prefix": {
+        "requested_tokens": 512,
+        "actual_tokens": 512,
+        "token_ids_sha256": "8a01ec6a0f7fe0f91a1ebf8c489f258af140086aac7db35eccb2e0016091b78b"
+      },
+      "target": {
+        "absolute_position": 512,
+        "token_id": 33036,
+        "token_text": " travels"
+      },
+      "operational_class": "long_trace",
+      "profiles": {
+        "control": "sp5-canonical-phase0-reference-plt-v1",
+        "candidate": "sp5-selective-phase0-finalist-plt-v1"
+      },
+      "run_disposition": "probe_then_full",
+      "resource_envelope": {
+        "gpu": "NVIDIA H200",
+        "gpu_count": 1,
+        "host_memory_stop_gib": 200,
+        "host_rss_stop_gib": 64,
+        "hbm_peak_fraction_max": 0.9,
+        "walltime_seconds": 14400
+      },
+      "comparison_policy": {
+        "fidelity": "canonical_taxonomy_classified_separately",
+        "mechanism_control": "mapped_lazy_cpu_exact",
+        "probe_before_full": true
+      }
+    },
+    {
+      "workload_id": "ls0-361-dev-1024",
+      "preparation_status": "frozen",
+      "fixture": {
+        "catalog": "experiments/generated/performance_campaigns/ls0/fixture_catalog.json",
+        "catalog_sha256": "4ba856c8f0964a06834343990d905413f16f56b8331c29b5bb6ebc7aed758fb7",
+        "fixture_name": "361_length_v1",
+        "prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt",
+        "prompt_sha256": "938319d4a0c5740d60f31ec015bdba975e7952670a3d94e5b7438f7fff7648ee"
+      },
+      "model": {
+        "variant": "gemma3_1b",
+        "provider": "plt"
+      },
+      "prompt": {
+        "family": "gsm8k_361_length_v1",
+        "role": "development"
+      },
+      "trajectory": {
+        "trajectory_id": "ls0-gemma3-1b-361-greedy-v1",
+        "path": "experiments/generated/performance_campaigns/ls0/361_trajectory.json",
+        "sha256": "fc59c4512187a8b40fbfc62c5fadf0d0b5c2228ff35890a30b567fa9e64e158e"
+      },
+      "prefix": {
+        "requested_tokens": 1024,
+        "actual_tokens": 1024,
+        "token_ids_sha256": "75346f1791031a997292f1b625eda54d86cdc28244f811658f343f1ef9fa9625"
+      },
+      "target": {
+        "absolute_position": 1024,
+        "token_id": 9338,
+        "token_text": " journey"
+      },
+      "operational_class": "long_trace",
+      "profiles": {
+        "control": "sp5-canonical-phase0-reference-plt-v1",
+        "candidate": "sp5-selective-phase0-finalist-plt-v1"
+      },
+      "run_disposition": "probe_then_full",
+      "resource_envelope": {
+        "gpu": "NVIDIA H200",
+        "gpu_count": 1,
+        "host_memory_stop_gib": 200,
+        "host_rss_stop_gib": 64,
+        "hbm_peak_fraction_max": 0.9,
+        "walltime_seconds": 28800
+      },
+      "comparison_policy": {
+        "fidelity": "canonical_taxonomy_classified_separately",
+        "mechanism_control": "mapped_lazy_cpu_exact",
+        "probe_before_full": true
+      }
+    },
+    {
+      "workload_id": "ls0-828-holdout-256",
+      "preparation_status": "frozen",
+      "fixture": {
+        "catalog": "experiments/generated/weekend_exact_chunked_fixtures/fixture_catalog.json",
+        "catalog_sha256": "224081bd65f626881ef3cbed4277f8b3ee4b408b9d91c11828270ea0371b961d",
+        "fixture_name": "828_base",
+        "prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/828_base/prompt.txt",
+        "prompt_sha256": "839f0b2e3a6b92e463fdc6f2b9c77445dfd8ab4f1ab826975a1c0a185bc9eb0b"
+      },
+      "model": {
+        "variant": "gemma3_1b",
+        "provider": "plt"
+      },
+      "prompt": {
+        "family": "gsm8k_828_base",
+        "role": "holdout"
+      },
+      "trajectory": {
+        "trajectory_id": "ls0-gemma3-1b-828-greedy-v1",
+        "path": "experiments/generated/performance_campaigns/ls0/828_trajectory.json",
+        "sha256": "dcdf3058d1db652396a7d368169367f32458d2782c3c96c7cb77d9f309eb5874"
+      },
+      "prefix": {
+        "requested_tokens": 256,
+        "actual_tokens": 256,
+        "token_ids_sha256": "bbaf238f231c3057e41445fc5415dc0411e5a3a5e96f442db8c565487846fadd"
+      },
+      "target": {
+        "absolute_position": 256,
+        "token_id": 5676,
+        "token_text": " negative"
+      },
+      "operational_class": "sweep",
+      "profiles": {
+        "control": "sp5-canonical-phase0-reference-plt-v1",
+        "candidate": "sp5-selective-phase0-finalist-plt-v1"
+      },
+      "run_disposition": "heldout_reference",
+      "resource_envelope": {
+        "gpu": "NVIDIA H200",
+        "gpu_count": 1,
+        "host_memory_stop_gib": 200,
+        "host_rss_stop_gib": 64,
+        "hbm_peak_fraction_max": 0.9,
+        "walltime_seconds": 7200
+      },
+      "comparison_policy": {
+        "fidelity": "canonical_taxonomy_classified_separately",
+        "mechanism_control": "mapped_lazy_cpu_exact",
+        "probe_before_full": false
+      }
+    },
+    {
+      "workload_id": "ls0-94-holdout-256",
+      "preparation_status": "frozen",
+      "fixture": {
+        "catalog": "experiments/generated/weekend_exact_chunked_fixtures/fixture_catalog.json",
+        "catalog_sha256": "224081bd65f626881ef3cbed4277f8b3ee4b408b9d91c11828270ea0371b961d",
+        "fixture_name": "94_base",
+        "prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/94_base/prompt.txt",
+        "prompt_sha256": "a439b471fbc3c569aace34b2214408e87493c48542c666250caacbc50a2a5a01"
+      },
+      "model": {
+        "variant": "gemma3_1b",
+        "provider": "plt"
+      },
+      "prompt": {
+        "family": "gsm8k_94_base",
+        "role": "holdout"
+      },
+      "trajectory": {
+        "trajectory_id": "ls0-gemma3-1b-94-greedy-v1",
+        "path": "experiments/generated/performance_campaigns/ls0/94_trajectory.json",
+        "sha256": "705edd8e21620e43c1b6105628aeac03f409d112adc6f6c0e61ad7767794ed0f"
+      },
+      "prefix": {
+        "requested_tokens": 256,
+        "actual_tokens": 256,
+        "token_ids_sha256": "fde531c0fcd23a9614f5382ebb3a5c916db0ae7087fb2220c3b977bdb6a8fc2b"
+      },
+      "target": {
+        "absolute_position": 256,
+        "token_id": 506,
+        "token_text": " the"
+      },
+      "operational_class": "sweep",
+      "profiles": {
+        "control": "sp5-canonical-phase0-reference-plt-v1",
+        "candidate": "sp5-selective-phase0-finalist-plt-v1"
+      },
+      "run_disposition": "heldout_reference",
+      "resource_envelope": {
+        "gpu": "NVIDIA H200",
+        "gpu_count": 1,
+        "host_memory_stop_gib": 200,
+        "host_rss_stop_gib": 64,
+        "hbm_peak_fraction_max": 0.9,
+        "walltime_seconds": 7200
+      },
+      "comparison_policy": {
+        "fidelity": "canonical_taxonomy_classified_separately",
+        "mechanism_control": "mapped_lazy_cpu_exact",
+        "probe_before_full": false
+      }
+    },
+    {
+      "workload_id": "ls0-828-holdout-512",
+      "preparation_status": "frozen",
+      "fixture": {
+        "catalog": "experiments/generated/weekend_exact_chunked_fixtures/fixture_catalog.json",
+        "catalog_sha256": "224081bd65f626881ef3cbed4277f8b3ee4b408b9d91c11828270ea0371b961d",
+        "fixture_name": "828_base",
+        "prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/828_base/prompt.txt",
+        "prompt_sha256": "839f0b2e3a6b92e463fdc6f2b9c77445dfd8ab4f1ab826975a1c0a185bc9eb0b"
+      },
+      "model": {
+        "variant": "gemma3_1b",
+        "provider": "plt"
+      },
+      "prompt": {
+        "family": "gsm8k_828_base",
+        "role": "holdout"
+      },
+      "trajectory": {
+        "trajectory_id": "ls0-gemma3-1b-828-greedy-long-v1",
+        "path": "experiments/generated/performance_campaigns/ls0/828_long_trajectory.json",
+        "sha256": "8c5991853c19c8661120222858983fc41cbf4d92d16d37e02839134de1bd6d83"
+      },
+      "prefix": {
+        "requested_tokens": 512,
+        "actual_tokens": 512,
+        "token_ids_sha256": "dd7fba1eb96328d9eb0c5320cd0ab966d5e23e6aebf83721f957ec90c542eac8"
+      },
+      "target": {
+        "absolute_position": 512,
+        "token_id": 609,
+        "token_text": " $"
+      },
+      "operational_class": "long_trace",
+      "profiles": {
+        "control": "sp5-canonical-phase0-reference-plt-v1",
+        "candidate": "sp5-selective-phase0-finalist-plt-v1"
+      },
+      "run_disposition": "heldout_probe_then_full",
+      "resource_envelope": {
+        "gpu": "NVIDIA H200",
+        "gpu_count": 1,
+        "host_memory_stop_gib": 200,
+        "host_rss_stop_gib": 64,
+        "hbm_peak_fraction_max": 0.9,
+        "walltime_seconds": 14400
+      },
+      "comparison_policy": {
+        "fidelity": "canonical_taxonomy_classified_separately",
+        "mechanism_control": "mapped_lazy_cpu_exact",
+        "probe_before_full": true
+      }
+    },
+    {
+      "workload_id": "ls0-94-holdout-512",
+      "preparation_status": "frozen",
+      "fixture": {
+        "catalog": "experiments/generated/weekend_exact_chunked_fixtures/fixture_catalog.json",
+        "catalog_sha256": "224081bd65f626881ef3cbed4277f8b3ee4b408b9d91c11828270ea0371b961d",
+        "fixture_name": "94_base",
+        "prompt_file": "experiments/generated/weekend_exact_chunked_fixtures/94_base/prompt.txt",
+        "prompt_sha256": "a439b471fbc3c569aace34b2214408e87493c48542c666250caacbc50a2a5a01"
+      },
+      "model": {
+        "variant": "gemma3_1b",
+        "provider": "plt"
+      },
+      "prompt": {
+        "family": "gsm8k_94_base",
+        "role": "holdout"
+      },
+      "trajectory": {
+        "trajectory_id": "ls0-gemma3-1b-94-greedy-long-v1",
+        "path": "experiments/generated/performance_campaigns/ls0/94_long_trajectory.json",
+        "sha256": "7a761dc9d35dd7207551c42581892167b0f280c7bd7e3e7005195ab10119d859"
+      },
+      "prefix": {
+        "requested_tokens": 512,
+        "actual_tokens": 512,
+        "token_ids_sha256": "d371accf9d7fce260abc8ece2de99351c97b488faf64e63ede858845a4b69f5f"
+      },
+      "target": {
+        "absolute_position": 512,
+        "token_id": 563,
+        "token_text": " is"
+      },
+      "operational_class": "long_trace",
+      "profiles": {
+        "control": "sp5-canonical-phase0-reference-plt-v1",
+        "candidate": "sp5-selective-phase0-finalist-plt-v1"
+      },
+      "run_disposition": "heldout_probe_then_full",
+      "resource_envelope": {
+        "gpu": "NVIDIA H200",
+        "gpu_count": 1,
+        "host_memory_stop_gib": 200,
+        "host_rss_stop_gib": 64,
+        "hbm_peak_fraction_max": 0.9,
+        "walltime_seconds": 14400
+      },
+      "comparison_policy": {
+        "fidelity": "canonical_taxonomy_classified_separately",
+        "mechanism_control": "mapped_lazy_cpu_exact",
+        "probe_before_full": true
+      }
+    }
+  ]
+}

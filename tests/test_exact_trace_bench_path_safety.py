@@ -6,11 +6,42 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
-from nlp_research_project.exact_trace_bench import presets, workspace
+from nlp_research_project.exact_trace_bench import cli, presets, workspace
+from nlp_research_project.exact_trace_bench.fixtures import resolve_fixture
+from nlp_research_project.exact_trace_bench.scenarios.governor_calibration import (
+    build_governor_calibration_config,
+)
 
 
 def _fake_module(file_path: Path) -> SimpleNamespace:
     return SimpleNamespace(__file__=str(file_path))
+
+
+def test_wave_b_fallback_fixture_paths_are_snapshot_relative() -> None:
+    workspace_root = Path("/tmp/snapshot/workspace")
+    fixture = resolve_fixture("361_base", catalog_by_name={})
+
+    expected_root = Path("experiments/generated/weekend_exact_chunked_fixtures")
+    for path_text, expected_name in (
+        (fixture.prepared_prompt_file, "prompt.txt"),
+        (fixture.prepared_prompt_meta_file, "fixture_meta.json"),
+    ):
+        relative_path = Path(path_text)
+        assert not relative_path.is_absolute()
+        assert relative_path.parent == expected_root / "361_base"
+        assert relative_path.name == expected_name
+        assert (workspace_root / relative_path).resolve().is_relative_to(
+            workspace_root.resolve()
+        )
+
+    payload = build_governor_calibration_config(variant="gemma3_4b_plt")
+    for scenario in payload["scenarios"]:
+        for key in ("prepared_prompt_file", "prepared_prompt_meta_file"):
+            relative_path = Path(scenario[key])
+            assert not relative_path.is_absolute()
+            assert (workspace_root / relative_path).resolve().is_relative_to(
+                workspace_root.resolve()
+            )
 
 
 def test_verify_import_paths_prefers_workspace_src_and_reports_files(
@@ -40,8 +71,14 @@ def test_verify_import_paths_prefers_workspace_src_and_reports_files(
             )
         if name == "circuit_tracer":
             return _fake_module(library_root / "circuit_tracer" / "__init__.py")
-        if name == "trace_pipeline_chunked":
-            return _fake_module(library_root / "trace_pipeline_chunked" / "__init__.py")
+        if name == "nlp_research_project.exact_trace_bench.trace_runtime":
+            return _fake_module(
+                workspace_src
+                / "nlp_research_project"
+                / "exact_trace_bench"
+                / "trace_runtime"
+                / "__init__.py"
+            )
         raise AssertionError(f"Unexpected import: {name}")
 
     monkeypatch.setattr(importlib, "import_module", fake_import_module)
@@ -55,7 +92,7 @@ def test_verify_import_paths_prefers_workspace_src_and_reports_files(
     assert calls == [
         "nlp_research_project.exact_trace_bench",
         "circuit_tracer",
-        "trace_pipeline_chunked",
+        "nlp_research_project.exact_trace_bench.trace_runtime",
     ]
     assert sys.path[:3] == [
         str(workspace_src),
@@ -71,8 +108,14 @@ def test_verify_import_paths_prefers_workspace_src_and_reports_files(
     assert result["circuit_tracer_file"] == str(
         (library_root / "circuit_tracer" / "__init__.py").resolve()
     )
-    assert result["trace_pipeline_chunked_file"] == str(
-        (library_root / "trace_pipeline_chunked" / "__init__.py").resolve()
+    assert result["trace_runtime_file"] == str(
+        (
+            workspace_src
+            / "nlp_research_project"
+            / "exact_trace_bench"
+            / "trace_runtime"
+            / "__init__.py"
+        ).resolve()
     )
 
 
@@ -100,6 +143,125 @@ def test_verify_import_paths_rejects_exact_trace_bench_outside_workspace_src(
         assert "workspace_root/src" in str(exc)
     else:
         raise AssertionError("Expected ImportError for out-of-tree exact_trace_bench")
+
+
+def _make_mutable_snapshot(tmp_path: Path) -> tuple[Path, Path]:
+    source_root = tmp_path / "project"
+    sibling_root = tmp_path / "circuit-tracer_chunked"
+    source_root.mkdir()
+    sibling_root.mkdir()
+    (source_root / "src").mkdir()
+    (source_root / "pyproject.toml").write_text(
+        "[tool.uv.sources]\n"
+        'circuit-tracer = { path = "../circuit-tracer_chunked", editable = true }\n',
+        encoding="utf-8",
+    )
+    (sibling_root / "library.py").write_text("VALUE = 1\n", encoding="utf-8")
+    snapshot = workspace.create_workspace_snapshot(
+        snapshot_root=tmp_path / "snapshots",
+        source_root=source_root,
+        read_only=False,
+    )
+    library_snapshot = workspace.sibling_library_root(snapshot)
+    assert library_snapshot is not None
+    return snapshot, library_snapshot
+
+
+def test_make_snapshot_read_only_updates_manifest_before_freezing(tmp_path: Path) -> None:
+    snapshot, _ = _make_mutable_snapshot(tmp_path)
+
+    workspace.make_snapshot_read_only(snapshot)
+
+    manifest = workspace.load_snapshot_manifest(snapshot)
+    assert manifest["read_only"] is True
+    assert snapshot.stat().st_mode & 0o222 == 0
+    assert workspace._manifest_path_for_workspace(snapshot).stat().st_mode & 0o222 == 0
+
+
+def test_validate_launch_snapshot_returns_provenance(tmp_path: Path) -> None:
+    snapshot, library_snapshot = _make_mutable_snapshot(tmp_path)
+    workspace.make_snapshot_read_only(snapshot)
+
+    provenance = workspace.validate_launch_snapshot(
+        workspace_root=snapshot,
+        library_root=library_snapshot,
+        import_roots=(snapshot / "src", snapshot, library_snapshot),
+    )
+
+    assert provenance["workspace_mode"] == "immutable"
+    assert provenance["workspace_root"] == str(snapshot.resolve())
+    assert provenance["library_workspace_root"] == str(library_snapshot.resolve())
+    assert provenance["read_only"] is True
+
+
+def test_validate_launch_snapshot_rejects_invalid_roots_and_manifest(
+    tmp_path: Path,
+) -> None:
+    snapshot, library_snapshot = _make_mutable_snapshot(tmp_path)
+    try:
+        workspace.validate_launch_snapshot(
+            workspace_root=snapshot,
+            library_root=library_snapshot,
+        )
+    except ValueError as exc:
+        assert "writable" in str(exc) or "read_only" in str(exc)
+    else:
+        raise AssertionError("Expected mutable snapshot validation to fail")
+
+    workspace.make_snapshot_read_only(snapshot)
+    try:
+        workspace.validate_launch_snapshot(
+            workspace_root=snapshot,
+            library_root=library_snapshot,
+            import_roots=(tmp_path / "outside",),
+        )
+    except ValueError as exc:
+        assert "outside supplied snapshot roots" in str(exc)
+    else:
+        raise AssertionError("Expected out-of-tree import root validation to fail")
+
+
+def test_launch_plan_cli_defaults_immutable_and_supports_live_alias(tmp_path: Path) -> None:
+    parser = cli.build_parser()
+    immutable = parser.parse_args(
+        [
+            "launch-plan",
+            "--cluster",
+            "granite",
+            "--scenarios-file",
+            str(tmp_path / "scenarios.json"),
+        ]
+    )
+    assert immutable.immutable_workspace is True
+    assert immutable.mem is None
+
+    memory_override = parser.parse_args(
+        [
+            "launch-plan",
+            "--cluster",
+            "granite",
+            "--scenarios-file",
+            str(tmp_path / "scenarios.json"),
+            "--mem",
+            "600G",
+        ]
+    )
+    assert memory_override.mem == "600G"
+
+    live = parser.parse_args(
+        [
+            "launch-plan",
+            "--cluster",
+            "granite",
+            "--scenarios-file",
+            str(tmp_path / "scenarios.json"),
+            "--no-immutable-workspace",
+            "--live-workspace-rationale",
+            "interactive diagnosis",
+        ]
+    )
+    assert live.immutable_workspace is False
+    assert live.live_workspace_rationale == "interactive diagnosis"
 
 
 def test_run_preset_freezes_snapshot_before_submitting_jobs(

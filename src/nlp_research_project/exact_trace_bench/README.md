@@ -5,13 +5,13 @@ and immutable workspace snapshots.
 
 ## What is included
 
-- Canonical fixture tiers:
-  - base: `828_base`, `361_base`
-  - anomaly: `94_base`
+- Canonical base fixtures: `828_base`, `361_base`, `94_base`
+- Legacy scenario tiers retained for compatibility/provenance:
+  - historical anomaly: `94_base`
   - late: `828_late`, `361_late`, `94_late`
 - Scenario generation for three tiers: `fast`, `anomaly`, `long_eval`
 - Scratch-root defaults under:
-  - `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench`
+  - `/scratch/general/vast/$USER/nlp_research_project/exact_trace_bench`
 - Extraction/aggregation helpers for `result.json`, `run.log`, and SLURM logs
 - Compact graph comparison helpers for prompt94-style analysis (`step_*.npz`)
 - Immutable workspace snapshot helper for launch safety
@@ -45,7 +45,9 @@ Writes JSON configs to:
 - `experiments/generated/exact_trace_bench/`
 
 The generated-config index at `experiments/generated/README.md` distinguishes
-current canonical templates from historical one-off debug/sweep configs.
+reusable templates from historical one-off debug/sweep configs. New CHPC
+campaign placement uses operational classes even when a scenario still carries
+a legacy tier.
 
 ### 1.1) Prepare Wave 0 prompt fixtures
 
@@ -113,7 +115,10 @@ registry:
 
 `mode=metrics` writes comparison metrics without failing the run. `mode=gate`
 also evaluates numeric thresholds such as
-`overall_mean_weighted_edge_jaccard_min`.
+`overall_mean_weighted_edge_jaccard_min`. Compact summaries include
+`overall_mean_top256_edge_jaccard`, derived by independently ranking each
+step's edges before computing Top-256 Jaccard. Missing completion/step coverage
+or non-finite required summaries is always recorded as `compare_error`.
 
 Each self-scored scenario emits:
 
@@ -132,21 +137,21 @@ uv run exact-trace-bench build-baseline-registry \
   --run-id wave0-baseline-20260520-01 \
   --all-clusters \
   --all-tiers \
-  --output /fs/scratch/PAS2836/kopanev.1/exact_trace_bench/baselines/wave0-baseline-20260520-01.json
+  --output /scratch/general/vast/$USER/nlp_research_project/exact_trace_bench/baselines/wave0-baseline-20260520-01.json
 ```
 
 ### 1.5) Render a scratch-backed launch plan
 
 ```bash
 uv run exact-trace-bench launch-plan \
-  --cluster ascend \
-  --scenarios-file experiments/generated/exact_trace_bench/exact_trace_bench_fast_ascend_scenarios.json \
+  --cluster granite \
+  --scenarios-file experiments/generated/exact_trace_bench/exact_trace_bench_fast_granite_scenarios.json \
   --immutable-workspace
 ```
 
 This prints an `sbatch` command that uses:
 
-- a scratch output root under `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench/...`
+- a scratch output root under `/scratch/general/vast/$USER/nlp_research_project/exact_trace_bench/...`
   with an auto-generated run folder (`<base>/<timestamp>_<run_slug>`), so
   launches no longer collide when reusing the same tier/cluster base
 - and, optionally, an immutable workspace snapshot for `nnsight` safety.
@@ -155,9 +160,9 @@ You can attach run metadata for later extraction/disambiguation:
 
 ```bash
 uv run exact-trace-bench launch-plan \
-  --cluster ascend \
-  --scenarios-file experiments/generated/exact_trace_bench/exact_trace_bench_fast_ascend_scenarios.json \
-  --run-name "ascend fast sanity" \
+  --cluster granite \
+  --scenarios-file experiments/generated/exact_trace_bench/exact_trace_bench_fast_granite_scenarios.json \
+  --run-name "granite fast sanity" \
   --run-description "post-change smoke run" \
   --run-goal "confirm no launch collisions"
 ```
@@ -185,7 +190,7 @@ This matters in particular for:
 For the common workflows, you can skip the long commands and use either the CLI
 presets or the wrapper scripts in `scripts/`.
 
-Preset meanings:
+Legacy preset meanings:
 
 - `fast-*` = submit `fast` + `anomaly`
 - `full-*` = submit `fast` + `anomaly` + `long_eval`
@@ -193,7 +198,7 @@ Preset meanings:
 CLI form:
 
 ```bash
-uv run exact-trace-bench submit-preset --preset fast-ascend
+uv run exact-trace-bench submit-preset --preset fast-granite
 uv run exact-trace-bench submit-preset --preset full-all
 ```
 
@@ -213,15 +218,16 @@ scripts/archive/exact_trace_bench_full_all.sh
 
 Prefer the CLI form above for new runs. The archived wrappers call
 `uv run exact-trace-bench submit-preset ...` if you need compatibility.
-Preset submitters default to immutable workspace snapshots. Add
-`--no-immutable-workspace` if you intentionally want to run against the live tree,
-or `--print-only` to inspect the generated plans without calling `sbatch`.
+Preset submitters default to immutable workspace snapshots. A live-workspace
+launch is exceptional and must include the explicit override and rationale
+required by the current CLI; use `--print-only` to inspect plans without calling
+`sbatch`.
 
 ### 2) Extract benchmark tables
 
 ```bash
 uv run exact-trace-bench extract \
-  --input-root /fs/scratch/PAS2836/kopanev.1/exact_trace_bench \
+  --input-root /scratch/general/vast/$USER/nlp_research_project/exact_trace_bench \
   --output-dir experiments/extracted/exact_trace_bench \
   --logs-dir /path/to/benchmark/slurm/logs
 ```
@@ -266,12 +272,12 @@ such as:
 
 ```bash
 uv run exact-trace-bench verify-imports \
-  --workspace-root /fs/scratch/PAS2836/kopanev.1/exact_trace_bench/workspace_snapshots/<id>/nlp_research_project
+  --workspace-root /scratch/general/vast/$USER/nlp_research_project/exact_trace_bench/workspace_snapshots/<id>/nlp_research_project
 ```
 
 This prints the resolved import paths for:
 
-- `trace_pipeline_chunked`
+- `nlp_research_project.exact_trace_bench.trace_runtime`
 - `circuit_tracer`
 
 and is useful for checking that immutable runs will import the snapped library

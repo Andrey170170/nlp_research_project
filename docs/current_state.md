@@ -1,7 +1,7 @@
 # Current state overview
 
 Status: Current-state inventory
-Last updated: 2026-07-01
+Last updated: 2026-07-15
 
 This document is a descriptive workspace map, not a target architecture, rule
 set, or debt plan.
@@ -20,7 +20,7 @@ The current exact-trace workflow depends on both checkouts being present.
 | Status | Meaning |
 |---|---|
 | Authoritative | Current source-of-truth docs for contributor guidance, harness usage, and baseline interpretation |
-| Active specs | Live scratch/spec documents that describe ongoing work or near-term design choices |
+| Active plans/specs | Binding documents for ongoing work and near-term design choices |
 | Reports | Generated or scouting outputs; useful for inspection, not binding decisions |
 | Historical | Archived/superseded material kept for provenance only |
 
@@ -34,37 +34,62 @@ The current exact-trace workflow depends on both checkouts being present.
 | `EXPERIMENTS.md` | Compact baseline/index and current interpretation |
 | `docs/README.md` | Documentation index |
 | `docs/harness.md` | Current exact-bench harness overview |
+| `docs/memory_governor_rearchitecture_spec.md` | Current sibling governor/runtime target contract |
+| `docs/tracing_runtime_rewrite_spec.md` | Normative Phase C2 tracing-runtime target |
+| `plans/2026-07-03_governor_rearch.md` | Active gated Phase B-D, C2, E-F plan |
 | `docs/metric_calibration.md` | Metric calibration workflow |
 | `scripts/README.md` | Script entry-point notes |
 | `experiments/logs/README.md` | Structured experiment log guidance |
 | `src/nlp_research_project/exact_trace_bench/README.md` | Package-level harness notes |
 
-## Active specs and scratch docs
+## Active plan and specs
 
 | File | Role |
 |---|---|
 | `docs/current_project_roadmap.md` | Active scratch roadmap |
-| `docs/post_consolidation_cleanup_spec.md` | Cleanup strategy |
+| `docs/memory_governor_rearchitecture_spec.md` | Governor/runtime target contract |
+| `docs/tracing_runtime_rewrite_spec.md` | Phase C2 target architecture and work packages |
 | `docs/knob_api_taxonomy.md` | Knob/API taxonomy |
-| `docs/full_answer_harness_spec.md` | Full-answer harness design |
-| `docs/exact_trace_sweep_campaign_spec.md` | Sweep campaign plan |
-| `docs/tracing_profiling_spec.md` | Profiling/telemetry design |
-| `docs/phase4_scheduler_v2_spec.md` | Deferred scheduler-v2 proposal |
-| `docs/phase4_refresh_optimization_spec.md` | Phase-4 refresh optimization notes |
-| `docs/next_exact_optimization_paths_spec.md` | Optimization option map |
-| `docs/plt_clt_optimization_parity_spec.md` | PLT/CLT parity notes |
+| `plans/2026-07-03_governor_rearch.md` | Active gated Phase B-D, C2, E-F execution plan |
+
+## Reference and deferred designs
+
+| File | Role |
+|---|---|
+| `docs/post_consolidation_cleanup_spec.md` | Consolidation rationale; current roadmap supersedes its sequence |
+| `docs/tracing_profiling_spec.md` | Implemented telemetry schema/tooling reference |
+| `docs/phase4_refresh_optimization_spec.md` | Historical Phase-4 constraints and evidence |
+| `docs/phase4_scheduler_v2_spec.md` | Deferred scheduler design |
 
 ## Reports and historical material
 
 | Location | Role |
 |---|---|
 | `reports/**` | Generated/scouting outputs; inspect as evidence, not decisions |
-| `docs/history/**` | Archived/superseded docs for provenance |
+| `docs/history/**` | Archived/completed/superseded docs for provenance |
 
 ## Current workflow boundaries
 
-- The current fast fixtures are `828_base`, `361_base`, and `94_base`; `94_base`
-  also carries historical anomaly provenance.
+- The canonical base fixtures are `828_base`, `361_base`, and `94_base`; `94_base`
+  also carries historical anomaly provenance. New CHPC run placement uses
+  operational classes rather than those legacy scenario tiers.
+- Phase A is closed for implementation purposes. Phase B governor contracts and
+  the pure resolver are complete at sibling `phase-b-governor-contract@0ce3f96`.
+  Phase C1 structural runtime/observability extraction and its Granite gate are
+  complete. Phase D mechanism validation and the Phase C2 canonical runtime
+  rewrite are complete. Phase E staged governor execution and CPU gates are
+  complete: safety contracts, independent constrained search, staged phase cost
+  models, measured-unit refinement, and replay-cache ownership are wired.
+  The 1B Granite calibration and Phase-4 feedback diagnostic are complete. A
+  static Phase-4 coalescing correction passed its immutable 1B PLT gate:
+  semantic schedules, prepared frontiers, and compact topology were identical
+  at execution caps 128/256/512. The sibling implementation is
+  `phase-b-governor-contract@1ea7929`; dynamic refresh remains deferred. The
+  256-row execution cap is the current 1B PLT efficiency knee, while 512 remains
+  valid headroom. Wave B supplies 4B/12B resource, runtime, and fidelity
+  observations rather than one universal exact rung. The active work adds typed
+  calibration observations and exact/bounded/best-effort/research policy to the
+  staged solver before Wave C and Phase F consolidation.
 - Descriptive architecture details now live under `docs/architecture/`.
 - Current baseline decisions stay in `EXPERIMENTS.md`; active work stays in the owning spec.
 - Reports are not treated as source-of-truth unless a current doc explicitly cites them.

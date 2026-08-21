@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 
 from analyze import analyze_single_completion, load_completion_steps
-from circuit_utils import StepData
+from nlp_research_project.exact_trace_bench.compact_io import StepData
 
 
 def feature_jaccard(a: StepData, b: StepData) -> float:

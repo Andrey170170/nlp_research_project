@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "registry_id": "governor-calibration-granite-20260719",
+  "created_at": "2026-07-19",
+  "description": "Pinned corrected-hook Granite H200 361_base references for governor calibration self-scoring.",
+  "source_roots": [
+    "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03",
+    "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma3-12b-20260710-04"
+  ],
+  "entries": {
+    "governor_calibration/gemma3_1b_clt/361_base": {
+      "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03/gemma3_1b_clt/granite_baseline_gemma3_1b_clt_361_base_b1000_c4096_cache8g/artifacts",
+      "result_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03/gemma3_1b_clt/granite_baseline_gemma3_1b_clt_361_base_b1000_c4096_cache8g/result.json",
+      "expected_status": "success"
+    },
+    "governor_calibration/gemma3_1b_plt/361_base": {
+      "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03/gemma3_1b_plt/granite_baseline_gemma3_1b_plt_361_base_b128_c4096_cache0g/artifacts",
+      "result_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03/gemma3_1b_plt/granite_baseline_gemma3_1b_plt_361_base_b128_c4096_cache0g/result.json",
+      "expected_status": "success"
+    },
+    "governor_calibration/gemma3_4b_plt/361_base": {
+      "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03/gemma3_4b_plt/granite_baseline_gemma3_4b_plt_361_base_b128_c4096_cache0g/artifacts",
+      "result_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03/gemma3_4b_plt/granite_baseline_gemma3_4b_plt_361_base_b128_c4096_cache0g/result.json",
+      "expected_status": "success"
+    },
+    "governor_calibration/gemma3_12b_plt/361_base": {
+      "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma3-12b-20260710-04/granite_baseline_gemma3_12b_plt_361_base_b64_c4096_cache0g/artifacts",
+      "result_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma3-12b-20260710-04/granite_baseline_gemma3_12b_plt_361_base_b64_c4096_cache0g/result.json",
+      "expected_status": "success"
+    }
+  }
+}

@@ -1,20 +1,25 @@
 from __future__ import annotations
 
-import json
-import builtins
 import argparse
+import builtins
+import json
 import subprocess
 import sys
 import types
 from pathlib import Path
 from typing import Any, cast
 
+import numpy as np
+import pytest
+
+from nlp_research_project.exact_trace_bench import cli as full_answer_cli
+from nlp_research_project.exact_trace_bench import compact_io
+from nlp_research_project.exact_trace_bench.full_answer import runner as runner_module
 from nlp_research_project.exact_trace_bench.full_answer.aggregate import (
     aggregate_shards,
 )
-from nlp_research_project.exact_trace_bench import cli as full_answer_cli
 from nlp_research_project.exact_trace_bench.full_answer.runner import (
-    _attribute_performance_kwargs,
+    _trace_request,
     dry_run_shard,
     forced_target_payload,
     list_shard_specs,
@@ -26,9 +31,26 @@ from nlp_research_project.exact_trace_bench.full_answer.runner import (
     run_real_shard,
     session_reuse_metadata,
 )
+from nlp_research_project.exact_trace_bench.trace_runtime import provider
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PROJECT_ROOT / "src"
+
+
+def _stub_compact_packager(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runner_module,
+        "_compact_result_to_bucketed_compact",
+        lambda *_args, **_kwargs: types.SimpleNamespace(step={}),
+    )
+    monkeypatch.setattr(
+        compact_io,
+        "save_bucketed_compact",
+        lambda _bundle, path: (
+            Path(path).parent.mkdir(parents=True, exist_ok=True),
+            Path(path).write_text("graph"),
+        ),
+    )
 
 
 def _write_tiny_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -132,6 +154,20 @@ def test_dry_run_shard_writes_expected_files_and_metadata(tmp_path: Path) -> Non
     shard = json.loads((shard_dir / "shard.json").read_text(encoding="utf-8"))
     assert shard["target_positions"] == [3]
     assert (shard_dir / "trace_results.jsonl").exists()
+    selected = json.loads(
+        (shard_dir / "selected_execution.json").read_text(encoding="utf-8")
+    )
+    assert selected["selection_fingerprint"]
+    assert selected["selected_config"] == {"max_edges": 10}
+    assert selected["mechanism_selection"] == {
+        "feature_row_influence_mode": "cpu_exact",
+        "feature_row_influence_requirement": "preferred",
+        "backward_engine_mode": "duplicated_lanes",
+        "forward_graph_mode": "logical_capacity",
+        "vjp_kernel_mode": "nnsight_injected",
+        "forward_lane_count": None,
+        "backward_selection_source": "default",
+    }
 
 
 def test_list_mode_returns_specs_without_writing_token_dirs(tmp_path: Path) -> None:
@@ -146,72 +182,171 @@ def test_list_mode_returns_specs_without_writing_token_dirs(tmp_path: Path) -> N
     assert not (tmp_path / "shards").exists()
 
 
-def test_attribute_performance_kwargs_forward_safe_knobs() -> None:
-    kwargs = _attribute_performance_kwargs(
+def test_trace_request_builds_canonical_domain_policies(tmp_path: Path) -> None:
+    from circuit_tracer import TraceRequest
+
+    spec = cast(
+        Any,
         {
-            "row_subchunk_size": 128,
-            "plan_feature_batch_size": True,
-            "feature_batch_size_max": 512,
-            "phase4_scheduler_mode": "planner_v1",
-            "phase4_scheduler_telemetry_detail": "debug",
-            "phase4_refresh_optimization": "v1",
-            "phase4_refresh_prepared_chunk_cache_bytes": 0,
-            "phase4_refresh_active_row_accumulation": "direct_v1",
-            "phase4_row_executor": "streaming_v1",
-            "phase4_row_reduction": "gpu_v1",
-            "phase3_frontier_buffer_relative_epsilon": 0.01,
-            "phase3_frontier_buffer_max_extra": 256,
-            "phase4_frontier_buffer_relative_epsilon": 0.02,
-            "phase4_frontier_buffer_max_extra_per_refresh": 16,
-            "phase4_frontier_buffer_max_extra_total": 128,
-            "row_store_cache_control": "fadvise_dontneed_after_append_v1",
-            "row_store_preallocate": True,
-            "cross_cluster_debug": True,
-            "capture_phase0_donor_bundle": True,
-            "capture_phase3_seed_bundle": True,
-            "capture_feature_semantic_descriptors": True,
-            "semantic_descriptor_top_k": 1024,
-            "semantic_descriptor_dim": 32,
-            "decoder_chunk_size": 256,
-            "cross_batch_decoder_cache_bytes": 8589934592,
-            "feature_batch_size": None,
-            "chunked_feature_replay_window": 16,
-            "error_vector_prefetch_lookahead": 8,
-            "stage_encoder_vecs_on_cpu": False,
-            "stage_error_vectors_on_cpu": False,
-            "exact_encoder_residency": "active_pinned_cpu",
-        }
+            "target_token_id": 7,
+            "target_position": 3,
+            "graph_knobs": {
+                "row_subchunk_size": 128,
+                "plan_feature_batch_size": True,
+                "feature_batch_size_max": 512,
+                "feature_vjp_tape_batch_window": 2,
+                "feature_vjp_tape_max_bytes": 4096,
+                "decoder_page_prefetch_depth": 1,
+                "decoder_active_row_residency": True,
+                "decoder_active_row_max_bytes": 8192,
+                "phase0_decoder_row_ranges": True,
+                "transcoder_architecture": "plt",
+                "transcoder_provider_family": "gemmascope2-plt-1b-big-affine",
+                "phase4_scheduler_mode": "planner_v1",
+                "phase4_scheduler_telemetry_detail": "debug",
+                "phase4_refresh_optimization": "v1",
+                "phase4_refresh_prepared_chunk_cache_bytes": 0,
+                "phase4_refresh_active_row_accumulation": "direct_v1",
+                "phase4_row_executor": "streaming_v1",
+                "phase4_row_reduction": "gpu_v1",
+                "phase3_frontier_buffer_relative_epsilon": 0.01,
+                "phase3_frontier_buffer_max_extra": 256,
+                "phase4_frontier_buffer_relative_epsilon": 0.02,
+                "phase4_frontier_buffer_max_extra_per_refresh": 16,
+                "phase4_frontier_buffer_max_extra_total": 128,
+                "row_store_cache_control": "fadvise_dontneed_after_append_v1",
+                "row_store_preallocate": True,
+                "cross_cluster_debug": True,
+                "capture_phase0_donor_bundle": True,
+                "capture_phase3_seed_bundle": True,
+                "capture_feature_semantic_descriptors": True,
+                "semantic_descriptor_top_k": 1024,
+                "semantic_descriptor_dim": 32,
+                "decoder_chunk_size": 256,
+                "cross_batch_decoder_cache_bytes": 8589934592,
+                "feature_batch_size": None,
+                "chunked_feature_replay_window": 16,
+                "error_vector_prefetch_lookahead": 8,
+                "stage_encoder_vecs_on_cpu": False,
+                "stage_error_vectors_on_cpu": False,
+                "exact_encoder_residency": "active_cpu",
+                "phase1_trace_batch_policy": "cap_effective_batches",
+                "phase1_trace_batch_size_max": 16,
+                "backward_engine_mode": "single_forward_batched_vjp",
+                "feature_row_retention": "none_recompute",
+                "full_retention_backend": "column_tiled_v1",
+                "feature_row_influence_mode": "cuda_windowed",
+                "feature_row_influence_requirement": "required",
+                "feature_row_gpu_resident_max_bytes": 1024,
+                "feature_row_gpu_window_max_bytes": 2048,
+                "feature_row_gpu_resident_safety_margin_bytes": 4096,
+                "nnsight_session_capacity": 64,
+                "telemetry_max_events": 500,
+                "diagnostic_stop_mode": "transition_probe",
+                "diagnostic_stop_phase4_batches": 2,
+            },
+        },
     )
-    assert kwargs == {
-        "row_subchunk_size": 128,
-        "plan_feature_batch_size": True,
-        "feature_batch_size_max": 512,
-        "phase4_scheduler_mode": "planner_v1",
-        "phase4_scheduler_telemetry_detail": "debug",
-        "phase4_refresh_optimization": "v1",
-        "phase4_refresh_prepared_chunk_cache_bytes": 0,
-        "phase4_refresh_active_row_accumulation": "direct_v1",
-        "phase4_row_executor": "streaming_v1",
-        "phase4_row_reduction": "gpu_v1",
-        "phase3_frontier_buffer_relative_epsilon": 0.01,
-        "phase3_frontier_buffer_max_extra": 256,
-        "phase4_frontier_buffer_relative_epsilon": 0.02,
-        "phase4_frontier_buffer_max_extra_per_refresh": 16,
-        "phase4_frontier_buffer_max_extra_total": 128,
-        "row_store_cache_control": "fadvise_dontneed_after_append_v1",
-        "row_store_preallocate": True,
-        "chunked_feature_replay_window": 16,
-        "error_vector_prefetch_lookahead": 8,
-        "stage_encoder_vecs_on_cpu": False,
-        "stage_error_vectors_on_cpu": False,
-        "exact_encoder_residency": "active_pinned_cpu",
-        "cross_cluster_debug": True,
-        "capture_phase0_donor_bundle": True,
-        "capture_phase3_seed_bundle": True,
-        "capture_feature_semantic_descriptors": True,
-        "semantic_descriptor_top_k": 1024,
-        "semantic_descriptor_dim": 32,
-    }
+    model = types.SimpleNamespace(backend="nnsight")
+    request = _trace_request(
+        model=model,
+        prompt_token_ids=[101, 102, 201],
+        spec=spec,
+        prefix_metadata={"mode": "independent_prefix"},
+        full_sequence_mode=False,
+        telemetry_jsonl_path=tmp_path / "telemetry_live.jsonl",
+    )
+
+    assert isinstance(request, TraceRequest)
+    assert request.problem.model is model
+    assert request.problem.prompt.tolist() == [101, 102, 201]
+    assert request.problem.targets.tolist() == [7]
+    assert request.problem.prefix_view.mode == "independent_prefix"
+    assert request.problem.prefix_view.target_position == 3
+    assert request.semantics.source_batch_size == 256
+    assert request.execution.session.capacity == 64
+    assert request.execution.session.phase1_trace_batch_size_max == 16
+    assert request.execution.backward.mode == "single_forward_batched_vjp"
+    assert request.execution.storage.retention == "none_recompute"
+    assert request.execution.storage.full_retention_backend == "column_tiled_v1"
+    assert request.execution.storage.feature_row_influence_mode == "cuda_windowed"
+    assert request.execution.storage.feature_row_influence_requirement == "required"
+    assert request.execution.storage.gpu_resident_max_bytes == 1024
+    assert request.execution.storage.gpu_window_max_bytes == 2048
+    assert request.execution.storage.gpu_resident_safety_margin_bytes == 4096
+    assert request.execution.replay.decoder_contraction_tile == 128
+    assert request.execution.frontier.feature_vjp_tape_batch_window == 2
+    assert request.execution.frontier.feature_vjp_tape_max_bytes == 4096
+    assert request.execution.frontier.decoder_page_prefetch_depth == 1
+    assert request.execution.frontier.decoder_active_row_residency is True
+    assert request.execution.frontier.decoder_active_row_max_bytes == 8192
+    assert request.execution.frontier.phase0_decoder_row_ranges is True
+    assert request.semantics.frontier.scheduler == "planner_v1"
+    assert request.execution.session.decoder_cache.enabled is True
+    assert request.execution.session.decoder_cache.max_bytes == 8589934592
+    assert request.execution.observability.telemetry_max_events == 500
+    assert request.execution.diagnostic_stop.mode == "transition_probe"
+    assert request.execution.diagnostic_stop.phase4_batches == 2
+    assert request.execution.observability.telemetry_jsonl_path == (
+        tmp_path / "telemetry_live.jsonl"
+    )
+    assert request.evidence.metadata["prefix_view_metadata"] == {}
+
+
+@pytest.mark.parametrize(
+    ("knob", "value", "message"),
+    [
+        (
+            "decoder_active_row_residency",
+            1,
+            "decoder_active_row_residency must be a bool",
+        ),
+        (
+            "decoder_active_row_max_bytes",
+            -1,
+            "decoder_active_row_max_bytes must be a non-negative int",
+        ),
+        (
+            "decoder_active_row_max_bytes",
+            True,
+            "decoder_active_row_max_bytes must be a non-negative int",
+        ),
+        (
+            "phase0_decoder_row_ranges",
+            1,
+            "phase0_decoder_row_ranges must be a bool",
+        ),
+    ],
+)
+def test_model_load_knobs_rejects_invalid_active_row_controls(
+    knob: str, value: object, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        runner_module._model_load_knobs([cast(Any, {"graph_knobs": {knob: value}})])
+
+
+def test_trace_request_uses_legacy_phase4_rows_when_canonical_default_is_none() -> None:
+    spec = cast(
+        Any,
+        {
+            "target_token_id": 7,
+            "target_position": 3,
+            "graph_knobs": {
+                "phase4_execution_batch_max_rows": None,
+                "phase4_compute_microbatch_max_rows": 23,
+            },
+        },
+    )
+
+    request = _trace_request(
+        model=types.SimpleNamespace(backend="nnsight"),
+        prompt_token_ids=[101, 102, 201],
+        spec=spec,
+        prefix_metadata={"mode": "independent_prefix"},
+        full_sequence_mode=False,
+    )
+
+    assert request.execution.session.phase4_execution_batch_max_rows == 23
 
 
 def test_prefix_view_metadata_matches_reconstructed_prefix(tmp_path: Path) -> None:
@@ -315,15 +450,16 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
     for spec_row in specs_rows:
         spec_row["graph_knobs"]["phase1_trace_batch_policy"] = "cap_effective_batches"
         spec_row["graph_knobs"]["phase1_trace_batch_size_max"] = 16
+        spec_row["graph_knobs"]["capture_feature_semantic_descriptors"] = True
     specs_path.write_text(
         "\n".join(json.dumps(row) for row in specs_rows) + "\n",
         encoding="utf-8",
     )
     captured: dict[str, object] = {}
 
-    def fake_attribute(**kwargs):
-        captured.update(kwargs)
-        return {
+    def fake_trace_one(request):
+        captured["request"] = request
+        output = {
             "telemetry_events": [
                 {
                     "event_type": "ranker_frontier",
@@ -344,13 +480,14 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
             },
             "feature_semantic_descriptors": {
                 "status": "captured",
+                "descriptor_version": "semantic_descriptor_v1",
+                "descriptor_kind": "random_projection_v1",
                 "candidate_features": [[0, 0, 1]],
+                "candidate_row_indices": [0],
+                "semantic_sketch": [[0.25]],
             },
         }
-
-    def fake_save_compact(step, graph_path):
-        Path(graph_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(graph_path).write_text("graph")
+        return types.SimpleNamespace(output=output, telemetry_summary={})
 
     monkeypatch.setenv("SLURM_JOB_ID", "test-job")
     monkeypatch.setitem(
@@ -362,36 +499,11 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
             Tensor=type("FakeTensor", (), {}),
         ),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "circuit_utils",
-        types.SimpleNamespace(
-            save_bucketed_compact=lambda _bundle, graph_path: fake_save_compact(
-                {}, graph_path
-            ),
-            save_compact=fake_save_compact,
-        ),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline",
-        types.SimpleNamespace(load_model=lambda **_kwargs: object()),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline_chunked",
-        types.SimpleNamespace(
-            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: (
-                types.SimpleNamespace(step={})
-            ),
-            resolve_internal_precision=lambda _dtype: "float32",
-        ),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "circuit_tracer.attribution.attribute_nnsight",
-        types.SimpleNamespace(attribute=fake_attribute),
-    )
+    monkeypatch.setattr(provider, "load_model", lambda **_kwargs: object())
+    _stub_compact_packager(monkeypatch)
+    import circuit_tracer
+
+    monkeypatch.setattr(circuit_tracer, "trace_one", fake_trace_one)
 
     result = run_real_shard(
         trajectory_path=trajectory_path,
@@ -402,19 +514,28 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
     )
 
     assert result["status"] == "complete"
-    metadata = cast(dict[str, Any], captured["prefix_view_metadata"])
-    assert captured["phase1_trace_batch_policy"] == "cap_effective_batches"
-    assert captured["phase1_trace_batch_size_max"] == 16
-    assert metadata["trace_id"] == "traj_runner_tok000001"
-    assert metadata["target_position"] == 3
-    assert metadata["prefix_token_count"] == 3
-    assert metadata["target_token_ids"] == [202]
+    request = captured["request"]
+    evidence = cast(dict[str, Any], request.evidence.metadata["prefix_view_metadata"])
+    assert (
+        request.execution.session.phase1_trace_batch_policy == "cap_effective_batches"
+    )
+    assert request.execution.session.phase1_trace_batch_size_max == 16
+    assert evidence["trace_id"] == "traj_runner_tok000001"
+    assert "target_position" not in evidence
+    assert evidence["prefix_token_count"] == 3
+    assert evidence["target_token_ids"] == [202]
     trace = json.loads(
         (
             tmp_path / "run" / "shards" / "shard_000" / "token_000001" / "trace.json"
         ).read_text(encoding="utf-8")
     )
-    assert trace["prefix_view_metadata"] == metadata
+    assert trace["prefix_view_metadata"]["mode"] == "independent_prefix"
+    assert trace["prefix_view_metadata"]["target_position"] == 3
+    assert {
+        key: value
+        for key, value in trace["prefix_view_metadata"].items()
+        if key not in {"mode", "target_position"}
+    } == evidence
     assert trace["phase3_frontier_buffer_metadata"] == {
         "status": "expanded",
         "extra_feature_count": 2,
@@ -455,12 +576,70 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
     ).exists()
 
 
+def test_real_shard_raw_graph_success_does_not_read_compact_metadata(
+    tmp_path: Path, monkeypatch
+) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    specs = [
+        json.loads(line)
+        for line in specs_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    specs[1]["graph_knobs"]["save_raw_graph"] = True
+    specs_path.write_text(
+        "\n".join(json.dumps(row) for row in specs) + "\n", encoding="utf-8"
+    )
+
+    class FakeRawGraph:
+        def to_pt(self, path: str) -> None:
+            Path(path).write_bytes(b"raw graph")
+
+    monkeypatch.setenv("SLURM_JOB_ID", "test-job")
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        types.SimpleNamespace(
+            tensor=lambda data, dtype=None: data,
+            long=object(),
+            Tensor=type("FakeTensor", (), {}),
+        ),
+    )
+    monkeypatch.setattr(provider, "load_model", lambda **_kwargs: object())
+    import circuit_tracer
+
+    monkeypatch.setattr(
+        circuit_tracer,
+        "trace_one",
+        lambda _request: types.SimpleNamespace(
+            output=FakeRawGraph(), telemetry_summary={}
+        ),
+    )
+
+    result = run_real_shard(
+        trajectory_path=trajectory_path,
+        trace_specs_path=specs_path,
+        shards_path=shards_path,
+        shard_id=0,
+        output_root=tmp_path / "run",
+    )
+
+    assert result["status"] == "complete"
+    trace = json.loads(
+        (
+            tmp_path / "run" / "shards" / "shard_000" / "token_000001" / "trace.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert trace["status"] == "ok"
+    assert trace["graph_summary"]["format"] == "raw_graph_pt"
+    assert Path(trace["graph_path"]).read_bytes() == b"raw graph"
+
+
 def test_real_shard_persists_exception_attached_telemetry(
     tmp_path: Path, monkeypatch
 ) -> None:
     trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
 
-    def fake_attribute(**_kwargs):
+    def fake_trace_one(_request):
         exc = RuntimeError("synthetic attribution failure")
         setattr(
             exc,
@@ -491,31 +670,11 @@ def test_real_shard_persists_exception_attached_telemetry(
             Tensor=type("FakeTensor", (), {}),
         ),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "circuit_utils",
-        types.SimpleNamespace(save_compact=lambda *_args, **_kwargs: None),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline",
-        types.SimpleNamespace(load_model=lambda **_kwargs: object()),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline_chunked",
-        types.SimpleNamespace(
-            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: (
-                types.SimpleNamespace(step={})
-            ),
-            resolve_internal_precision=lambda _dtype: "float32",
-        ),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "circuit_tracer.attribution.attribute_nnsight",
-        types.SimpleNamespace(attribute=fake_attribute),
-    )
+    monkeypatch.setattr(provider, "load_model", lambda **_kwargs: object())
+    _stub_compact_packager(monkeypatch)
+    import circuit_tracer
+
+    monkeypatch.setattr(circuit_tracer, "trace_one", fake_trace_one)
 
     result = run_real_shard(
         trajectory_path=trajectory_path,
@@ -543,22 +702,158 @@ def test_real_shard_persists_exception_attached_telemetry(
     assert telemetry_rows[0]["event"]["attrs"] == {"active_features": 227051}
 
 
-def test_real_shard_forwards_full_sequence_prompt_and_output_position(
+def _diagnostic_capture_payloads() -> dict[str, dict[str, Any]]:
+    common = {
+        "schema_version": 1,
+        "status": "captured",
+        "target_token_ids": [7],
+        "target_probabilities": [0.5],
+        "target_token_ids_hash": "target-hash",
+        "target_probability_hash": "probability-hash",
+        "active_feature_count": 1,
+        "active_features_hash": "feature-hash",
+        "activation_values_hash": "activation-hash",
+    }
+    return {
+        "phase0_donor_bundle": {
+            "schema_version": 1,
+            "replay_kind": "phase0_active_features_v1",
+            "status": "captured",
+            "active_features": [[0, 0, 1]],
+            "activation_values": [0.25],
+            "activation_values_dtype": "float32",
+            "activation_matrix_shape": [1, 1, 2],
+            "active_feature_count": 1,
+            "active_feature_membership_hash_raw_order": "raw-order-hash",
+            "active_feature_membership_hash_canonical": "canonical-hash",
+            "active_feature_values_hash": "value-hash",
+            "active_feature_layer_counts": [1],
+            "input_tokens": [1, 2],
+            "input_token_count": 2,
+            "input_tokens_hash": "input-hash",
+            "target_token_ids": [7],
+            "target_count": 1,
+            "target_token_ids_hash": "target-hash",
+            "target_probabilities": [0.5],
+            "target_probability_hash": "probability-hash",
+        },
+        "phase3_seed_bundle": {
+            "status": "captured",
+            "active_features": [[0, 0, 1]],
+            "activation_values": [0.25],
+            "seed_feature_influences": [0.125],
+            "frontier_pre_locality": [0],
+            "frontier_post_locality": [0],
+            "queue_size": 1,
+            "actual_max_feature_nodes": 1,
+            "total_active_features": 1,
+            "planner_compute_dtype": "float32",
+            "influence_compute_dtype": "float32",
+        },
+        "phase3_gradient_bundle": {
+            **common,
+            "schema_version": 2,
+            "capture_kind": "phase3_gradient_bundle_v2",
+            "gradient_batch_representation": "canonical_target_width_v1",
+            "canonical_target_width": 1,
+            "gradients": [[[[0.25]]]],
+            "layer_mask": [True],
+            "batch_call_indices": [0],
+            "per_layer_abs_sum": [0.25],
+            "per_layer_max_abs": [0.25],
+            "per_layer_nonfinite_count": [0],
+            "per_layer_hashes": ["layer-hash"],
+            "gradient_hash": "gradient-hash",
+        },
+        "phase3_row_bundle": {
+            **common,
+            "schema_version": 2,
+            "capture_kind": "phase3_row_bundle_v2",
+            "phase3_feature_rows": [[0.25]],
+            "row_abs_sums": [0.5],
+            "feature_abs_sums": [0.25],
+            "error_abs_sums": [0.125],
+            "token_abs_sums": [0.125],
+            "nonfeature_row_layout": "target_layer_position_v1",
+            "phase3_error_rows_by_layer": [[[0.125]]],
+            "phase3_token_rows": [[-0.125]],
+            "total_active_features": 1,
+            "error_column_count": 1,
+            "token_column_count": 1,
+            "row_hash": "row-hash",
+            "row_abs_sum_hash": "row-abs-hash",
+            "error_rows_hash": "error-row-hash",
+            "token_rows_hash": "token-row-hash",
+        },
+    }
+
+
+def test_exception_payload_reuses_bounded_observability_serializer() -> None:
+    class UnprintableFailure(RuntimeError):
+        def __str__(self) -> str:
+            raise RuntimeError("unsafe str")
+
+        def __repr__(self) -> str:
+            raise RuntimeError("unsafe repr")
+
+    error = UnprintableFailure()
+    error.details = {
+        **{f"field-{index}": index for index in range(100)},
+        "nested": {"unsafe": True},
+    }
+
+    payload = runner_module._exception_payload(error)
+
+    assert payload["error"].startswith("<unavailable: repr raised")
+    assert payload["error_message"].startswith("<unavailable: str raised")
+    assert len(payload["error_details"]) == 64
+    assert "nested" not in payload["error_details"]
+
+
+def test_real_shard_persists_probe_artifacts_without_graph_packaging(
     tmp_path: Path, monkeypatch
 ) -> None:
     trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
     rows = [json.loads(line) for line in specs_path.read_text().splitlines()]
-    rows[1]["graph_knobs"]["input_context_mode"] = "full_sequence"
+    rows[1]["graph_knobs"].update(
+        {
+            "diagnostic_stop_mode": "transition_probe",
+            "diagnostic_stop_phase4_batches": 2,
+            "capture_phase0_donor_bundle": True,
+            "capture_phase3_seed_bundle": True,
+            "capture_phase3_gradient_bundle": True,
+            "capture_phase3_row_bundle": True,
+        }
+    )
     specs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-    captured: dict[str, object] = {}
 
-    def fake_attribute(**kwargs):
-        captured.update(kwargs)
-        return {}
+    active_row_evidence = {
+        "requested": True,
+        "effective": True,
+        "fallback_reason": None,
+        "admission_policy": "live_hbm_headroom",
+    }
 
-    def fake_save_compact(step, graph_path):
-        Path(graph_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(graph_path).write_text("graph")
+    def fake_trace_one(_request):
+        output = _diagnostic_capture_payloads()
+        output["decoder_active_row_residency"] = active_row_evidence
+        return types.SimpleNamespace(
+            output=output,
+            status="probe_completed",
+            semantic_fingerprint="semantic-probe",
+            execution_fingerprint="execution-probe",
+            telemetry_summary={
+                "diagnostic_stop_mode": "transition_probe",
+                "phase4_batches_completed": 2,
+            },
+            telemetry_events=(
+                {
+                    "scope": "run",
+                    "name": "attribute.probe_completed",
+                    "attrs": {"status": "probe_completed"},
+                },
+            ),
+        )
 
     monkeypatch.setenv("SLURM_JOB_ID", "test-job")
     monkeypatch.setitem(
@@ -570,36 +865,155 @@ def test_real_shard_forwards_full_sequence_prompt_and_output_position(
             Tensor=type("FakeTensor", (), {}),
         ),
     )
+    monkeypatch.setattr(provider, "load_model", lambda **_kwargs: object())
+    import circuit_tracer
+
+    monkeypatch.setattr(circuit_tracer, "trace_one", fake_trace_one)
+
+    result = run_real_shard(
+        trajectory_path=trajectory_path,
+        trace_specs_path=specs_path,
+        shards_path=shards_path,
+        shard_id=0,
+        output_root=tmp_path / "run",
+    )
+
+    assert result["status"] == "probe_completed"
+    token_dir = tmp_path / "run" / "shards" / "shard_000" / "token_000001"
+    trace = json.loads((token_dir / "trace.json").read_text())
+    assert trace["status"] == "probe_completed"
+    assert trace["graph_path"] is None
+    assert trace["diagnostic_stop_mode"] == "transition_probe"
+    assert trace["phase4_batches_completed"] == 2
+    assert trace["decoder_active_row_residency"] == active_row_evidence
+    assert not (token_dir / "graph.npz").exists()
+    expected_sidecars = {
+        "phase0_donor_bundle",
+        "phase3_seed_bundle",
+        "phase3_gradient_bundle",
+        "phase3_row_bundle",
+    }
+    assert set(trace["debug_sidecars"]) == expected_sidecars
+    assert trace["capture_artifact_status"]["requested"] == sorted(expected_sidecars)
+    assert trace["capture_artifact_status"]["written"] == sorted(expected_sidecars)
+    assert trace["capture_artifact_status"]["missing"] == []
+    assert trace["capture_artifact_status"]["failed"] == []
+    assert trace["capture_artifact_status"]["complete"] is True
+    for key in expected_sidecars:
+        sidecar = Path(trace["debug_sidecars"][key])
+        assert sidecar == token_dir / f"{key}.npz"
+        assert sidecar.is_file()
+    with np.load(token_dir / "phase3_row_bundle.npz", allow_pickle=False) as row_bundle:
+        assert int(row_bundle["schema_version"]) == 2
+        assert row_bundle["capture_kind"].item() == "phase3_row_bundle_v2"
+        assert row_bundle["phase3_error_rows_by_layer"].shape == (1, 1, 1)
+        assert row_bundle["phase3_token_rows"].shape == (1, 1)
+    shard = json.loads(
+        (tmp_path / "run" / "shards" / "shard_000" / "shard.json").read_text()
+    )
+    assert shard["status"] == "probe_completed"
+    assert shard["shard_health"]["failed_token_count"] == 0
+    assert shard["shard_health"]["diagnostic_token_count"] == 1
+    assert shard["shard_health"]["retry_recommended"] is False
+
+
+def test_real_shard_fails_when_requested_probe_capture_is_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    rows = [json.loads(line) for line in specs_path.read_text().splitlines()]
+    rows[1]["graph_knobs"].update(
+        {
+            "diagnostic_stop_mode": "transition_probe",
+            "diagnostic_stop_phase4_batches": 1,
+            "capture_phase3_gradient_bundle": True,
+        }
+    )
+    specs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+
+    def fake_trace_one(_request):
+        return types.SimpleNamespace(
+            output={},
+            status="probe_completed",
+            semantic_fingerprint="semantic-probe",
+            execution_fingerprint="execution-probe",
+            telemetry_summary={
+                "diagnostic_stop_mode": "transition_probe",
+                "phase4_batches_completed": 1,
+            },
+            telemetry_events=(),
+        )
+
+    monkeypatch.setenv("SLURM_JOB_ID", "test-job")
     monkeypatch.setitem(
         sys.modules,
-        "circuit_utils",
+        "torch",
         types.SimpleNamespace(
-            save_bucketed_compact=lambda _bundle, graph_path: fake_save_compact(
-                {}, graph_path
-            ),
-            save_compact=fake_save_compact,
+            tensor=lambda data, dtype=None: data,
+            long=object(),
+            Tensor=type("FakeTensor", (), {}),
         ),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline",
-        types.SimpleNamespace(load_model=lambda **_kwargs: object()),
+    monkeypatch.setattr(provider, "load_model", lambda **_kwargs: object())
+    import circuit_tracer
+
+    monkeypatch.setattr(circuit_tracer, "trace_one", fake_trace_one)
+
+    result = run_real_shard(
+        trajectory_path=trajectory_path,
+        trace_specs_path=specs_path,
+        shards_path=shards_path,
+        shard_id=0,
+        output_root=tmp_path / "run",
     )
+
+    assert result["status"] == "error"
+    token_dir = tmp_path / "run" / "shards" / "shard_000" / "token_000001"
+    trace = json.loads((token_dir / "trace.json").read_text())
+    assert trace["status"] == "error"
+    assert trace["error_type"] == "CaptureArtifactContractError"
+    assert "phase3_gradient_bundle" in trace["error"]
+    assert "requested diagnostic capture sidecars" in trace["error"]
+    assert trace["capture_artifact_status"] == {
+        "schema_version": 1,
+        "requested": ["phase3_gradient_bundle"],
+        "written": [],
+        "missing": ["phase3_gradient_bundle"],
+        "failed": [],
+        "paths": {},
+        "payload_statuses": {},
+        "complete": False,
+    }
+
+
+def test_real_shard_forwards_full_sequence_prompt_and_output_position(
+    tmp_path: Path, monkeypatch
+) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    rows = [json.loads(line) for line in specs_path.read_text().splitlines()]
+    rows[1]["graph_knobs"]["input_context_mode"] = "full_sequence"
+    specs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+    captured: dict[str, object] = {}
+
+    def fake_trace_one(request):
+        captured["request"] = request
+        return types.SimpleNamespace(output={}, telemetry_summary={})
+
+    monkeypatch.setenv("SLURM_JOB_ID", "test-job")
     monkeypatch.setitem(
         sys.modules,
-        "trace_pipeline_chunked",
+        "torch",
         types.SimpleNamespace(
-            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: (
-                types.SimpleNamespace(step={})
-            ),
-            resolve_internal_precision=lambda _dtype: "float32",
+            tensor=lambda data, dtype=None: data,
+            long=object(),
+            Tensor=type("FakeTensor", (), {}),
         ),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "circuit_tracer.attribution.attribute_nnsight",
-        types.SimpleNamespace(attribute=fake_attribute),
-    )
+    monkeypatch.setattr(provider, "load_model", lambda **_kwargs: object())
+    _stub_compact_packager(monkeypatch)
+    import circuit_tracer
+
+    monkeypatch.setattr(circuit_tracer, "trace_one", fake_trace_one)
 
     run_real_shard(
         trajectory_path=trajectory_path,
@@ -609,13 +1023,17 @@ def test_real_shard_forwards_full_sequence_prompt_and_output_position(
         output_root=tmp_path / "run",
     )
 
-    assert captured["prompt"] == [101, 102, 201, 202]
-    assert captured["output_position"] == 2
-    metadata = cast(dict[str, Any], captured["prefix_view_metadata"])
-    assert metadata["mode"] == "full_sequence_target_position"
+    request = captured["request"]
+    assert request.problem.prompt == [101, 102, 201, 202]
+    assert request.problem.output_position == 2
+    assert request.problem.prefix_view.mode == "full_sequence_target_position"
+    assert request.problem.prefix_view.target_position == 3
+    evidence = cast(dict[str, Any], request.evidence.metadata["prefix_view_metadata"])
+    assert "mode" not in evidence
+    assert "target_position" not in evidence
 
 
-def test_real_shard_experimental_reuse_passes_shared_decoder_cache(
+def test_real_shard_experimental_reuse_falls_back_to_canonical_per_token_trace(
     tmp_path: Path, monkeypatch
 ) -> None:
     trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
@@ -646,9 +1064,9 @@ def test_real_shard_experimental_reuse_passes_shared_decoder_cache(
     transcoders = Transcoders()
     model = types.SimpleNamespace(transcoders=transcoders, device="cpu")
 
-    def fake_attribute(**kwargs):
-        captured.update(kwargs)
-        return {}
+    def fake_trace_one(request):
+        captured["request"] = request
+        return types.SimpleNamespace(output={}, telemetry_summary={})
 
     monkeypatch.setenv("SLURM_JOB_ID", "test-job")
     monkeypatch.setitem(
@@ -660,37 +1078,11 @@ def test_real_shard_experimental_reuse_passes_shared_decoder_cache(
             Tensor=type("FakeTensor", (), {}),
         ),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "circuit_utils",
-        types.SimpleNamespace(
-            save_bucketed_compact=lambda _bundle, graph_path: (
-                Path(graph_path).parent.mkdir(parents=True, exist_ok=True),
-                Path(graph_path).write_text("graph"),
-            ),
-            save_compact=lambda _step, graph_path: Path(graph_path).write_text("graph"),
-        ),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline",
-        types.SimpleNamespace(load_model=lambda **_kwargs: model),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline_chunked",
-        types.SimpleNamespace(
-            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: (
-                types.SimpleNamespace(step={})
-            ),
-            resolve_internal_precision=lambda _dtype: "float32",
-        ),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "circuit_tracer.attribution.attribute_nnsight",
-        types.SimpleNamespace(attribute=fake_attribute),
-    )
+    monkeypatch.setattr(provider, "load_model", lambda **_kwargs: model)
+    _stub_compact_packager(monkeypatch)
+    import circuit_tracer
+
+    monkeypatch.setattr(circuit_tracer, "trace_one", fake_trace_one)
 
     run_real_shard(
         trajectory_path=trajectory_path,
@@ -700,20 +1092,21 @@ def test_real_shard_experimental_reuse_passes_shared_decoder_cache(
         output_root=tmp_path / "run",
     )
 
-    assert captured["decoder_chunk_cache"] is transcoders.cache
-    assert captured["decoder_cache_fingerprint"] == transcoders.cache.fingerprint
-    assert transcoders.created == 1
-    assert transcoders.cleared == 1
+    request = captured["request"]
+    assert request.problem.prompt == [101, 102, 201, 202]
+    assert transcoders.created == 0
+    assert transcoders.cleared == 0
     trace = json.loads(
         (
             tmp_path / "run" / "shards" / "shard_000" / "token_000001" / "trace.json"
         ).read_text(encoding="utf-8")
     )
-    assert trace["trajectory_session"]["session_reuse_effective"] is True
-    assert trace["trajectory_session"]["decoder_cache_reuse_effective"] is True
+    assert trace["trajectory_session"]["session_reuse_effective"] is False
+    assert trace["trajectory_session"]["session_reuse_fallback"] == "per_token_path"
+    assert trace["trajectory_session"]["decoder_cache_reuse_effective"] is False
 
 
-def test_real_shard_decoder_cache_reuse_is_per_spec_opt_in(
+def test_real_shard_canonical_per_token_requests_preserve_each_spec(
     tmp_path: Path, monkeypatch
 ) -> None:
     trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
@@ -727,7 +1120,7 @@ def test_real_shard_decoder_cache_reuse_is_per_spec_opt_in(
         {"shard_id": 0, "estimated_cost_sum": 5, "spec_indices": [0, 1]}
     ]
     shards_path.write_text(json.dumps(shards), encoding="utf-8")
-    calls: list[dict[str, object]] = []
+    calls: list[Any] = []
 
     class Cache:
         fingerprint: object | None = None
@@ -746,9 +1139,9 @@ def test_real_shard_decoder_cache_reuse_is_per_spec_opt_in(
     transcoders = Transcoders()
     model = types.SimpleNamespace(transcoders=transcoders, device="cpu")
 
-    def fake_attribute(**kwargs):
-        calls.append(dict(kwargs))
-        return {}
+    def fake_trace_one(request):
+        calls.append(request)
+        return types.SimpleNamespace(output={}, telemetry_summary={})
 
     monkeypatch.setenv("SLURM_JOB_ID", "test-job")
     monkeypatch.setitem(
@@ -756,37 +1149,11 @@ def test_real_shard_decoder_cache_reuse_is_per_spec_opt_in(
         "torch",
         types.SimpleNamespace(tensor=lambda data, dtype=None: data, long=object()),
     )
-    monkeypatch.setitem(
-        sys.modules,
-        "circuit_utils",
-        types.SimpleNamespace(
-            save_bucketed_compact=lambda _bundle, graph_path: (
-                Path(graph_path).parent.mkdir(parents=True, exist_ok=True),
-                Path(graph_path).write_text("graph"),
-            ),
-            save_compact=lambda _step, graph_path: Path(graph_path).write_text("graph"),
-        ),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline",
-        types.SimpleNamespace(load_model=lambda **_kwargs: model),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline_chunked",
-        types.SimpleNamespace(
-            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: (
-                types.SimpleNamespace(step={})
-            ),
-            resolve_internal_precision=lambda _dtype: "float32",
-        ),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "circuit_tracer.attribution.attribute_nnsight",
-        types.SimpleNamespace(attribute=fake_attribute),
-    )
+    monkeypatch.setattr(provider, "load_model", lambda **_kwargs: model)
+    _stub_compact_packager(monkeypatch)
+    import circuit_tracer
+
+    monkeypatch.setattr(circuit_tracer, "trace_one", fake_trace_one)
 
     run_real_shard(
         trajectory_path=trajectory_path,
@@ -797,8 +1164,10 @@ def test_real_shard_decoder_cache_reuse_is_per_spec_opt_in(
     )
 
     assert len(calls) == 2
-    assert calls[0]["decoder_chunk_cache"] is None
-    assert calls[1]["decoder_chunk_cache"] is transcoders.cache
+    assert calls[0].problem.targets == [201]
+    assert calls[1].problem.targets == [202]
+    assert calls[0].problem.output_position == 1
+    assert calls[1].problem.output_position == 2
 
 
 def test_real_shard_window_reuse_uses_window_session(
@@ -850,18 +1219,22 @@ def test_real_shard_window_reuse_uses_window_session(
     session_inits: list[dict[str, object]] = []
 
     class FakeSession:
-        def __init__(self, **kwargs) -> None:
-            session_inits.append(dict(kwargs))
-
-        def attribute_target_position(self, target_position, **kwargs):
+        def trace_window(self, target_position, *, reuse, request):
             calls.append(int(target_position))
-            return {
+            assert reuse is True
+            assert request.problem.output_position == int(target_position) - 1
+            output = {
                 "phase0_window_state_reuse_effective": True,
                 "target_logit_source": "full_sequence_window_logits",
             }
+            return types.SimpleNamespace(output=output, telemetry_summary={})
 
-        def cleanup(self) -> None:
+        def close(self) -> None:
             calls.append(-1)
+
+    def fake_open_session(request, *, window):
+        session_inits.append({"request": request, "window": window})
+        return FakeSession()
 
     class Transcoders:
         def create_decoder_block_cache(self, *, fingerprint=None):
@@ -878,45 +1251,17 @@ def test_real_shard_window_reuse_uses_window_session(
     )
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
 
-    def fake_save_bucketed(_bundle, graph_path) -> None:
-        Path(graph_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(graph_path).write_text("graph")
+    monkeypatch.setattr(
+        provider,
+        "load_model",
+        lambda **_kwargs: types.SimpleNamespace(
+            transcoders=Transcoders(), device="cpu"
+        ),
+    )
+    _stub_compact_packager(monkeypatch)
+    import circuit_tracer
 
-    monkeypatch.setitem(
-        sys.modules,
-        "circuit_utils",
-        types.SimpleNamespace(
-            save_bucketed_compact=fake_save_bucketed,
-            save_compact=lambda _step, graph_path: Path(graph_path).write_text("graph"),
-        ),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline",
-        types.SimpleNamespace(
-            load_model=lambda **_kwargs: types.SimpleNamespace(
-                transcoders=Transcoders(), device="cpu"
-            )
-        ),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "trace_pipeline_chunked",
-        types.SimpleNamespace(
-            compact_result_to_bucketed_compact=lambda *_args, **_kwargs: (
-                types.SimpleNamespace(step={})
-            ),
-            resolve_internal_precision=lambda _dtype: "float32",
-        ),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "circuit_tracer.attribution.attribute_nnsight",
-        types.SimpleNamespace(
-            attribute=lambda **_kwargs: {},
-            FullSequenceWindowAttributionSession=FakeSession,
-        ),
-    )
+    monkeypatch.setattr(circuit_tracer, "open_session", fake_open_session)
 
     result = run_real_shard(
         trajectory_path=trajectory_path,
@@ -928,9 +1273,8 @@ def test_real_shard_window_reuse_uses_window_session(
 
     assert result["status"] == "complete"
     assert calls == [2, 3, -1]
-    assert session_inits[0]["window_max_prefix_len"] == 3
-    assert session_inits[0]["reuse_phase0_window_state"] is True
-    assert session_inits[0]["reuse_target_logits"] is True
+    assert session_inits[0]["window"].max_prefix_len == 3
+    assert session_inits[0]["request"].problem.prompt == [101, 102, 201, 202]
     trace = json.loads(
         (
             tmp_path / "run" / "shards" / "shard_000" / "token_000001" / "trace.json"
@@ -1011,7 +1355,10 @@ def test_shard_inputs_normalize_old_specs_without_target_position(
 
 
 def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
-    env = {"PYTHONPATH": str(SRC_ROOT)}
+    env = {
+        "MPLCONFIGDIR": "/tmp/nlp-research-project-matplotlib",
+        "PYTHONPATH": str(SRC_ROOT),
+    }
     return subprocess.run(
         [sys.executable, "-m", "nlp_research_project.exact_trace_bench", *args],
         check=False,
@@ -1115,6 +1462,30 @@ def test_cli_real_shard_exits_nonzero_on_error_status(
         raise AssertionError("expected non-ok shard status to fail the CLI")
 
 
+def test_cli_real_shard_accepts_terminal_probe_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    monkeypatch.setattr(
+        "nlp_research_project.exact_trace_bench.full_answer.runner.run_real_shard",
+        lambda **kwargs: {"status": "probe_completed", "shard_dir": "x"},
+    )
+    args = argparse.Namespace(
+        trajectory=trajectory_path,
+        trace_specs=specs_path,
+        shards=shards_path,
+        shard_id=0,
+        output_root=tmp_path / "run",
+        list=False,
+        dry_run=False,
+        run_id=None,
+        run_name=None,
+        run_description=None,
+        run_goal=None,
+    )
+    full_answer_cli._cmd_run_full_answer_shard(args)
+
+
 def test_real_shard_requires_slurm_before_heavy_imports(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -1126,9 +1497,8 @@ def test_real_shard_requires_slurm_before_heavy_imports(
     def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
         if name in {
             "torch",
-            "trace_pipeline",
-            "circuit_utils",
-            "trace_pipeline_chunked",
+            "nlp_research_project.exact_trace_bench.trace_runtime.provider",
+            "nlp_research_project.exact_trace_bench.compact_io",
             "circuit_tracer",
         }:
             raise AssertionError(f"heavy import attempted: {name}")

@@ -8,6 +8,11 @@ wheels/
 
 # Virtual environments
 .venv
+.uv-cache
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
 data/
 experiments/traces/
 experiments/explore/
@@ -15,17 +20,23 @@ experiments/extracted/
 experiments/figures/
 experiments/generated/
 logs/
+/slurm-*.out
+/slurm-*.err
+/PLAN.md
 .env
 docs/
 !docs/
 docs/*
 !docs/README.md
+!docs/chpc_setup.md
+!docs/chpc_resource_pools.md
 !docs/current_state.md
 !docs/architecture/
 !docs/architecture/*.md
 !docs/harness.md
 !docs/knob_api_taxonomy.md
 !docs/current_project_roadmap.md
+!docs/exact_trace_optimization_registry.md
 !docs/exact_trace_sweep_campaign_spec.md
 !docs/full_answer_harness_spec.md
 !docs/post_consolidation_cleanup_spec.md
@@ -33,8 +44,10 @@ docs/*
 !docs/phase4_scheduler_v2_spec.md
 !docs/plt_clt_optimization_parity_spec.md
 !docs/memory_governor_rearchitecture_spec.md
+!docs/tracing_runtime_rewrite_spec.md
 !docs/next_exact_optimization_paths_spec.md
 !docs/tracing_profiling_spec.md
+!docs/performance_optimization_loop.md
 !docs/history/
 !docs/history/*.md
 

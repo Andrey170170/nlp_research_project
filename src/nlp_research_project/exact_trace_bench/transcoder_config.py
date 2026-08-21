@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass, replace
 from typing import Any, Literal, Mapping
 
 Architecture = Literal["clt", "plt"]
+CheckpointAssetScope = Literal["shared", "job_private", "exclusive"]
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,8 @@ class TranscoderLoadConfig:
     lazy_decoder: bool = True
     decoder_chunk_size: int = 256
     cross_batch_decoder_cache_bytes: int = 8589934592
+    checkpoint_asset_scope: CheckpointAssetScope = "shared"
+    checkpoint_prefault_budget_bytes: int = 0
     transcoder_cache_dir: str | None = None
 
 
@@ -188,6 +191,17 @@ def resolve_transcoder_load_config(
         data["layer_count"] = int(data["layer_count"])
     if data["transcoder_architecture"] not in {"clt", "plt"}:
         raise ValueError("transcoder_architecture must be 'clt' or 'plt'")
+    if data["checkpoint_asset_scope"] not in {"shared", "job_private", "exclusive"}:
+        raise ValueError(
+            "checkpoint_asset_scope must be 'shared', 'job_private', or 'exclusive'"
+        )
+    prefault_budget = data["checkpoint_prefault_budget_bytes"]
+    if prefault_budget is None:
+        data["checkpoint_prefault_budget_bytes"] = 0
+    else:
+        if isinstance(prefault_budget, bool) or int(prefault_budget) < 0:
+            raise ValueError("checkpoint_prefault_budget_bytes must be non-negative")
+        data["checkpoint_prefault_budget_bytes"] = int(prefault_budget)
     if data["transcoder_architecture"] == "plt":
         data["lazy_encoder"] = True
         data["lazy_decoder"] = True

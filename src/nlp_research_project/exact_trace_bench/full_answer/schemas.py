@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping, TypedDict, cast
+from typing import Any, TypedDict, cast
 
+from ..backward_selection import (
+    BACKWARD_ENGINE_PRESETS,
+    normalize_backward_overrides,
+    resolve_backward_execution_selection,
+)
 from ..config import base_trace_defaults
 from ..io_utils import iter_jsonl, read_json, write_json, write_jsonl
+from ..transcoder_config import resolve_transcoder_load_config
 
 SCHEMA_VERSION = 1
 TARGET_MODE = "frozen_target_only"
@@ -18,6 +25,16 @@ ROW_STORE_CACHE_CONTROLS = {
     "fadvise_dontneed_after_append_v1",
     "fadvise_dontneed_after_append_and_read_v1",
 }
+FEATURE_ROW_INFLUENCE_MODES = {
+    "cpu_exact",
+    "cpu_prepared",
+    "cuda_full",
+    "cuda_windowed",
+    "auto",
+}
+FEATURE_ROW_INFLUENCE_REQUIREMENTS = {"preferred", "required"}
+RUNTIME_RESOURCE_POLICIES = {"off", "measure_only", "enforce"}
+BACKWARD_ENGINE_MODES = frozenset(BACKWARD_ENGINE_PRESETS)
 
 
 class GeneratedToken(TypedDict, total=False):
@@ -182,6 +199,19 @@ def validate_trace_spec(spec: Mapping[str, Any]) -> None:
         raise ValueError("trace spec selection_reasons must be a list of strings")
     if not isinstance(spec.get("graph_knobs"), dict):
         raise ValueError("trace spec graph_knobs must be an object")
+    try:
+        backward_selection = resolve_backward_execution_selection(spec["graph_knobs"])
+    except ValueError as error:
+        raise ValueError(f"trace spec graph_knobs {error}") from error
+    if (
+        backward_selection.vjp_kernel_mode in {"autograd_batched", "autograd_serial"}
+        and spec["graph_knobs"].get("phase3_gradient_replay_mode", "disabled")
+        != "disabled"
+    ):
+        raise ValueError(
+            f"{backward_selection.backward_engine_mode} does not support "
+            "phase3_gradient_replay_mode"
+        )
     input_context_mode = spec["graph_knobs"].get("input_context_mode")
     if input_context_mode is not None and input_context_mode not in INPUT_CONTEXT_MODES:
         raise ValueError(
@@ -194,10 +224,70 @@ def validate_trace_spec(spec: Mapping[str, Any]) -> None:
             "trace spec graph_knobs.trajectory_session_mode must be one of "
             f"{sorted(TRAJECTORY_SESSION_MODES)!r}"
         )
-    for key in ("reuse_phase0_window_state", "reuse_target_logits"):
+    for key in (
+        "reuse_phase0_window_state",
+        "reuse_target_logits",
+        "decoder_active_row_residency",
+        "phase0_decoder_row_ranges",
+    ):
         value = spec["graph_knobs"].get(key)
         if value is not None and not isinstance(value, bool):
             raise ValueError(f"trace spec graph_knobs.{key} must be a bool")
+    active_row_max_bytes = spec["graph_knobs"].get("decoder_active_row_max_bytes", 0)
+    active_row_safety_margin_bytes = spec["graph_knobs"].get(
+        "decoder_active_row_safety_margin_bytes", 0
+    )
+    for key, value in (
+        ("decoder_active_row_max_bytes", active_row_max_bytes),
+        ("decoder_active_row_safety_margin_bytes", active_row_safety_margin_bytes),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"trace spec graph_knobs.{key} must be a non-negative int")
+    active_row_requirement = spec["graph_knobs"].get(
+        "decoder_active_row_residency_requirement", "preferred"
+    )
+    if active_row_requirement not in {"preferred", "required"}:
+        raise ValueError(
+            "trace spec graph_knobs.decoder_active_row_residency_requirement "
+            "must be preferred or required"
+        )
+    if (
+        active_row_requirement == "required"
+        and spec["graph_knobs"].get("decoder_active_row_residency") is not True
+    ):
+        raise ValueError(
+            "required decoder active-row residency requires "
+            "decoder_active_row_residency=true"
+        )
+    if (
+        spec["graph_knobs"].get("decoder_active_row_residency") is True
+        and active_row_max_bytes == 0
+        and active_row_safety_margin_bytes == 0
+    ):
+        raise ValueError(
+            "dynamic decoder active-row residency requires a positive "
+            "decoder_active_row_safety_margin_bytes"
+        )
+    if spec["graph_knobs"].get("phase0_decoder_row_ranges"):
+        provider = resolve_transcoder_load_config(
+            spec["graph_knobs"], preserve_default_values=True
+        )
+        if provider.transcoder_architecture != "plt":
+            raise ValueError(
+                "trace spec graph_knobs.phase0_decoder_row_ranges requires "
+                "a PLT-compatible provider"
+            )
+        if spec["graph_knobs"].get("decoder_active_row_residency") is not True:
+            raise ValueError(
+                "trace spec graph_knobs.phase0_decoder_row_ranges requires "
+                "decoder_active_row_residency=true"
+            )
+        if spec["graph_knobs"].get("reuse_phase0_window_state"):
+            raise ValueError(
+                "trace spec graph_knobs.phase0_decoder_row_ranges is "
+                "incompatible with reuse_phase0_window_state until "
+                "forward-session policy is shared"
+            )
     phase0_window_scope = spec["graph_knobs"].get("phase0_window_scope")
     if (
         phase0_window_scope is not None
@@ -233,6 +323,86 @@ def validate_trace_spec(spec: Mapping[str, Any]) -> None:
         raise ValueError(
             "trace spec graph_knobs.row_store_cache_control must be one of "
             f"{sorted(ROW_STORE_CACHE_CONTROLS)!r}"
+        )
+    influence_mode = spec["graph_knobs"].get("feature_row_influence_mode", "cpu_exact")
+    if influence_mode not in FEATURE_ROW_INFLUENCE_MODES:
+        raise ValueError(
+            "trace spec graph_knobs.feature_row_influence_mode must be one of "
+            f"{sorted(FEATURE_ROW_INFLUENCE_MODES)!r}"
+        )
+    influence_requirement = spec["graph_knobs"].get(
+        "feature_row_influence_requirement", "preferred"
+    )
+    if influence_requirement not in FEATURE_ROW_INFLUENCE_REQUIREMENTS:
+        raise ValueError(
+            "trace spec graph_knobs.feature_row_influence_requirement must be "
+            "preferred or required"
+        )
+    if influence_mode == "auto" and influence_requirement == "required":
+        raise ValueError("auto feature-row influence cannot be required")
+    resident_bytes = spec["graph_knobs"].get("feature_row_gpu_resident_max_bytes", 0)
+    window_bytes = spec["graph_knobs"].get("feature_row_gpu_window_max_bytes", 0)
+    safety_bytes = spec["graph_knobs"].get(
+        "feature_row_gpu_resident_safety_margin_bytes", 0
+    )
+    for key, value in (
+        ("feature_row_gpu_resident_max_bytes", resident_bytes),
+        ("feature_row_gpu_window_max_bytes", window_bytes),
+        ("feature_row_gpu_resident_safety_margin_bytes", safety_bytes),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"trace spec graph_knobs.{key} must be a non-negative int")
+    if influence_mode == "cuda_full" and resident_bytes == 0:
+        raise ValueError(
+            "cuda_full feature-row influence requires a resident byte budget"
+        )
+    if influence_mode == "cuda_windowed" and window_bytes == 0:
+        raise ValueError(
+            "cuda_windowed feature-row influence requires a window byte budget"
+        )
+    if influence_mode == "auto" and (resident_bytes == 0 or window_bytes == 0):
+        raise ValueError(
+            "auto feature-row influence requires resident and window budgets"
+        )
+    resource_policy = spec["graph_knobs"].get("runtime_resource_policy", "off")
+    if resource_policy not in RUNTIME_RESOURCE_POLICIES:
+        raise ValueError(
+            "trace spec graph_knobs.runtime_resource_policy must be off, "
+            "measure_only, or enforce"
+        )
+    planning_envelope = spec["graph_knobs"].get("resource_planning_envelope", {})
+    if not isinstance(planning_envelope, dict):
+        raise ValueError(
+            "trace spec graph_knobs.resource_planning_envelope must be an object"
+        )
+    if resource_policy == "enforce" and not any(
+        key in planning_envelope for key in ("host_rss_stop_gib", "walltime_seconds")
+    ):
+        raise ValueError(
+            "enforce resource policy requires host_rss_stop_gib or walltime_seconds"
+        )
+    diagnostic_mode = spec["graph_knobs"].get("diagnostic_stop_mode", "none")
+    diagnostic_batches = spec["graph_knobs"].get("diagnostic_stop_phase4_batches")
+    if diagnostic_mode not in {
+        "none",
+        "phase0_probe",
+        "phase3_probe",
+        "transition_probe",
+    }:
+        raise ValueError(
+            "trace spec graph_knobs.diagnostic_stop_mode must be none, "
+            "phase0_probe, phase3_probe, or transition_probe"
+        )
+    if diagnostic_mode == "transition_probe":
+        if (
+            isinstance(diagnostic_batches, bool)
+            or not isinstance(diagnostic_batches, int)
+            or diagnostic_batches <= 0
+        ):
+            raise ValueError("transition_probe requires positive phase4 batches")
+    elif diagnostic_batches is not None:
+        raise ValueError(
+            "diagnostic_stop_phase4_batches is valid only for transition_probe"
         )
     if (
         spec["graph_knobs"].get("reuse_target_logits")
@@ -305,8 +475,10 @@ def build_trace_specs(
         int(index): list(reasons)
         for index, reasons in selection.get("selection_reasons", {}).items()
     }
+    overrides = graph_knob_overrides or {}
     knobs = base_trace_defaults()
-    knobs.update(graph_knob_overrides or {})
+    knobs.update(overrides)
+    normalize_backward_overrides(knobs, overrides)
     specs: list[TraceSpec] = []
     for generated_index in selection.get("selected_indices", []):
         token = generated_tokens[generated_index]

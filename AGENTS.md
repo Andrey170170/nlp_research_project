@@ -1,7 +1,7 @@
 # Agent operating instructions
 
 Status: Durable repo policy
-Last updated: 2026-05-16
+Last updated: 2026-07-10
 
 This file is the source of truth for agents working in this repository. Keep
 `CLAUDE.md` as a pointer only.
@@ -9,9 +9,14 @@ This file is the source of truth for agents working in this repository. Keep
 ## Project context
 
 - Research project: temporal circuit stability for LLM reliability, with most
-  current work centered on exact/chunked attribution tracing and validation.
-- Model stack: Gemma-3-1B-IT with GemmaScope-2 cross-layer transcoders.
-- Local editable library dependency: sibling checkout `../circuit-tracer_chunked`.
+  current work centered on a large-scale circuit-tracing harness: scenario
+  generation, batching, SLURM orchestration, provenance, extraction, validation,
+  and cross-run analysis.
+- Current calibration stack: Gemma 3 1B/4B/12B with GemmaScope-2 CLT and PLT
+  providers. The governor/runtime contract must remain provider-agnostic.
+- Local editable library dependency: sibling checkout `../circuit-tracer_chunked`;
+  that library owns the in-round tracing implementation while this repo owns the
+  experiment harness around it.
 - Environment manager: `uv`; run Python as `uv run ...` unless already inside the
   uv-managed `.venv`.
 
@@ -26,10 +31,53 @@ parent_directory/
 The project repo alone is not enough for provenance. Exact-trace results depend
 on both this repo and the sibling library checkout.
 
-## OSC / login-node safety
+Possible future direction: reusable harness pieces such as batched tracing
+orchestration may move into `../circuit-tracer_chunked` so the library can run
+more independently. Until that is an explicit task, keep this repo as the
+orchestration/provenance layer and avoid opportunistic cross-repo merges.
 
-This repo runs on Ohio Supercomputer Center systems. GPU/model work must happen
-inside SLURM jobs, never on login nodes.
+Phase E consumes governor plans through the canonical runtime after the Phase D
+and C2 immutable Granite gates. The governor is a staged constrained optimizer:
+it replans still-free axes from progressively better measurements while
+preserving hard user pins and already-frozen state. Its fidelity policies are
+`exact`, `bounded`, `best_effort`, and `research`. Calibration observations,
+fidelity-scope authorization, and launch-default changes are separate reviewed
+actions; do not treat a fitted or selected plan as a default promotion.
+
+Scaling workloads are architecture diagnostics, not hurdles to clear with
+workload-specific exceptions. When a longer prefix, larger model, or harder
+prompt exposes a resource or runtime failure, stop the ladder and fix the
+general capability/shape-dependent mechanism that failed. A narrower batch,
+larger allocation, longer walltime, or one-off profile may be used to localize
+the boundary or remain as an explicit safety fallback, but it does not close the
+rung or authorize progression by itself. Promotion requires a reusable physical
+mechanism with unchanged semantic pins, explicit selection/provenance, and
+evidence on the stress point that exposed the limitation.
+
+Tracing cleanup phases must extract logging and telemetry mechanics into deep
+sibling modules. Tracing algorithms should emit typed domain events or
+lifecycle spans; schema construction, sequencing, resource sampling,
+incremental sinks/flushing, and human log rendering belong to the observability
+subsystem.
+
+Phase C2 replaces the complete project-to-sibling tracing path before Phase E.
+Legacy Python API compatibility is not a requirement. Build one canonical
+typed runtime around meaningful domain objects with subsystem-owned invariants;
+do not replace flat argument lists with generic context/config/input bags.
+Migrate sibling and project callers atomically, then delete
+`attribute_nnsight.py`, flat `attribute(...)` routing, legacy translators and
+kwargs, private compatibility re-exports, and obsolete project trace pipelines.
+There must be no dual runtime. Moving large methods behind imports is not a
+cleanup result unless the new modules have coherent ownership and the top-level
+trace flow is readable. The normative design is
+`docs/tracing_runtime_rewrite_spec.md`.
+
+## CHPC / login-node safety
+
+This repo now runs primarily on Utah CHPC Granite. Historical Ascend/Cardinal
+OSC paths remain in the codebase for provenance, but new launches should use the
+`granite` cluster profile unless intentionally reconstructing old OSC work.
+GPU/model work must happen inside SLURM jobs, never on login nodes.
 
 Filesystem search safety on HPC:
 
@@ -60,9 +108,13 @@ When in doubt, do not run it locally; prepare or inspect the SLURM command.
 
 - `README.md` — contributor orientation and safe workflow summary.
 - `AGENTS.md` — durable operating policy for agents.
+- `CHPC.md` — practical CHPC GPU/RAM/walltime routing and launch checklist.
 - `CLAUDE.md` — pointer to `AGENTS.md`; do not duplicate policy there.
 - `docs/README.md` — documentation index.
 - `docs/harness.md` — current exact-bench harness overview.
+- `docs/exact_trace_optimization_registry.md` — single intake/triage ledger for
+  performance ideas, code-quality work, deferred experiments, and rejected
+  directions; the active plan still owns execution order.
 - `docs/current_project_roadmap.md` — current scratch roadmap for active work.
 - `docs/post_consolidation_cleanup_spec.md` — durable cleanup strategy.
 - `EXPERIMENTS.md` — compact current baseline, run-family meanings, and current
@@ -100,21 +152,48 @@ Current harness:
 - overview: `docs/harness.md`
 - CLI help: `uv run exact-trace-bench --help`
 
-Scratch outputs should be organized by cluster and tier only:
+Scratch outputs should be organized by cluster and operational class:
 
-- cluster: `ascend` / `cardinal`
-- tier: `fast` / `anomaly` / `long_eval` (`anomaly` is retained for historical scratch/provenance, not new default `94_base` placement)
+- cluster: `granite` for new CHPC work; `ascend` / `cardinal` only for historical OSC provenance
+- operational class: legacy scenario tiers still exist in code as `fast` / `anomaly` /
+  `long_eval`, but new planning should classify work by operational resource
+  class instead: `setup_prefetch`, `smoke`, `baseline`, `sweep`,
+  `long_trace`, `full_answer`, and `analysis`.
 
 Use `run_id`, `run_name`, `run_description`, `run_goal`, and scenario names to
-distinguish debug campaigns. Do not introduce ordinary scratch buckets like
+distinguish campaigns. Do not introduce ordinary scratch buckets like
 `matched_debug`; those are historical provenance only.
+
+Practical GPU/RAM/walltime routing is documented in `CHPC.md`; detailed pool
+inventory is in `docs/chpc_resource_pools.md`. In short: use Granite
+`rai-gpu-grn` H200 nodes for scientific baselines and large traces, the
+SOC-associated RTX PRO 6000 Blackwell route when its class policy permits 1B
+functional testing, and Notchpeak `marasovic-gpu-np` A100 nodes for routine lab
+smokes that do not need 1T+ host RAM. Treat guest GPUs as preemptable.
+
+Workspace immutability is the default for every SLURM launch that executes
+project code, including smoke, baseline, sweep, long-trace, full-answer, and
+analysis jobs:
+
+- create one immutable read-only snapshot containing both the project and the
+  sibling library, and reuse it across a campaign when the code state is shared;
+- packaged launch commands must snapshot automatically unless an existing
+  verified snapshot is supplied;
+- direct `sbatch` use must set `WORKSPACE_ROOT` and `LIB_WORKSPACE_ROOT` to
+  the verified snapshot paths instead of relying on `SLURM_SUBMIT_DIR`;
+- environments, secrets, model caches, and output roots remain external to the
+  snapshot;
+- a live-workspace launch is an explicit exceptional override only. Record the
+  reason and both dirty states, label the run as live, and do not edit either
+  runtime checkout until the job terminates.
 
 Before any serious run, record:
 
 1. project repo branch, commit, and dirty files,
 2. sibling `../circuit-tracer_chunked` branch, commit, and dirty files,
-3. whether the launch uses a live workspace or immutable workspace snapshot,
-4. scratch output root and SLURM job IDs.
+3. immutable snapshot container/project/library roots and manifest,
+4. any explicit live-workspace override and its rationale,
+5. scratch output root and SLURM job IDs.
 
 ## Git hygiene
 

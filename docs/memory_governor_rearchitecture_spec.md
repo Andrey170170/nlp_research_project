@@ -1,7 +1,7 @@
 # Memory Governor and Library Rearchitecture Spec
 
-Status: Target design, agreed 2026-07-03; not yet implemented
-Last updated: 2026-07-08
+Status: Phase D and C2 complete; Phase E staged optimizer calibration active
+Last updated: 2026-07-21
 
 This is the "how it is supposed to be" document for the next major rework of
 the sibling library `../circuit-tracer_chunked` and its project-side harness
@@ -10,8 +10,8 @@ surface. It folds together two previously separate threads:
 1. the architecture restructure motivated by the scouting reports
    (`reports/circuit_tracer_architecture_scout.md`,
    `reports/harness_architecture_scout.md`), and
-2. the reframing of the optimization-knob sprawl as a budget-driven,
-   three-tier **memory governor**.
+2. the reframing of the optimization-knob sprawl as a staged, budget-driven,
+   fidelity-aware **memory governor**.
 
 The execution plan lives in `plans/2026-07-03_governor_rearch.md`; section 10
 below is the summary-level version. Step 1 (PLT merge) completed 2026-07-03:
@@ -52,11 +52,21 @@ The pilot burned its budget in the file-cache tier while the GPU starved —
 and no single existing knob owns that tradeoff. Only a budget-level planner
 can make it.
 
-Separately, the whole library is being restructured anyway (see the scout
-reports: `attribute_nnsight.py` is a ~12.5k-line mega-module with low
-locality and a knob-bag interface). The governor is not an add-on to that
-restructure; it *is* the "exact-trace policy/config seam" the scout report
-recommends, given a concrete job description.
+Current Granite calibration addendum (2026-07-10): the immutable strict
+Gemma-3-12B PLT baseline completed all three canonical fixtures on H200 at
+b64/c4096 in 5.8--6.4 hours. Slurm MaxRSS ranged from roughly 38 to 244 GiB
+across fixtures, so comparable launches retain a conservative 600G request
+until repeated measurements explain the spread. This run calibrates resource
+and walltime profiles only; it does not broaden the Cardinal A4 semantic-caste
+scope.
+
+Separately, the whole tracing path is being rewritten. Phase C1 extracted phase
+execution and observability mechanics, but left `attribute_nnsight.py` as a
+2,254-line aggregation layer with a 90-field interface and left the project
+mirroring that surface. Phase C2 replaces this path with coherent domain
+objects and one canonical runtime before governor integration. Old Python API
+compatibility is not a target. The governor is not an add-on to that rewrite;
+it is the exact-trace planning boundary consumed by the canonical runtime.
 
 ## 2. Philosophy
 
@@ -69,12 +79,13 @@ Three principles:
    ladder of *semantically identical* residency/execution modes (mechanism).
    The governor's job is to pick rungs given budgets (policy). Neither knows
    the other's internals.
-2. **Never die; degrade.** Every large structure must have a
-   degraded-but-correct fallback mode, so admission control never has to say
-   "does not fit" — it says "fits at mode X with estimated slowdown Y".
-   Memory stops being a cause of run death; **walltime becomes the honest
-   binding constraint**, which the planner must therefore also estimate and
-   warn about (the 12B pilot died of walltime, not memory).
+2. **Optimize under an explicit fidelity contract.** Every large structure
+   should expose slower exact rungs and, where measured evidence exists, faster
+   numerically sensitive alternatives. Exact requests fail closed when no
+   certified exact plan fits. Bounded and best-effort requests may trade measured
+   fidelity for throughput only within their declared budgets. Research requests
+   may extrapolate, but never imply equivalence. Walltime remains a first-class
+   predicted constraint in every mode.
 3. **Provider-agnostic coverage.** The governor is for every model/transcoder
    pair the library can currently run through the exact/chunked provider path,
    not just the Gemma/GemmaScope2 pairs that motivated the work. If Gemma 3
@@ -84,7 +95,23 @@ Three principles:
    capabilities/cost metadata; it must not require a governor-code special case
    for each model family or transcoder architecture.
 
-### 2.1 Supported-provider coverage contract
+### 2.1 Admission enforcement policy
+
+The canonical admission result and the decision to enforce it are distinct.
+Every run computes and records pre-execution, loaded-state, active-universe,
+Phase-3-entry, and Phase-4-entry admission reports. The default `enforce` mode
+keeps the fail-closed behavior. The calibration-only `advisory` mode may continue
+after a refused report and after predicted-ledger or observed-governor budget
+checks, with explicit `planning.admission_bypassed` or
+`planning.resource_limit_bypassed` events and preserved refusal reasons.
+
+Admission mode is operational provenance: it is recorded in runtime-plan,
+planning, and lifecycle telemetry but excluded from semantic and execution
+fingerprints. Advisory never converts provider or structural validation,
+frozen-mechanism invariants, actual CUDA OOM, OS/cgroup termination, or arbitrary
+exceptions into warnings.
+
+### 2.2 Supported-provider coverage contract
 
 The target boundary is **provider-semantics preserving**:
 
@@ -105,7 +132,8 @@ The target boundary is **provider-semantics preserving**:
   the governor planner unless it introduces a genuinely new mechanism/ladder.
 - Missing capabilities degrade cleanly. A provider that cannot support a fast
   rung (for example, no lazy encoder rows or no decoder cache) still gets a
-  valid plan using the supported rungs or a clearly reported compatibility mode;
+  valid plan using the supported rungs or a clearly reported capability-limited
+  mode;
   unsupported capabilities are telemetry/admission facts, not hidden fallbacks.
 - Cost formulas are parameterized by provider metadata and measurements. The
   Gemma/GemmaScope2 1B/4B/12B data calibrate constants and validate the first
@@ -157,13 +185,18 @@ lower-bandwidth; the governor treats the spill target as a derived choice
 (capacity first, then bandwidth) built on the existing
 `row_store_temp_root_policy` seam.
 
-### 3.4 Practical ceiling context (OSC)
+### 3.4 Current CHPC context and historical OSC evidence
 
-Typical host allocations run 400–700 GB; ~1 TB is a practical upper bound.
-Small problems should be allowed to run "warm" (let cache grow, everything
-effectively RAM-speed); large problems must stream. That decision is
-automatable: compare projected total file working set (checkpoint bytes
-actually touched + row store + caches) against the host allowance.
+Granite/H200 is the current execution and calibration environment. The concrete
+Cardinal/Ascend measurements in this document are historical OSC evidence, not
+current launch policy. The planner discovers the actual SLURM/cgroup, device,
+local-disk, and scratch envelope rather than relying on a fixed 400--700 GB OSC
+allocation heuristic. Small problems may run warm; large problems stream based
+on projected file working set versus the discovered host allowance.
+
+CHPC baselines calibrate cost and resource models only. They do not become
+matched A4 execution-caste evidence unless a separately scoped validation
+campaign promotes them as such.
 
 ### 3.5 Coupled NNSight trace-capacity constraint
 
@@ -200,54 +233,170 @@ memory reduction.
 
 ## 4. Correctness invariant and knob castes
 
-**The governor may only dynamically control knobs that are proven
-output-invariant under the currently validated provider regime. Anything
-semantics-touching is derived deterministically from (model, transcoder
-provider, scenario) — never from runtime conditions like free memory.**
+**Logical trace semantics are fixed before admission and never selected from
+runtime conditions such as free memory, measured frontier margins, or allocator
+pressure. The governor controls physical execution only.**
 
-Knobs therefore split into two castes:
+### 4.1 Logical semantics versus physical execution
 
-- **Semantics-touching** (fixed per scenario, deterministic): batch sizes
-  (backprop is pre-initialized on them and cannot change mid-run), internal
-  dtype, row-store *content* policy, and — pending revalidation —
-  `decoder_chunk_size`. Provider-defined approximation knobs, such as top-k
-  feature caps in a top-k transcoder, are also semantics-touching unless
-  separately proven invariant.
-- **Performance-only** (governor-controllable, even mid-run): cache byte
-  budgets, replay window, prefetch lookahead, read caches, fadvise
-  eagerness, residency modes, ladder rung selection, spill targets.
+The current API conflates these concepts; the new types must separate them:
 
-### 4.1 Caste is empirical and provenance-tagged
+| Logical `TraceSemantics` (semantic fingerprint) | Physical `TracePlan` (execution fingerprint) |
+|---|---|
+| decoder reduction tile and reduction order | decoder fetch chunk and cache chunk/bytes |
+| frontier refresh stride and explicit checkpoints | physical microbatch and prefetch depth |
+| dtype, hooks, provider approximation, caps, row-store content | residency, spill target, cache policy, ladder rung |
+| sequence/window state-reuse semantics | buffers, scheduling, transfer overlap |
 
-The historical claim "`decoder_chunk_size` changes cause small
-compact-output drift" was measured on the wrong-hook contaminated setup
-(raw residual into JumpReLU → ~everything active → 1–2M actives competing
-for an 8k extraction slot → a razor-thin, tie-dense selection boundary where
-any float-summation reordering flips selections). That is a property of the
-pathological regime, not necessarily of the knob.
+The planner may change the right column under the selected fidelity contract.
+It must not infer a right-column value by reinterpreting a legacy knob that also
+changes the left column. Phase C2 migrates each old argument to one canonical
+semantic or execution field and deletes the mixed argument rather than carrying
+translation into the runtime (section 9.2).
 
-Corrected-regime scale is structurally different:
+Selection/frontier margins are validation diagnostics and runtime warnings.
+They are never a semantic gate: a large measured margin does not authorize a
+different reduction order or refresh checkpoint, and low free memory does not
+authorize a semantics change.
 
-- CLT short prompt: ~4k actives vs the 8k cap — selection is **non-binding**;
-  there is no boundary to perturb. Chunk size is plausibly exactly invariant.
-- PLT: 50k–78k actives vs 8k — selection binds (~10:1) but against a healthy
-  score distribution. Sensitivity is an open empirical question.
+Phase D freezes direct physical controls for NNSight session capacity, Phase-3
+and Phase-4 compute microbatches, per-phase replay windows, decoder contraction
+row tiles, row-production column tiles, influence row/column tiles, row
+retention, and each file-cache behavior. Logical Phase-4 reference batches and
+refresh checkpoints remain independent of physical backward-call boundaries.
+Combined legacy values translate into both sides deterministically; explicit
+old/new conflicts are rejected before a lifecycle or model load begins.
 
-Consequently the knob taxonomy (`docs/knob_api_taxonomy.md`, to be extended)
-gets per-knob columns: **tier, bytes-cost formula, caste, validated-under**
-(hook regime, provider family/topology, model family where relevant, scenario
-family). Contaminated-era evidence does not count as validation. Unproven knobs
-are treated as semantics-caste until cleared. If `decoder_chunk_size` is
-cleared, the governor gains its single most powerful VRAM lever — this is the
-biggest open fork in the design and is resolved by the probe campaign (section
-10, step 2).
+### 4.2 Fidelity budgets and decision-axis classes
 
-## 5. Plan epochs
+Every request carries one immutable `FidelityBudget`; the budget is inherited by
+every planning epoch and is never weakened at runtime.
 
-The governor is not a continuous memory manager. It acts at a small number
-of discrete decision points, each with strictly more information:
+- **`exact` (default):** only axes classified as exact may vary. A numerically
+  sensitive axis is eligible only when a scope-matched calibration observation
+  certifies the requested exact metrics. Unknown support refuses actionably.
+- **`bounded`:** exact axes and explicitly allowed numerically sensitive axes
+  may vary. Conservative predicted metric lower bounds must satisfy every
+  caller-supplied floor at the requested confidence. Semantic axes stay fixed.
+- **`best_effort`:** explicitly allowed sensitive axes may vary. Fidelity loss
+  is a soft objective penalty rather than a hard floor; the report must expose
+  the selected tradeoff and non-dominated alternatives.
+- **`research`:** caller-enumerated alternatives and safe extrapolation are
+  allowed. Unsupported predictions are labeled unknown with no equivalence or
+  bound claim.
 
-1. **Admission (before load).** Inputs: model config, transcoder provider
+The sibling owns a complete decision-axis catalog. Each axis is classified as
+`exact`, `numerically_sensitive`, or `semantic`, names its subsystem owner and
+freeze epoch, and declares dependencies. Cache capacity, residency, storage,
+spill, and proven invariant prefetch policies are exact. Physical execution
+grouping and decoder fetch/reduction grouping are numerically sensitive while
+floating-point grouping can feed later frontiers. Logical source/feature/logit
+grouping, refresh cadence, reduction order, dtype, caps, and provider
+approximation are semantic. Axis class describes mechanism behavior; one exact
+experimental comparison does not reclassify an axis globally.
+
+Unclassified axes are semantic and remain pinned outside explicitly enumerated
+research work. No fidelity mode silently broadens the allowed axis set.
+
+### 4.3 A4 decision and exact validation scope
+
+Cardinal A4 is sufficient to proceed with the sibling implementation. Ascend
+job `6260319` is deferred, non-blocking, optional environment follow-up.
+
+The metrics below are transcribed from the OSC-side Codex comparison summary
+supplied by the user. Cardinal source artifacts and generated campaign files are
+pending transfer to CHPC. This is sufficient to freeze the API and begin
+mechanism work, but a validation profile cannot ship as a runtime default until
+the transferred artifacts reproduce the derived report and provenance record.
+
+Scope: corrected-hook Gemma-3-1B + GemmaScope2 PLT-small, Cardinal, fp32,
+`t01_361_s1002_g300` and the explicit 298--300 window, using the indicated
+configurations. Metrics are **feature / edge / weighted-edge similarity** and
+**top64 / top256 / top1024 / top5000**:
+
+| Comparison | Feature / edge / weighted | Top64 / 256 / 1024 / 5000 |
+|---|---:|---:|
+| chunk c4096/b256 vs A3 c8192/b256 | .994643 / .988269 / .987517 | 1 / .996 / .993 / .992 |
+| batch c8192/b128 vs A3 c8192/b256 | .990040 / .987479 / .984281 | .969 / .984 / .989 / .991 |
+| per-token g300 vs A3 | .998292 / .992627 / .992163 | 1 / 1 / .995 / .995 |
+| window-reuse g300 vs A3 | 1 / 1 / 1 | 1 / 1 / 1 / 1 |
+| window-reuse vs per-token g298 | 1 / 1 / 1 | 1 / 1 / 1 / 1 |
+| window-reuse vs per-token g299 | .984737 / .973165 / .976543 | 1 / .992 / .992 / .991 |
+| window-reuse vs per-token g300 | .998292 / .992627 / .992163 | 1 / 1 / .995 / .995 |
+
+A4 has three tracks: **execution-caste** (the Cardinal comparisons above,
+decision-bearing), **environment reproducibility** (Ascend deferred and
+non-blocking), and **session regression** (the 298--300 comparisons). This
+evidence does not clear 4B, 12B, CLT, another dtype, another cluster, or another
+provider regime. Historical wrong-hook results remain provenance only.
+
+## 5. Staged constrained optimization
+
+The governor is not a continuous memory manager, but neither is it a one-shot
+resolver. It runs the same constrained optimization contract at a small number
+of discrete decision points, each with strictly more information. Every run
+carries forward hard user requirements and decisions frozen by already-created
+state; each epoch replaces estimates with observations and re-optimizes every
+remaining free physical variable.
+
+`PhysicalExecutionRequirements` expresses hard equality/bound constraints.
+For example, forcing `row_store_policy=recompute` fixes that variable while the
+optimizer remains responsible for selecting the best fitting source schedule,
+session capacity, Phase-3/4 microbatches, tiles, cache, residency, and placement.
+No candidate that violates a hard requirement is admissible. When the hard
+constraint set is infeasible, the result reports conflicts and nearest rejected
+candidates rather than silently relaxing a requirement.
+
+Provider profiles declare loose implementation safety limits. The sibling
+governor also owns an extensible response-model registry and immutable response
+bundles. Project campaigns convert artifacts into the sibling's typed
+calibration samples; the sibling owns fitting, evaluation, uncertainty, bundle
+validation, and runtime prediction. Each bundle contains independently
+replaceable feasibility, resource, phase-runtime, and fidelity model artifacts,
+plus their feature schemas, support scopes, fit configuration, held-out
+diagnostics, observation-set hash, and content fingerprint. Adding a model
+family must not require changing campaign ingestion or the other response
+families.
+
+Normalized observations contain workload, hardware/code scope, decision vector,
+outcome, runtime, resources, fidelity, uncertainty, and artifact provenance.
+OOM/refusal are censored feasibility evidence, timeout is a runtime lower bound,
+and infrastructure failure carries no scientific response value. Held-out rows
+are never fit inputs. Wave labels are provenance only, never solver gates.
+Response coordinates use the last selected value recorded for each physical
+axis, not merely the requested scenario value. Feature schemas are derived from
+fit rows only. Project-side legacy names are normalized to the sibling's typed
+row-store and residency values before fitting.
+
+The first registered models remain deliberately small: conservative censored
+feasibility envelopes, regularized corrections around analytic resource and
+phase-runtime estimates, and local conservative fidelity prediction. Every
+family has a deterministic undersupported-data fallback. Models may not
+interpolate across semantic axes without explicit authorization. Later model
+families may add richer response surfaces, interactions, or hierarchical
+transfer where held-out evidence supports them. Neural models are not part of
+the design requirement; complexity should increase only when it measurably
+improves prediction and uncertainty calibration. Bundle and predictor protocols,
+not one particular statistical estimator, are the runtime contract.
+
+Response bundles are inert unless a caller supplies one explicitly. The project
+harness loads a validated bundle only through `governor_response_bundle_path`
+and forwards the typed object into `TraceRequest`; bundle fingerprints are part
+of execution provenance. Publication, held-out evaluation, fidelity-scope
+authorization, and default activation remain separate review points.
+
+Candidate selection is deterministic: satisfy provider safety, resource and
+walltime budgets, frozen decisions, and user pins; apply the fidelity budget;
+prefer better-supported/lower-risk predictions; then minimize predicted
+remaining time, peak pressure, I/O amplification, and stable fingerprint order.
+Best-effort adds its declared fidelity-loss penalty to the objective. Minimum
+memory is not the objective when additional safe resource improves throughput.
+Each report includes a bounded Pareto set over fidelity loss, walltime, VRAM,
+host RAM, and I/O so callers can inspect meaningful alternatives.
+
+The epochs are:
+
+1. **Pre-execution admission.** Inputs: model config, transcoder provider
    profile/capabilities (or a preset resolving to them), prompt/prefix length,
    hardware (VRAM queried; host budget auto-discovered from the SLURM/cgroup
    limit — not typed by the user). Only closed-form estimates are available.
@@ -256,19 +405,44 @@ of discrete decision points, each with strictly more information:
    Output: a plan statement — predicted per-tier rigid/elastic demand,
    selected ladder rungs, estimated phase times vs walltime — or an early,
    explicit "will not finish / must shrink X" instead of a death 90 minutes
-   into Phase 3.
-2. **Post-load calibration.** The model is resident: measure it — that is
+   into Phase 3. The current canonical API receives an already-constructed
+   model, so this epoch is not a true pre-load gate. A future typed loader
+   specification may move the same decision ahead of model construction.
+2. **Loaded-state optimization.** The model is resident: measure it — that is
    the permanent VRAM line item. Load one decoder chunk and one encoder-row
    read: unit costs are now measured, not estimated. Everything remaining
    under `vram_fraction x total` after permanent + worst-case phase working
-   set becomes the **headroom pool** (vLLM's profile-then-claim move).
-3. **Post-Phase-0 re-plan.** Phase 0 measures the only real unknown: `nnz`.
+   set becomes the **headroom pool**. Re-run candidate search with those
+   measurements before freezing controls whose state Phase 0 creates.
+3. **Post-Phase-0 optimization.** Phase 0 measures the only real unknown: `nnz`.
    Row-store bytes, encoder residency, replay working sets all become
    arithmetic. Spend the headroom pool here: bigger decoder cache, wider
-   replay window, deeper prefetch — performance-caste levers only.
-4. **Phase transitions.** Each phase declares its working-set shape,
-   receives a grant from the ledger, and returns it on exit. Ledger entries
-   carry (tier, demand class, lifetime: permanent / phase / transient).
+   storage, encoder residency, and Phase-3/4 microbatches here. Decoder
+   cache/fetch, source batching, replay window, and prefetch are frozen because
+   Phase-0 state may already depend on them.
+4. **Phase-entry optimization and transitions.** Each phase declares its
+   working-set shape, receives a grant from the ledger, and returns it on exit.
+   Measurements from the previous phase refine still-free phase-local controls
+   before the next grant. Ledger entries carry (tier, demand class, lifetime:
+   permanent / phase / transient).
+
+Each epoch records the candidate domain, hard constraints, frozen/free variable
+sets, selected candidate, rejected candidates and reasons, binding resources,
+support/extrapolation classification, predicted time/demand, observed
+time/demand, and prediction error. Memory is predicted as independent
+concurrent phase peaks. Walltime is additive: observed elapsed work plus
+predicted not-yet-started phase components. Row policy, decoder cache, and
+replay-tile cache affect only their owning phase components; no whole-run
+policy multiplier is admissible.
+
+Controls freeze at their last safe epoch: load placement before model load;
+decoder fetch/cache ownership, source scheduling, replay, and prefetch before
+Phase 0; row-store and encoder residency before row production; Phase-3 and
+Phase-4 microbatches/tiles at their respective phase entries. Session capacity,
+Phase-1 source scheduling, Phase-3 microbatch, Phase-4 microbatch, decoder
+cache, and replay-tile cache remain separate variables. Replay-tile cache is
+zero outside recompute storage. Source microbatch is not a free optimizer
+dimension until a sequenced source executor consumes it.
 
 The hand-tuned size-aware presets for the 1B/4B/12B stress campaign (batch
 1024/512/256, chunk 8192/4096/2048, cache 32/16/8 GiB) are a lookup-table
@@ -282,7 +456,7 @@ Each large structure exposes ordered modes; **all rungs must produce
 bitwise-identical outputs for the fixed provider semantics**. Rung selection is
 policy (governor); rung implementation is mechanism (subsystem). Rung catalogs
 are capability-filtered: if a provider lacks a fast mechanism, the governor
-selects a supported slower rung or reports compatibility mode rather than
+selects a supported slower rung or reports a capability-limited plan rather than
 special-casing the provider name.
 
 | Structure | Rungs (fast → survivable) |
@@ -312,6 +486,15 @@ storage for compute entirely. Tiling and recompute are output-invariant
 it changes what Phase 4 sees and is excluded from the governor's authority
 (scenario-level decision only).
 
+A tiled store that retains every tile still has worst-case `K x N` disk demand
+and is therefore only a bounded-RSS/full-retention rung. The extreme-case rung
+uses canonical column-tiled row production plus a recipe ledger and
+deterministic replay. It retains the unavoidable `O(N)` influence/ranking state
+and compact selected output, but never creates a full `K x N` tensor or file.
+Providers explicitly declare ordered tile-production and replay capabilities;
+unsupported bounded requests are rejected rather than falling back to full
+retention.
+
 Precedent that the slow rungs are workable: vLLM's swap-vs-recompute pair
 for KV blocks under preemption; MegaTrain (arXiv 2604.05091) runs
 permanently on the bottom rung (params live in host RAM, GPU as transient
@@ -319,7 +502,35 @@ compute engine, double-buffered streams hiding transfer latency).
 
 ## 7. User-facing surface
 
-The knob set collapses to a handful of targets:
+The sibling library owns five public value objects:
+
+- `TraceRequest`: provider/model reference, input/targets, requested operation,
+  `TraceSemantics`, fidelity mode, and optional named evidence/overrides.
+- `TraceSemantics`: all logical choices that define the semantic fingerprint.
+- `ResourceEnvelope`: device, VRAM fraction/bytes, host rigid/file allowances,
+  local/scratch capacities, walltime, and explicit operator constraints.
+- `TracePlan`: resolved physical execution, estimates, warnings/refusal reasons,
+  profile/evidence versions, and semantic plus execution fingerprints.
+- `TraceResult`: outputs/artifact references, fingerprints, provenance, terminal
+  status, and telemetry stream summary.
+
+First-class runtime entry points are:
+
+```text
+trace_one(request, resource_envelope) -> TraceResult
+trace_batch(requests, resource_envelope) -> list[TraceResult]
+open_session(request, resource_envelope) -> TraceSession
+TraceSession.trace_sequence(...)
+TraceSession.trace_window(..., reuse=explicit)
+```
+
+`trace_batch` plans shared loading/cache use without forcing requests to share
+logical semantics. `open_session` makes lifecycle, sequence state, and window
+reuse explicit; reuse is never inferred from available memory. Phase C2 makes
+these the only runtime entry points and deletes the former `attribute(...)`
+facade and argument-translation path in the same migration.
+
+The ordinary resource surface collapses to a handful of targets:
 
 ```text
 vram_fraction:      0.90          # of detected device memory
@@ -327,20 +538,49 @@ host_budget:        auto          # from SLURM/cgroup limit; explicit override a
 cache_policy:       auto          # warm | bounded | streaming | auto
 planner:            v2            # planner/machinery version
 spill_roots:        auto          # tmp -> scratch ladder; explicit override allowed
+fidelity:           exact         # exact | bounded | best_effort | research
+fidelity_metrics:   {}            # metric floors/confidence for bounded mode
+fidelity_penalty:   0.0           # soft loss weight for best_effort mode
 ```
 
 - `cache_policy=auto` resolves from projected file working set vs host
   allowance: **warm** (small problem: let page cache grow, no advisories),
   **streaming** (big problem: aggressive DONTNEED after append/read, sized
   read caches as the only deliberate retention), **bounded** in between.
-- All existing per-mechanism knobs survive as explicit *overrides* of the
-  governor's derived values, not as the primary interface.
+- Canonical physical constraints and semantic choices are represented directly
+  by `ExecutionConstraints` and `TraceSemantics`; the runtime does not preserve
+  old flat knob names as a second control surface. Logical overrides require
+  explicit research alternatives, while physical constraints remain plan
+  inputs. Numerically sensitive physical axes require calibration support under
+  exact/bounded modes.
 - Existing explicit model/transcoder/provider selection remains outside the
   budget surface. The governor receives the resolved provider profile and plans
   from capabilities; it does not infer policy from repo names or model family
   strings.
 
 ## 8. Telemetry contract
+
+Telemetry is a versioned, append-only stream emitted during planning, provider
+loading, execution, cleanup, refusal, cancellation, and failure. It must not
+wait for a successful `TraceResult` or retain the complete event history in
+memory. Every event carries request/run ID, monotonic sequence number, timestamp,
+event-schema version, semantic fingerprint, execution fingerprint, provider
+profile version, and validation-evidence version (if any). Consumers tolerate
+unknown additive events and can detect gaps or a truncated stream.
+
+Observability is implemented as deep sibling modules rather than inline tracing
+plumbing. Algorithm modules emit a small number of typed domain events or enter
+phase/batch lifecycle spans. Dedicated observability modules own schema
+construction, timestamps/sequences, sanitization, CUDA/cgroup sampling,
+incremental sinks and flush policy, bounded retention, and human-readable log
+adapters. Human logs should normally be derived from structured events instead
+of duplicated beside them. Provide no-op, collecting, composite, and
+failure-injection observers for tests; avoid a global untyped event bus.
+
+The project configures artifact placement and may consume the event stream for
+run orchestration. The sibling sink remains the sole owner of event sequencing,
+serialization, incremental flushing, and terminal records; the harness must not
+re-serialize a competing canonical stream.
 
 Every run reports, per phase and per tier:
 
@@ -357,47 +597,85 @@ Every run reports, per phase and per tier:
    (k+1)-th feature; count of features within epsilon of the boundary.
    This is the per-run answer to "how brittle is this output to
    floating-point reordering" and the per-run form of the Track-A
-   amplification question. Used as validation evidence, not as a per-run
-   gate (knob choices must never depend on runtime measurements in ways
-   that could differ across reruns);
+   amplification question. Used as validation evidence and warning only, never
+   as a semantic or free-memory-dependent runtime gate;
 6. the Phase-0 sanity gate: `active_features ≈ tokens x layers x trained
    L0`, as a hard screaming check — the structural fix for the class of
    error that let the wrong-hook contamination shape conclusions for weeks.
 7. provider identity and capabilities: architecture/topology, hook map,
    checkpoint/provider fingerprint, declared/measured dimensions and bytes,
-   selected compatibility fallbacks, and any missing capability that forced a
+   selected capability fallbacks, and any missing capability that forced a
    slower rung.
+8. admission and lifecycle events: discovered `ResourceEnvelope`, predicted
+   plan, binding constraints/actionable refusal, session open/reuse/reset/close,
+   batch sharing decisions, cancellation, cleanup, terminal status, and dropped
+   event count.
 
 ## 9. Relation to the module-split restructure
 
-From the scout report's deepening candidates:
+### 9.1 Ownership boundary
 
-- The governor **is** candidate #2 (exact-trace policy/config seam): policy
-  resolution becomes one deep module, testable without running attribution.
-- The attribution mega-module split (candidate #1) reshapes phases into
-  governor *consumers*: each phase declares working sets and requests
-  grants, instead of reading a flat knob bag.
-- Row-store/replay locality (candidate #3) is where the ladder mechanism
-  for the row store lands.
-- The provider contract from the PLT parity work
-  (`docs/plt_clt_optimization_parity_spec.md`) already made capabilities
-  architecture-neutral; the governor consumes `TranscoderCapabilities`, a
-  provider runtime profile, and per-provider cost formulas rather than CLT/PLT,
-  Gemma/GPT/Llama, or checkpoint-name special cases.
+The sibling `../circuit-tracer_chunked` owns the complete tracing runtime:
 
-Implementation rule: the governor package must be unit-testable with synthetic
-providers that cover at least cross-layer, same-layer, and top-k/approximate
-provider semantics. If a new supported model/transcoder pair requires editing
-governor branching instead of supplying provider metadata or a new mechanism
-rung, the abstraction has failed.
+- `TraceRequest`, `TraceSemantics`, `ResourceEnvelope`, `TracePlan`, and
+  `TraceResult` schemas and fingerprint implementations;
+- provider loading, capabilities, provider profiles, and profile-version
+  validation;
+- the pure resolver, governor/ledger/epochs, degradation mechanisms, row store,
+  replay, caches, and streaming telemetry;
+- first-class `trace_one`, `trace_batch`, and `open_session`, including sequence
+  tracing and explicit window reuse.
 
-Public `attribute(...)` remains a compatibility facade during migration.
+The project owns the experiment harness:
+
+- scenarios, fixtures, campaign/wave definitions, and expected comparisons;
+- SLURM submission and CHPC cluster/resource policy (Granite/H200 current; OSC
+  profiles historical);
+- immutable workspace snapshots and two-repo provenance;
+- experiment layout, artifact promotion, extraction, comparison, and scientific
+  interpretation;
+- generation of calibration observations. The sibling consumes only promoted,
+  versioned provider profiles, never project-internal campaign objects.
+
+This follows the scout split in dependency order: Phase C1 extracted deep
+modules without changing behavior; Phase D implements explicit mechanisms;
+Phase C2 replaces the complete sibling/project trace path with one readable
+runtime; only Phase E makes that runtime consume governor plans. The governor
+consumes capabilities and profiles, not model/provider name special cases.
+
+Repository integration is an editable package during development and immutable
+project+sibling snapshots for runs. A git submodule is explicitly rejected: it
+does not create the API boundary and makes CHPC snapshot/provenance workflows
+more brittle. A third package or plugin abstraction is deferred until the new
+boundary reveals proven shared code.
+
+### 9.2 Atomic runtime replacement
+
+Phase C2 follows `docs/tracing_runtime_rewrite_spec.md`:
+
+1. inventory old arguments and effects only to preserve semantics and artifact
+   interpretation, not to preserve their API;
+2. define canonical attribution, semantics, envelope, execution-constraint,
+   resolved-plan, phase-result, storage, session, and result objects with
+   subsystem-owned invariants;
+3. migrate sibling and project callers/tests to one runtime atomically;
+4. delete `attribute_nnsight.py`, flat `attribute(...)` routing, legacy kwargs,
+   signature reflection/translators, private re-export namespaces, and obsolete
+   project trace pipelines;
+5. preserve separate semantic and execution fingerprints plus explicitly
+   versioned retained artifact readers where required.
+
+There is no compatibility window and no dual runtime.
+
+The governor package is unit-testable with synthetic cross-layer, same-layer,
+and top-k/approximate providers. New provider eligibility comes from metadata or
+a genuinely new mechanism rung, not a model-family branch.
 
 ## 10. Execution plan
 
-Ordered; each step is useful even if later steps slip.
+Ordered; completed historical steps remain here for provenance.
 
-### Step 1 — Merge PLT parity + hook fix into main (first, before anything)
+### Step 1 — Merge PLT parity + hook fix (DONE 2026-07-03; history)
 
 - Merge `feature/plt-optimization-parity-harness` (project) and
   `feature/plt-optimization-parity` (sibling) into their `main` branches,
@@ -407,83 +685,194 @@ Ordered; each step is useful even if later steps slip.
 - Re-establish corrected-hook CLT baselines; do not reuse any
   `hook_resid_mid`-era GemmaScope2 CLT artifacts as references.
 
-### Step 2 — Sensitivity + calibration probe campaign (1B/4B, before rewrite)
+### Step 2 — A3/A4 evidence (A4 GATE PASSED 2026-07-09; history)
 
-One campaign, two axes, on corrected hooks:
+A3 supplied survival/cost observations. A4 supplied the narrowly scoped
+execution-caste and session evidence in section 4.3. Cardinal is sufficient to
+proceed. Ascend `6260319` is optional environment reproducibility follow-up and
+does not block implementation.
 
-- **FP-sensitivity axis:** per (model, prefix size):
-  `decoder_chunk_size` sweep {2048, 4096, 8192} with everything else
-  pinned, plus a same-config repeat run as the determinism control; diff
-  compact outputs; record selection-margin telemetry so results explain
-  *why*, not just *whether*, outputs moved. This resolves the
-  `decoder_chunk_size` caste — the biggest open design fork.
-- **Cost-model axis:** the same runs across a spread of prefix lengths
-  yield the nnz-vs-tokens curve, unit decoder-chunk/encoder-row timings,
-  and rigid/elastic memory curves — the empirical constants for admission
-  estimates, measured clean instead of inherited from contaminated
-  telemetry. Store these as provider-profile calibration data, not as
-  GemmaScope2-only constants.
-
-### Step 3 — Taxonomy pass (login-safe)
+### Step 3 — Freeze semantics, evidence, and profile schemas (DONE 2026-07-10)
 
 Extend `docs/knob_api_taxonomy.md`: for every knob — tier, bytes-cost
 formula, caste, validated-under provenance, and whether it is provider-declared,
 scenario-declared, or governor-derived. This is the requirements doc for the
-governor and the guardrail that keeps provider semantics knobs out of memory
-policy.
+governor. Define `TraceSemantics`, semantic/execution fingerprint schemas,
+   fidelity-budget evidence schema, provider calibration profile schema, and the
+canonical domain-field ownership map before mechanisms move.
 
-### Step 4 — Governor v0 as a pure resolver, project-side
+### Step 4 — Governor v0 as a pure resolver in the sibling (DONE 2026-07-10)
 
-A pure function (model config, provider profile/capabilities, scenario,
-hardware) → existing knob values, living next to `transcoder_config.py`. No
-library changes. The hand-tuned 1B/4B/12B presets become test fixtures: the
-resolver must reproduce them within tolerance, and must beat them where the
-probe data says they were too conservative. Add synthetic provider fixtures so
-the resolver is tested without Gemma/GemmaScope-specific branches.
+Implement the pure `TraceSemantics` + provider profile + `ResourceEnvelope` ->
+`TracePlan` resolver directly in `../circuit-tracer_chunked`. Do not create a
+disposable project-side resolver. The project generates calibration; promoted,
+versioned profiles are sibling inputs. Recorded presets and synthetic providers
+are arithmetic fixtures, not semantic-equivalence evidence.
 
-### Step 5 — Library restructure with the governor as a deep module
+Implemented at sibling `phase-b-governor-contract@0ce3f96`. Resolver outputs are
+explicitly advisory through Phase D mechanism validation and the Phase C2
+runtime rewrite; Phase E is the first runtime consumer. The package-owned
+   trusted validation-evidence registry is empty; this intentionally prevents A4
+   from certifying exact or bounded scope until the source artifacts are
+   transferred, the report is regenerated, and a reviewed record is shipped.
 
-The module split per the scout report, with the ledger, epoch model, provider
-runtime profile, and ladder mechanisms (including the tiled row store) landing
-behind the new seams. Existing login-safe tests listed in the scout report are
-the safety rails; parity runs on canonical prompts guard exact outputs, and
-provider-contract tests guard non-Gemma/top-k extensibility.
+### Step 5 / Phase C1 — Behavior-preserving sibling cleanup
 
-### Step 6 — Dynamic post-Phase-0 spending
+Implemented structurally at sibling `phase-b-governor-contract@0d65fba` and
+closed by the immutable Granite jobs `1613108`/`1613109`. Phase D0 lifecycle
+integrity subsequently landed at sibling `20225ac`.
 
-Enable epoch-3 re-planning, gated per knob on parity proofs from step 2
-(and equivalent proofs for any knob added later).
+Mechanically decompose the attribution mega-module and supporting transcoder
+helpers. Extract observability as deep typed modules so tracing logic no longer
+contains event construction, timestamps, memory sampling, JSONL/flushing, and
+duplicate log formatting. Preserve existing algorithms, defaults, artifacts,
+entry points, and telemetry semantics. Do not apply governor plans or introduce
+new mechanisms in this phase.
+
+Gate C1 with immutable Granite H200 exact-reference runs on `361_base` for 1B CLT and 1B
+PLT. Require exact compact graph/artifact parity, required telemetry
+lifecycle/schema coverage, terminal incremental JSONL, and no unexplained peak
+VRAM or walltime regression over 10% versus the recorded baseline; rerun an
+exceeded metric before classifying it as a regression.
+
+### Step 6 / Phase D — Explicit controls and mechanisms
+
+Begin with lifecycle failure integrity: independent cleanup attempts, primary
+exception preservation, cleanup-only `ExceptionGroup` reporting, preflight
+validation before sink creation, explicit API-level preflight rejection, and
+injected failure coverage. Then split legacy logical semantics from physical
+execution controls with a temporary validation translator that Phase C2 must
+delete. Implement direct NNSight session-capacity
+and per-phase physical-microbatch controls, then canonical column-tiled row
+production, a two-dimensional influence solver, and no-retention exact replay.
+Introduce the
+sibling runtime APIs over these explicit mechanisms while keeping the Phase B
+governor advisory.
+
+Refine Phase 4 only as these mechanisms touch it. Its orchestrator should call
+self-contained operations for initialization, refresh planning, batch planning,
+execution, row commit, frontier update, and finalization over one explicit
+runtime state. Extract boundaries that own invariants; do not optimize for line
+count or introduce boilerplate-only classes. Improve typing at touched
+boundaries where it clarifies ownership or mechanism contracts, but do not make
+broad annotation cleanup a phase gate.
+
+Gate D on immutable `361_base` 1B CLT/PLT comparisons. Force mechanisms through
+explicit selectors, not envelopes. Require default/reference parity; measurable
+Phase-1 peak allocated/reserved VRAM reduction or survival under a cap the
+reference cannot meet; at least one bounded Phase-3/4 path that avoids the full
+dense allocation while matching output; and stable semantic fingerprints.
+Before E, validate `trace_one`, mixed-shape `trace_batch`, and `open_session`
+sequence/reuse/cleanup/cancellation/failure behavior. Failure injection must
+prove all cleanup is attempted, primary exceptions are not masked, and terminal
+telemetry closes whenever possible.
+
+### Step 7 / Phase C2 — Atomic tracing-runtime rewrite
+
+After Phase D D/E jobs and artifacts are fully adjudicated, replace the complete
+project-to-sibling trace path according to
+`docs/tracing_runtime_rewrite_spec.md`. Meaningful domain objects, not argument
+bags, define the boundaries. Migrate callers atomically and delete the old
+runtime/API paths. Gate with login-safe architecture/failure tests and immutable
+`361_base` 1B CLT/PLT parity. Planning may proceed while D jobs run, but code
+execution waits for the recorded D behavior references.
+
+### Step 8 / Phase E — Staged governor integration
+
+Connect pre-execution admission, loaded-state measurement/re-planning,
+post-Phase-0 active-universe re-planning, Phase-3/4 entry re-planning, and
+phase-level grants/releases. The governor may select only Phase D mechanisms
+that passed parity; exact mode refuses when no certified rung fits.
+
+Gate E on `361_base` 1B CLT/PLT governed-versus-explicit equivalence, expected
+rung selection under constrained envelopes, complete epoch telemetry, and
+exact compact-output/semantic-fingerprint parity.
+
+The governor-v0.3 correction gate uses one unconstrained CLT and one
+unconstrained PLT trace. The subsequent staged campaign is defined in
+`docs/governor_calibration_matrix.md`: Wave A is a 36-row 1B upward search,
+Wave B measures 4B/12B transfer, and Wave C fits local physical mechanisms.
+Every completed, refused, OOM, and timed-out row becomes a typed calibration
+observation. Evidence ingestion, authorization for a fidelity scope, and a
+change to launch defaults are three separate reviewed actions.
+
+### Step 9 / Phase F — Governed harness consolidation and final validation
+
+Phase C2 already maps trace execution into the stable sibling API. Add governed
+envelopes, consume sibling-owned streaming telemetry and fingerprints, and
+consolidate project launches without moving experiment policy or interpretation
+into the sibling.
+
+Gate F first with `361_base` for 1B CLT, 1B PLT, 4B PLT, and 12B PLT. Before
+promoting the integrated runtime, run the canonical
+`828_base`/`361_base`/`94_base` matrix and
+require graph/artifact parity, telemetry completeness, plan-versus-actual
+resource reports, batching/session correctness, and immutable two-repo
+provenance.
 
 ## 11. Acceptance criteria
 
-1. A run can be launched with only budget-level inputs; all per-mechanism
-   values are derived, logged, and overridable.
-2. The governor reproduces (or justifiedly improves on) the hand-tuned
-   stress presets for 1B/4B/12B.
-3. No governor-controlled knob can change compact outputs — enforced by
-   caste tests with validated-under provenance, not by convention.
-4. Admission produces a plan or an actionable refusal; no memory-caused
-   mid-run deaths in the validation matrix; walltime projections reported.
-5. Telemetry reports predicted-vs-actual per tier with rigid/elastic split,
-   ladder decisions, selection margins, and the Phase-0 L0 sanity gate.
-6. The row store completes (slower) at problem sizes where full
-   materialization would exceed node NVMe capacity, via tiled/recompute
-   rungs spilling toward scratch.
-7. Any model/transcoder pair supported by the exact/chunked provider contract
-   can obtain a governor plan from provider metadata. Unsupported/missing
-   provider capabilities are explicit in the plan and telemetry; they are not
-   hidden Gemma/CLT/PLT special cases.
+1. A run can be launched through `trace_one` with logical semantics and a
+   resource envelope; all physical values are derived, logged, and separately
+   overridable. `trace_batch` and `open_session` are first-class, not harness
+   loops over private internals.
+2. Semantic and execution fingerprints are independently stable and persisted.
+   Changing an exact physical fetch/cache or microbatch axis changes only
+   the execution fingerprint; logical reduction or refresh changes the semantic
+   fingerprint.
+3. `exact` uses only exact or scope-certified rungs and refuses actionably when
+   none fits. `bounded` enforces declared conservative metric floors;
+   `best_effort` reports its fidelity penalty and Pareto tradeoff; `research`
+   labels unknown/extrapolated support. True pre-load refusal still requires the
+   future loader boundary. Drift evidence is never represented as a guarantee.
+4. The canonical runtime has no legacy kwargs, reflected legacy signature,
+   translator, compatibility facade, or stale project/sibling imports of the
+   removed tracing paths.
+5. Streaming telemetry covers planning, success, failure, refusal, cancellation,
+   session lifecycle, and cleanup; reports predicted/actual rigid and elastic
+   demand, ladder decisions, margins as warnings, Phase-0 sanity, sequence gaps,
+   and terminal status without buffering the full stream.
+6. Mixed-shape batching tests verify result isolation, ordering, shared-resource
+   accounting, partial failure, and cancellation. Session tests verify explicit
+   reuse, independent sequence steps, the A4 298--300 window regression, reset,
+   cleanup, and failure recovery.
+7. The row store completes more slowly where full materialization exceeds local
+   capacity via semantics-preserving tiled/recompute rungs, or exact admission
+   refuses actionably if no validated rung fits.
+8. The sibling resolver consumes promoted, versioned provider calibration
+   profiles. The project retains calibration generation, campaigns, CHPC policy,
+   snapshots, extraction, comparison, and interpretation.
+9. Granite/H200 validation provenance records both repository states/snapshot
+   IDs, SLURM job/allocation, output root, envelope, profile/evidence versions,
+   and both fingerprints. CHPC calibration results are not mislabeled as A4
+   semantic evidence.
+10. Any supported provider obtains a plan from capabilities/profile metadata;
+    missing capabilities are explicit. No git submodule, third package, plugin
+    system, or model-family governor branch is introduced in this phase.
+11. Phase C1 is demonstrably behavior-preserving: the 1B CLT/PLT immutable gate
+    passes before any explicit mechanism or governor integration lands.
+12. Phase D mechanisms are directly selectable and parity-proven before the
+    governor may select them, including Phase-1 peak reduction and bounded
+    Phase-3/4 execution.
+13. Phase C2 replaces the entire project-to-sibling trace path with meaningful
+    domain contracts and passes its canonical runtime parity gate before E.
+14. Phase E records and validates five ordered planning decisions:
+    pre-execution, loaded-state, post-Phase-0, Phase-3 entry, and Phase-4 entry,
+    plus phase-transition grants/releases and measured resource samples.
+15. Phase F passes the `361_base` 1B CLT, 1B PLT, 4B PLT, and 12B PLT smoke and
+    then the canonical `828_base`/`361_base`/`94_base` matrix before launch
+    defaults or the project harness migration are declared done.
 
 ## 12. Open questions
 
-1. `decoder_chunk_size` caste in the corrected regime (resolved by step 2).
-2. Whether PLT selection at ~10:1 binding ratio shows meaningful
-   FP-sensitivity, and whether tolerance-aware tie-breaking (Track-A
-   follow-up) should land with the governor or stay separate.
-3. Exact shape of the walltime estimator (per-phase throughput models need
-   step-2 data; Phase 3 on 12B may be compute-bound regardless of budgets).
-4. Whether the recompute rung of the row-store ladder is ever cheaper than
+1. Exact shape of the walltime estimator; Phase 3 on 12B may be compute-bound
+   regardless of budgets.
+2. Whether the recompute rung of the row-store ladder is ever cheaper than
    tiled streaming in practice on Lustre, or is kept only as the
    survivability floor.
-5. How much of the ledger/epoch machinery belongs library-side vs
-   harness-side for non-harness library users.
+3. Which fidelity metrics and confidence method should become the canonical
+   bounded-mode contract after Wave C; A4 remains limited to section 4.3 scope.
+4. Whether hierarchical transfer across model sizes/providers can be supported
+   without hiding uncertainty; the MVP uses scope-matched nearest evidence.
+5. Whether a third package/plugin boundary becomes justified after the sibling
+   API and project adapter have stabilized; it is not part of this rework.

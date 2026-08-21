@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 import re
 from typing import TYPE_CHECKING, Any
@@ -8,11 +9,28 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 if TYPE_CHECKING:
-    from circuit_utils import StepData
+    from nlp_research_project.exact_trace_bench.compact_io import StepData
+    from nlp_research_project.circuit_stability_analysis.signed_graph import SignedGraph
 
 DEFAULT_EDGE_TOP_KS = (64, 128, 256, 512, 1024)
 DEFAULT_QUANTILES = (0.0, 0.25, 0.5, 0.75, 0.9, 0.99, 1.0)
 COMPACT_STEP_RE = re.compile(r"step_\d+\.npz\Z")
+LEGACY_ALL_EDGE_SCOPE = "legacy_feature_source_edges_only"
+LEGACY_ALL_EDGE_BUCKETS = ("feature<-feature", "logit<-feature")
+TYPED_BUCKET_SCOPE = "typed_bucket_edges_only"
+
+
+@dataclass(frozen=True)
+class _LoadedCompact:
+    step: "StepData"
+    bucket_graph: "SignedGraph"
+
+
+@dataclass(frozen=True)
+class _CanonicalBucket:
+    rows: np.ndarray
+    cols: np.ndarray
+    weights: np.ndarray
 
 
 def _feature_set(step: "StepData") -> set[tuple[int, int, int]]:
@@ -35,23 +53,50 @@ def _edge_map(step: "StepData") -> dict[tuple[object, object], float]:
     return edge_map
 
 
-def _jaccard(a: set[Any], b: set[Any]) -> float:
+def _jaccard(a: set[Any], b: set[Any]) -> float | None:
     union = a | b
     if not union:
-        return float("nan")
+        return None
     return len(a & b) / len(union)
 
 
 def _weighted_edge_jaccard(
-    edge_map_a: dict[tuple[object, object], float],
-    edge_map_b: dict[tuple[object, object], float],
-) -> float:
+    edge_map_a: dict[Any, float],
+    edge_map_b: dict[Any, float],
+) -> float | None:
     keys = set(edge_map_a) | set(edge_map_b)
     if not keys:
-        return float("nan")
+        return None
     num = sum(min(edge_map_a.get(key, 0.0), edge_map_b.get(key, 0.0)) for key in keys)
     den = sum(max(edge_map_a.get(key, 0.0), edge_map_b.get(key, 0.0)) for key in keys)
-    return num / den if den > 0.0 else float("nan")
+    return num / den if den > 0.0 else None
+
+
+def _finite_mean(values: list[float | int | None]) -> float | None:
+    finite_values = [
+        float(value)
+        for value in values
+        if value is not None and np.isfinite(float(value))
+    ]
+    return float(np.mean(finite_values)) if finite_values else None
+
+
+def _finite_min(values: list[float | int | None]) -> float | None:
+    finite_values = [
+        float(value)
+        for value in values
+        if value is not None and np.isfinite(float(value))
+    ]
+    return min(finite_values) if finite_values else None
+
+
+def _finite_max(values: list[float | int | None]) -> float | None:
+    finite_values = [
+        float(value)
+        for value in values
+        if value is not None and np.isfinite(float(value))
+    ]
+    return max(finite_values) if finite_values else None
 
 
 def _safe_pearson(left: np.ndarray, right: np.ndarray) -> float | None:
@@ -84,8 +129,8 @@ def _quantile_summary(values: np.ndarray) -> dict[str, float] | None:
 
 
 def _topk_edge_overlap(
-    left_edges: dict[tuple[object, object], float],
-    right_edges: dict[tuple[object, object], float],
+    left_edges: dict[Any, float],
+    right_edges: dict[Any, float],
     *,
     ks: tuple[int, ...] = DEFAULT_EDGE_TOP_KS,
 ) -> dict[str, dict[str, float | int | None]]:
@@ -93,23 +138,22 @@ def _topk_edge_overlap(
     left_sorted = sorted(left_edges, key=lambda key: (-left_edges[key], repr(key)))
     right_sorted = sorted(right_edges, key=lambda key: (-right_edges[key], repr(key)))
     for k in ks:
-        k_eff = min(k, len(left_sorted), len(right_sorted))
-        if k_eff <= 0:
-            result[str(k)] = {
-                "k_effective": 0,
-                "shared_count": 0,
-                "overlap_fraction_of_k": None,
-                "jaccard": None,
-            }
-            continue
-        left_top = set(left_sorted[:k_eff])
-        right_top = set(right_sorted[:k_eff])
+        left_k = min(k, len(left_sorted))
+        right_k = min(k, len(right_sorted))
+        left_top = set(left_sorted[:left_k])
+        right_top = set(right_sorted[:right_k])
         shared = left_top & right_top
+        union = left_top | right_top
+        denominator = max(left_k, right_k)
         result[str(k)] = {
-            "k_effective": k_eff,
+            "k_effective": min(left_k, right_k),
+            "left_k_effective": left_k,
+            "right_k_effective": right_k,
             "shared_count": len(shared),
-            "overlap_fraction_of_k": len(shared) / k_eff,
-            "jaccard": _jaccard(left_top, right_top),
+            "overlap_fraction_of_k": (
+                len(shared) / denominator if denominator else 1.0
+            ),
+            "jaccard": len(shared) / len(union) if union else 1.0,
         }
     return result
 
@@ -174,6 +218,253 @@ def _all_edge_map(step: "StepData") -> dict[tuple[object, object], float]:
             target_label = ("logit", row_value - step.n_features)
         edge_map[(target_label, source_label)] = float(abs(weight))
     return edge_map
+
+
+def _all_edge_signed_map(step: "StepData") -> dict[tuple[object, object], float]:
+    edge_map: dict[tuple[object, object], float] = {}
+    for row, col, weight in zip(step.row_idx, step.col_idx, step.weights):
+        row_value = int(row)
+        col_value = int(col)
+        if not 0 <= col_value < step.n_features:
+            continue
+        source_label: object = ("feature",) + _feature_label(step, col_value)
+        if row_value < step.n_features:
+            target_label: object = ("feature",) + _feature_label(step, row_value)
+        else:
+            target_label = ("logit", row_value - step.n_features)
+        edge_map[(target_label, source_label)] = float(weight)
+    return edge_map
+
+
+def _shared_edge_sign_agreement(
+    left_edges: dict[Any, float],
+    right_edges: dict[Any, float],
+) -> float | None:
+    shared = set(left_edges) & set(right_edges)
+    if not shared:
+        return None
+    matching = sum(
+        np.sign(left_edges[key]) == np.sign(right_edges[key]) for key in shared
+    )
+    return float(matching / len(shared))
+
+
+def _normalized_l1_deviation(
+    left_edges: dict[Any, float],
+    right_edges: dict[Any, float],
+) -> float:
+    keys = set(left_edges) | set(right_edges)
+    numerator = sum(
+        abs(left_edges.get(key, 0.0) - right_edges.get(key, 0.0)) for key in keys
+    )
+    denominator = max(
+        sum(abs(value) for value in left_edges.values()),
+        sum(abs(value) for value in right_edges.values()),
+        1e-12,
+    )
+    return numerator / denominator
+
+
+def _validate_bucket_graph(graph: "SignedGraph") -> None:
+    names = tuple(graph.bucket_names)
+    if len(names) != len(set(names)):
+        raise ValueError(f"duplicate typed bucket names in {graph.path}")
+    lengths = {
+        len(graph.bucket_row_idx),
+        len(graph.bucket_col_idx),
+        len(graph.bucket_weights),
+        len(graph.bucket_ids),
+    }
+    if len(lengths) != 1:
+        raise ValueError(
+            f"typed bucket COO arrays have mismatched lengths in {graph.path}"
+        )
+    ids = np.asarray(graph.bucket_ids, dtype=np.int64)
+    if ids.size and (int(ids.min()) < 0 or int(ids.max()) >= len(names)):
+        raise ValueError(f"typed bucket id is outside bucket_names in {graph.path}")
+    if not np.isfinite(graph.bucket_weights).all():
+        raise ValueError(f"non-finite typed bucket weight in {graph.path}")
+
+
+def _canonical_bucket_map(graph: "SignedGraph", bucket_name: str) -> _CanonicalBucket:
+    """Canonicalize one COO bucket without retaining every bucket in memory."""
+    if bucket_name not in graph.bucket_names:
+        return _CanonicalBucket(
+            np.empty(0, dtype=np.int64),
+            np.empty(0, dtype=np.int64),
+            np.empty(0, dtype=np.float64),
+        )
+    bucket_id = graph.bucket_names.index(bucket_name)
+    mask = np.asarray(graph.bucket_ids) == bucket_id
+    rows = np.asarray(graph.bucket_row_idx[mask], dtype=np.int64)
+    cols = np.asarray(graph.bucket_col_idx[mask], dtype=np.int64)
+    weights = np.asarray(graph.bucket_weights[mask], dtype=np.float64)
+    if not weights.size:
+        return _CanonicalBucket(rows, cols, weights)
+    # Sorting the signed value after the primary row/column keys gives COO
+    # duplicates a deterministic reduction order as well as making entry order
+    # irrelevant.
+    order = np.lexsort((weights, cols, rows))
+    rows = rows[order]
+    cols = cols[order]
+    weights = weights[order]
+    starts = np.concatenate(
+        (
+            np.asarray([0], dtype=np.int64),
+            np.flatnonzero((rows[1:] != rows[:-1]) | (cols[1:] != cols[:-1])) + 1,
+        )
+    )
+    reduced = np.add.reduceat(weights, starts)
+    return _CanonicalBucket(rows[starts], cols[starts], reduced)
+
+
+def _bucket_metric_report(
+    left: _CanonicalBucket, right: _CanonicalBucket
+) -> dict[str, Any]:
+    key_dtype = np.dtype([("row", np.int64), ("col", np.int64)])
+    left_keys = np.empty(left.rows.size, dtype=key_dtype)
+    right_keys = np.empty(right.rows.size, dtype=key_dtype)
+    left_keys["row"], left_keys["col"] = left.rows, left.cols
+    right_keys["row"], right_keys["col"] = right.rows, right.cols
+    _shared, left_idx, right_idx = np.intersect1d(
+        left_keys,
+        right_keys,
+        assume_unique=True,
+        return_indices=True,
+    )
+    shared_count = int(left_idx.size)
+    union_count = int(left.weights.size + right.weights.size - shared_count)
+    left_abs = np.abs(left.weights)
+    right_abs = np.abs(right.weights)
+    left_total = float(left_abs.sum(dtype=np.float64))
+    right_total = float(right_abs.sum(dtype=np.float64))
+    shared_min = float(
+        np.minimum(left_abs[left_idx], right_abs[right_idx]).sum(dtype=np.float64)
+    )
+    weighted_denominator = left_total + right_total - shared_min
+    left_unique = left_total - float(left_abs[left_idx].sum(dtype=np.float64))
+    right_unique = right_total - float(right_abs[right_idx].sum(dtype=np.float64))
+    magnitude_delta = float(
+        np.abs(left_abs[left_idx] - right_abs[right_idx]).sum(dtype=np.float64)
+    )
+    signed_delta = float(
+        np.abs(left.weights[left_idx] - right.weights[right_idx]).sum(dtype=np.float64)
+    )
+    exact = bool(
+        np.array_equal(left.rows, right.rows)
+        and np.array_equal(left.cols, right.cols)
+        and np.array_equal(left.weights, right.weights)
+    )
+
+    def top_candidates(bucket: _CanonicalBucket) -> dict[tuple[int, int], float]:
+        order = np.lexsort((bucket.cols, bucket.rows, -np.abs(bucket.weights)))[
+            : max(DEFAULT_EDGE_TOP_KS)
+        ]
+        return {
+            (int(bucket.rows[index]), int(bucket.cols[index])): float(
+                abs(bucket.weights[index])
+            )
+            for index in order
+        }
+
+    denominator = max(left_total, right_total, 1e-12)
+    return {
+        "edge_count_a": int(left.weights.size),
+        "edge_count_b": int(right.weights.size),
+        "shared_edge_count": shared_count,
+        "union_edge_count": union_count,
+        "support_jaccard": shared_count / union_count if union_count else None,
+        "weighted_jaccard": (
+            shared_min / weighted_denominator if weighted_denominator > 0.0 else None
+        ),
+        "normalized_l1_deviation": (magnitude_delta + left_unique + right_unique)
+        / denominator,
+        "shared_sign_agreement": (
+            float(
+                np.mean(
+                    np.sign(left.weights[left_idx]) == np.sign(right.weights[right_idx])
+                )
+            )
+            if shared_count
+            else None
+        ),
+        "signed_normalized_l1_deviation": (signed_delta + left_unique + right_unique)
+        / denominator,
+        "topk_overlap": _topk_edge_overlap(top_candidates(left), top_candidates(right)),
+        "exact": exact,
+        "classification": "strict_exact" if exact else "non_exact",
+    }
+
+
+def _typed_bucket_comparison(
+    left_graph: "SignedGraph | None", right_graph: "SignedGraph | None"
+) -> dict[str, Any]:
+    left_available = bool(left_graph is not None and left_graph.bucket_names)
+    right_available = bool(right_graph is not None and right_graph.bucket_names)
+    base: dict[str, Any] = {
+        "scope": TYPED_BUCKET_SCOPE,
+        "left_available": left_available,
+        "right_available": right_available,
+        "comparable": left_available and right_available,
+    }
+    if not left_available or not right_available:
+        base["classification"] = (
+            "not_available" if left_available == right_available else "incomplete"
+        )
+        base["buckets"] = {}
+        return base
+
+    assert left_graph is not None
+    assert right_graph is not None
+    _validate_bucket_graph(left_graph)
+    _validate_bucket_graph(right_graph)
+    left_names = set(left_graph.bucket_names)
+    right_names = set(right_graph.bucket_names)
+    bucket_names = sorted(left_names | right_names)
+    bucket_reports: dict[str, dict[str, Any]] = {}
+    for name in bucket_names:
+        bucket_reports[name] = _bucket_metric_report(
+            _canonical_bucket_map(left_graph, name),
+            _canonical_bucket_map(right_graph, name),
+        )
+    exact = left_names == right_names and all(
+        bool(report["exact"]) for report in bucket_reports.values()
+    )
+    shared_edges = sum(
+        int(report["shared_edge_count"]) for report in bucket_reports.values()
+    )
+    union_edges = sum(
+        int(report["union_edge_count"]) for report in bucket_reports.values()
+    )
+    aggregate = {
+        "edge_count_a": sum(
+            int(report["edge_count_a"]) for report in bucket_reports.values()
+        ),
+        "edge_count_b": sum(
+            int(report["edge_count_b"]) for report in bucket_reports.values()
+        ),
+        "shared_edge_count": shared_edges,
+        "union_edge_count": union_edges,
+        "support_jaccard": shared_edges / union_edges if union_edges else None,
+        "exact": exact,
+        "classification": "strict_exact" if exact else "non_exact",
+    }
+    base.update(
+        {
+            "classification": "strict_exact" if exact else "non_exact",
+            "bucket_count_a": len(left_names),
+            "bucket_count_b": len(right_names),
+            "shared_bucket_count": len(left_names & right_names),
+            "left_only_buckets": sorted(left_names - right_names),
+            "right_only_buckets": sorted(right_names - left_names),
+            "non_exact_buckets": [
+                name for name in bucket_names if not bucket_reports[name]["exact"]
+            ],
+            "aggregate": aggregate,
+            "buckets": bucket_reports,
+        }
+    )
+    return base
 
 
 def _edge_class_maps(
@@ -255,7 +546,13 @@ def _shared_endpoint_edge_stability(
     }
 
 
-def compare_step_pair(step_a: "StepData", step_b: "StepData") -> dict[str, Any]:
+def _compare_step_pair(
+    step_a: "StepData",
+    step_b: "StepData",
+    *,
+    bucket_graph_a: "SignedGraph | None" = None,
+    bucket_graph_b: "SignedGraph | None" = None,
+) -> dict[str, Any]:
     features_a = _feature_set(step_a)
     features_b = _feature_set(step_b)
     shared_features = features_a & features_b
@@ -263,6 +560,8 @@ def compare_step_pair(step_a: "StepData", step_b: "StepData") -> dict[str, Any]:
     edges_b = _edge_map(step_b)
     all_edges_a = _all_edge_map(step_a)
     all_edges_b = _all_edge_map(step_b)
+    signed_all_edges_a = _all_edge_signed_map(step_a)
+    signed_all_edges_b = _all_edge_signed_map(step_b)
     edge_class_maps_a = _edge_class_maps(step_a, shared_features)
     edge_class_maps_b = _edge_class_maps(step_b, shared_features)
 
@@ -279,6 +578,33 @@ def compare_step_pair(step_a: "StepData", step_b: "StepData") -> dict[str, Any]:
         "n_edges_b": len(edges_b),
         "edge_jaccard": _jaccard(set(edges_a), set(edges_b)),
         "weighted_edge_jaccard": _weighted_edge_jaccard(edges_a, edges_b),
+        "topk_edge_overlap": _topk_edge_overlap(edges_a, edges_b),
+        "all_edge_jaccard": _jaccard(set(all_edges_a), set(all_edges_b)),
+        "all_edge_weighted_jaccard": _weighted_edge_jaccard(all_edges_a, all_edges_b),
+        "all_edge_topk_overlap": _topk_edge_overlap(all_edges_a, all_edges_b),
+        "all_edge_normalized_l1_deviation": (
+            _normalized_l1_deviation(
+                all_edges_a,
+                all_edges_b,
+            )
+        ),
+        "all_edge_shared_sign_agreement": _shared_edge_sign_agreement(
+            signed_all_edges_a,
+            signed_all_edges_b,
+        ),
+        "all_edge_signed_normalized_l1_deviation": _normalized_l1_deviation(
+            signed_all_edges_a,
+            signed_all_edges_b,
+        ),
+        "all_edge_scope": LEGACY_ALL_EDGE_SCOPE,
+        "all_edge_included_buckets": list(LEGACY_ALL_EDGE_BUCKETS),
+        "all_edge_includes_typed_buckets": False,
+        "typed_bucket_comparison": _typed_bucket_comparison(
+            bucket_graph_a, bucket_graph_b
+        ),
+        "target_token_match": float(step_a.token_text == step_b.token_text),
+        "target_token_a": step_a.token_text,
+        "target_token_b": step_b.token_text,
         "n_logit_rows_a": len(
             {int(row) for row in step_a.row_idx if int(row) >= step_a.n_features}
         ),
@@ -297,18 +623,78 @@ def compare_step_pair(step_a: "StepData", step_b: "StepData") -> dict[str, Any]:
             edge_class_maps_a.get("shared_to_shared", {}),
             edge_class_maps_b.get("shared_to_shared", {}),
         ),
-        "all_edge_weighted_jaccard": _weighted_edge_jaccard(all_edges_a, all_edges_b),
     }
 
 
-def _load_completion_steps(completion_dir: Path) -> list["StepData"]:
-    from circuit_utils import load_compact
+def compare_step_pair(step_a: "StepData", step_b: "StepData") -> dict[str, Any]:
+    """Compare legacy compact step data.
 
+    Typed buckets are intentionally reported as unavailable because ``StepData``
+    does not carry them. Use :func:`compare_compact_paths` when comparing saved
+    full-answer graph artifacts.
+    """
+    return _compare_step_pair(step_a, step_b)
+
+
+def _load_compact_for_compare(path: Path) -> _LoadedCompact:
+    from nlp_research_project.circuit_stability_analysis.signed_graph import (
+        load_signed_graph,
+    )
+    from nlp_research_project.exact_trace_bench.compact_io import load_compact
+
+    return _LoadedCompact(
+        step=load_compact(path),
+        bucket_graph=load_signed_graph(path),
+    )
+
+
+def compare_compact_paths(left_path: Path, right_path: Path) -> dict[str, Any]:
+    """Compare legacy and typed-bucket graph semantics from two compact files."""
+    left = _load_compact_for_compare(Path(left_path))
+    right = _load_compact_for_compare(Path(right_path))
+    return _compare_step_pair(
+        left.step,
+        right.step,
+        bucket_graph_a=left.bucket_graph,
+        bucket_graph_b=right.bucket_graph,
+    )
+
+
+def _load_completion_steps(completion_dir: Path) -> list[_LoadedCompact]:
     return [
-        load_compact(path)
+        _load_compact_for_compare(path)
         for path in sorted(completion_dir.glob("step_*.npz"))
         if COMPACT_STEP_RE.fullmatch(path.name)
     ]
+
+
+def _comparison_set_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    typed = [row["typed_bucket_comparison"] for row in rows]
+    comparable = [row for row in typed if row["comparable"]]
+    if not typed or not comparable:
+        classification = "not_available"
+    elif len(comparable) != len(typed):
+        classification = "incomplete"
+    elif all(row["classification"] == "strict_exact" for row in comparable):
+        classification = "strict_exact"
+    else:
+        classification = "non_exact"
+    return {
+        "scope": TYPED_BUCKET_SCOPE,
+        "classification": classification,
+        "step_count": len(typed),
+        "comparable_step_count": len(comparable),
+        "strict_exact_step_count": sum(
+            row["classification"] == "strict_exact" for row in comparable
+        ),
+        "non_exact_buckets": sorted(
+            {
+                bucket
+                for row in comparable
+                for bucket in row.get("non_exact_buckets", [])
+            }
+        ),
+    }
 
 
 def _completion_key(artifacts_dir: Path, completion_dir: Path) -> str:
@@ -333,20 +719,22 @@ def compare_artifact_dirs(
 
     for completion_key in shared_completion_keys:
         steps_a = {
-            step.step_idx: step
-            for step in _load_completion_steps(left_completions[completion_key])
+            loaded.step.step_idx: loaded
+            for loaded in _load_completion_steps(left_completions[completion_key])
         }
         steps_b = {
-            step.step_idx: step
-            for step in _load_completion_steps(right_completions[completion_key])
+            loaded.step.step_idx: loaded
+            for loaded in _load_completion_steps(right_completions[completion_key])
         }
         shared_step_indices = sorted(set(steps_a) & set(steps_b))
         n_aligned_steps = len(shared_step_indices)
-        if n_aligned_steps == 0:
-            continue
-
         step_rows = [
-            compare_step_pair(steps_a[step_idx], steps_b[step_idx])
+            _compare_step_pair(
+                steps_a[step_idx].step,
+                steps_b[step_idx].step,
+                bucket_graph_a=steps_a[step_idx].bucket_graph,
+                bucket_graph_b=steps_b[step_idx].bucket_graph,
+            )
             for step_idx in shared_step_indices
         ]
         all_step_rows.extend(
@@ -356,19 +744,54 @@ def compare_artifact_dirs(
         completion_rows.append(
             {
                 "completion_key": completion_key,
+                "n_steps_left": len(steps_a),
+                "n_steps_right": len(steps_b),
                 "n_steps_aligned": n_aligned_steps,
-                "mean_feature_jaccard": float(
-                    np.nanmean([row["feature_jaccard"] for row in step_rows])
+                "left_only_step_count": len(set(steps_a) - set(steps_b)),
+                "right_only_step_count": len(set(steps_b) - set(steps_a)),
+                "mean_feature_jaccard": _finite_mean(
+                    [row["feature_jaccard"] for row in step_rows]
                 ),
-                "mean_edge_jaccard": float(
-                    np.nanmean([row["edge_jaccard"] for row in step_rows])
+                "mean_edge_jaccard": _finite_mean(
+                    [row["edge_jaccard"] for row in step_rows]
                 ),
-                "mean_weighted_edge_jaccard": float(
-                    np.nanmean([row["weighted_edge_jaccard"] for row in step_rows])
+                "mean_weighted_edge_jaccard": _finite_mean(
+                    [row["weighted_edge_jaccard"] for row in step_rows]
                 ),
-                "mean_shared_features": float(
-                    np.nanmean([row["n_features_shared"] for row in step_rows])
+                "mean_top256_edge_jaccard": _finite_mean(
+                    [row["topk_edge_overlap"]["256"]["jaccard"] for row in step_rows]
                 ),
+                "mean_all_edge_jaccard": _finite_mean(
+                    [row["all_edge_jaccard"] for row in step_rows]
+                ),
+                "mean_all_edge_weighted_jaccard": _finite_mean(
+                    [row["all_edge_weighted_jaccard"] for row in step_rows]
+                ),
+                "mean_all_edge_top256_jaccard": _finite_mean(
+                    [
+                        row["all_edge_topk_overlap"]["256"]["jaccard"]
+                        for row in step_rows
+                    ]
+                ),
+                "mean_target_token_match": _finite_mean(
+                    [row["target_token_match"] for row in step_rows]
+                ),
+                "mean_all_edge_normalized_l1_deviation": _finite_mean(
+                    [row["all_edge_normalized_l1_deviation"] for row in step_rows]
+                ),
+                "mean_all_edge_shared_sign_agreement": _finite_mean(
+                    [row["all_edge_shared_sign_agreement"] for row in step_rows]
+                ),
+                "mean_all_edge_signed_normalized_l1_deviation": _finite_mean(
+                    [
+                        row["all_edge_signed_normalized_l1_deviation"]
+                        for row in step_rows
+                    ]
+                ),
+                "mean_shared_features": _finite_mean(
+                    [row["n_features_shared"] for row in step_rows]
+                ),
+                "typed_bucket_comparison": _comparison_set_summary(step_rows),
             }
         )
 
@@ -382,19 +805,117 @@ def compare_artifact_dirs(
         "right_only_completion_count": len(
             set(right_completions) - set(left_completions)
         ),
+        "aligned_completion_count": sum(
+            row["n_steps_aligned"] > 0 for row in completion_rows
+        ),
+        "aligned_step_count": sum(row["n_steps_aligned"] for row in completion_rows),
+        "comparison_complete": bool(completion_rows)
+        and not (set(left_completions) ^ set(right_completions))
+        and all(
+            row["n_steps_aligned"] > 0
+            and row["left_only_step_count"] == 0
+            and row["right_only_step_count"] == 0
+            for row in completion_rows
+        ),
         "completion_comparisons": completion_rows,
         "step_comparisons": all_step_rows,
+        "all_edge_scope": LEGACY_ALL_EDGE_SCOPE,
+        "all_edge_included_buckets": list(LEGACY_ALL_EDGE_BUCKETS),
+        "all_edge_includes_typed_buckets": False,
+        "typed_bucket_comparison": _comparison_set_summary(all_step_rows),
     }
+    summary["overall_typed_bucket_classification"] = summary["typed_bucket_comparison"][
+        "classification"
+    ]
 
     if completion_rows:
-        summary["overall_mean_feature_jaccard"] = float(
-            np.nanmean([row["mean_feature_jaccard"] for row in completion_rows])
+        summary["overall_mean_feature_jaccard"] = _finite_mean(
+            [row["mean_feature_jaccard"] for row in completion_rows]
         )
-        summary["overall_mean_edge_jaccard"] = float(
-            np.nanmean([row["mean_edge_jaccard"] for row in completion_rows])
+        summary["overall_mean_edge_jaccard"] = _finite_mean(
+            [row["mean_edge_jaccard"] for row in completion_rows]
         )
-        summary["overall_mean_weighted_edge_jaccard"] = float(
-            np.nanmean([row["mean_weighted_edge_jaccard"] for row in completion_rows])
+        summary["overall_mean_weighted_edge_jaccard"] = _finite_mean(
+            [row["mean_weighted_edge_jaccard"] for row in completion_rows]
         )
+        summary["overall_mean_top256_edge_jaccard"] = _finite_mean(
+            [row["mean_top256_edge_jaccard"] for row in completion_rows]
+        )
+        summary["overall_mean_all_edge_jaccard"] = _finite_mean(
+            [row["mean_all_edge_jaccard"] for row in completion_rows]
+        )
+        summary["overall_mean_all_edge_weighted_jaccard"] = _finite_mean(
+            [row["mean_all_edge_weighted_jaccard"] for row in completion_rows]
+        )
+        summary["overall_mean_all_edge_top256_jaccard"] = _finite_mean(
+            [row["mean_all_edge_top256_jaccard"] for row in completion_rows]
+        )
+        summary["overall_mean_target_token_match"] = _finite_mean(
+            [row["mean_target_token_match"] for row in completion_rows]
+        )
+        summary["overall_mean_all_edge_normalized_l1_deviation"] = _finite_mean(
+            [row["mean_all_edge_normalized_l1_deviation"] for row in completion_rows]
+        )
+        summary["overall_mean_all_edge_shared_sign_agreement"] = _finite_mean(
+            [row["mean_all_edge_shared_sign_agreement"] for row in completion_rows]
+        )
+        summary["overall_mean_all_edge_signed_normalized_l1_deviation"] = _finite_mean(
+            [
+                row["mean_all_edge_signed_normalized_l1_deviation"]
+                for row in completion_rows
+            ]
+        )
+
+    worst_metric_sources = {
+        "worst_step_feature_jaccard": "feature_jaccard",
+        "worst_step_all_edge_jaccard": "all_edge_jaccard",
+        "worst_step_all_edge_weighted_jaccard": "all_edge_weighted_jaccard",
+        "worst_step_all_edge_top256_jaccard": "all_edge_top256_jaccard",
+        "worst_step_target_token_match": "target_token_match",
+        "worst_step_all_edge_normalized_l1_deviation": (
+            "all_edge_normalized_l1_deviation"
+        ),
+        "worst_step_all_edge_shared_sign_agreement": ("all_edge_shared_sign_agreement"),
+        "worst_step_all_edge_signed_normalized_l1_deviation": (
+            "all_edge_signed_normalized_l1_deviation"
+        ),
+    }
+    for summary_key, row_key in worst_metric_sources.items():
+        if row_key == "all_edge_top256_jaccard":
+            values = [
+                row["all_edge_topk_overlap"]["256"]["jaccard"] for row in all_step_rows
+            ]
+        else:
+            values = [row[row_key] for row in all_step_rows]
+        summary[summary_key] = (
+            _finite_max(values)
+            if row_key
+            in {
+                "all_edge_normalized_l1_deviation",
+                "all_edge_signed_normalized_l1_deviation",
+            }
+            else _finite_min(values)
+        )
+
+    summary["worst_step_evidence"] = {}
+    for summary_key, row_key in worst_metric_sources.items():
+        worst_value = summary[summary_key]
+        matching_rows = []
+        for row in all_step_rows:
+            value = (
+                row["all_edge_topk_overlap"]["256"]["jaccard"]
+                if row_key == "all_edge_top256_jaccard"
+                else row[row_key]
+            )
+            if worst_value is not None and value == worst_value:
+                matching_rows.append(
+                    {
+                        "completion_key": row["completion_key"],
+                        "step_index_a": row["step_index_a"],
+                        "step_index_b": row["step_index_b"],
+                        "value": value,
+                    }
+                )
+        summary["worst_step_evidence"][summary_key] = matching_rows
 
     return summary

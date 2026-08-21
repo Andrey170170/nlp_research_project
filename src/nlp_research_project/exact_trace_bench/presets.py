@@ -24,12 +24,22 @@ from .workspace import (
 PRESET_DEFS: dict[str, dict[str, tuple[str, ...]]] = {
     "fast-ascend": {"clusters": ("ascend",), "tiers": ("fast", "anomaly")},
     "fast-cardinal": {"clusters": ("cardinal",), "tiers": ("fast", "anomaly")},
+    "fast-granite": {"clusters": ("granite",), "tiers": ("fast", "anomaly")},
+    "fast-chpc": {"clusters": ("granite",), "tiers": ("fast", "anomaly")},
     "full-ascend": {
         "clusters": ("ascend",),
         "tiers": ("fast", "anomaly", "long_eval"),
     },
     "full-cardinal": {
         "clusters": ("cardinal",),
+        "tiers": ("fast", "anomaly", "long_eval"),
+    },
+    "full-granite": {
+        "clusters": ("granite",),
+        "tiers": ("fast", "anomaly", "long_eval"),
+    },
+    "full-chpc": {
+        "clusters": ("granite",),
         "tiers": ("fast", "anomaly", "long_eval"),
     },
     "fast-all": {
@@ -63,6 +73,7 @@ def run_preset(
     snapshot_root: Path = DEFAULT_SNAPSHOT_ROOT,
     source_root: Path = REPO_ROOT,
     workspace_label_prefix: str | None = None,
+    live_workspace_rationale: str | None = None,
     walltime: str | None = None,
     run_id: str | None = None,
     run_name: str | None = None,
@@ -141,6 +152,8 @@ def run_preset(
                     snapshot_root=snapshot_root,
                     source_root=launch_source_root,
                     workspace_label=None,
+                    live_workspace_rationale=live_workspace_rationale,
+                    _pending_snapshot_freeze=immutable_workspace,
                     walltime=walltime,
                 )
                 if immutable_workspace:
@@ -165,6 +178,11 @@ def run_preset(
 
         if snapshot_to_freeze is not None:
             make_snapshot_read_only(snapshot_to_freeze)
+            for plan in plans:
+                provenance = plan.get("workspace_provenance")
+                if isinstance(provenance, dict):
+                    provenance["read_only"] = True
+                    provenance.pop("pending_freeze", None)
 
         if not print_only:
             for plan in plans:

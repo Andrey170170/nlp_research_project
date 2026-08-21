@@ -41,6 +41,12 @@ from experiments.run_sparsification_experiment import (  # noqa: E402
     build_command,
     load_scenarios,
 )
+from nlp_research_project.exact_trace_bench.trace_runtime.provider import (  # noqa: E402
+    ProviderLoadPolicy,
+)
+from nlp_research_project.exact_trace_bench.trace_runtime.request import (  # noqa: E402
+    trace_policy_from_scenario,
+)
 
 
 CLUSTERS = ("ascend", "cardinal")
@@ -230,6 +236,13 @@ def test_exact_mode_knobs_are_classified_without_duplicates() -> None:
 
     assert "exact_trace_internal_dtype" in STABLE_PUBLIC_SCENARIO_KEYS
     assert "phase4_scheduler_mode" in ADVANCED_PUBLIC_TUNING_KEYS
+    assert "decoder_page_prefetch_depth" in ADVANCED_PUBLIC_TUNING_KEYS
+    assert "decoder_active_row_residency" in ADVANCED_PUBLIC_TUNING_KEYS
+    assert "decoder_active_row_max_bytes" in ADVANCED_PUBLIC_TUNING_KEYS
+    assert "feature_row_influence_mode" in ADVANCED_PUBLIC_TUNING_KEYS
+    assert "feature_row_gpu_resident_max_bytes" in ADVANCED_PUBLIC_TUNING_KEYS
+    assert "feature_row_gpu_window_max_bytes" in ADVANCED_PUBLIC_TUNING_KEYS
+    assert "phase0_decoder_row_ranges" in ADVANCED_PUBLIC_TUNING_KEYS
     assert "phase3_row_replay_mode" in DEBUG_REPLAY_PUBLIC_KEYS
     assert "telemetry_max_events" in TELEMETRY_KEYS
     assert "auto_scale_feature_batch_size" in DEPRECATED_COMPAT_KEYS
@@ -242,6 +255,13 @@ def test_canonical_exact_bench_defaults_are_stable() -> None:
         assert defaults["phase0_activation_threshold_compare_mode"] == "baseline"
         assert defaults["phase4_anomaly_debug"] is False
         assert defaults["cross_cluster_debug"] is False
+        assert defaults["decoder_page_prefetch_depth"] == 0
+        assert defaults["decoder_active_row_residency"] is False
+        assert defaults["decoder_active_row_max_bytes"] == 0
+        assert defaults["feature_row_influence_mode"] == "cpu_exact"
+        assert defaults["feature_row_gpu_resident_max_bytes"] == 0
+        assert defaults["feature_row_gpu_window_max_bytes"] == 0
+        assert defaults["phase0_decoder_row_ranges"] is False
         assert defaults["phase4_scheduler_mode"] == "locality"
         assert defaults["phase4_scheduler_debug"] is False
         assert defaults["phase4_scheduler_telemetry_detail"] == "normal"
@@ -307,12 +327,14 @@ def test_canonical_commands_do_not_enable_debug_or_replay_knobs() -> None:
             command_flags = {part for part in command if part.startswith("--")}
             assert command_flags.isdisjoint(DISALLOWED_CANONICAL_COMMAND_FLAGS)
 
-            assert "--exact-trace-internal-dtype" in command
-            dtype_index = command.index("--exact-trace-internal-dtype")
-            assert command[dtype_index + 1] == "fp32"
-
-            assert "--decoder-chunk-size" in command
-            assert "--cross-batch-decoder-cache-bytes" in command
+            assert command[1:3] == [
+                "-m",
+                "nlp_research_project.exact_trace_bench.trace_runtime",
+            ]
+            trace_policy = trace_policy_from_scenario(scenario)
+            provider = ProviderLoadPolicy.from_scenario(scenario)
+            assert trace_policy.semantics.exact_trace_internal_dtype == "fp32"
+            assert provider.decoder_chunk_size > 0
 
 
 def test_command_builder_resolves_provider_family_to_coherent_plt_config() -> None:
@@ -332,19 +354,13 @@ def test_command_builder_resolves_provider_family_to_coherent_plt_config() -> No
         "prepared_prompt_file": "/tmp/prompt.txt",
         "transcoder_provider_family": "gemmascope2-plt-4b-small-affine",
     }
-    command = build_command(Path("/tmp/exact-bench-taxonomy"), scenario)
-
-    def flag_value(flag: str) -> str:
-        return command[command.index(flag) + 1]
-
-    assert flag_value("--transcoder-architecture") == "plt"
-    assert (
-        flag_value("--transcoder-provider-family") == "gemmascope2-plt-4b-small-affine"
-    )
-    assert flag_value("--model-name") == "google/gemma-3-4b-it"
-    assert flag_value("--transcoder-repo-id") == "google/gemma-scope-2-4b-it"
-    assert flag_value("--transcoder-layer-count") == "34"
-    assert flag_value("--cross-batch-decoder-cache-bytes") == "0"
+    provider = ProviderLoadPolicy.from_scenario(scenario)
+    assert provider.transcoder_architecture == "plt"
+    assert provider.transcoder_provider_family == "gemmascope2-plt-4b-small-affine"
+    assert provider.model_name == "google/gemma-3-4b-it"
+    assert provider.repo_id == "google/gemma-scope-2-4b-it"
+    assert provider.layer_count == 34
+    assert provider.cross_batch_decoder_cache_bytes == 0
 
 
 def test_command_builder_preserves_explicit_default_valued_plt_cache_budget(
@@ -374,16 +390,10 @@ def test_command_builder_preserves_explicit_default_valued_plt_cache_budget(
     scenario_file = tmp_path / "scenarios.json"
     scenario_file.write_text(json.dumps(payload))
     scenarios, _metadata = load_scenarios(scenario_file)
-    command = build_command(Path("/tmp/exact-bench-taxonomy"), scenarios[0])
-
-    def flag_value(flag: str) -> str:
-        return command[command.index(flag) + 1]
-
-    assert flag_value("--transcoder-architecture") == "plt"
-    assert (
-        flag_value("--transcoder-provider-family") == "gemmascope2-plt-4b-small-affine"
-    )
-    assert flag_value("--cross-batch-decoder-cache-bytes") == "8589934592"
+    provider = ProviderLoadPolicy.from_scenario(scenarios[0])
+    assert provider.transcoder_architecture == "plt"
+    assert provider.transcoder_provider_family == "gemmascope2-plt-4b-small-affine"
+    assert provider.cross_batch_decoder_cache_bytes == 8589934592
 
 
 def test_wave0_baseline_scenario_counts_and_tiers() -> None:
@@ -458,9 +468,17 @@ def test_wave0_commands_do_not_enable_debug_or_replay_knobs() -> None:
             command = build_command(Path("/tmp/exact-bench-wave0"), scenario)
             command_flags = {part for part in command if part.startswith("--")}
             assert command_flags.isdisjoint(DISALLOWED_CANONICAL_COMMAND_FLAGS)
-            assert "--exact-trace-internal-dtype" in command
-            assert "--decoder-chunk-size" in command
-            assert "--cross-batch-decoder-cache-bytes" in command
+            assert command[1:3] == [
+                "-m",
+                "nlp_research_project.exact_trace_bench.trace_runtime",
+            ]
+            assert (
+                trace_policy_from_scenario(
+                    scenario
+                ).semantics.exact_trace_internal_dtype
+                == "fp32"
+            )
+            assert ProviderLoadPolicy.from_scenario(scenario).decoder_chunk_size > 0
 
 
 def test_wave2_scenarios_preserve_variants_and_baseline_checks() -> None:

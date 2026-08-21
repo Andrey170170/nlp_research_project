@@ -5,8 +5,8 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-import circuit_utils  # noqa: E402
-from trace_pipeline_chunked import (  # noqa: E402
+from nlp_research_project.exact_trace_bench import compact_io as circuit_utils  # noqa: E402
+from nlp_research_project.exact_trace_bench.trace_runtime import (  # noqa: E402
     compact_result_to_bucketed_compact,
     compact_result_to_step_data,
 )

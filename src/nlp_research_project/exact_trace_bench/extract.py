@@ -1573,6 +1573,41 @@ def _summarize_artifacts(artifact_dir: Path) -> dict[str, Any]:
             ),
             default=None,
         ),
+        **{
+            key: max(
+                (diag.get(key) for diag in diagnostics if diag.get(key) is not None),
+                default=None,
+            )
+            for key in (
+                "decoder_prefetch_request_count",
+                "decoder_prefetch_load_count",
+                "decoder_prefetch_load_bytes",
+                "decoder_prefetch_cache_hit_count",
+                "decoder_prefetch_consume_hit_count",
+                "decoder_prefetch_host_wait_count",
+                "decoder_prefetch_host_wait_seconds",
+                "decoder_prefetch_in_flight_count",
+                "decoder_prefetch_in_flight_high_watermark",
+                "decoder_prefetch_in_flight_bytes",
+                "decoder_prefetch_in_flight_bytes_high_watermark",
+                "decoder_prefetch_consumer_active_count",
+                "decoder_prefetch_consumer_active_bytes",
+                "decoder_prefetch_consumer_retained_count",
+                "decoder_prefetch_consumer_retained_bytes",
+                "decoder_prefetch_consumer_retained_bytes_high_watermark",
+                "decoder_prefetch_consumer_retirement_count",
+                "decoder_prefetch_consumer_backpressure_count",
+                "decoder_prefetch_consumer_backpressure_seconds",
+                "decoder_prefetch_pipeline_owned_final_page_count",
+                "decoder_prefetch_pipeline_owned_final_page_high_watermark",
+                "decoder_prefetch_pipeline_owned_final_page_bytes",
+                "decoder_prefetch_pipeline_owned_final_page_bytes_high_watermark",
+                "decoder_prefetch_owner_count",
+                "decoder_prefetch_owner_high_watermark",
+                "decoder_prefetch_owner_open_count",
+                "decoder_prefetch_owner_close_count",
+            )
+        },
         "phase4_feature_batch_size_effective": (
             max(manifest_phase4_effective_sizes)
             if manifest_phase4_effective_sizes
@@ -2526,6 +2561,7 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
         scenario.get("cross_batch_decoder_cache_bytes"),
     )
 
+    result_status = result.get("status")
     return {
         "scenario_root": str(scenario_root),
         "scenario_name": result.get("name")
@@ -2534,7 +2570,14 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
         "stage": result.get("stage") or scenario.get("stage"),
         "cluster": _infer_cluster(scenario_root, scenario),
         "method": result.get("method") or scenario.get("method"),
-        "status": result.get("status"),
+        "status": result_status,
+        "outcome_class": (
+            "diagnostic"
+            if result_status == "probe_completed"
+            else "success"
+            if result_status == "success"
+            else "failure"
+        ),
         "returncode": result.get("returncode"),
         "duration_seconds": result.get("duration_seconds"),
         "timeout_minutes": result.get("timeout_minutes"),
@@ -2576,6 +2619,27 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
         ),
         "row_subchunk_size": run_config.get(
             "row_subchunk_size", scenario.get("row_subchunk_size")
+        ),
+        **{
+            key: run_config.get(key, scenario.get(key))
+            for key in (
+                "nnsight_session_capacity",
+                "phase3_compute_microbatch_max_rows",
+                "full_retention_backend",
+                "feature_row_column_tile_size",
+                "influence_row_tile_size",
+                "influence_column_tile_size",
+                "feature_row_retention",
+                "replay_tile_cache_bytes",
+                "validation_baseline_key",
+                "validation_mechanism",
+            )
+        },
+        "phase4_execution_batch_max_rows": _first_non_null(
+            run_config.get("phase4_execution_batch_max_rows"),
+            run_config.get("phase4_compute_microbatch_max_rows"),
+            scenario.get("phase4_execution_batch_max_rows"),
+            scenario.get("phase4_compute_microbatch_max_rows"),
         ),
         "plan_feature_batch_size": run_config.get(
             "plan_feature_batch_size", scenario.get("plan_feature_batch_size")
@@ -2857,7 +2921,7 @@ def extract_benchmark_index(input_root: Path) -> list[dict[str, Any]]:
 def _guess_failure_stage(
     summary: dict[str, Any], result_status: str | None
 ) -> str | None:
-    if result_status == "success":
+    if result_status in {"success", "probe_completed"}:
         return None
     if summary.get("cuda_oom_requested_gib") is not None:
         if summary.get("phase0_encode_total_active_features") is None:
@@ -3268,7 +3332,9 @@ def merge_benchmark_tables(
         slurm_any_ram_oom = _to_bool(merged.get("slurm_any_ram_oom"))
         slurm_any_timeout = _to_bool(merged.get("slurm_any_timeout"))
         cuda_oom_seen = _to_float(merged.get("cuda_oom_requested_gib")) is not None
-        if status == "success":
+        if status == "probe_completed":
+            failure_family = "diagnostic"
+        elif status == "success":
             failure_family = "success"
         elif slurm_any_ram_oom:
             failure_family = "ram_oom"

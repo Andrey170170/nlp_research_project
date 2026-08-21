@@ -1,7 +1,7 @@
 # Experiments inventory
 
 Status: Current compact index and interpretation summary
-Last updated: 2026-07-07
+Last updated: 2026-08-20
 
 This file is the readable front page for experiment provenance. It should stay
 small enough to edit by hand.
@@ -24,16 +24,16 @@ For important future launches, baseline decisions, and reinterpretations:
 
 | Item | Current value |
 |---|---|
-| Project workspace | `/users/PAS2119/andreykopanev/nlp_research_project` |
-| Project branch / commit | `main` / `620e781` (`Persist full-answer telemetry events`) |
-| Sibling library workspace | `/users/PAS2119/andreykopanev/circuit-tracer_chunked` |
-| Sibling branch / commit | `main` / `6e81aff` (`Add Phase-4 selection margin telemetry`) |
+| Project workspace | `/uufs/chpc.utah.edu/common/home/u1653998/projects/nlp_research_project` |
+| Project branch / run commit | `chpc-granite-baseline-setup` / `5cb554a` |
+| Sibling library workspace | `/uufs/chpc.utah.edu/common/home/u1653998/projects/circuit-tracer_chunked` |
+| Sibling branch / run commit | `chpc-incremental-telemetry` / `3ad7fc9` |
 | Editable dependency path | `../circuit-tracer_chunked` |
 | Canonical exact-trace dtype | `exact_trace_internal_dtype=fp32` |
 | Canonical prompt tiers | `828_base`, `361_base`, and `94_base` in `fast` for new work |
 | GemmaScope-2 feature input hook | `mlp.hook_in` (`pre_feedforward_layernorm.output`) for CLT and PLT |
-| Scratch root | `/fs/scratch/PAS2836/kopanev.1/exact_trace_bench` |
-| Run placement | cluster (`ascend`/`cardinal`) × tier (`fast`/`anomaly`/`long_eval`) |
+| Scratch root | `/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench` |
+| New-run placement | Granite plus operational class (`smoke`, `baseline`, `sweep`, `long_trace`, `full_answer`, or `analysis`) |
 
 Baseline preservation notes:
 
@@ -48,8 +48,266 @@ Baseline preservation notes:
 - Corrected-hook CLT fast baselines were regenerated on 2026-07-06/07 for
   `828_base`, `361_base`, and `94_base` on both Cardinal and Ascend. Treat older
   GemmaScope-2 `hook_resid_mid` CLT/PLT artifacts as contaminated provenance only.
+- The first CHPC Gemma-3-12B PLT strict baseline completed successfully on
+  Granite H200 from one immutable snapshot:
+
+  | Fixture | Trace duration | Phase 4 | Slurm MaxRSS | Compact graph |
+  |---|---:|---:|---:|---:|
+  | `828_base` | 20,878.41s | 20,417.06s | 38,719,956K | 8,192 features / 20,000 edges |
+  | `361_base` | 23,051.72s | 20,787.43s | 244,429,132K | 8,192 features / 20,000 edges |
+  | `94_base` | 22,588.42s | 20,324.72s | 208,527,604K | 8,192 features / 20,000 edges |
+
+  Run root:
+  `/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma3-12b-20260710-04`.
+  Keep the 600G request until the large fixture-dependent RSS spread is
+  understood and repeated.
 
 ## Current interpretation
+
+LS4 now admits mirrored `cuda_windowed` through the frozen 4B/512 development
+point. Against the retained preheated `cpu_exact` control, the fail-closed
+candidate reduced trace wall from 346.773s to 168.067s (51.5%, 2.06x), Phase 4
+from 276.521s to 121.596s, and refresh from 201.158s to 53.521s. Its compact
+graph was `strict_exact`: all 8,192 features and 20,000 edges, weights, signs,
+target token, and Top-64 through Top-1,024 views matched. Retain
+`cuda_windowed` as a selectable non-dominated 4B development mode; do not make
+it an arbitrary-prompt or global default. The control and candidate cgroups
+owned different amounts of shared page cache, so their total MaxRSS/cgroup
+charges do not establish a mode-level host-memory reduction or a minimum RAM
+request. A full H200 plus 400 GiB is the demonstrated safe 4B/512 contract;
+retain that request for the next formal long-prefix gate despite the
+candidate's low charged MaxRSS. Canonical selected-config provenance,
+runtime-level required-mode enforcement, explicit resource policy, and
+requested-to-effective execution deltas are now implemented. The legacy
+duplicated-lane, fail-closed 4B/1,024 probe passed launch/preheat/Phase 0 but
+filled one H200 to
+142,553/143,771 MiB and failed in Phase 1 before `cuda_windowed` resolution;
+its primary exception was masked by NNsight formatting. Preserve that error
+correctly.
+
+The opt-in `single_forward_batched_vjp` engine is now qualified as a separate
+frozen numerical regime through 4B/512. The independent 256-token jobs
+`1796289`/`1796290` first established a `strict_exact` canonical selected
+feature circuit across nodes. The 512-token jobs `1807387`/`1807388` then
+repeated that result on `grn027` and `grn031`: all 8,192 selected features,
+20,000 selected edges, weights, signs, and Top-64 through Top-1,024 views were
+exact, as were all four non-error typed buckets. The auxiliary error buckets
+remained bounded rather than bit-exact. Feature-from-error support/weighted
+Jaccard were 0.9946394/0.9942986 with signed L1 0.0057175; logit-from-error
+support/weighted Jaccard were 1.0/0.9958178 with signed L1 0.0041973. Sampled
+peak HBM repeated at 17,177/17,175 MiB and process RSS at 34.86/34.69 GiB.
+Trace times were 168.44/200.44 seconds, but 27/266-second preheats and
+independent nodes make those timings descriptive rather than a benchmark.
+
+The unchanged frozen batched-VJP regime then completed the 4B/1,024
+development point in job `1818091`. The trace took 288.93 seconds, sampled peak
+HBM was 25,693 MiB, process peak RSS was 60.89 GiB, and strict artifact reopen
+validated the complete 8,192-feature/20,000-edge compact graph. Required
+`cuda_windowed`, single-lane forward execution, batched-autograd VJP, and all
+recorded capacity pins resolved exactly with no fallback. This is one-run
+resource and artifact feasibility only; it does not establish 1,024-token
+self-consistency, arbitrary-prompt validity, or cross-regime equivalence.
+
+This qualification does not make the narrow and duplicated-lane regimes
+interchangeable: the earlier cross-regime compact comparison remains bounded,
+and the width-localization evidence remains valid. It instead freezes execution
+width and the full mechanism identity alongside existing experiment identity
+bits such as decoder chunk size. The frozen 4B 828/512 holdout completed in job
+`1818336`, and the dependent ordered 12B sequence completed in job `1818349`.
+All 129-, 256-, and 512-token 12B rungs retained required `cuda_windowed`, the
+single-forward batched-VJP regime, native 12B capacities of 64, complete
+telemetry, and compact artifacts that passed strict reopen. Sampled HBM was
+32,227/32,457/33,079 MiB and process RSS was 29.59/38.28/56.07 GiB. These are
+single-run feasibility artifacts against the frozen 1B-generated trajectory,
+not repeatability or native-12B-generation evidence.
+
+The first full 12B/1,024 attempt, job `1819287`, exposed a discrete active-row
+admission cliff rather than an HBM-capacity failure and timed out without a
+graph. The repaired v2 job `1832086` then completed the same frozen endpoint in
+517.46s trace time and 11m34s allocation wall. Dynamic admission accepted the
+exact 8,691,901,440-byte decoder-row demand from 114,088,345,600 free HBM after
+a 16 GiB margin; Phase 4 performed zero decoder-page loads and finished in
+399.97s. Peak HBM was 48,861 MiB and process RSS 93.41 GiB. Independent strict
+audit reopened a finite typed graph with 8,192 features, 20,000 selected edges,
+all six expected typed buckets, and no future-position violations. Cross-node
+repeat job `1834396` then completed on `grn028` with the byte-identical trace
+spec. The selected compact circuit was exact, required dynamic residency
+admitted the identical 8,691,901,440-byte row set, peak HBM was exactly 48,861
+MiB in both runs, and process RSS stayed near 93.4 GiB. Non-error typed buckets
+were exact except one equal-weight cutoff tie in the million-edge
+feature-to-feature bucket. Error buckets remained bounded rather than exact:
+feature-from-error weighted Jaccard was 0.97398 with signed L1 0.02614, and
+logit-from-error was 0.99418 with signed L1 0.00585. This qualifies the selected
+circuit and resource envelope only inside the frozen v2 regime; it does not
+establish whole-NPZ exactness, cross-regime equivalence, a default, or
+native-12B continuation behavior.
+
+The bounded parallel preheater also completed its first real 411 GB execution:
+eight workers read 411,062,639,478 bytes in 14.09s with 7.57x summed-file-time
+overlap and exact accounting. This proves concurrency and a valid cache-hot
+path, not 27.8 GiB/s cold-storage throughput; controlled warm 1-vs-8 and
+cold-client qualification remain separate work.
+The legacy direct eight-hour job `1740811` remains superseded zero-runtime
+preparation evidence. No result changes the global default, fidelity policy, or
+baseline registry.
+
+The 4B/12B mapped-row campaign ran the remaining optimization lanes in
+`reports/2026-07-27_large_model_optimization_results.md`; formal diagnostic
+Gates B/C remain unresolved. Provider-owned mapped decoder rows are the
+accepted transferable physical mechanism: the 4B compact-strict gate passed
+twice with exact signed evidence, while 12B raw decoder-row materialization
+accounting fell from 95.316 GB to 0.910 GB with zero post-Phase-0 decoder
+loads. The 12B lazy b64/c4096 reference repeated in 586.30s and 563.27s and
+passed an exact permutation-insensitive signed compact-graph comparison.
+
+Active-CPU encoder residency repeated at 509.80s and 508.67s with Phase 4 near
+359.6s, but its two compact artifacts were only bounded-aligned
+(`0.999024/0.988961/1.0/0.989621` feature/all-edge/Top-256/weighted Jaccard).
+Keep lazy mapped b64 as the reproducible reference and active CPU only as an
+explicitly bounded, placement-frozen candidate. Pinned CPU, b128, b256, and
+16,384/65,536 FP32 contraction tiles were slower or failed the Pareto margin.
+No default, governor bundle, fidelity scope, or baseline registry changed.
+
+SP4.1 phase-scoped telemetry now passes its formal overhead gate. A reversed
+4B exact pair after unified sparse resource sampling and bounded JSONL flushing
+measured telemetry-on at 184.783s versus telemetry-off at 185.862s in the
+paired mean (-0.581%, interpreted as noise around zero). All four artifacts
+were exact; both on runs recorded 9,835 events with zero sink errors and a
+maximum 63-event crash-loss window.
+
+SP4.2 checkpoint lifecycle also passes. A verified 171 GiB job-private 4B
+transcoder cache produced 34/34 safe release refusals under shared scope and
+34/34 issued releases under job-private scope. The private transition reduced
+cgroup file charge by 4.426 GiB, caused zero Phase-4 decoder reloads, preserved
+the exact signed compact graph, and did not harm full-run warm steady state.
+The synchronized three-batch private probe was 7.25% slower, so the lifecycle
+is accepted for ownership/reclamation correctness without claiming a repeatable
+speedup. See `reports/2026-07-31_exact_trace_sp4_lifecycle_results.md`.
+
+SP1 closes active-CPU encoder placement as a high-value bounded/research path,
+not an exact finalist. Direct duplicate-aware host materialization removed the
+old approximately 0.98 GiB GPU occurrence table and reduced a matched 12B
+Phase 4 from 389.50s to 286.69s (26.4%) and completion from 457.30s to 368.70s
+(19.4%). The full graphs nevertheless selected two different features per arm
+and executed 129 versus 130 semantic batches: feature/all-edge/weighted-edge
+Jaccard was `0.999512/0.999500/0.999529`, signed normalized L1 was `0.000471`,
+and the target token and Top-64 through Top-1024 support remained exact.
+Persisted probes localized the first numerical difference after byte-exact
+Phase-3 feature rows to seed-influence reduction. Keep mapped lazy in the SP5
+exact finalist and retain direct active CPU as a default-off bounded option.
+See `reports/2026-07-31_exact_trace_sp1_results.md`.
+
+SP5 is fully characterized but not promoted. Selective mapped Phase-0 rows
+produced two exact-on-workload 12B `361_base` runs at 471.38s and 470.14s, but
+failed held-out 1B `94_base` (feature/edge/weighted Jaccard
+`0.999756/0.997004/0.996279`, signed L1 `0.003728`). Canonical full-page Phase
+0 restored held-out exactness but took 1,905.57s completion at 12B, including
+1,370.02s in Phase 0, and current canonical 4B `361_base` disagreed with the
+older mechanism control. Keep selective rows as an explicit bounded opt-in,
+make no default or scientific-baseline change, and resolve the source-invariant
+Phase-0 reduction boundary before LS1. LS0 itself is complete with frozen
+129/256/512/1,024-token development workloads and two 256-token holdouts. See
+`reports/2026-07-31_short_prefix_performance_results.md`.
+
+Governor Wave A completed on Granite H200 and was analyzed on 2026-07-19. The
+provider-local CLT/PLT references match the original corrected-hook Granite
+`361_base` artifacts. CLT has a useful `c10080` fetch candidate at 1.43x warm
+speed with effectively exact output; `b1500` consumes 132.98 GiB reserved VRAM
+for only 1.05x and `b2000+` OOMs. For PLT, `b256` gives 1.68x at minimum
+Jaccard `0.9845`; `c32768` is the fastest measured row above all `0.97`
+feature/edge/weighted-edge/Top-256 floors at 4.01x. The `b512/c8192` corner
+reaches 5.08x but misses the Top-256 floor at `0.9617`; the 12-16x `b1024+`
+corners are not acceptable defaults because broad graph overlap falls as low as
+`0.51-0.87`. The full report is under
+`exact_trace_bench/granite/analysis/governor_calibration/wave_a_20260716/`.
+
+Wave A/B rows are calibration observations, not a global pass/fail list. They
+fit separate compact statistical feasibility/resource, phase-runtime, and
+fidelity response models. This does not imply neural training. Exact mode
+remains scope-certified; bounded mode enforces explicit
+metric floors; best-effort mode assigns fidelity loss a soft objective penalty;
+research mode permits labeled extrapolation. Campaign ingestion, fidelity-scope
+authorization, and launch-default changes are separate decisions.
+
+Wave C uses a ten-row local causal matrix: nine serialized 4B PLT rows at
+`400G/2h` and one 12B PLT row at `600G/8h`. The response-model implementation
+is now split at the intended ownership boundary: project artifacts become typed
+fit/held-out observations, while the sibling owns model families, uncertainty,
+immutable bundles, validation, and staged runtime evaluation. Bundle activation
+is explicit and remains off for calibration launches.
+
+Decoder-fetch chunk size is numerically sensitive for PLT: `c32768`
+gives 4.01x speed with about 0.25-0.28% broad graph drift. Keep non-reference
+chunks out of exact mode unless scope-certified; retain them as bounded,
+best-effort, and research calibration evidence.
+
+The isolated 1B PLT performance loop now has a reproducible short-prefix
+bounded candidate on Granite H200. `c65536` plus a 16 GiB cross-batch decoder
+cache, Phase-1/3 cap 128, Phase-4 execution cap 256, and session 256 completed
+`361_base` in 279.89s and 280.58s versus the 2805.70s frozen anchor. Both runs
+passed the bounded compact gate with identical comparison metrics (minimum
+feature/all-edge/Top-256/weighted Jaccard
+`0.994643/0.996008/0.992218/0.995133`, magnitude L1 `0.004879`, exact target
+token). This is a 124-token, 1B engineering result, not an exact-mode default,
+long-prefix validation, or evidence that the same cache envelope is safe for
+4B/12B.
+
+Fused active-row residency supersedes that pre-residency cache/tape family.
+Under the current 1B active-row path, c65536 completes in `79.37s` versus
+`84.82s` for c4096 and passes bounded parity, but its graph drift is the chunk
+regime and it is not exact-equivalent. Cache, tape, gather, frontier, and
+prefetch variants did not show additional detectable compact drift beyond their
+shared chunk regime; they remain rejected because residency removes their reuse
+benefit or because they are slower/more memory-heavy. See
+`reports/2026-07-26_bounded_candidate_reassessment.md`.
+
+The first active-row larger-model transfer on Granite H200 established:
+
+- 4B b128/c4096 completed in `335.61s` (`16.30x` versus the frozen baseline),
+  with Phase 0 `191.09s`, Phase 4 `113.21s`, and 27,685 MiB framebuffer. It
+  failed exact but passed bounded at feature/all-edge/Top-256/weighted Jaccard
+  `0.999024/0.998401/1.000000/0.998881`, L1 `0.001119`, token exact.
+- 4B b512/c65536 passed bounded but regressed to `418.58s`: Phase 0 improved to
+  `147.32s`, Phase 4 worsened to `220.12s`, framebuffer rose to 82,111 MiB, and
+  bounded metrics moved near the floor (`0.992460/0.983143/0.992218/0.985026`,
+  L1 `0.015087`). Do not select the combined profile.
+- 12B b64/c4096 proved 250 GiB capacity viability but not throughput viability.
+  Phase 0 completed in `1350.83s` with 3,030 decoder loads / 95.32 GB logical
+  bytes; rigid anonymous memory reached 19.46 GiB and HBM stayed around 40.6
+  GiB. Phase 3 took `0.39s`, but the first two Phase-4 batches took `187.85s`
+  and `120.29s` because model/refresh pages repeatedly faulted under cgroup
+  reclaim. The step was stopped before completion, so there is no 12B compact
+  parity result.
+
+Paired warm 4B follow-ups separated chunk size from execution batching:
+
+- At c4096, b512 and b128 had identical compact metrics, but the matched b512
+  run took `327.32s` / Phase 4 `192.72s` / 82,111 MiB versus b128 `255.72s` /
+  `139.58s` / 27,685 MiB. Larger execution batches add no detectable compact
+  drift here, but are slower and use roughly 3x framebuffer.
+- At b128, c65536 and c4096 were run in both orders. c65536 won both pairs
+  (`234.99s` versus `255.72s`, then `221.87s` versus `223.00s`), averaging
+  `228.43s` versus `239.36s`, a `4.6%` gain. Its compact metrics were identical
+  with and without b512, attributing the measured drift to chunk partitioning.
+  Retain c65536 as an explicit dataset-frozen bounded regime, but do not promote
+  it: the average gain misses 5% and all-edge Jaccard `0.983143` / L1 `0.015087`
+  sit close to the preregistered floors.
+
+In both model sizes the 250 GiB cgroup reached its hard limit almost entirely
+through clean file cache while rigid RSS remained small and `memory.failcnt`
+stayed zero. This validates the capacity hypothesis, but the 12B result shows
+why nominal cache is operationally useful: insufficient cache headroom can turn
+refresh into the bottleneck even when no OOM occurs. Guard future accepted-risk
+runs by anonymous/RSS growth rather than low total cgroup charge.
+
+Wave B completed all 14 Gemma 3 4B/12B PLT rows on Granite H200. Larger
+Phase-4 execution envelopes improved total runtime by `1.52-1.60x` at 4B and
+`1.70-2.14x` at 12B, but did not receive cross-model exact certification under
+the prepared-frontier contract.
+The 4B 256 arm is compact-graph exact to numerical tolerance despite two later
+frontier-membership changes; the 12B 128 arm drifts by about 1% on edge metrics,
+and the 12B 256 arm is closer but still changes later frontiers. Treat the
+validated 1B execution knee as model-scoped, not as a universal physical rung.
 
 Track-A cross-cluster localization is mostly complete:
 
@@ -74,12 +332,35 @@ Clean/current toy parity follow-up (May 2026):
 - The observed batch sensitivity is not attributed to the exact-chunked decoder
   implementation itself; it appears to be general NNSight/replacement behavior.
 
-Near-term cleanup focus:
+Near-term implementation focus:
 
-1. keep the current exact-trace baseline readable and reproducible,
-2. keep docs and scenario defaults from drifting,
-3. separate normal benchmark workflow from Track-A replay/debug tooling,
-4. add lightweight tests before deeper harness or library refactors.
+1. backfill Wave A/B into the v2 observation schema and publish the preliminary
+   response bundle;
+2. run the separate Wave C 4B/12B arrays and dependent finalizer;
+3. inspect held-out coverage, prediction error, resource use, and graph parity
+   before authorizing any new fidelity scope;
+4. consolidate governed harness workflows in Phase F after the calibrated
+   solver passes its final Granite gates.
+
+Static Phase-4 coalescing gate (Granite H200, 1B PLT, `361_base`, 2026-07-19):
+
+- execution caps `128/256/512` preserved the same semantic fingerprint, 65
+  semantic batches, 17 prepared frontiers, frontier membership and execution
+  order, and exact compact feature/edge/top-256 topology;
+- weighted-edge Jaccard versus 128 was `0.9999999979` at 256 and
+  `0.9999999964` at 512;
+- execution calls fell `65 -> 33 -> 17`; total runtime was
+  `3125.24s -> 2178.85s -> 2147.83s`, while reserved CUDA memory rose
+  `13.30 -> 24.67 -> 46.57 GiB`;
+- use 256 as the current 1B PLT efficiency knee. The 512 cap is validated
+  headroom, but its additional `1.4%` total speedup does not justify nearly
+  doubling reserved CUDA memory for this workload.
+
+Phase C1 closed on July 11 with immutable jobs `1613108`/`1613109`: compact NPZ
+artifacts were byte-identical to baseline, live/final telemetry counts matched,
+and both sinks closed without errors. The CLT job reached its `32G` host-memory
+request and slowed materially; this was accepted as a memory-headroom outlier,
+not a clean timing measurement. Request at least `64G` for future 1B CLT gates.
 
 Track-2 full-answer typed-bucketed interpretation (May 2026):
 
@@ -173,10 +454,14 @@ Full-sequence telemetry pilot (June 2026):
 
 | Family | Meaning | Current status |
 |---|---|---|
-| `exact_trace_bench/ascend/fast` | Ascend quick validation/debug for normal prompts | Current |
-| `exact_trace_bench/cardinal/fast` | Cardinal quick validation/debug for normal prompts | Current |
-| `exact_trace_bench/{ascend,cardinal}/anomaly` | Historical `94_base` anomaly/debug/parity work | Historical/current-readable; do not use for new default placement |
-| `exact_trace_bench/{ascend,cardinal}/long_eval` | Longer exact-bench evaluation tier | Current but SLURM-only |
+| `exact_trace_bench/granite/setup_prefetch` | Model/transcoder download and cache preparation | Current CHPC operational class |
+| `exact_trace_bench/granite/smoke` | Minimal load/trace validation | Current CHPC operational class |
+| `exact_trace_bench/granite/baseline` | Canonical strict baseline rebuilds, including the 12B `20260710-04` run | Current CHPC operational class |
+| `exact_trace_bench/granite/sweep` | Parameter/resource campaigns | Current CHPC operational class |
+| `exact_trace_bench/granite/long_trace` | Large-context/high-memory traces | Current CHPC operational class |
+| `exact_trace_bench/granite/full_answer` | Multi-token/full-answer campaigns | Current CHPC operational class |
+| `exact_trace_bench/granite/analysis` | Extraction, comparison, and plotting | Current CHPC operational class |
+| `exact_trace_bench/{ascend,cardinal}/{fast,anomaly,long_eval}` | OSC baselines, parity, and historical evaluation tiers | Historical provenance; do not use for new placement |
 | `workspace_snapshots/` | Immutable project + sibling-library launch snapshots | Current provenance mechanism |
 | historical `matched_debug` artifacts | Old matched-debug campaign outputs/configs | Historical only; do not use as an ordinary bucket |
 
@@ -315,6 +600,41 @@ membership for the long-prefix 1B PLT target.
   generated indices `298,299,300`.
 - `12275061` Cardinal: matching tiny-window `window_reuse_v1` run with
   Phase-0 window-state reuse and target-logit reuse enabled.
+
+A4 Cardinal readout (reported 2026-07-09; OSC artifacts pending transfer to
+CHPC): the completed Cardinal comparisons are sufficient to unblock the scoped
+knob-caste design. The delayed Ascend job `6260319` is now optional
+cross-environment reproducibility evidence rather than a Phase-B gate.
+
+| Pair | Feature J | Edge J | Weighted Edge J | Top64 | Top256 | Top1024 | Top5000 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| chunk c4096/b256 vs A3 c8192/b256 | 0.994643 | 0.988269 | 0.987517 | 1.000 | 0.996 | 0.993 | 0.992 |
+| batch c8192/b128 vs A3 c8192/b256 | 0.990040 | 0.987479 | 0.984281 | 0.969 | 0.984 | 0.989 | 0.991 |
+| per-token g300 vs A3 | 0.998292 | 0.992627 | 0.992163 | 1.000 | 1.000 | 0.995 | 0.995 |
+| window-reuse g300 vs A3 | 1.000000 | 1.000000 | 1.000000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| window-reuse vs per-token g298 | 1.000000 | 1.000000 | 1.000000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| window-reuse vs per-token g299 | 0.984737 | 0.973165 | 0.976543 | 1.000 | 0.992 | 0.992 | 0.991 |
+| window-reuse vs per-token g300 | 0.998292 | 0.992627 | 0.992163 | 1.000 | 1.000 | 0.995 | 0.995 |
+
+Validated-under scope: corrected-hook Gemma-3-1B with GemmaScope2 PLT-small,
+Cardinal, fp32, long-prefix `t01_361_s1002_g300` and full-sequence window indices
+`298--300`, using the listed chunk/batch settings. This does not validate 4B,
+12B, CLT, other prompts, or Granite/H200.
+
+Decision:
+
+- strict mode keeps decoder reduction order, coupled batch/refresh semantics,
+  and session mode scenario-pinned;
+- decoder chunk variation is eligible for an explicit validated-relaxed policy
+  in this narrow regime because the Top64 core was exact and weighted drift was
+  about 1.25%;
+- coupled batch/refresh variation needs a separate, stronger permission because
+  it changed the Top64 set (`0.969`) and had about 1.57% weighted drift;
+- `window_reuse_v1` remains the canonical full-answer session mode, not a memory
+  governor choice; its g300 output exactly matched the A3 anchor;
+- future implementation should decouple logical reduction/refresh checkpoints
+  from physical fetch chunks and compute microbatches so strict mode can recover
+  more performance without accepting semantic drift.
 
 Key roots:
 

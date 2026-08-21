@@ -405,8 +405,8 @@ Useful current docs:
 - `docs/README.md`
 - `docs/harness.md`
 - `docs/knob_api_taxonomy.md`
-- `docs/full_answer_harness_spec.md`
-- `docs/exact_trace_sweep_campaign_spec.md`
+- `docs/history/full_answer_harness_spec.md`
+- `docs/history/exact_trace_sweep_campaign_spec.md`
 - `docs/post_consolidation_cleanup_spec.md`
 - `docs/current_project_roadmap.md`
 - `experiments/logs/2026-05.jsonl`

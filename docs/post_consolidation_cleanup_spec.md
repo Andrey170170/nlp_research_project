@@ -1,9 +1,19 @@
 # Post-Consolidation Cleanup Spec
 
-Status: Current cleanup strategy
+Status: Reference-only; Phase C2 supersedes its compatibility-preserving cleanup approach
 Date: 2026-05-15
 Applies to: project `main` + sibling `../circuit-tracer_chunked` `main` after
 Track-0B consolidation
+
+This document preserves the consolidation rationale and constraints. Active
+work sequencing lives in `docs/current_project_roadmap.md` and
+`plans/2026-07-03_governor_rearch.md`.
+
+Phase C2 intentionally does not preserve old Python runtime APIs. Its canonical
+architecture, atomic caller migration, and deletion gate are defined in
+`docs/tracing_runtime_rewrite_spec.md`. Retained artifact formats require
+explicit readers/versioning where changed; `attribute_nnsight`, flat argument
+surfaces, compatibility wrappers, and translators do not.
 
 ## 1. Problem statement
 

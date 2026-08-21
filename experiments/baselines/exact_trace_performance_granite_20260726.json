@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "registry_id": "exact-trace-performance-granite-20260726",
+  "created_at": "2026-07-26",
+  "description": "Merged pinned Granite H200 performance references for Gemma 3 1B CLT/PLT and 4B/12B PLT exact-trace optimization.",
+  "source_registry_ids": [
+    "exact-trace-performance-granite-20260709",
+    "governor-calibration-granite-20260719"
+  ],
+  "source_roots": [
+    "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03",
+    "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma3-12b-20260710-04"
+  ],
+  "source_provenance": {
+    "performance/gemma3_1b": {
+      "cluster": "granite",
+      "gpu": "NVIDIA H200",
+      "workspace_mode": "live",
+      "project_branch": "chpc-granite-baseline-setup",
+      "project_base_commit": "6a91f1b81658e930491f2cb190e8f483354a96cd",
+      "project_dirty_files": [
+        "slurm/exact_trace_bench/trace_baseline_h200.granite.sbatch"
+      ],
+      "sibling_branch": "main",
+      "sibling_commit": "690fc042165da07912e95f0762408d0f9cf55163",
+      "sibling_dirty_files": [],
+      "immutable_snapshot_recorded": false,
+      "caveat": "The source run recorded these live-workspace repository states but no immutable snapshot. These digests freeze the result artifacts; they do not make the live source workspace immutable.",
+      "source_registry_id": "exact-trace-performance-granite-20260709"
+    },
+    "performance/gemma3_4b_plt/361_base": {
+      "source_run_id": "chpc-baseline-gemma-stack-20260709-03",
+      "source_run_metadata": {
+        "run_name": "CHPC Gemma baseline stack",
+        "run_goal": "Capture baseline timings, compact graphs, and diagnostic sidecars for analysis"
+      },
+      "execution_metadata": {
+        "cluster": "granite",
+        "gpu_class": "H200",
+        "slurm": {
+          "account": "rai",
+          "partition": "rai-gpu-grn",
+          "qos": "rai-gpu-grn",
+          "gres": "gpu:h200:1",
+          "mem": "400G",
+          "time": "02:00:00"
+        }
+      },
+      "project_source_state": "not recorded in the referenced result or summary artifact",
+      "sibling_source_state": "not recorded in the referenced result or summary artifact",
+      "workspace_snapshot": "not recorded in the referenced result or summary artifact",
+      "caveat": "Do not infer project or sibling commits from the shared run identifier; only the recorded run and H200 execution metadata are auditable."
+    },
+    "performance/gemma3_12b_plt/361_base": {
+      "source_run_id": "chpc-baseline-gemma3-12b-20260710-04",
+      "source_run_metadata": {
+        "run_name": "CHPC Gemma-3 12B PLT baseline rerun",
+        "run_goal": "Produce CHPC H200 timing and compact graph baselines for 828_base, 361_base, and 94_base with crash-surviving telemetry."
+      },
+      "execution_metadata": {
+        "cluster": "granite",
+        "gpu_class": "H200",
+        "slurm": {
+          "account": "rai",
+          "partition": "rai-gpu-grn",
+          "qos": "rai-gpu-grn",
+          "gres": "gpu:h200:1",
+          "mem": "600G",
+          "time": "08:30:00"
+        }
+      },
+      "workspace_snapshot": {
+        "manifest": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/workspace_snapshots/workspace_20260709_235933_chpc-12b-baseline-20260709-04/.exact_trace_bench_snapshot.json",
+        "read_only": true,
+        "project": {
+          "branch": "chpc-granite-baseline-setup",
+          "commit": "5cb554a75b32f170eff32ae53295f789ec047cf8",
+          "dirty_files": []
+        },
+        "sibling": {
+          "branch": "chpc-incremental-telemetry",
+          "commit": "3ad7fc95a19ff180c1e6d055ea403e0e25356e35",
+          "dirty_files": []
+        }
+      },
+      "caveat": "The immutable snapshot manifest establishes repository source state; the baseline result artifact itself does not repeat that state."
+    }
+  },
+  "entries": {
+    "performance/gemma3_1b_clt/828_base": {
+      "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03/gemma3_1b_clt/granite_baseline_gemma3_1b_clt_828_base_b1000_c4096_cache8g/artifacts",
+      "result_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03/gemma3_1b_clt/granite_baseline_gemma3_1b_clt_828_base_b1000_c4096_cache8g/result.json",
+      "duration_seconds": 156.5,
+      "expected_status": "success",
+      "artifact_sha256": {
+        "artifacts/prompt_000/completion_000/step_000.npz": "7a954db1f58f86895bcb30bed88e9bfb6d73568cbe06be2326b9d1776aca0f4d",
+        "artifacts/prompt_000/completion_000/completion.json": "15f3b958e5e7046018e2fafed9c6eb496f2f4b619cac2eabd691b5ca657c39ca",
+        "result.json": "6c5635bd7e63843fd81f76fd39434a2a3ef8aa094e3fe43a047764b531462c21"
+      }
+    },
+    "performance/gemma3_1b_clt/361_base": {
+      "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03/gemma3_1b_clt/granite_baseline_gemma3_1b_clt_361_base_b1000_c4096_cache8g/artifacts",
+      "result_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03/gemma3_1b_clt/granite_baseline_gemma3_1b_clt_361_base_b1000_c4096_cache8g/result.json",
+      "duration_seconds": 105.07,
+      "expected_status": "success",
+      "artifact_sha256": {
+        "artifacts/prompt_000/completion_000/step_000.npz": "053de57ff279d6370a1aca9b60c481508755adfdc1a420753f10a69298b66c4e",
+        "artifacts/prompt_000/completion_000/completion.json": "512f46a49df6d9202b2358d19418bb064f7fba6c1900b023ad4cd6e73b211299",
+        "result.json": "0082a4b2863b77a8e925ada68acf81abee70ceba30ed38d2409ea319afeea4d3"
+      }
+    },
+    "performance/gemma3_1b_plt/361_base": {
+      "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03/gemma3_1b_plt/granite_baseline_gemma3_1b_plt_361_base_b128_c4096_cache0g/artifacts",
+      "result_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03/gemma3_1b_plt/granite_baseline_gemma3_1b_plt_361_base_b128_c4096_cache0g/result.json",
+      "duration_seconds": 2805.7,
+      "expected_status": "success",
+      "artifact_sha256": {
+        "artifacts/prompt_000/completion_000/step_000.npz": "5585b3fae10370260dd7e821f8d048dea840565ebab7d0e6a0faf6e3563fd0bf",
+        "artifacts/prompt_000/completion_000/completion.json": "19fc947c04dea3758387f7de4d9991389024559b15e73f03f0449e04dd521c50",
+        "result.json": "0d9b76966cdac338da8ef6c333c1d9d7ff98c3f568948deea663198ce642d7d7"
+      }
+    },
+    "performance/gemma3_4b_plt/361_base": {
+      "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03/gemma3_4b_plt/granite_baseline_gemma3_4b_plt_361_base_b128_c4096_cache0g/artifacts",
+      "result_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03/gemma3_4b_plt/granite_baseline_gemma3_4b_plt_361_base_b128_c4096_cache0g/result.json",
+      "duration_seconds": 5471.7,
+      "expected_status": "success",
+      "artifact_sha256": {
+        "artifacts/prompt_000/completion_000/step_000.npz": "d9eea62aad961ff3bdab29515802abcc07a432db67cb12d6a535a6c5206f2806",
+        "artifacts/prompt_000/completion_000/completion.json": "3c097fed92971e753dfc6ec54319e6d9a95479061ed05c33c7d8f90ce5f338a7",
+        "result.json": "64c70dd711bb1034b8754811251e4b2a1168f554fdb96a6d5fb4ba6c0ea2e9fd"
+      }
+    },
+    "performance/gemma3_12b_plt/361_base": {
+      "artifacts_dir": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma3-12b-20260710-04/granite_baseline_gemma3_12b_plt_361_base_b64_c4096_cache0g/artifacts",
+      "result_json": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma3-12b-20260710-04/granite_baseline_gemma3_12b_plt_361_base_b64_c4096_cache0g/result.json",
+      "duration_seconds": 23051.72,
+      "expected_status": "success",
+      "artifact_sha256": {
+        "artifacts/prompt_000/completion_000/step_000.npz": "ddd1e6bb021f3e8c699a8ff5522442163ae4c95a60dbde918a5d0fa606f32066",
+        "artifacts/prompt_000/completion_000/completion.json": "f7c3284abb0b15696f5da5f15a347e0e345133126d9030a85f7127cfc9d83c0c",
+        "result.json": "32c81e0c106a9a5b7fd0db66bcb4151d0394f1021b688f666132a2de82b2ee25"
+      }
+    }
+  }
+}

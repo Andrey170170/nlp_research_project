@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "campaign_id": "ls5-gemma3-12b-batched-vjp-1024-dynamic-rows-v2",
+  "description": "Superseding 12B/1,024 feasibility run after v1 job 1819287 exposed the fixed 8 GiB active-decoder-row admission cliff. This rerun preserves the frozen width-one batched-VJP numerical regime and required CUDA-windowed row influence while requiring dynamic active-decoder-row residency. The exact active-row size is admitted against live HBM headroom after a pinned 16 GiB safety margin; no user byte ceiling is imposed. The failed v1 campaign remains immutable provenance.",
+  "execution_policy": {
+    "ordered_profile_roles": ["run"],
+    "full_execution_required": true,
+    "single_scheduler_job_required": true,
+    "preheat_policy": "file_cache_once_before_run",
+    "legacy_control_forbidden": true,
+    "supersedes_failed_campaign_id": "ls5-gemma3-12b-batched-vjp-1024-feasibility-v1",
+    "supersedes_failed_job_id": "1819287",
+    "required_scheduler_request": {
+      "gpu": "NVIDIA H200",
+      "gpu_count": 1,
+      "cpus_per_task": 32,
+      "memory": "600G",
+      "walltime": "02:00:00"
+    },
+    "scheduler_walltime_ceiling_seconds": 7200,
+    "stop_on_required_mode_mismatch": true,
+    "qualification_only_no_default_or_promotion": true,
+    "qualification_only_no_repeatability_claim": true,
+    "qualification_only_no_cross_regime_claim": true,
+    "qualification_only_no_native_12b_trajectory_claim": true,
+    "qualification_only_no_further_scaling_authorization": true
+  },
+  "workloads": [
+    {
+      "workload_id": "ls5-batched-vjp-12b-361-dev-1024-dynamic-rows-v2",
+      "preparation_status": "frozen",
+      "fixture": {
+        "catalog": "experiments/generated/performance_campaigns/ls0/fixture_catalog.json",
+        "catalog_sha256": "4ba856c8f0964a06834343990d905413f16f56b8331c29b5bb6ebc7aed758fb7",
+        "fixture_name": "361_length_v1",
+        "prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt",
+        "prompt_sha256": "938319d4a0c5740d60f31ec015bdba975e7952670a3d94e5b7438f7fff7648ee"
+      },
+      "model": {"variant": "gemma3_12b", "provider": "plt"},
+      "prompt": {"family": "gsm8k_361_length_v1", "role": "development"},
+      "trajectory": {
+        "trajectory_id": "ls0-gemma3-1b-361-greedy-v1",
+        "path": "experiments/generated/performance_campaigns/ls0/361_trajectory.json",
+        "sha256": "fc59c4512187a8b40fbfc62c5fadf0d0b5c2228ff35890a30b567fa9e64e158e"
+      },
+      "prefix": {
+        "requested_tokens": 1024,
+        "actual_tokens": 1024,
+        "token_ids_sha256": "75346f1791031a997292f1b625eda54d86cdc28244f811658f343f1ef9fa9625"
+      },
+      "target": {"absolute_position": 1024, "token_id": 9338, "token_text": " journey"},
+      "operational_class": "long_trace",
+      "profiles": {
+        "run": "ls5-12b-cuda-windowed-width1-batched-vjp-dynamic-rows-v2"
+      },
+      "run_disposition": "single_full_dynamic_residency_feasibility_and_artifact_validation",
+      "resource_envelope": {
+        "gpu": "NVIDIA H200",
+        "gpu_count": 1,
+        "host_memory_stop_gib": 600,
+        "host_rss_stop_gib": 500,
+        "hbm_peak_fraction_max": 0.9,
+        "walltime_seconds": 7200
+      },
+      "comparison_policy": {
+        "comparison_domain": "none_single_run",
+        "claim_boundary": "A successful run establishes 12B/1,024 resource feasibility and validates the produced artifact only for this frozen width-one batched-VJP regime with required dynamic active-row residency. It cannot establish repeatability, cross-regime equivalence, default promotion, a native 12B continuation result, or further-scaling authorization.",
+        "required_execution_mode": "full",
+        "required_exact_trace_internal_dtype": "fp32",
+        "required_checkpoint_asset_scope": "shared",
+        "required_feature_row_influence_mode": "cuda_windowed",
+        "feature_row_influence_requirement": "required",
+        "required_decoder_active_row_residency": true,
+        "decoder_active_row_residency_requirement": "required",
+        "required_decoder_active_row_max_bytes": 0,
+        "required_decoder_active_row_safety_margin_bytes": 17179869184,
+        "required_backward_engine_mode": "single_forward_batched_vjp",
+        "required_forward_graph_mode": "single_lane",
+        "required_vjp_kernel_mode": "autograd_batched",
+        "required_forward_lane_count": 1,
+        "required_actual_phase1_forward_trace_width": 1,
+        "capacity_contract": "Physical forward lane count and actual Phase-1 forward trace width are one; logical/session/backward capacity and configured Phase-1, Phase-3, and Phase-4 caps remain 64. Active decoder rows have no user ceiling and must be admitted from live HBM headroom after the frozen 16 GiB safety margin.",
+        "runtime_resource_policy": "measure_only",
+        "predecessor_gate": "ls5-batched-vjp-12b-361-dev-512",
+        "advance_only_if_predecessor_passes": true,
+        "legacy_control_forbidden": true,
+        "artifact_acceptance_contract": {
+          "classification": "single_run_feasibility_and_within_regime_artifact_only",
+          "required": [
+            "full_trace_completion",
+            "strict_artifact_validation",
+            "graph_reopen_success",
+            "frozen_mechanism_telemetry_match",
+            "required_dynamic_active_row_residency_effective",
+            "resource_telemetry_persisted"
+          ],
+          "forbidden_claims": [
+            "repeatability",
+            "cross_regime_equivalence",
+            "default_promotion",
+            "native_12b_trajectory_result",
+            "further_scaling_authorization"
+          ]
+        },
+        "arms": {
+          "run": {
+            "backward_engine_mode": "single_forward_batched_vjp",
+            "forward_graph_mode": "single_lane",
+            "vjp_kernel_mode": "autograd_batched",
+            "forward_lane_count": 1,
+            "config_pins": {
+              "exact_trace_internal_dtype": "fp32",
+              "checkpoint_asset_scope": "shared",
+              "decoder_active_row_residency": true,
+              "decoder_active_row_residency_requirement": "required",
+              "decoder_active_row_max_bytes": 0,
+              "decoder_active_row_safety_margin_bytes": 17179869184
+            },
+            "physical_caps": {
+              "nnsight_session_capacity": 64,
+              "phase1_trace_batch_size_max": 64,
+              "phase3_compute_microbatch_max_rows": 64,
+              "phase4_execution_batch_max_rows": 64
+            },
+            "derived_execution": {
+              "actual_phase1_forward_trace_width": 1,
+              "backward_batch_capacity": 64
+            }
+          }
+        },
+        "required_telemetry": [
+          "backward_engine_mode",
+          "forward_graph_mode",
+          "vjp_kernel_mode",
+          "forward_lane_count",
+          "feature_row_influence_mode",
+          "feature_row_influence_requirement",
+          "decoder_active_row_residency_requested",
+          "decoder_active_row_residency_requirement",
+          "decoder_active_row_residency_effective",
+          "decoder_active_row_admission_reason",
+          "decoder_active_row_estimated_bytes",
+          "decoder_active_row_dynamic_budget_bytes",
+          "decoder_active_row_effective_budget_bytes",
+          "decoder_active_row_safety_margin_bytes",
+          "decoder_active_row_hbm_free_bytes",
+          "decoder_active_row_hbm_total_bytes"
+        ],
+        "fidelity": "single_run_same_regime_feasibility_and_artifact_only"
+      }
+    }
+  ]
+}

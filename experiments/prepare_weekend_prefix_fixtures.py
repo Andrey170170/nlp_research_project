@@ -15,7 +15,16 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import trace_pipeline as base  # noqa: E402
+from nlp_research_project.exact_trace_bench.trace_runtime.prompts import (  # noqa: E402
+    format_prompt,
+    load_gsm8k_examples,
+)
+from nlp_research_project.exact_trace_bench.trace_runtime.provider import (  # noqa: E402
+    load_model,
+)
+from nlp_research_project.exact_trace_bench.trace_runtime.support import (  # noqa: E402
+    generate_next_token,
+)
 
 
 DEFAULT_TARGET_SPEC = Path(__file__).with_name(
@@ -51,7 +60,7 @@ def generate_greedy_completion(
     generated_token_ids: list[int] = []
 
     for _ in range(max_new_tokens):
-        token_result = base.generate_next_token(model, input_ids, temperature=0.0)
+        token_result = generate_next_token(model, input_ids, temperature=0.0)
         next_token_id = token_result["token_id"]
         generated_token_ids.append(next_token_id)
         input_ids = token_result["next_input_ids"]
@@ -154,7 +163,7 @@ def build_fixture_catalog(
     max_new_tokens: int,
 ) -> dict[str, Any]:
     gsm8k_indices = [int(index) for index in target_spec["gsm8k_indices"]]
-    examples = base.load_gsm8k_examples(len(gsm8k_indices), indices=gsm8k_indices)
+    examples = load_gsm8k_examples(len(gsm8k_indices), indices=gsm8k_indices)
     tokenizer = model.tokenizer
 
     catalog: dict[str, Any] = {
@@ -168,7 +177,7 @@ def build_fixture_catalog(
         gsm8k_index = int(example["gsm8k_index"])
         question = example["question"]
         ground_truth_answer = example["answer"]
-        prompt_text = base.format_prompt(tokenizer, question)
+        prompt_text = format_prompt(tokenizer, question)
         prompt_token_ids = model.ensure_tokenized(prompt_text)  # type: ignore[unresolved-attribute]
         prompt_token_count = int(prompt_token_ids.shape[0])
 
@@ -339,7 +348,7 @@ def main() -> None:
         print(f"GPU: {torch.cuda.get_device_name(0)}")
         print(f"VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
 
-    model = base.load_model(
+    model = load_model(
         lazy_encoder=not args.no_lazy_encoder,
         lazy_decoder=not args.no_lazy_decoder,
         decoder_chunk_size=args.decoder_chunk_size,

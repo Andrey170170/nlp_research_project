@@ -21,6 +21,33 @@ def test_default_transcoder_config_is_current_clt() -> None:
     assert payload["feature_output_hook"] == "hook_mlp_out"
     assert payload["decoder_chunk_size"] == 256
     assert payload["cross_batch_decoder_cache_bytes"] == 8589934592
+    assert payload["checkpoint_asset_scope"] == "shared"
+    assert payload["checkpoint_prefault_budget_bytes"] == 0
+
+
+def test_checkpoint_residency_controls_are_explicit_and_validated() -> None:
+    config = resolve_transcoder_load_config(
+        {
+            "checkpoint_asset_scope": "job_private",
+            "checkpoint_prefault_budget_bytes": 4096,
+        }
+    )
+    assert config.checkpoint_asset_scope == "job_private"
+    assert config.checkpoint_prefault_budget_bytes == 4096
+    assert (
+        resolve_transcoder_load_config(
+            {"checkpoint_prefault_budget_bytes": None}
+        ).checkpoint_prefault_budget_bytes
+        == 0
+    )
+
+    for invalid in ("private", "auto"):
+        try:
+            resolve_transcoder_load_config({"checkpoint_asset_scope": invalid})
+        except ValueError as exc:
+            assert "checkpoint_asset_scope" in str(exc)
+        else:  # pragma: no cover - explicit assertion path
+            raise AssertionError("expected invalid checkpoint scope to fail")
 
 
 def test_plt_architecture_without_family_uses_safe_explicit_default() -> None:

@@ -42,7 +42,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from circuit_utils import StepData, load_compact  # noqa: E402
+from nlp_research_project.exact_trace_bench.compact_io import StepData, load_compact  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +168,7 @@ def _step_from_dict_topk(
     max_edges: int,
 ) -> StepData:
     """Apply step_from_pt logic but with activation_values explicitly absent."""
-    from circuit_utils import sparsify_edges, StepData
+    from nlp_research_project.exact_trace_bench.compact_io import sparsify_edges, StepData
     import numpy as np
     import torch
 
