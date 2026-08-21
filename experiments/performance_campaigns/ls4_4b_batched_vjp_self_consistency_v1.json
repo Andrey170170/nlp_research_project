@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "campaign_id": "ls4-gemma3-4b-batched-vjp-self-consistency-v1",
+  "description": "Two independent full 4B/256 repeats inside one frozen single-forward batched-VJP numerical regime. Width one refers specifically to the physical forward-graph lane and the actual Phase-1 forward trace width. Configured session, backward, Phase-1 cap, Phase-3, and Phase-4 capacities remain 128. This qualification compares the repeats only with each other; it has no legacy-wide control and cannot promote a default or claim interchangeability with another execution regime.",
+  "execution_policy": {
+    "ordered_profile_roles": [
+      "repeat_a",
+      "repeat_b"
+    ],
+    "full_execution_required": true,
+    "separate_scheduler_jobs_required": true,
+    "different_h200_nodes_preferred": true,
+    "same_profile_required": true,
+    "legacy_control_forbidden": true,
+    "scheduler_walltime_ceiling_seconds": 3600,
+    "stop_on_required_mode_mismatch": true,
+    "stop_on_fidelity_failure": false,
+    "qualification_only_no_default_or_promotion": true
+  },
+  "workloads": [
+    {
+      "workload_id": "ls4-batched-vjp-self-consistency-4b-361-dev-256",
+      "preparation_status": "frozen",
+      "fixture": {
+        "catalog": "experiments/generated/performance_campaigns/ls0/fixture_catalog.json",
+        "catalog_sha256": "4ba856c8f0964a06834343990d905413f16f56b8331c29b5bb6ebc7aed758fb7",
+        "fixture_name": "361_length_v1",
+        "prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt",
+        "prompt_sha256": "938319d4a0c5740d60f31ec015bdba975e7952670a3d94e5b7438f7fff7648ee"
+      },
+      "model": {"variant": "gemma3_4b", "provider": "plt"},
+      "prompt": {"family": "gsm8k_361_length_v1", "role": "development"},
+      "trajectory": {
+        "trajectory_id": "ls0-gemma3-1b-361-greedy-v1",
+        "path": "experiments/generated/performance_campaigns/ls0/361_trajectory.json",
+        "sha256": "fc59c4512187a8b40fbfc62c5fadf0d0b5c2228ff35890a30b567fa9e64e158e"
+      },
+      "prefix": {
+        "requested_tokens": 256,
+        "actual_tokens": 256,
+        "token_ids_sha256": "cfee207d0bce712e77190bcf4a7dbc4a0c69e410602a89bd5c5462794fa1d983"
+      },
+      "target": {"absolute_position": 256, "token_id": 236751, "token_text": "s"},
+      "operational_class": "sweep",
+      "profiles": {
+        "repeat_a": "ls4-4b-self-consistency-cuda-windowed-width1-batched-vjp-v1",
+        "repeat_b": "ls4-4b-self-consistency-cuda-windowed-width1-batched-vjp-v1"
+      },
+      "run_disposition": "two_independent_full_same_regime_repeats",
+      "resource_envelope": {
+        "gpu": "NVIDIA H200",
+        "gpu_count": 1,
+        "host_memory_stop_gib": 400,
+        "host_rss_stop_gib": 300,
+        "hbm_peak_fraction_max": 0.9,
+        "walltime_seconds": 3600
+      },
+      "comparison_policy": {
+        "comparison_domain": "same_frozen_width1_batched_vjp_regime_only",
+        "claim_boundary": "A passing repeat comparison establishes self-consistency only for this frozen width-one batched-VJP regime. It does not establish equivalence to the legacy duplicated-lane regime, promote a launch default, or authorize scaling.",
+        "required_execution_mode": "full",
+        "required_feature_row_influence_mode": "cuda_windowed",
+        "feature_row_influence_requirement": "required",
+        "required_backward_engine_mode": "single_forward_batched_vjp",
+        "required_forward_graph_mode": "single_lane",
+        "required_vjp_kernel_mode": "autograd_batched",
+        "required_forward_lane_count": 1,
+        "required_actual_phase1_forward_trace_width": 1,
+        "capacity_contract": "Width one means physical forward_lane_count=1 and therefore actual Phase-1 forward trace width=1. It does not mean logical/session/backward or downstream microbatch capacity one: nnsight session capacity, backward batch capacity, configured Phase-1 cap, Phase-3 microbatch maximum, and Phase-4 execution maximum are all frozen at 128.",
+        "runtime_resource_policy": "measure_only",
+        "legacy_control_forbidden": true,
+        "same_profile_required": true,
+        "allowed_repeat_variation": [
+          "run_id",
+          "launch_output_root",
+          "prepared_bundle_path",
+          "scheduler_job_id",
+          "scheduler_node"
+        ],
+        "arms": {
+          "repeat_a": {
+            "backward_engine_mode": "single_forward_batched_vjp",
+            "forward_graph_mode": "single_lane",
+            "vjp_kernel_mode": "autograd_batched",
+            "forward_lane_count": 1,
+            "physical_caps": {
+              "nnsight_session_capacity": 128,
+              "phase1_trace_batch_size_max": 128,
+              "phase3_compute_microbatch_max_rows": 128,
+              "phase4_execution_batch_max_rows": 128
+            },
+            "derived_execution": {
+              "actual_phase1_forward_trace_width": 1,
+              "backward_batch_capacity": 128
+            }
+          },
+          "repeat_b": {
+            "backward_engine_mode": "single_forward_batched_vjp",
+            "forward_graph_mode": "single_lane",
+            "vjp_kernel_mode": "autograd_batched",
+            "forward_lane_count": 1,
+            "physical_caps": {
+              "nnsight_session_capacity": 128,
+              "phase1_trace_batch_size_max": 128,
+              "phase3_compute_microbatch_max_rows": 128,
+              "phase4_execution_batch_max_rows": 128
+            },
+            "derived_execution": {
+              "actual_phase1_forward_trace_width": 1,
+              "backward_batch_capacity": 128
+            }
+          }
+        },
+        "required_telemetry": [
+          "backward_engine_mode",
+          "forward_graph_mode",
+          "vjp_kernel_mode",
+          "forward_lane_count",
+          "feature_row_influence_mode",
+          "feature_row_influence_requirement"
+        ],
+        "fidelity": "same_regime_self_consistency_only"
+      }
+    }
+  ]
+}

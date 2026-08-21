@@ -3,37 +3,24 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Any
 
 import torch
+
 from nlp_research_project.exact_trace_bench.compact_io import save_compact
 
 from .artifacts import (
-    save_feature_semantic_descriptors,
-    save_phase0_donor_bundle,
-    save_phase3_gradient_bundle,
-    save_phase3_row_bundle,
-    save_phase3_seed_bundle,
+    legacy_capture_artifact_status,
+    require_complete_capture_artifacts,
+    write_capture_artifacts,
 )
 from .compact_graph import compact_result_to_step_data
 from .completion_workspace import CompletionWorkspace
 from .request import TracePolicy
-from .telemetry import normalize_telemetry_events
 from .support import capture_resource_snapshot, capture_transcoder_diagnostics
-
-
-_SIDECARS: tuple[tuple[str, str, Callable[..., None]], ...] = (
-    ("phase0_donor_bundle", "phase0_donor_bundle", save_phase0_donor_bundle),
-    ("phase3_seed_bundle", "phase3_seed_bundle", save_phase3_seed_bundle),
-    ("phase3_gradient_bundle", "phase3_gradient_bundle", save_phase3_gradient_bundle),
-    ("phase3_row_bundle", "phase3_row_bundle", save_phase3_row_bundle),
-    (
-        "feature_semantic_descriptors",
-        "feature_semantic_descriptors",
-        save_feature_semantic_descriptors,
-    ),
-)
+from .telemetry import normalize_telemetry_events
 
 
 @dataclass
@@ -68,7 +55,9 @@ class StepArtifactWriter:
         artifact_seconds = time.perf_counter() - artifact_started
 
         telemetry = self._write_telemetry(step_index, compact_result)
-        sidecars = self._write_sidecars(step_index, compact_result)
+        capture_artifacts = self._write_sidecars(step_index, compact_result)
+        self._persist_capture_artifact_status(step_index, capture_artifacts)
+        require_complete_capture_artifacts(capture_artifacts)
         self._write_debug_artifacts(step_index, compact_result)
         runtime = jsonable_runtime_metadata(compact_result)
         return {
@@ -80,14 +69,15 @@ class StepArtifactWriter:
             "next_token_text": str(token_result["token_text"]),
             "next_token_logprob": token_result["token_logprob"],
             "n_active_features": int(step_data.n_features),
-            "n_edges_retained": int(len(step_data.weights)),
+            "n_edges_retained": len(step_data.weights),
             "stop_reason": "eos" if stop else None,
             "step_end_to_end_seconds": round(time.perf_counter() - step_started, 6),
             "attribution_seconds": round(attribution_seconds, 6),
             "token_generation_seconds": round(token_generation_seconds, 6),
             "artifact_save_seconds": round(artifact_seconds, 6),
             "telemetry_event_count": telemetry,
-            "sidecar_status": sidecars,
+            "sidecar_status": legacy_capture_artifact_status(capture_artifacts),
+            "capture_artifact_status": capture_artifacts,
             "resource_snapshot": capture_resource_snapshot(),
             "transcoder_diagnostics": capture_transcoder_diagnostics(self.model),
         }
@@ -110,42 +100,39 @@ class StepArtifactWriter:
 
     def _write_sidecars(
         self, step_index: int, result: dict[str, Any]
-    ) -> dict[str, str]:
+    ) -> dict[str, Any]:
         enabled = self.trace_policy.execution.observability
-        flags = {
+        requested = {
             "phase0_donor_bundle": enabled.capture_phase0_donor_bundle,
             "phase3_seed_bundle": enabled.capture_phase3_seed_bundle,
             "phase3_gradient_bundle": enabled.capture_phase3_gradient_bundle,
             "phase3_row_bundle": enabled.capture_phase3_row_bundle,
             "feature_semantic_descriptors": enabled.capture_feature_semantic_descriptors,
         }
-        statuses: dict[str, str] = {}
-        for payload_name, suffix, saver in _SIDECARS:
-            if not flags[payload_name]:
-                statuses[payload_name] = "disabled"
-                continue
-            payload = result.get(payload_name)
-            if not isinstance(payload, dict):
-                statuses[payload_name] = "missing_payload"
-                continue
-            try:
-                saver(payload, self.workspace.sidecar_path(step_index, suffix))
-            except Exception as error:  # retain primary trace and report sidecar failure
-                statuses[payload_name] = f"save_failed:{type(error).__name__}"
-            else:
-                statuses[payload_name] = str(payload.get("status", "captured"))
-        return statuses
+        return write_capture_artifacts(
+            requested=requested,
+            payloads=result,
+            path_for=lambda name: self.workspace.sidecar_path(step_index, name),
+        )
 
     def write_diagnostic_sidecars(
         self, step_index: int, artifacts: Mapping[str, Any]
-    ) -> dict[str, str]:
+    ) -> dict[str, Any]:
         """Persist bounded captures returned by a graph-free diagnostic probe."""
 
-        return self._write_sidecars(step_index, dict(artifacts))
+        report = self._write_sidecars(step_index, dict(artifacts))
+        self._persist_capture_artifact_status(step_index, report)
+        require_complete_capture_artifacts(report)
+        return report
 
-    def _write_debug_artifacts(
-        self, step_index: int, result: dict[str, Any]
+    def _persist_capture_artifact_status(
+        self, step_index: int, report: Mapping[str, Any]
     ) -> None:
+        self.workspace.write_json(
+            f"step_{step_index:03d}_capture_artifacts.json", dict(report)
+        )
+
+    def _write_debug_artifacts(self, step_index: int, result: dict[str, Any]) -> None:
         anomaly = result.get("phase4_anomaly_debug")
         if isinstance(anomaly, dict):
             self.workspace.write_json("phase4_anomaly_debug.json", anomaly)
@@ -155,7 +142,10 @@ class StepArtifactWriter:
         if isinstance(summary, dict):
             self.workspace.write_json("cross_cluster_debug.json", summary)
         for key, filename in (
-            ("cross_cluster_debug_checkpoints", "cross_cluster_debug_checkpoints.jsonl"),
+            (
+                "cross_cluster_debug_checkpoints",
+                "cross_cluster_debug_checkpoints.jsonl",
+            ),
             ("cross_cluster_debug_batches", "cross_cluster_debug_batches.jsonl"),
         ):
             payload = result.get(key)
@@ -210,7 +200,11 @@ def _jsonable(value: Any) -> Any | None:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     if isinstance(value, dict):
-        return {str(key): converted for key, item in value.items() if (converted := _jsonable(item)) is not None}
+        return {
+            str(key): converted
+            for key, item in value.items()
+            if (converted := _jsonable(item)) is not None
+        }
     if isinstance(value, (list, tuple)) and len(value) <= 4096:
         converted = [_jsonable(item) for item in value]
         return converted if all(item is not None for item in converted) else None

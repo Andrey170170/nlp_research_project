@@ -166,6 +166,40 @@ def test_trace_spec_generation_rejects_mismatched_selection() -> None:
         build_trace_specs(tiny_trajectory(), selection)
 
 
+def test_trace_spec_rejects_ambiguous_required_feature_row_selection() -> None:
+    selection = select_tokens(tiny_trajectory(), explicit_indices=[3])
+    spec = build_trace_specs(
+        tiny_trajectory(),
+        selection,
+        graph_knob_overrides={
+            "feature_row_influence_mode": "auto",
+            "feature_row_influence_requirement": "required",
+            "feature_row_gpu_resident_max_bytes": 1024,
+            "feature_row_gpu_window_max_bytes": 1024,
+        },
+    )[0]
+
+    with pytest.raises(
+        ValueError, match="auto feature-row influence cannot be required"
+    ):
+        validate_trace_spec(spec)
+
+
+def test_trace_spec_enforced_resource_policy_requires_enforceable_limit() -> None:
+    selection = select_tokens(tiny_trajectory(), explicit_indices=[3])
+    spec = build_trace_specs(
+        tiny_trajectory(),
+        selection,
+        graph_knob_overrides={
+            "runtime_resource_policy": "enforce",
+            "resource_planning_envelope": {"hbm_peak_fraction_max": 0.9},
+        },
+    )[0]
+
+    with pytest.raises(ValueError, match="host_rss_stop_gib or walltime_seconds"):
+        validate_trace_spec(spec)
+
+
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
@@ -193,7 +227,7 @@ def test_trace_spec_generation_rejects_mismatched_selection() -> None:
                 "phase0_decoder_row_ranges": True,
                 "decoder_active_row_residency": True,
             },
-            "positive decoder_active_row_max_bytes",
+            "positive decoder_active_row_safety_margin_bytes",
         ),
         (
             {

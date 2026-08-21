@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from .config import REPO_ROOT
 from .full_answer.schemas import load_trajectory
@@ -34,9 +35,23 @@ class CampaignWorkload:
     prompt_role: str
     requested_prefix_tokens: int
     actual_prefix_tokens: int | None
-    candidate_profile: str
-    control_profile: str
+    profiles: tuple[tuple[str, str], ...]
     run_disposition: str
+
+    def profile_for(self, role: str) -> str | None:
+        return dict(self.profiles).get(role)
+
+    @property
+    def candidate_profile(self) -> str | None:
+        """Compatibility view for ordinary paired campaigns."""
+
+        return self.profile_for("candidate")
+
+    @property
+    def control_profile(self) -> str | None:
+        """Compatibility view for ordinary paired campaigns."""
+
+        return self.profile_for("control")
 
 
 @dataclass(frozen=True)
@@ -160,9 +175,7 @@ def load_mechanism_claims(path: Path) -> dict[str, Any]:
 
 def _validate_frozen_workload(workload: Mapping[str, Any], *, label: str) -> None:
     fixture = _require_mapping(workload["fixture"], label=f"{label}.fixture")
-    trajectory = _require_mapping(
-        workload["trajectory"], label=f"{label}.trajectory"
-    )
+    trajectory = _require_mapping(workload["trajectory"], label=f"{label}.trajectory")
     prefix = _require_mapping(workload["prefix"], label=f"{label}.prefix")
     target = _require_mapping(workload["target"], label=f"{label}.target")
     _require_sha256(
@@ -196,6 +209,27 @@ def validate_performance_campaign(
     if payload.get("schema_version") != 1:
         raise ValueError("performance campaign schema_version must be 1")
     _require_nonempty_string(payload.get("campaign_id"), label="campaign_id")
+    execution_policy = payload.get("execution_policy")
+    ordered_profile_roles: tuple[str, ...] = ()
+    if execution_policy is not None:
+        policy = _require_mapping(execution_policy, label="execution_policy")
+        raw_roles = policy.get("ordered_profile_roles")
+        if raw_roles is not None:
+            if not isinstance(raw_roles, list) or not raw_roles:
+                raise ValueError(
+                    "execution_policy.ordered_profile_roles must be a non-empty list"
+                )
+            ordered_profile_roles = tuple(
+                _require_nonempty_string(
+                    role,
+                    label=f"execution_policy.ordered_profile_roles[{index}]",
+                )
+                for index, role in enumerate(raw_roles)
+            )
+            if len(set(ordered_profile_roles)) != len(ordered_profile_roles):
+                raise ValueError(
+                    "execution_policy.ordered_profile_roles must not contain duplicates"
+                )
     workloads = payload.get("workloads")
     if not isinstance(workloads, list) or not workloads:
         raise ValueError("performance campaign must contain workloads")
@@ -221,6 +255,19 @@ def validate_performance_campaign(
         prompt = _require_mapping(workload["prompt"], label=f"{label}.prompt")
         prefix = _require_mapping(workload["prefix"], label=f"{label}.prefix")
         profiles = _require_mapping(workload["profiles"], label=f"{label}.profiles")
+        for profile_role, profile_name in profiles.items():
+            _require_nonempty_string(profile_role, label=f"{label}.profiles role")
+            _require_nonempty_string(
+                profile_name, label=f"{label}.profiles.{profile_role}"
+            )
+        missing_ordered_roles = [
+            role for role in ordered_profile_roles if role not in profiles
+        ]
+        if missing_ordered_roles:
+            raise ValueError(
+                f"{label}.profiles is missing ordered roles: "
+                + ", ".join(missing_ordered_roles)
+            )
         requested_tokens = prefix.get("requested_tokens")
         if not isinstance(requested_tokens, int) or requested_tokens <= 0:
             raise ValueError(f"{label}.prefix.requested_tokens must be positive")
@@ -251,11 +298,9 @@ def validate_performance_campaign(
                 ),
                 requested_prefix_tokens=requested_tokens,
                 actual_prefix_tokens=actual_tokens,
-                candidate_profile=_require_nonempty_string(
-                    profiles.get("candidate"), label=f"{label}.profiles.candidate"
-                ),
-                control_profile=_require_nonempty_string(
-                    profiles.get("control"), label=f"{label}.profiles.control"
+                profiles=tuple(
+                    (str(profile_role), str(profile_name))
+                    for profile_role, profile_name in profiles.items()
                 ),
                 run_disposition=_require_nonempty_string(
                     workload.get("run_disposition"),
@@ -392,18 +437,27 @@ def resolve_frozen_campaign_workload(
 
 
 def render_campaign_workloads(workloads: Sequence[CampaignWorkload]) -> list[str]:
-    return [
-        (
+    rendered: list[str] = []
+    for workload in workloads:
+        if (
+            workload.control_profile is not None
+            and workload.candidate_profile is not None
+        ):
+            profiles = f"{workload.control_profile}->{workload.candidate_profile}"
+        else:
+            profiles = ",".join(
+                f"{role}:{profile}" for role, profile in workload.profiles
+            )
+        rendered.append(
             f"{workload.workload_id}: status={workload.preparation_status.value} "
             f"model={workload.model_variant}/{workload.provider} "
             f"prompt={workload.prompt_family}/{workload.prompt_role} "
             f"prefix={workload.actual_prefix_tokens or '?'}"
             f"/{workload.requested_prefix_tokens} "
-            f"profiles={workload.control_profile}->{workload.candidate_profile} "
+            f"profiles={profiles} "
             f"run={workload.run_disposition}"
         )
-        for workload in workloads
-    ]
+    return rendered
 
 
 def _resolve_campaign_path(value: Any, *, repo_root: Path, label: str) -> Path:

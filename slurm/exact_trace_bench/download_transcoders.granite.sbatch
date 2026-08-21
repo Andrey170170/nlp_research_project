@@ -20,6 +20,9 @@ ENV_FILE="${ENV_FILE:-$WORKSPACE_ROOT/.env}"
 PROVIDER_FAMILIES="${PROVIDER_FAMILIES:-gemmascope2-plt-1b-big-affine,gemmascope2-plt-4b-big-affine}"
 
 cd "$WORKSPACE_ROOT"
+# Prefetch is the only standard batch workflow that intentionally contacts the
+# Hub. Scientific jobs remain offline by default in chpc_env.sh.
+export EXACT_TRACE_HF_OFFLINE=0
 source "$WORKSPACE_ROOT/slurm/exact_trace_bench/chpc_env.sh"
 
 TRANSCODER_CACHE_DIR="${TRANSCODER_CACHE_DIR:-$HF_HOME}"

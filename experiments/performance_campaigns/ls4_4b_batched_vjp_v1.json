@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "campaign_id": "ls4-gemma3-4b-batched-vjp-v1",
+  "description": "Opt-in single-forward batched-VJP qualification. The control and candidate share the accepted 4B selective-Phase0/cuda-windowed configuration; only backward_engine_mode changes. Start at the frozen 256-token point, then advance to the accepted 512-token stress point only after exactness, selection, telemetry, and resource classification.",
+  "execution_policy": {
+    "ordered_workload_ids": [
+      "ls4-batched-vjp-4b-361-dev-256",
+      "ls4-batched-vjp-4b-361-dev-512"
+    ],
+    "advance_only_after_classification": true,
+    "candidate_probe_required": true,
+    "matched_control_required_before_promotion": true,
+    "scheduler_walltime_ceiling_seconds": 7200,
+    "stop_on_required_mode_mismatch": true,
+    "stop_on_fidelity_failure": true
+  },
+  "workloads": [
+    {
+      "workload_id": "ls4-batched-vjp-4b-361-dev-256",
+      "preparation_status": "frozen",
+      "fixture": {
+        "catalog": "experiments/generated/performance_campaigns/ls0/fixture_catalog.json",
+        "catalog_sha256": "4ba856c8f0964a06834343990d905413f16f56b8331c29b5bb6ebc7aed758fb7",
+        "fixture_name": "361_length_v1",
+        "prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt",
+        "prompt_sha256": "938319d4a0c5740d60f31ec015bdba975e7952670a3d94e5b7438f7fff7648ee"
+      },
+      "model": {"variant": "gemma3_4b", "provider": "plt"},
+      "prompt": {"family": "gsm8k_361_length_v1", "role": "development"},
+      "trajectory": {
+        "trajectory_id": "ls0-gemma3-1b-361-greedy-v1",
+        "path": "experiments/generated/performance_campaigns/ls0/361_trajectory.json",
+        "sha256": "fc59c4512187a8b40fbfc62c5fadf0d0b5c2228ff35890a30b567fa9e64e158e"
+      },
+      "prefix": {
+        "requested_tokens": 256,
+        "actual_tokens": 256,
+        "token_ids_sha256": "cfee207d0bce712e77190bcf4a7dbc4a0c69e410602a89bd5c5462794fa1d983"
+      },
+      "target": {"absolute_position": 256, "token_id": 236751, "token_text": "s"},
+      "operational_class": "sweep",
+      "profiles": {
+        "control": "ls4-4b-transfer-cuda-windowed-512mib-b128-v1",
+        "candidate": "ls4-4b-transfer-cuda-windowed-512mib-b128-batched-vjp-v1"
+      },
+      "run_disposition": "candidate_transition_probe_then_matched_full_pair",
+      "resource_envelope": {
+        "gpu": "NVIDIA H200",
+        "gpu_count": 1,
+        "host_memory_stop_gib": 400,
+        "host_rss_stop_gib": 300,
+        "hbm_peak_fraction_max": 0.9,
+        "walltime_seconds": 3600
+      },
+      "comparison_policy": {
+        "isolated_axis": "backward_engine_mode",
+        "control_mode": "duplicated_lanes",
+        "required_candidate_mode": "single_forward_batched_vjp",
+        "required_candidate_forward_lane_count": 1,
+        "runtime_resource_policy": "measure_only",
+        "required_telemetry": [
+          "backward_engine_mode",
+          "forward_lane_count",
+          "backward_batch_capacity",
+          "source_layer_group_count",
+          "source_layer_group_max_rows",
+          "autograd_call_count",
+          "cotangent_peak_nbytes",
+          "autograd_elapsed_ms",
+          "contraction_elapsed_ms"
+        ],
+        "required_failure_fields": [
+          "failure_stage",
+          "failure_source_layer",
+          "failure_cause_type"
+        ],
+        "fidelity": "strict_exact_before_advancement"
+      }
+    },
+    {
+      "workload_id": "ls4-batched-vjp-4b-361-dev-512",
+      "preparation_status": "frozen",
+      "fixture": {
+        "catalog": "experiments/generated/performance_campaigns/ls0/fixture_catalog.json",
+        "catalog_sha256": "4ba856c8f0964a06834343990d905413f16f56b8331c29b5bb6ebc7aed758fb7",
+        "fixture_name": "361_length_v1",
+        "prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt",
+        "prompt_sha256": "938319d4a0c5740d60f31ec015bdba975e7952670a3d94e5b7438f7fff7648ee"
+      },
+      "model": {"variant": "gemma3_4b", "provider": "plt"},
+      "prompt": {"family": "gsm8k_361_length_v1", "role": "development"},
+      "trajectory": {
+        "trajectory_id": "ls0-gemma3-1b-361-greedy-v1",
+        "path": "experiments/generated/performance_campaigns/ls0/361_trajectory.json",
+        "sha256": "fc59c4512187a8b40fbfc62c5fadf0d0b5c2228ff35890a30b567fa9e64e158e"
+      },
+      "prefix": {
+        "requested_tokens": 512,
+        "actual_tokens": 512,
+        "token_ids_sha256": "8a01ec6a0f7fe0f91a1ebf8c489f258af140086aac7db35eccb2e0016091b78b"
+      },
+      "target": {"absolute_position": 512, "token_id": 33036, "token_text": " travels"},
+      "operational_class": "long_trace",
+      "profiles": {
+        "control": "ls4-4b-transfer-cuda-windowed-512mib-b128-v1",
+        "candidate": "ls4-4b-transfer-cuda-windowed-512mib-b128-batched-vjp-v1"
+      },
+      "run_disposition": "candidate_transition_probe_then_matched_full_pair",
+      "resource_envelope": {
+        "gpu": "NVIDIA H200",
+        "gpu_count": 1,
+        "host_memory_stop_gib": 400,
+        "host_rss_stop_gib": 300,
+        "hbm_peak_fraction_max": 0.9,
+        "walltime_seconds": 7200
+      },
+      "comparison_policy": {
+        "isolated_axis": "backward_engine_mode",
+        "control_mode": "duplicated_lanes",
+        "required_candidate_mode": "single_forward_batched_vjp",
+        "required_candidate_forward_lane_count": 1,
+        "runtime_resource_policy": "measure_only",
+        "required_telemetry": [
+          "backward_engine_mode",
+          "forward_lane_count",
+          "backward_batch_capacity",
+          "source_layer_group_count",
+          "source_layer_group_max_rows",
+          "autograd_call_count",
+          "cotangent_peak_nbytes",
+          "autograd_elapsed_ms",
+          "contraction_elapsed_ms"
+        ],
+        "required_failure_fields": [
+          "failure_stage",
+          "failure_source_layer",
+          "failure_cause_type"
+        ],
+        "predecessor_workload_id": "ls4-batched-vjp-4b-361-dev-256",
+        "fidelity": "strict_exact_before_advancement",
+        "stop_if_projected_runtime_exceeds_seconds": 7200
+      }
+    }
+  ]
+}

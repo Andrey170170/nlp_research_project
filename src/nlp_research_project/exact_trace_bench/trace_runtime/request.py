@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from circuit_tracer import (
     AdmissionMode,
@@ -42,6 +43,9 @@ from circuit_tracer.governor.response_models import (
     load_response_bundle,
 )
 
+from nlp_research_project.exact_trace_bench.backward_selection import (
+    build_backward_plan,
+)
 from nlp_research_project.exact_trace_bench.calibration_observations import (
     NormalizedFidelityPolicy,
     parse_fidelity_policy,
@@ -119,6 +123,36 @@ def trace_policy_from_scenario(
     active_row_residency = _bool_knob(scenario, "decoder_active_row_residency", False)
     reuse_phase0_window_state = _bool_knob(scenario, "reuse_phase0_window_state", False)
     active_row_max_bytes = scenario.get("decoder_active_row_max_bytes", 0)
+    active_row_requirement = str(
+        scenario.get("decoder_active_row_residency_requirement", "preferred")
+    )
+    active_row_safety_margin_bytes = scenario.get(
+        "decoder_active_row_safety_margin_bytes", 0
+    )
+    for name, value in (
+        ("decoder_active_row_max_bytes", active_row_max_bytes),
+        ("decoder_active_row_safety_margin_bytes", active_row_safety_margin_bytes),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"{name} must be a non-negative int")
+    if active_row_requirement not in {"preferred", "required"}:
+        raise ValueError(
+            "decoder_active_row_residency_requirement must be preferred or required"
+        )
+    if active_row_requirement == "required" and not active_row_residency:
+        raise ValueError(
+            "required decoder active-row residency requires "
+            "decoder_active_row_residency=true"
+        )
+    if (
+        active_row_residency
+        and active_row_max_bytes == 0
+        and active_row_safety_margin_bytes == 0
+    ):
+        raise ValueError(
+            "dynamic decoder active-row residency requires a positive "
+            "decoder_active_row_safety_margin_bytes"
+        )
     if phase0_decoder_row_ranges:
         provider = resolve_transcoder_load_config(
             scenario, preserve_default_values=True
@@ -130,15 +164,6 @@ def trace_policy_from_scenario(
         if not active_row_residency:
             raise ValueError(
                 "phase0_decoder_row_ranges requires decoder_active_row_residency=true"
-            )
-        if (
-            isinstance(active_row_max_bytes, bool)
-            or not isinstance(active_row_max_bytes, int)
-            or active_row_max_bytes <= 0
-        ):
-            raise ValueError(
-                "phase0_decoder_row_ranges requires a positive "
-                "decoder_active_row_max_bytes"
             )
         if reuse_phase0_window_state:
             raise ValueError(
@@ -218,6 +243,7 @@ def trace_policy_from_scenario(
                 scenario.get("cross_batch_decoder_cache_bytes")
             ),
         ),
+        backward=build_backward_plan(scenario),
         storage=RowStoragePlan(
             retention=_choice(scenario, "feature_row_retention", "full_file"),
             full_retention_backend=_choice(
@@ -241,6 +267,11 @@ def trace_policy_from_scenario(
                 scenario,
                 "feature_row_influence_mode",
                 "cpu_exact",
+            ),
+            feature_row_influence_requirement=_choice(
+                scenario,
+                "feature_row_influence_requirement",
+                "preferred",
             ),
             gpu_resident_max_bytes=int(
                 scenario.get("feature_row_gpu_resident_max_bytes", 0)
@@ -315,7 +346,9 @@ def trace_policy_from_scenario(
                 scenario.get("decoder_page_prefetch_depth", 0)
             ),
             decoder_active_row_residency=bool(active_row_residency),
+            decoder_active_row_residency_requirement=active_row_requirement,
             decoder_active_row_max_bytes=int(active_row_max_bytes),
+            decoder_active_row_safety_margin_bytes=int(active_row_safety_margin_bytes),
             phase0_decoder_row_ranges=phase0_decoder_row_ranges,
         ),
         observability=ObservabilityPolicy(

@@ -7,19 +7,29 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from .backward_selection import (
+    BACKWARD_ENGINE_PRESETS,
+    FORWARD_GRAPH_MODES,
+    VJP_KERNEL_MODES,
+)
 from .config import (
     DEFAULT_EXTRACTED_DIR,
     DEFAULT_FIXTURE_CATALOG,
     DEFAULT_GENERATED_DIR,
-    REPO_ROOT,
     DEFAULT_SCRATCH_ROOT,
     DEFAULT_WAVE0_BASELINE_REGISTRY,
     DEFAULT_WAVE0_FIXTURE_CATALOG,
     DEFAULT_WAVE0_FIXTURE_OUTPUT_DIR,
     DEFAULT_WAVE0_FIXTURE_TARGET_SPEC,
+    REPO_ROOT,
 )
+from .diagnostic_bundle_compare import compare_diagnostic_bundle_dirs_to_json
 from .extract import run_full_extraction
 from .fixtures import describe_fixture_tiers
+from .full_answer.aggregate import aggregate_shards
+from .full_answer.audit import audit_prefix_views
+from .full_answer.diagnostics import diagnose_full_answer_stability
+from .full_answer.runner import dry_run_shard, list_shard_specs, print_shard_specs
 from .full_answer.schemas import (
     build_trace_specs,
     load_trace_specs,
@@ -28,10 +38,6 @@ from .full_answer.schemas import (
     write_trace_selection,
     write_trace_specs,
 )
-from .full_answer.aggregate import aggregate_shards
-from .full_answer.audit import audit_prefix_views
-from .full_answer.diagnostics import diagnose_full_answer_stability
-from .full_answer.runner import dry_run_shard, list_shard_specs, print_shard_specs
 from .full_answer.selection import parse_indices_csv, select_tokens
 from .full_answer.sharding import build_contiguous_window_lpt_shards, build_lpt_shards
 from .full_answer.stability import compare_token_stability
@@ -45,8 +51,8 @@ from .graph_compare import compare_artifact_dirs
 from .io_utils import ensure_dir
 from .jobs import (
     render_fixture_prep_plan,
-    render_full_answer_trajectory_plan,
     render_full_answer_shard_plan,
+    render_full_answer_trajectory_plan,
     render_launch_plan,
 )
 from .phase0_replay_matrix_compare import compare_phase0_replay_matrix_to_json
@@ -61,19 +67,19 @@ from .scenarios import (
     WAVE3_INTERACTION_CONFIRMATION_TIERS,
     WAVE4_GENERALIZATION_TIERS,
     build_tier_config,
+    build_wave0_baseline_config,
     build_wave2a_phase1_config,
     build_wave2b_phase4_config,
     build_wave2c_row_encoder_config,
     build_wave3_interaction_confirmation_config,
     build_wave4_generalization_config,
-    build_wave0_baseline_config,
     write_tier_config,
+    write_wave0_baseline_config,
     write_wave2a_phase1_config,
     write_wave2b_phase4_config,
     write_wave2c_row_encoder_config,
     write_wave3_interaction_confirmation_config,
     write_wave4_generalization_config,
-    write_wave0_baseline_config,
 )
 from .semantic_feature_compare import compare_semantic_feature_descriptors_to_json
 from .transcoder_config import (
@@ -450,6 +456,19 @@ def _cmd_compare_phase3_seed_bundles(args: argparse.Namespace) -> None:
     print(json.dumps(summary, indent=2))
 
 
+def _cmd_compare_diagnostic_bundles(args: argparse.Namespace) -> None:
+    summary = compare_diagnostic_bundle_dirs_to_json(
+        args.left_token_dir,
+        args.right_token_dir,
+        output_json=args.output_json,
+        claim_boundary=args.claim_boundary,
+        rtol=args.rtol,
+        atol=args.atol,
+    )
+    print(f"Wrote diagnostic bundle comparison to {args.output_json}")
+    print(json.dumps(summary, indent=2))
+
+
 def _cmd_compare_semantic_features(args: argparse.Namespace) -> None:
     summary = compare_semantic_feature_descriptors_to_json(
         args.left_descriptor,
@@ -624,7 +643,9 @@ def _cmd_publish_response_bundle(args: argparse.Namespace) -> None:
     if args.observation_manifest is not None:
         observations.extend(
             Path(line.strip())
-            for line in args.observation_manifest.read_text(encoding="utf-8").splitlines()
+            for line in args.observation_manifest.read_text(
+                encoding="utf-8"
+            ).splitlines()
             if line.strip() and not line.lstrip().startswith("#")
         )
     print(
@@ -704,6 +725,18 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
             "--phase4-frontier-buffer-max-extra-total",
             args.phase4_frontier_buffer_max_extra_total,
         ),
+        (
+            "--feature-row-gpu-resident-max-bytes",
+            args.feature_row_gpu_resident_max_bytes,
+        ),
+        (
+            "--feature-row-gpu-window-max-bytes",
+            args.feature_row_gpu_window_max_bytes,
+        ),
+        (
+            "--feature-row-gpu-resident-safety-margin-bytes",
+            args.feature_row_gpu_resident_safety_margin_bytes,
+        ),
     ):
         if value is not None and value < 0:
             raise ValueError(f"{flag_name} must be non-negative")
@@ -721,6 +754,23 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
         raise ValueError(
             "--phase4-frontier-buffer-relative-epsilon must be non-negative"
         )
+    for flag_name, value in (
+        ("--planning-host-memory-gib", args.planning_host_memory_gib),
+        ("--planning-host-rss-gib", args.planning_host_rss_gib),
+        ("--planning-walltime-seconds", args.planning_walltime_seconds),
+    ):
+        if value is not None and value <= 0:
+            raise ValueError(f"{flag_name} must be positive")
+    if (
+        args.planning_hbm_peak_fraction is not None
+        and not 0 < args.planning_hbm_peak_fraction <= 1
+    ):
+        raise ValueError("--planning-hbm-peak-fraction must be in (0, 1]")
+    if (
+        args.diagnostic_stop_phase4_batches is not None
+        and args.diagnostic_stop_phase4_batches <= 0
+    ):
+        raise ValueError("--diagnostic-stop-phase4-batches must be positive")
     trajectory = load_trajectory(args.trajectory)
     selection_modes = set(args.select or [])
     selection = select_tokens(
@@ -732,6 +782,16 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
         include_all="all" in selection_modes,
         high_surprisal_top_k=args.high_surprisal_top_k,
     )
+    planning_envelope = {
+        key: value
+        for key, value in {
+            "host_memory_stop_gib": args.planning_host_memory_gib,
+            "host_rss_stop_gib": args.planning_host_rss_gib,
+            "hbm_peak_fraction_max": args.planning_hbm_peak_fraction,
+            "walltime_seconds": args.planning_walltime_seconds,
+        }.items()
+        if value is not None
+    }
     graph_overrides = {
         key: value
         for key, value in {
@@ -745,10 +805,26 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
             "logit_batch_size": args.logit_batch_size,
             "phase1_trace_batch_policy": args.phase1_trace_batch_policy,
             "phase1_trace_batch_size_max": args.phase1_trace_batch_size_max,
+            "backward_engine_mode": args.backward_engine_mode,
+            "forward_graph_mode": args.forward_graph_mode,
+            "vjp_kernel_mode": args.vjp_kernel_mode,
             "phase4_refresh_optimization": args.phase4_refresh_optimization,
             "phase4_refresh_active_row_accumulation": args.phase4_refresh_active_row_accumulation,
             "phase4_row_reduction": args.phase4_row_reduction,
             "row_store_cache_control": args.row_store_cache_control,
+            "feature_row_influence_mode": args.feature_row_influence_mode,
+            "feature_row_influence_requirement": (
+                args.feature_row_influence_requirement
+            ),
+            "feature_row_gpu_resident_max_bytes": (
+                args.feature_row_gpu_resident_max_bytes
+            ),
+            "feature_row_gpu_window_max_bytes": (args.feature_row_gpu_window_max_bytes),
+            "feature_row_gpu_resident_safety_margin_bytes": (
+                args.feature_row_gpu_resident_safety_margin_bytes
+            ),
+            "runtime_resource_policy": args.runtime_resource_policy,
+            "resource_planning_envelope": planning_envelope or None,
             "row_store_preallocate": args.row_store_preallocate,
             "phase4_refresh_prepared_chunk_cache_bytes": args.phase4_refresh_prepared_chunk_cache_bytes,
             "phase4_row_executor": args.phase4_row_executor,
@@ -762,6 +838,8 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
             "cross_cluster_debug": args.cross_cluster_debug,
             "capture_phase0_donor_bundle": args.capture_phase0_donor_bundle,
             "capture_phase3_seed_bundle": args.capture_phase3_seed_bundle,
+            "capture_phase3_gradient_bundle": args.capture_phase3_gradient_bundle,
+            "capture_phase3_row_bundle": args.capture_phase3_row_bundle,
             "capture_feature_semantic_descriptors": args.capture_feature_semantic_descriptors,
             "semantic_descriptor_top_k": args.semantic_descriptor_top_k,
             "semantic_descriptor_dim": args.semantic_descriptor_dim,
@@ -775,6 +853,8 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
             "exact_encoder_residency": args.exact_encoder_residency,
             "verbose_attribution": args.verbose_attribution,
             "profile_attribution": args.profile_attribution,
+            "diagnostic_stop_mode": args.diagnostic_stop_mode,
+            "diagnostic_stop_phase4_batches": args.diagnostic_stop_phase4_batches,
             "input_context_mode": args.input_context_mode,
             "trajectory_session_mode": args.trajectory_session_mode,
             "reuse_phase0_window_state": args.reuse_phase0_window_state,
@@ -1232,6 +1312,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--phase1-trace-batch-size-max", type=int, default=None
     )
     full_answer_trace_specs.add_argument(
+        "--backward-engine-mode",
+        choices=sorted(BACKWARD_ENGINE_PRESETS),
+        default=None,
+        help=(
+            "Named backward execution preset; mutually exclusive with the "
+            "explicit forward-graph/VJP-kernel pair"
+        ),
+    )
+    full_answer_trace_specs.add_argument(
+        "--forward-graph-mode",
+        choices=sorted(FORWARD_GRAPH_MODES),
+        default=None,
+        help="Explicit forward topology; requires --vjp-kernel-mode",
+    )
+    full_answer_trace_specs.add_argument(
+        "--vjp-kernel-mode",
+        choices=sorted(VJP_KERNEL_MODES),
+        default=None,
+        help="Explicit VJP kernel; requires --forward-graph-mode",
+    )
+    full_answer_trace_specs.add_argument(
         "--exact-trace-internal-dtype",
         choices=["fp32", "fp64", "float32", "float64"],
         default=None,
@@ -1255,6 +1356,42 @@ def build_parser() -> argparse.ArgumentParser:
             "fadvise_dontneed_after_append_and_read_v1",
         ],
         default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--feature-row-influence-mode",
+        choices=["cpu_exact", "cpu_prepared", "cuda_full", "cuda_windowed", "auto"],
+        default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--feature-row-influence-requirement",
+        choices=["preferred", "required"],
+        default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--feature-row-gpu-resident-max-bytes", type=int, default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--feature-row-gpu-window-max-bytes", type=int, default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--feature-row-gpu-resident-safety-margin-bytes", type=int, default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--runtime-resource-policy",
+        choices=["off", "measure_only", "enforce"],
+        default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--planning-host-memory-gib", type=float, default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--planning-host-rss-gib", type=float, default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--planning-hbm-peak-fraction", type=float, default=None
+    )
+    full_answer_trace_specs.add_argument(
+        "--planning-walltime-seconds", type=float, default=None
     )
     full_answer_trace_specs.add_argument(
         "--row-store-preallocate",
@@ -1332,6 +1469,30 @@ def build_parser() -> argparse.ArgumentParser:
     full_answer_trace_specs.add_argument(
         "--no-capture-phase3-seed-bundle",
         dest="capture_phase3_seed_bundle",
+        action="store_false",
+    )
+    full_answer_trace_specs.add_argument(
+        "--capture-phase3-gradient-bundle",
+        dest="capture_phase3_gradient_bundle",
+        action="store_true",
+        default=None,
+        help="Capture full Phase-3 gradient evidence for diagnostic traces",
+    )
+    full_answer_trace_specs.add_argument(
+        "--no-capture-phase3-gradient-bundle",
+        dest="capture_phase3_gradient_bundle",
+        action="store_false",
+    )
+    full_answer_trace_specs.add_argument(
+        "--capture-phase3-row-bundle",
+        dest="capture_phase3_row_bundle",
+        action="store_true",
+        default=None,
+        help="Capture normalized Phase-3 row evidence for diagnostic traces",
+    )
+    full_answer_trace_specs.add_argument(
+        "--no-capture-phase3-row-bundle",
+        dest="capture_phase3_row_bundle",
         action="store_false",
     )
     full_answer_trace_specs.add_argument(
@@ -1478,6 +1639,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-profile-attribution",
         dest="profile_attribution",
         action="store_false",
+    )
+    full_answer_trace_specs.add_argument(
+        "--diagnostic-stop-mode",
+        choices=["none", "phase0_probe", "phase3_probe", "transition_probe"],
+        default=None,
+    )
+    full_answer_trace_specs.add_argument(
+        "--diagnostic-stop-phase4-batches", type=int, default=None
     )
     full_answer_trace_specs.set_defaults(func=_cmd_build_full_answer_trace_specs)
 
@@ -2511,6 +2680,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     compare_phase3.set_defaults(func=_cmd_compare_phase3_seed_bundles)
 
+    compare_diagnostic = subparsers.add_parser(
+        "compare-diagnostic-bundles",
+        help="Compare the four required Phase-0/Phase-3 diagnostic bundles",
+    )
+    compare_diagnostic.add_argument("left_token_dir", type=Path)
+    compare_diagnostic.add_argument("right_token_dir", type=Path)
+    compare_diagnostic.add_argument("--output-json", type=Path, required=True)
+    compare_diagnostic.add_argument(
+        "--claim-boundary",
+        default=None,
+        help=(
+            "Caller-supplied statement of what the pair isolates; omitted means "
+            "a neutral pairwise report"
+        ),
+    )
+    compare_diagnostic.add_argument("--rtol", type=float, default=1e-5)
+    compare_diagnostic.add_argument("--atol", type=float, default=1e-8)
+    compare_diagnostic.set_defaults(func=_cmd_compare_diagnostic_bundles)
+
     compare_semantic = subparsers.add_parser(
         "compare-semantic-features",
         help="Compare two saved feature semantic descriptor artifacts",
@@ -2864,7 +3052,8 @@ def build_parser() -> argparse.ArgumentParser:
     wave_c.add_argument(
         "--baseline-registry",
         type=Path,
-        default=REPO_ROOT / "experiments/baselines/governor_calibration_granite_20260719.json",
+        default=REPO_ROOT
+        / "experiments/baselines/governor_calibration_granite_20260719.json",
     )
     wave_c.set_defaults(func=_cmd_build_governor_wave_c)
 

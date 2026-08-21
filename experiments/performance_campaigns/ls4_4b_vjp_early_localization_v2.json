@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "campaign_id": "ls4-gemma3-4b-vjp-early-localization-v2",
+  "description": "Frozen four-arm 4B/256 Phase-3-stop diagnostic. The run ends before Phase 4 and must persist the Phase-0 donor state plus raw Phase-3 gradient, normalized row, and seed/frontier bundles. A wide and singleton-width injected pair localizes width-sensitive drift without changing the injected backward mechanism; singleton injected, serial, and batched arms then expose the earliest boundary at which the backward implementation changes.",
+  "execution_policy": {
+    "ordered_profile_roles": [
+      "wide_injected",
+      "narrow_injected",
+      "narrow_serial",
+      "narrow_batched"
+    ],
+    "advance_only_after_classification": true,
+    "phase3_probe_required": true,
+    "phase4_execution_forbidden": true,
+    "scheduler_walltime_ceiling_seconds": 3600,
+    "stop_on_required_mode_mismatch": true,
+    "stop_on_missing_capture": true,
+    "stop_on_fidelity_failure": false,
+    "full_scaling_blocked_until_localized": true
+  },
+  "workloads": [
+    {
+      "workload_id": "ls4-vjp-early-localization-4b-361-dev-256",
+      "preparation_status": "frozen",
+      "fixture": {
+        "catalog": "experiments/generated/performance_campaigns/ls0/fixture_catalog.json",
+        "catalog_sha256": "4ba856c8f0964a06834343990d905413f16f56b8331c29b5bb6ebc7aed758fb7",
+        "fixture_name": "361_length_v1",
+        "prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt",
+        "prompt_sha256": "938319d4a0c5740d60f31ec015bdba975e7952670a3d94e5b7438f7fff7648ee"
+      },
+      "model": {"variant": "gemma3_4b", "provider": "plt"},
+      "prompt": {"family": "gsm8k_361_length_v1", "role": "development"},
+      "trajectory": {
+        "trajectory_id": "ls0-gemma3-1b-361-greedy-v1",
+        "path": "experiments/generated/performance_campaigns/ls0/361_trajectory.json",
+        "sha256": "fc59c4512187a8b40fbfc62c5fadf0d0b5c2228ff35890a30b567fa9e64e158e"
+      },
+      "prefix": {
+        "requested_tokens": 256,
+        "actual_tokens": 256,
+        "token_ids_sha256": "cfee207d0bce712e77190bcf4a7dbc4a0c69e410602a89bd5c5462794fa1d983"
+      },
+      "target": {"absolute_position": 256, "token_id": 236751, "token_text": "s"},
+      "operational_class": "sweep",
+      "profiles": {
+        "wide_injected": "ls4-4b-vjp-diagnostic-wide-injected-v2",
+        "narrow_injected": "ls4-4b-vjp-diagnostic-narrow-injected-v2",
+        "narrow_serial": "ls4-4b-vjp-diagnostic-narrow-serial-v2",
+        "narrow_batched": "ls4-4b-vjp-diagnostic-narrow-batched-v2"
+      },
+      "run_disposition": "four_arm_preheated_phase3_probe_before_replay_or_full_scaling",
+      "resource_envelope": {
+        "gpu": "NVIDIA H200",
+        "gpu_count": 1,
+        "host_memory_stop_gib": 400,
+        "host_rss_stop_gib": 300,
+        "hbm_peak_fraction_max": 0.9,
+        "walltime_seconds": 3600
+      },
+      "comparison_policy": {
+        "diagnostic_model": "factorial_width_then_backward_implementation_localization",
+        "claim_boundary": "wide_injected_vs_narrow_injected measures the joint effect of narrowing the session and Phase-1/3/4 physical widths while retaining duplicated_lanes plus NNSight injection; narrow_injected_vs_narrow_serial remains composite across the logical_capacity/single_lane graph path and injected/direct-autograd primitive even though both execute one lane; narrow_serial_vs_narrow_batched isolates the serial versus batched autograd API at singleton width, not multi-vector vmap grouping; Phase-3-stop captures do not establish Phase-4 or compact-graph fidelity",
+        "required_feature_row_influence_mode": "cuda_windowed",
+        "feature_row_influence_requirement": "required",
+        "runtime_resource_policy": "measure_only",
+        "arms": {
+          "wide_injected": {
+            "backward_engine_mode": "duplicated_lanes",
+            "forward_graph_mode": "logical_capacity",
+            "vjp_kernel_mode": "nnsight_injected",
+            "forward_lane_count": 128,
+            "physical_caps": {
+              "nnsight_session_capacity": 128,
+              "phase1_trace_batch_size_max": 128,
+              "phase3_compute_microbatch_max_rows": 128,
+              "phase4_execution_batch_max_rows": 128
+            }
+          },
+          "narrow_injected": {
+            "backward_engine_mode": "duplicated_lanes",
+            "forward_graph_mode": "logical_capacity",
+            "vjp_kernel_mode": "nnsight_injected",
+            "forward_lane_count": 1,
+            "physical_caps": {
+              "nnsight_session_capacity": 1,
+              "phase1_trace_batch_size_max": 1,
+              "phase3_compute_microbatch_max_rows": 1,
+              "phase4_execution_batch_max_rows": 1
+            }
+          },
+          "narrow_serial": {
+            "backward_engine_mode": "single_forward_serial_vjp",
+            "forward_graph_mode": "single_lane",
+            "vjp_kernel_mode": "autograd_serial",
+            "forward_lane_count": 1,
+            "physical_caps": {
+              "nnsight_session_capacity": 1,
+              "phase1_trace_batch_size_max": 1,
+              "phase3_compute_microbatch_max_rows": 1,
+              "phase4_execution_batch_max_rows": 1
+            }
+          },
+          "narrow_batched": {
+            "backward_engine_mode": "single_forward_batched_vjp",
+            "forward_graph_mode": "single_lane",
+            "vjp_kernel_mode": "autograd_batched",
+            "forward_lane_count": 1,
+            "physical_caps": {
+              "nnsight_session_capacity": 1,
+              "phase1_trace_batch_size_max": 1,
+              "phase3_compute_microbatch_max_rows": 1,
+              "phase4_execution_batch_max_rows": 1
+            }
+          }
+        },
+        "required_capture_flags": [
+          "capture_phase0_donor_bundle",
+          "capture_phase3_gradient_bundle",
+          "capture_phase3_row_bundle",
+          "capture_phase3_seed_bundle"
+        ],
+        "comparison_order": [
+          "phase0_active_support",
+          "phase0_activation_values",
+          "phase1_target_state",
+          "phase3_raw_gradients",
+          "phase3_normalized_row_and_denominator",
+          "phase3_seed_influences_and_frontier"
+        ],
+        "followup_replay_policy": {
+          "admit_only_after_natural_arm_capture_classification": true,
+          "phase0_donor_replay": "Consider Phase-0 replay only after the natural four-arm captures identify a Phase-0 divergence and only in combinations accepted by the typed runtime; replay holds captured state fixed but does not prove graph-topology equivalence.",
+          "phase3_gradient_replay": "Current direct-autograd engines do not support Phase-3 gradient replay. Any follow-up gradient replay is limited to runtime-supported NNSight-injected combinations unless a separately reviewed implementation adds direct-autograd support; never route a wide-injected donor into narrow_serial or narrow_batched under the current contract.",
+          "stop_at_first_divergent_boundary": true
+        },
+        "fidelity": "diagnostic_localization_then_bounded_requalification"
+      }
+    }
+  ]
+}

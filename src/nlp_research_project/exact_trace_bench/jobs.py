@@ -14,7 +14,8 @@ from .config import (
     REPO_ROOT,
     recommended_output_root,
 )
-from .full_answer.schemas import load_shards
+from .full_answer.launch_spec import build_full_answer_launch_spec
+from .full_answer.schemas import load_shards, load_trace_specs
 from .io_utils import read_json
 from .scenarios import (
     CHPC_BASELINE_RESOURCE_PROFILE,
@@ -370,9 +371,7 @@ def render_launch_plan(
         raise ValueError("existing_workspace requires immutable_workspace")
     if not immutable_workspace and not _pending_snapshot_freeze:
         if normalized_live_rationale is None:
-            raise ValueError(
-                "Live workspace launches require a non-empty rationale"
-            )
+            raise ValueError("Live workspace launches require a non-empty rationale")
     scenarios_file = scenarios_file.resolve()
     resource_profile = _resolve_resource_profile(scenarios_file)
     script_key = (cluster, resource_profile)
@@ -554,16 +553,8 @@ def render_launch_plan(
             if slurm_metadata.get("partition")
             else []
         ),
-        *(
-            [f"--qos={slurm_metadata['qos']}"]
-            if slurm_metadata.get("qos")
-            else []
-        ),
-        *(
-            [f"--gres={slurm_metadata['gres']}"]
-            if slurm_metadata.get("gres")
-            else []
-        ),
+        *([f"--qos={slurm_metadata['qos']}"] if slurm_metadata.get("qos") else []),
+        *([f"--gres={slurm_metadata['gres']}"] if slurm_metadata.get("gres") else []),
         *(
             [f"--cpus-per-task={slurm_metadata['cpus_per_task']}"]
             if slurm_metadata.get("cpus_per_task")
@@ -946,6 +937,13 @@ def render_full_answer_shard_plan(
     )
     source_root = source_root.resolve()
     script_path = SBATCH_FULL_ANSWER_TRACE_SCRIPTS[script_key].resolve()
+    sbatch_defaults: dict[str, str] = {}
+    for line in script_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("#SBATCH --") or "=" not in stripped:
+            continue
+        key, value = stripped.removeprefix("#SBATCH --").split("=", maxsplit=1)
+        sbatch_defaults[key] = value
     launch_script_path = _path_in_workspace(
         script_path, workspace=workspace, source_root=source_root
     )
@@ -959,6 +957,61 @@ def render_full_answer_shard_plan(
         shards_path, workspace=workspace, source_root=source_root
     )
 
+    scheduler_request = {
+        "cluster": cluster,
+        "resource_profile": resource_profile,
+        "account": sbatch_defaults.get("account"),
+        "partition": partition or sbatch_defaults.get("partition"),
+        "qos": sbatch_defaults.get("qos"),
+        "gpus_per_task": sbatch_defaults.get("gpus-per-task"),
+        "cpus_per_task": sbatch_defaults.get("cpus-per-task"),
+        "memory": mem or sbatch_defaults.get("mem"),
+        "walltime": walltime or sbatch_defaults.get("time"),
+    }
+    specs = load_trace_specs(trace_specs_path)
+    launch_spec = None
+    if specs:
+        first_knobs = specs[0]["graph_knobs"]
+        launch_spec = build_full_answer_launch_spec(
+            trajectory_path=launch_trajectory,
+            trace_specs_path=launch_trace_specs,
+            shards_path=launch_shards,
+            output_root=resolved_output_root,
+            shard_selection=resolved_array_range,
+            run={
+                "run_id": resolved_run_id,
+                "run_name": resolved_run_name,
+                "run_description": _normalize_free_text(run_description),
+                "run_goal": _normalize_free_text(run_goal),
+            },
+            specs=specs,
+            planning_envelope=first_knobs.get("resource_planning_envelope", {}),
+            scheduler_request=scheduler_request,
+            runtime_resource_policy=first_knobs.get("runtime_resource_policy", "off"),
+            runtime_resource_override_rationale=None,
+            preheat={"policy": "none", "paths": []},
+            workspace={
+                "policy": (
+                    "immutable_snapshot" if immutable_workspace else "live_override"
+                ),
+                "project_root": str(workspace),
+                "library_root": (
+                    None if library_workspace is None else str(library_workspace)
+                ),
+                "provenance": workspace_provenance,
+            },
+            monitoring={
+                "gpu_sampler": False,
+                "runtime_resource_samples": (
+                    first_knobs.get("runtime_resource_policy", "off") != "off"
+                ),
+                "incremental_trace_telemetry": bool(
+                    first_knobs.get("incremental_telemetry_jsonl", False)
+                ),
+                "postrun_mechanism_validation": True,
+            },
+        )
+
     export_parts = [
         "ALL",
         f"TRAJECTORY_PATH={launch_trajectory}",
@@ -969,6 +1022,15 @@ def render_full_answer_shard_plan(
         f"LIB_WORKSPACE_ROOT={library_workspace or ''}",
         f"UV_PROJECT_ENVIRONMENT={_external_uv_environment()}",
         f"ENV_FILE={_external_env_file()}",
+        f"EXACT_TRACE_REQUESTED_CLUSTER={cluster}",
+        f"EXACT_TRACE_REQUESTED_RESOURCE_PROFILE={resource_profile}",
+        f"EXACT_TRACE_REQUESTED_ACCOUNT={scheduler_request['account'] or ''}",
+        f"EXACT_TRACE_REQUESTED_PARTITION={scheduler_request['partition'] or ''}",
+        f"EXACT_TRACE_REQUESTED_QOS={scheduler_request['qos'] or ''}",
+        f"EXACT_TRACE_REQUESTED_GPUS_PER_TASK={scheduler_request['gpus_per_task'] or ''}",
+        f"EXACT_TRACE_REQUESTED_CPUS={scheduler_request['cpus_per_task'] or ''}",
+        f"EXACT_TRACE_REQUESTED_MEM={scheduler_request['memory'] or ''}",
+        f"EXACT_TRACE_REQUESTED_WALLTIME={scheduler_request['walltime'] or ''}",
     ]
     _append_workspace_exports(export_parts, workspace_provenance)
     script_args: list[str] = [
@@ -1015,6 +1077,7 @@ def render_full_answer_shard_plan(
         else str(library_workspace),
         "immutable_workspace": immutable_workspace,
         "workspace_provenance": workspace_provenance,
+        "launch_spec": None if launch_spec is None else launch_spec.to_record(),
         "sbatch_script": str(launch_script_path),
         "sbatch_argv": command_parts,
         "sbatch_command": shlex.join(command_parts),

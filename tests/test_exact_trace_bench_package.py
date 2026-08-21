@@ -56,11 +56,162 @@ def test_granite_templates_source_snapshot_guard_without_submit_dir_fallback() -
     paths = sorted(
         (PROJECT_ROOT / "slurm" / "exact_trace_bench").glob("*.granite.sbatch")
     )
-    assert len(paths) == 9
+    assert len(paths) == 12
     for path in paths:
         text = path.read_text(encoding="utf-8")
-        assert 'source "$WORKSPACE_ROOT/slurm/exact_trace_bench/require_snapshot_workspace.sh"' in text
+        assert (
+            'source "$WORKSPACE_ROOT/slurm/exact_trace_bench/require_snapshot_workspace.sh"'
+            in text
+        )
         assert "SLURM_SUBMIT_DIR" not in text
+
+
+def test_preheated_prepared_wrapper_resolves_and_preflights_bundle() -> None:
+    text = (
+        PROJECT_ROOT
+        / "slurm"
+        / "exact_trace_bench"
+        / "full_answer_preheated_prepared.granite.sbatch"
+    ).read_text(encoding="utf-8")
+    assert 'if [[ -d "$PREPARED_WORKLOAD_PATH" ]]; then' in text
+    assert (
+        'PREPARED_WORKLOAD_PATH="${PREPARED_WORKLOAD_PATH%/}/prepared_workload.json"'
+        in text
+    )
+    assert (
+        '[[ ! -f "$PREPARED_WORKLOAD_PATH" || ! -r "$PREPARED_WORKLOAD_PATH" ]]' in text
+    )
+    snapshot_imports = text.index('export PYTHONPATH="$WORKSPACE_ROOT/src:')
+    expectation_resolution = text.index("prepared_expectations")
+    preflight = text.index("--validate-only")
+    cache_preflight = text.index("validate_hf_cache.py")
+    runtime_environment = text.index("runtime_environment.json")
+    preheat = text.index('echo "Preheat start:')
+    launch = text.rindex('run-prepared-campaign-workload "$PREPARED_WORKLOAD_PATH"')
+    assert snapshot_imports < expectation_resolution < preflight
+    assert preflight < cache_preflight < runtime_environment < preheat < launch
+    assert "reconcile_expectation EXPECTED_BACKWARD_ENGINE_MODE" in text
+    assert "reconcile_expectation EXPECTED_FORWARD_GRAPH_MODE" in text
+    assert "reconcile_expectation EXPECTED_VJP_KERNEL_MODE" in text
+    assert "reconcile_expectation EXPECTED_FORWARD_LANE_COUNT" in text
+    assert "reconcile_expectation EXPECTED_SESSION_CAPACITY" in text
+    assert "reconcile_expectation EXPECTED_BACKWARD_BATCH_CAPACITY" in text
+    assert "reconcile_expectation EXPECTED_PHASE1_TRACE_BATCH_SIZE_MAX" in text
+    assert "reconcile_expectation EXPECTED_PHASE1_EFFECTIVE_TRACE_BATCH_SIZE" in text
+    assert "reconcile_expectation EXPECTED_PHASE3_BATCH_SIZE" in text
+    assert "reconcile_expectation EXPECTED_PHASE4_BATCH_SIZE" in text
+    assert "reconcile_expectation REQUIRE_FULL_COMPLETION" in text
+    assert "reconcile_expectation EXPECTED_DECODER_ACTIVE_ROW_RESIDENCY" in text
+    assert (
+        "reconcile_expectation EXPECTED_DECODER_ACTIVE_ROW_RESIDENCY_REQUIREMENT"
+        in text
+    )
+    assert "reconcile_expectation EXPECTED_DECODER_ACTIVE_ROW_MAX_BYTES" in text
+    assert (
+        "reconcile_expectation EXPECTED_DECODER_ACTIVE_ROW_SAFETY_MARGIN_BYTES" in text
+    )
+    assert (
+        "EXPECTED_PROVIDER_FILE_COUNT:?EXPECTED_PROVIDER_FILE_COUNT is required" in text
+    )
+    assert "--expected-backward-engine-mode" in text
+    assert "--expected-forward-lane-count" in text
+    assert "--expected-phase1-trace-batch-size-max" in text
+    assert "--expected-phase1-effective-trace-batch-size" in text
+    assert "validation_args+=(--require-full-completion)" in text
+    assert "--expected-decoder-active-row-residency" in text
+    assert "--expected-decoder-active-row-safety-margin-bytes" in text
+    assert (
+        "nlp_research_project.exact_trace_bench.full_answer.runtime_environment" in text
+    )
+    assert 'preheat_args+=(--workers "$PREHEAT_WORKERS")' in text
+
+
+def test_preheated_sequence_preflights_all_entries_before_one_preheat() -> None:
+    text = (
+        PROJECT_ROOT
+        / "slurm"
+        / "exact_trace_bench"
+        / "full_answer_preheated_sequence.granite.sbatch"
+    ).read_text(encoding="utf-8")
+    snapshot_imports = text.index('export PYTHONPATH="$WORKSPACE_ROOT/src:')
+    inspect = text.index("inspect-prepared-campaign-sequence")
+    validate_only = text.index('--state-root "$SEQUENCE_STATE_ROOT" --validate-only')
+    cache_preflight = text.index("validate_hf_cache.py")
+    preheat = text.index('echo "Preheat start:')
+    launch = text.rindex("run-prepared-campaign-sequence")
+    assert (
+        snapshot_imports < inspect < validate_only < cache_preflight < preheat < launch
+    )
+    assert text.count("preheat_file_cache.py") == 1
+    assert 'preheat_args+=(--workers "$PREHEAT_WORKERS")' in text
+    assert "--format output-paths" in text
+    assert "root collides with" in text
+
+
+def test_preheated_pair_checks_offline_cache_before_creating_output() -> None:
+    text = (
+        PROJECT_ROOT
+        / "slurm"
+        / "exact_trace_bench"
+        / "full_answer_pair_preheated.granite.sbatch"
+    ).read_text(encoding="utf-8")
+    cache_preflight = text.index("validate_hf_cache.py")
+    output_creation = text.index('mkdir -p "$PAIR_OUTPUT_ROOT"')
+    preheat = text.index('echo "Preheat start:')
+    assert cache_preflight < output_creation < preheat
+    assert 'preheat_args+=(--workers "$PREHEAT_WORKERS")' in text
+
+
+def test_chpc_env_uses_one_authoritative_offline_hf_cache(tmp_path: Path) -> None:
+    script = PROJECT_ROOT / "slurm" / "exact_trace_bench" / "chpc_env.sh"
+    cache_root = tmp_path / "shared-hf"
+    env = os.environ.copy()
+    env.update(
+        {
+            "PROJECT_CACHE_ROOT": str(tmp_path / "project-cache"),
+            "EXACT_TRACE_HF_CACHE_ROOT": str(cache_root),
+            "HF_HOME": str(tmp_path / "stale-home"),
+            "HF_HUB_CACHE": str(tmp_path / "stale-hub"),
+            "TRANSFORMERS_CACHE": str(tmp_path / "stale-transformers"),
+            "HF_HUB_OFFLINE": "0",
+            "TRANSFORMERS_OFFLINE": "0",
+        }
+    )
+    proc = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'source "{script}" && printf "%s\\n" "$HF_HOME" "$HF_HUB_CACHE" '
+            '"$TRANSFORMERS_CACHE" "$HF_HUB_OFFLINE" "$TRANSFORMERS_OFFLINE"',
+        ],
+        check=False,
+        capture_output=True,
+        env=env,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.splitlines() == [
+        str(cache_root),
+        str(cache_root),
+        str(cache_root),
+        "1",
+        "1",
+    ]
+
+
+def test_prefetch_templates_explicitly_enable_online_hf_access() -> None:
+    for name in (
+        "download_model_and_transcoders.granite.sbatch",
+        "download_transcoders.granite.sbatch",
+    ):
+        text = (PROJECT_ROOT / "slurm" / "exact_trace_bench" / name).read_text(
+            encoding="utf-8"
+        )
+        online = text.index("export EXACT_TRACE_HF_OFFLINE=0")
+        shared_env = text.index(
+            'source "$WORKSPACE_ROOT/slurm/exact_trace_bench/chpc_env.sh"'
+        )
+        assert online < shared_env
 
 
 def test_wrapper_scripts_call_console_entrypoint() -> None:

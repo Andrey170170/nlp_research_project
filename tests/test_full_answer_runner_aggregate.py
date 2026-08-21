@@ -1,22 +1,23 @@
 from __future__ import annotations
 
-import json
-import builtins
 import argparse
+import builtins
+import json
 import subprocess
 import sys
 import types
 from pathlib import Path
 from typing import Any, cast
 
+import numpy as np
 import pytest
 
-from nlp_research_project.exact_trace_bench.full_answer.aggregate import (
-    aggregate_shards,
-)
 from nlp_research_project.exact_trace_bench import cli as full_answer_cli
 from nlp_research_project.exact_trace_bench import compact_io
 from nlp_research_project.exact_trace_bench.full_answer import runner as runner_module
+from nlp_research_project.exact_trace_bench.full_answer.aggregate import (
+    aggregate_shards,
+)
 from nlp_research_project.exact_trace_bench.full_answer.runner import (
     _trace_request,
     dry_run_shard,
@@ -153,6 +154,20 @@ def test_dry_run_shard_writes_expected_files_and_metadata(tmp_path: Path) -> Non
     shard = json.loads((shard_dir / "shard.json").read_text(encoding="utf-8"))
     assert shard["target_positions"] == [3]
     assert (shard_dir / "trace_results.jsonl").exists()
+    selected = json.loads(
+        (shard_dir / "selected_execution.json").read_text(encoding="utf-8")
+    )
+    assert selected["selection_fingerprint"]
+    assert selected["selected_config"] == {"max_edges": 10}
+    assert selected["mechanism_selection"] == {
+        "feature_row_influence_mode": "cpu_exact",
+        "feature_row_influence_requirement": "preferred",
+        "backward_engine_mode": "duplicated_lanes",
+        "forward_graph_mode": "logical_capacity",
+        "vjp_kernel_mode": "nnsight_injected",
+        "forward_lane_count": None,
+        "backward_selection_source": "default",
+    }
 
 
 def test_list_mode_returns_specs_without_writing_token_dirs(tmp_path: Path) -> None:
@@ -176,57 +191,59 @@ def test_trace_request_builds_canonical_domain_policies(tmp_path: Path) -> None:
             "target_token_id": 7,
             "target_position": 3,
             "graph_knobs": {
-            "row_subchunk_size": 128,
-            "plan_feature_batch_size": True,
-            "feature_batch_size_max": 512,
-            "feature_vjp_tape_batch_window": 2,
-            "feature_vjp_tape_max_bytes": 4096,
-            "decoder_page_prefetch_depth": 1,
-            "decoder_active_row_residency": True,
-            "decoder_active_row_max_bytes": 8192,
-            "phase0_decoder_row_ranges": True,
-            "transcoder_architecture": "plt",
-            "transcoder_provider_family": "gemmascope2-plt-1b-big-affine",
-            "phase4_scheduler_mode": "planner_v1",
-            "phase4_scheduler_telemetry_detail": "debug",
-            "phase4_refresh_optimization": "v1",
-            "phase4_refresh_prepared_chunk_cache_bytes": 0,
-            "phase4_refresh_active_row_accumulation": "direct_v1",
-            "phase4_row_executor": "streaming_v1",
-            "phase4_row_reduction": "gpu_v1",
-            "phase3_frontier_buffer_relative_epsilon": 0.01,
-            "phase3_frontier_buffer_max_extra": 256,
-            "phase4_frontier_buffer_relative_epsilon": 0.02,
-            "phase4_frontier_buffer_max_extra_per_refresh": 16,
-            "phase4_frontier_buffer_max_extra_total": 128,
-            "row_store_cache_control": "fadvise_dontneed_after_append_v1",
-            "row_store_preallocate": True,
-            "cross_cluster_debug": True,
-            "capture_phase0_donor_bundle": True,
-            "capture_phase3_seed_bundle": True,
-            "capture_feature_semantic_descriptors": True,
-            "semantic_descriptor_top_k": 1024,
-            "semantic_descriptor_dim": 32,
-            "decoder_chunk_size": 256,
-            "cross_batch_decoder_cache_bytes": 8589934592,
-            "feature_batch_size": None,
-            "chunked_feature_replay_window": 16,
-            "error_vector_prefetch_lookahead": 8,
-            "stage_encoder_vecs_on_cpu": False,
-            "stage_error_vectors_on_cpu": False,
-            "exact_encoder_residency": "active_cpu",
-            "phase1_trace_batch_policy": "cap_effective_batches",
-            "phase1_trace_batch_size_max": 16,
-            "feature_row_retention": "none_recompute",
-            "full_retention_backend": "column_tiled_v1",
-            "feature_row_influence_mode": "cuda_windowed",
-            "feature_row_gpu_resident_max_bytes": 1024,
-            "feature_row_gpu_window_max_bytes": 2048,
-            "feature_row_gpu_resident_safety_margin_bytes": 4096,
-            "nnsight_session_capacity": 64,
-            "telemetry_max_events": 500,
-            "diagnostic_stop_mode": "transition_probe",
-            "diagnostic_stop_phase4_batches": 2,
+                "row_subchunk_size": 128,
+                "plan_feature_batch_size": True,
+                "feature_batch_size_max": 512,
+                "feature_vjp_tape_batch_window": 2,
+                "feature_vjp_tape_max_bytes": 4096,
+                "decoder_page_prefetch_depth": 1,
+                "decoder_active_row_residency": True,
+                "decoder_active_row_max_bytes": 8192,
+                "phase0_decoder_row_ranges": True,
+                "transcoder_architecture": "plt",
+                "transcoder_provider_family": "gemmascope2-plt-1b-big-affine",
+                "phase4_scheduler_mode": "planner_v1",
+                "phase4_scheduler_telemetry_detail": "debug",
+                "phase4_refresh_optimization": "v1",
+                "phase4_refresh_prepared_chunk_cache_bytes": 0,
+                "phase4_refresh_active_row_accumulation": "direct_v1",
+                "phase4_row_executor": "streaming_v1",
+                "phase4_row_reduction": "gpu_v1",
+                "phase3_frontier_buffer_relative_epsilon": 0.01,
+                "phase3_frontier_buffer_max_extra": 256,
+                "phase4_frontier_buffer_relative_epsilon": 0.02,
+                "phase4_frontier_buffer_max_extra_per_refresh": 16,
+                "phase4_frontier_buffer_max_extra_total": 128,
+                "row_store_cache_control": "fadvise_dontneed_after_append_v1",
+                "row_store_preallocate": True,
+                "cross_cluster_debug": True,
+                "capture_phase0_donor_bundle": True,
+                "capture_phase3_seed_bundle": True,
+                "capture_feature_semantic_descriptors": True,
+                "semantic_descriptor_top_k": 1024,
+                "semantic_descriptor_dim": 32,
+                "decoder_chunk_size": 256,
+                "cross_batch_decoder_cache_bytes": 8589934592,
+                "feature_batch_size": None,
+                "chunked_feature_replay_window": 16,
+                "error_vector_prefetch_lookahead": 8,
+                "stage_encoder_vecs_on_cpu": False,
+                "stage_error_vectors_on_cpu": False,
+                "exact_encoder_residency": "active_cpu",
+                "phase1_trace_batch_policy": "cap_effective_batches",
+                "phase1_trace_batch_size_max": 16,
+                "backward_engine_mode": "single_forward_batched_vjp",
+                "feature_row_retention": "none_recompute",
+                "full_retention_backend": "column_tiled_v1",
+                "feature_row_influence_mode": "cuda_windowed",
+                "feature_row_influence_requirement": "required",
+                "feature_row_gpu_resident_max_bytes": 1024,
+                "feature_row_gpu_window_max_bytes": 2048,
+                "feature_row_gpu_resident_safety_margin_bytes": 4096,
+                "nnsight_session_capacity": 64,
+                "telemetry_max_events": 500,
+                "diagnostic_stop_mode": "transition_probe",
+                "diagnostic_stop_phase4_batches": 2,
             },
         },
     )
@@ -249,9 +266,11 @@ def test_trace_request_builds_canonical_domain_policies(tmp_path: Path) -> None:
     assert request.semantics.source_batch_size == 256
     assert request.execution.session.capacity == 64
     assert request.execution.session.phase1_trace_batch_size_max == 16
+    assert request.execution.backward.mode == "single_forward_batched_vjp"
     assert request.execution.storage.retention == "none_recompute"
     assert request.execution.storage.full_retention_backend == "column_tiled_v1"
     assert request.execution.storage.feature_row_influence_mode == "cuda_windowed"
+    assert request.execution.storage.feature_row_influence_requirement == "required"
     assert request.execution.storage.gpu_resident_max_bytes == 1024
     assert request.execution.storage.gpu_window_max_bytes == 2048
     assert request.execution.storage.gpu_resident_safety_margin_bytes == 4096
@@ -303,9 +322,7 @@ def test_model_load_knobs_rejects_invalid_active_row_controls(
     knob: str, value: object, message: str
 ) -> None:
     with pytest.raises(ValueError, match=message):
-        runner_module._model_load_knobs(
-            [cast(Any, {"graph_knobs": {knob: value}})]
-        )
+        runner_module._model_load_knobs([cast(Any, {"graph_knobs": {knob: value}})])
 
 
 def test_trace_request_uses_legacy_phase4_rows_when_canonical_default_is_none() -> None:
@@ -433,6 +450,7 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
     for spec_row in specs_rows:
         spec_row["graph_knobs"]["phase1_trace_batch_policy"] = "cap_effective_batches"
         spec_row["graph_knobs"]["phase1_trace_batch_size_max"] = 16
+        spec_row["graph_knobs"]["capture_feature_semantic_descriptors"] = True
     specs_path.write_text(
         "\n".join(json.dumps(row) for row in specs_rows) + "\n",
         encoding="utf-8",
@@ -462,7 +480,11 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
             },
             "feature_semantic_descriptors": {
                 "status": "captured",
+                "descriptor_version": "semantic_descriptor_v1",
+                "descriptor_kind": "random_projection_v1",
                 "candidate_features": [[0, 0, 1]],
+                "candidate_row_indices": [0],
+                "semantic_sketch": [[0.25]],
             },
         }
         return types.SimpleNamespace(output=output, telemetry_summary={})
@@ -494,7 +516,9 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
     assert result["status"] == "complete"
     request = captured["request"]
     evidence = cast(dict[str, Any], request.evidence.metadata["prefix_view_metadata"])
-    assert request.execution.session.phase1_trace_batch_policy == "cap_effective_batches"
+    assert (
+        request.execution.session.phase1_trace_batch_policy == "cap_effective_batches"
+    )
     assert request.execution.session.phase1_trace_batch_size_max == 16
     assert evidence["trace_id"] == "traj_runner_tok000001"
     assert "target_position" not in evidence
@@ -550,6 +574,64 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
         / "token_000001"
         / "feature_semantic_descriptors.npz"
     ).exists()
+
+
+def test_real_shard_raw_graph_success_does_not_read_compact_metadata(
+    tmp_path: Path, monkeypatch
+) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    specs = [
+        json.loads(line)
+        for line in specs_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    specs[1]["graph_knobs"]["save_raw_graph"] = True
+    specs_path.write_text(
+        "\n".join(json.dumps(row) for row in specs) + "\n", encoding="utf-8"
+    )
+
+    class FakeRawGraph:
+        def to_pt(self, path: str) -> None:
+            Path(path).write_bytes(b"raw graph")
+
+    monkeypatch.setenv("SLURM_JOB_ID", "test-job")
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        types.SimpleNamespace(
+            tensor=lambda data, dtype=None: data,
+            long=object(),
+            Tensor=type("FakeTensor", (), {}),
+        ),
+    )
+    monkeypatch.setattr(provider, "load_model", lambda **_kwargs: object())
+    import circuit_tracer
+
+    monkeypatch.setattr(
+        circuit_tracer,
+        "trace_one",
+        lambda _request: types.SimpleNamespace(
+            output=FakeRawGraph(), telemetry_summary={}
+        ),
+    )
+
+    result = run_real_shard(
+        trajectory_path=trajectory_path,
+        trace_specs_path=specs_path,
+        shards_path=shards_path,
+        shard_id=0,
+        output_root=tmp_path / "run",
+    )
+
+    assert result["status"] == "complete"
+    trace = json.loads(
+        (
+            tmp_path / "run" / "shards" / "shard_000" / "token_000001" / "trace.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert trace["status"] == "ok"
+    assert trace["graph_summary"]["format"] == "raw_graph_pt"
+    assert Path(trace["graph_path"]).read_bytes() == b"raw graph"
 
 
 def test_real_shard_persists_exception_attached_telemetry(
@@ -620,7 +702,115 @@ def test_real_shard_persists_exception_attached_telemetry(
     assert telemetry_rows[0]["event"]["attrs"] == {"active_features": 227051}
 
 
-def test_real_shard_persists_probe_without_graph_packaging(
+def _diagnostic_capture_payloads() -> dict[str, dict[str, Any]]:
+    common = {
+        "schema_version": 1,
+        "status": "captured",
+        "target_token_ids": [7],
+        "target_probabilities": [0.5],
+        "target_token_ids_hash": "target-hash",
+        "target_probability_hash": "probability-hash",
+        "active_feature_count": 1,
+        "active_features_hash": "feature-hash",
+        "activation_values_hash": "activation-hash",
+    }
+    return {
+        "phase0_donor_bundle": {
+            "schema_version": 1,
+            "replay_kind": "phase0_active_features_v1",
+            "status": "captured",
+            "active_features": [[0, 0, 1]],
+            "activation_values": [0.25],
+            "activation_values_dtype": "float32",
+            "activation_matrix_shape": [1, 1, 2],
+            "active_feature_count": 1,
+            "active_feature_membership_hash_raw_order": "raw-order-hash",
+            "active_feature_membership_hash_canonical": "canonical-hash",
+            "active_feature_values_hash": "value-hash",
+            "active_feature_layer_counts": [1],
+            "input_tokens": [1, 2],
+            "input_token_count": 2,
+            "input_tokens_hash": "input-hash",
+            "target_token_ids": [7],
+            "target_count": 1,
+            "target_token_ids_hash": "target-hash",
+            "target_probabilities": [0.5],
+            "target_probability_hash": "probability-hash",
+        },
+        "phase3_seed_bundle": {
+            "status": "captured",
+            "active_features": [[0, 0, 1]],
+            "activation_values": [0.25],
+            "seed_feature_influences": [0.125],
+            "frontier_pre_locality": [0],
+            "frontier_post_locality": [0],
+            "queue_size": 1,
+            "actual_max_feature_nodes": 1,
+            "total_active_features": 1,
+            "planner_compute_dtype": "float32",
+            "influence_compute_dtype": "float32",
+        },
+        "phase3_gradient_bundle": {
+            **common,
+            "schema_version": 2,
+            "capture_kind": "phase3_gradient_bundle_v2",
+            "gradient_batch_representation": "canonical_target_width_v1",
+            "canonical_target_width": 1,
+            "gradients": [[[[0.25]]]],
+            "layer_mask": [True],
+            "batch_call_indices": [0],
+            "per_layer_abs_sum": [0.25],
+            "per_layer_max_abs": [0.25],
+            "per_layer_nonfinite_count": [0],
+            "per_layer_hashes": ["layer-hash"],
+            "gradient_hash": "gradient-hash",
+        },
+        "phase3_row_bundle": {
+            **common,
+            "schema_version": 2,
+            "capture_kind": "phase3_row_bundle_v2",
+            "phase3_feature_rows": [[0.25]],
+            "row_abs_sums": [0.5],
+            "feature_abs_sums": [0.25],
+            "error_abs_sums": [0.125],
+            "token_abs_sums": [0.125],
+            "nonfeature_row_layout": "target_layer_position_v1",
+            "phase3_error_rows_by_layer": [[[0.125]]],
+            "phase3_token_rows": [[-0.125]],
+            "total_active_features": 1,
+            "error_column_count": 1,
+            "token_column_count": 1,
+            "row_hash": "row-hash",
+            "row_abs_sum_hash": "row-abs-hash",
+            "error_rows_hash": "error-row-hash",
+            "token_rows_hash": "token-row-hash",
+        },
+    }
+
+
+def test_exception_payload_reuses_bounded_observability_serializer() -> None:
+    class UnprintableFailure(RuntimeError):
+        def __str__(self) -> str:
+            raise RuntimeError("unsafe str")
+
+        def __repr__(self) -> str:
+            raise RuntimeError("unsafe repr")
+
+    error = UnprintableFailure()
+    error.details = {
+        **{f"field-{index}": index for index in range(100)},
+        "nested": {"unsafe": True},
+    }
+
+    payload = runner_module._exception_payload(error)
+
+    assert payload["error"].startswith("<unavailable: repr raised")
+    assert payload["error_message"].startswith("<unavailable: str raised")
+    assert len(payload["error_details"]) == 64
+    assert "nested" not in payload["error_details"]
+
+
+def test_real_shard_persists_probe_artifacts_without_graph_packaging(
     tmp_path: Path, monkeypatch
 ) -> None:
     trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
@@ -629,13 +819,26 @@ def test_real_shard_persists_probe_without_graph_packaging(
         {
             "diagnostic_stop_mode": "transition_probe",
             "diagnostic_stop_phase4_batches": 2,
+            "capture_phase0_donor_bundle": True,
+            "capture_phase3_seed_bundle": True,
+            "capture_phase3_gradient_bundle": True,
+            "capture_phase3_row_bundle": True,
         }
     )
     specs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
 
+    active_row_evidence = {
+        "requested": True,
+        "effective": True,
+        "fallback_reason": None,
+        "admission_policy": "live_hbm_headroom",
+    }
+
     def fake_trace_one(_request):
+        output = _diagnostic_capture_payloads()
+        output["decoder_active_row_residency"] = active_row_evidence
         return types.SimpleNamespace(
-            output=None,
+            output=output,
             status="probe_completed",
             semantic_fingerprint="semantic-probe",
             execution_fingerprint="execution-probe",
@@ -682,7 +885,29 @@ def test_real_shard_persists_probe_without_graph_packaging(
     assert trace["graph_path"] is None
     assert trace["diagnostic_stop_mode"] == "transition_probe"
     assert trace["phase4_batches_completed"] == 2
+    assert trace["decoder_active_row_residency"] == active_row_evidence
     assert not (token_dir / "graph.npz").exists()
+    expected_sidecars = {
+        "phase0_donor_bundle",
+        "phase3_seed_bundle",
+        "phase3_gradient_bundle",
+        "phase3_row_bundle",
+    }
+    assert set(trace["debug_sidecars"]) == expected_sidecars
+    assert trace["capture_artifact_status"]["requested"] == sorted(expected_sidecars)
+    assert trace["capture_artifact_status"]["written"] == sorted(expected_sidecars)
+    assert trace["capture_artifact_status"]["missing"] == []
+    assert trace["capture_artifact_status"]["failed"] == []
+    assert trace["capture_artifact_status"]["complete"] is True
+    for key in expected_sidecars:
+        sidecar = Path(trace["debug_sidecars"][key])
+        assert sidecar == token_dir / f"{key}.npz"
+        assert sidecar.is_file()
+    with np.load(token_dir / "phase3_row_bundle.npz", allow_pickle=False) as row_bundle:
+        assert int(row_bundle["schema_version"]) == 2
+        assert row_bundle["capture_kind"].item() == "phase3_row_bundle_v2"
+        assert row_bundle["phase3_error_rows_by_layer"].shape == (1, 1, 1)
+        assert row_bundle["phase3_token_rows"].shape == (1, 1)
     shard = json.loads(
         (tmp_path / "run" / "shards" / "shard_000" / "shard.json").read_text()
     )
@@ -690,6 +915,75 @@ def test_real_shard_persists_probe_without_graph_packaging(
     assert shard["shard_health"]["failed_token_count"] == 0
     assert shard["shard_health"]["diagnostic_token_count"] == 1
     assert shard["shard_health"]["retry_recommended"] is False
+
+
+def test_real_shard_fails_when_requested_probe_capture_is_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
+    rows = [json.loads(line) for line in specs_path.read_text().splitlines()]
+    rows[1]["graph_knobs"].update(
+        {
+            "diagnostic_stop_mode": "transition_probe",
+            "diagnostic_stop_phase4_batches": 1,
+            "capture_phase3_gradient_bundle": True,
+        }
+    )
+    specs_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+
+    def fake_trace_one(_request):
+        return types.SimpleNamespace(
+            output={},
+            status="probe_completed",
+            semantic_fingerprint="semantic-probe",
+            execution_fingerprint="execution-probe",
+            telemetry_summary={
+                "diagnostic_stop_mode": "transition_probe",
+                "phase4_batches_completed": 1,
+            },
+            telemetry_events=(),
+        )
+
+    monkeypatch.setenv("SLURM_JOB_ID", "test-job")
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        types.SimpleNamespace(
+            tensor=lambda data, dtype=None: data,
+            long=object(),
+            Tensor=type("FakeTensor", (), {}),
+        ),
+    )
+    monkeypatch.setattr(provider, "load_model", lambda **_kwargs: object())
+    import circuit_tracer
+
+    monkeypatch.setattr(circuit_tracer, "trace_one", fake_trace_one)
+
+    result = run_real_shard(
+        trajectory_path=trajectory_path,
+        trace_specs_path=specs_path,
+        shards_path=shards_path,
+        shard_id=0,
+        output_root=tmp_path / "run",
+    )
+
+    assert result["status"] == "error"
+    token_dir = tmp_path / "run" / "shards" / "shard_000" / "token_000001"
+    trace = json.loads((token_dir / "trace.json").read_text())
+    assert trace["status"] == "error"
+    assert trace["error_type"] == "CaptureArtifactContractError"
+    assert "phase3_gradient_bundle" in trace["error"]
+    assert "requested diagnostic capture sidecars" in trace["error"]
+    assert trace["capture_artifact_status"] == {
+        "schema_version": 1,
+        "requested": ["phase3_gradient_bundle"],
+        "written": [],
+        "missing": ["phase3_gradient_bundle"],
+        "failed": [],
+        "paths": {},
+        "payload_statuses": {},
+        "complete": False,
+    }
 
 
 def test_real_shard_forwards_full_sequence_prompt_and_output_position(

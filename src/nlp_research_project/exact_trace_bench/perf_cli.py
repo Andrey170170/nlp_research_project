@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import resource
 import shlex
@@ -9,18 +10,31 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from .config import DEFAULT_SCRATCH_ROOT, REPO_ROOT, base_trace_defaults
+from .full_answer.launch_spec import (
+    build_full_answer_launch_spec,
+    render_local_full_answer_command,
+)
 from .full_answer.schemas import (
     build_trace_specs,
     write_shards,
     write_trace_selection,
     write_trace_specs,
 )
+from .full_answer.prepared_sequence import (
+    PreparedSequenceEntry,
+    build_prepared_sequence,
+    load_prepared_sequence,
+    run_prepared_sequence,
+    write_prepared_sequence,
+)
+from .full_answer.prepared_workload import validate_prepared_workload
 from .full_answer.selection import select_tokens
 from .full_answer.sharding import build_lpt_shards
 from .io_utils import read_json, write_json
@@ -33,7 +47,6 @@ from .performance_campaign import (
 )
 from .scenarios.chpc_baseline import build_chpc_baseline_config
 from .transcoder_config import PUBLIC_TRANSCODER_KNOB_KEYS
-
 
 DEFAULT_OUTPUT_ROOT = (
     DEFAULT_SCRATCH_ROOT / "granite" / "sweep" / "performance_optimization"
@@ -759,9 +772,7 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
             ),
             _candidate_variant(
                 {
-                    **_LEGACY_CANDIDATE_OVERRIDES[
-                        "plt-active-rows-4b-c4096-v1"
-                    ],
+                    **_LEGACY_CANDIDATE_OVERRIDES["plt-active-rows-4b-c4096-v1"],
                     "phase0_decoder_row_ranges": False,
                     "checkpoint_asset_scope": "shared",
                     "exact_encoder_residency": "lazy",
@@ -777,9 +788,7 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
             ),
             _candidate_variant(
                 {
-                    **_LEGACY_CANDIDATE_OVERRIDES[
-                        "plt-active-rows-12b-c4096-v1"
-                    ],
+                    **_LEGACY_CANDIDATE_OVERRIDES["plt-active-rows-12b-c4096-v1"],
                     "phase0_decoder_row_ranges": False,
                     "checkpoint_asset_scope": "shared",
                     "exact_encoder_residency": "lazy",
@@ -866,28 +875,25 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
         evidence_scope=source_profile.evidence_scope,
     )
     source_profile = contracts["ls2-1b-long-prefix-active-rows-1536mib-b128-v1"]
-    contracts["ls2-1b-long-prefix-cuda-windowed-512mib-b128-v1"] = (
-        CandidateProfile(
-            name="ls2-1b-long-prefix-cuda-windowed-512mib-b128-v1",
-            variants=tuple(
-                _candidate_variant(
-                    {
-                        **dict(variant.compatibility_controls),
-                        **variant.physical.as_overrides(),
-                        "feature_row_influence_mode": "cuda_windowed",
-                        "feature_row_gpu_window_max_bytes": 512 * 1024**2,
-                        "feature_row_gpu_resident_safety_margin_bytes": 16
-                        * 1024**3,
-                    },
-                    variant.requires,
-                )
-                for variant in source_profile.variants
-            ),
-            evidence_scope=EvidenceScope(
-                BaselineScope.MECHANISM,
-                bounded_baseline=BaselineScope.MECHANISM,
-            ),
-        )
+    contracts["ls2-1b-long-prefix-cuda-windowed-512mib-b128-v1"] = CandidateProfile(
+        name="ls2-1b-long-prefix-cuda-windowed-512mib-b128-v1",
+        variants=tuple(
+            _candidate_variant(
+                {
+                    **dict(variant.compatibility_controls),
+                    **variant.physical.as_overrides(),
+                    "feature_row_influence_mode": "cuda_windowed",
+                    "feature_row_gpu_window_max_bytes": 512 * 1024**2,
+                    "feature_row_gpu_resident_safety_margin_bytes": 16 * 1024**3,
+                },
+                variant.requires,
+            )
+            for variant in source_profile.variants
+        ),
+        evidence_scope=EvidenceScope(
+            BaselineScope.MECHANISM,
+            bounded_baseline=BaselineScope.MECHANISM,
+        ),
     )
     source_profile = contracts["sp5-canonical-phase0-reference-plt-v1"]
     contracts["ls2-1b-long-prefix-canonical-active-rows-1536mib-b128-v1"] = (
@@ -921,9 +927,29 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
         variants=ls4_4b_variants,
         evidence_scope=source_profile.evidence_scope,
     )
-    contracts["ls4-4b-transfer-cuda-windowed-512mib-b128-v1"] = (
+    contracts["ls4-4b-transfer-cuda-windowed-512mib-b128-v1"] = CandidateProfile(
+        name="ls4-4b-transfer-cuda-windowed-512mib-b128-v1",
+        variants=tuple(
+            _candidate_variant(
+                {
+                    **dict(variant.compatibility_controls),
+                    **variant.physical.as_overrides(),
+                    "feature_row_influence_mode": "cuda_windowed",
+                    "feature_row_gpu_window_max_bytes": 512 * 1024**2,
+                    "feature_row_gpu_resident_safety_margin_bytes": 16 * 1024**3,
+                },
+                variant.requires,
+            )
+            for variant in ls4_4b_variants
+        ),
+        evidence_scope=EvidenceScope(
+            BaselineScope.MECHANISM,
+            bounded_baseline=BaselineScope.MECHANISM,
+        ),
+    )
+    contracts["ls4-4b-transfer-cuda-windowed-512mib-b128-batched-vjp-v1"] = (
         CandidateProfile(
-            name="ls4-4b-transfer-cuda-windowed-512mib-b128-v1",
+            name="ls4-4b-transfer-cuda-windowed-512mib-b128-batched-vjp-v1",
             variants=tuple(
                 _candidate_variant(
                     {
@@ -931,8 +957,8 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
                         **variant.physical.as_overrides(),
                         "feature_row_influence_mode": "cuda_windowed",
                         "feature_row_gpu_window_max_bytes": 512 * 1024**2,
-                        "feature_row_gpu_resident_safety_margin_bytes": 16
-                        * 1024**3,
+                        "feature_row_gpu_resident_safety_margin_bytes": 16 * 1024**3,
+                        "backward_engine_mode": "single_forward_batched_vjp",
                     },
                     variant.requires,
                 )
@@ -944,6 +970,145 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
             ),
         )
     )
+    source_profile = contracts[
+        "ls4-4b-transfer-cuda-windowed-512mib-b128-batched-vjp-v1"
+    ]
+    contracts["ls4-4b-self-consistency-cuda-windowed-width1-batched-vjp-v1"] = (
+        CandidateProfile(
+            name=("ls4-4b-self-consistency-cuda-windowed-width1-batched-vjp-v1"),
+            variants=tuple(
+                _candidate_variant(
+                    {
+                        **dict(variant.compatibility_controls),
+                        **variant.physical.as_overrides(),
+                        "feature_row_influence_requirement": "required",
+                    },
+                    variant.requires,
+                )
+                for variant in source_profile.variants
+            ),
+            evidence_scope=source_profile.evidence_scope,
+        )
+    )
+    diagnostic_overrides = {
+        "feature_row_influence_mode": "cuda_windowed",
+        "feature_row_influence_requirement": "required",
+        "feature_row_gpu_window_max_bytes": 512 * 1024**2,
+        "feature_row_gpu_resident_safety_margin_bytes": 16 * 1024**3,
+        "cross_cluster_debug": True,
+        "capture_phase0_donor_bundle": True,
+        "capture_phase3_seed_bundle": True,
+        "capture_phase3_gradient_bundle": True,
+        "capture_phase3_row_bundle": True,
+    }
+    for profile_suffix, backward_engine_mode in (
+        ("duplicated-lanes", "duplicated_lanes"),
+        ("single-forward-serial-vjp", "single_forward_serial_vjp"),
+        ("single-forward-batched-vjp", "single_forward_batched_vjp"),
+    ):
+        profile_name = f"ls4-4b-vjp-diagnostic-{profile_suffix}-v1"
+        contracts[profile_name] = CandidateProfile(
+            name=profile_name,
+            variants=tuple(
+                _candidate_variant(
+                    {
+                        **dict(variant.compatibility_controls),
+                        **variant.physical.as_overrides(),
+                        **diagnostic_overrides,
+                        "backward_engine_mode": backward_engine_mode,
+                    },
+                    variant.requires,
+                )
+                for variant in ls4_4b_variants
+            ),
+            evidence_scope=EvidenceScope(
+                BaselineScope.MECHANISM,
+                bounded_baseline=BaselineScope.MECHANISM,
+            ),
+        )
+
+    def register_vjp_diagnostic_profile(
+        *, profile_suffix: str, version: int, physical_overrides: Mapping[str, Any]
+    ) -> None:
+        profile_name = f"ls4-4b-vjp-diagnostic-{profile_suffix}-v{version}"
+        contracts[profile_name] = CandidateProfile(
+            name=profile_name,
+            variants=tuple(
+                _candidate_variant(
+                    {
+                        **dict(variant.compatibility_controls),
+                        **variant.physical.as_overrides(),
+                        **diagnostic_overrides,
+                        **physical_overrides,
+                    },
+                    variant.requires,
+                )
+                for variant in ls4_4b_variants
+            ),
+            evidence_scope=EvidenceScope(
+                BaselineScope.MECHANISM,
+                bounded_baseline=BaselineScope.MECHANISM,
+            ),
+        )
+
+    diagnostic_widths = {
+        "wide-injected": {
+            "backward_engine_mode": "duplicated_lanes",
+            "nnsight_session_capacity": 128,
+            "phase1_trace_batch_policy": "cap_effective_batches",
+            "phase1_trace_batch_size_max": 128,
+            "phase3_compute_microbatch_max_rows": 128,
+            "phase4_execution_batch_max_rows": 128,
+        },
+        "narrow-injected": {
+            "backward_engine_mode": "duplicated_lanes",
+            "nnsight_session_capacity": 1,
+            "phase1_trace_batch_policy": "cap_effective_batches",
+            "phase1_trace_batch_size_max": 1,
+            "phase3_compute_microbatch_max_rows": 1,
+            "phase4_execution_batch_max_rows": 1,
+        },
+        "narrow-serial": {
+            "backward_engine_mode": "single_forward_serial_vjp",
+            "nnsight_session_capacity": 1,
+            "phase1_trace_batch_policy": "cap_effective_batches",
+            "phase1_trace_batch_size_max": 1,
+            "phase3_compute_microbatch_max_rows": 1,
+            "phase4_execution_batch_max_rows": 1,
+        },
+        "narrow-batched": {
+            "backward_engine_mode": "single_forward_batched_vjp",
+            "nnsight_session_capacity": 1,
+            "phase1_trace_batch_policy": "cap_effective_batches",
+            "phase1_trace_batch_size_max": 1,
+            "phase3_compute_microbatch_max_rows": 1,
+            "phase4_execution_batch_max_rows": 1,
+        },
+    }
+    for profile_suffix, width_overrides in diagnostic_widths.items():
+        register_vjp_diagnostic_profile(
+            profile_suffix=profile_suffix,
+            version=2,
+            physical_overrides=width_overrides,
+        )
+
+    # Diagnostic-only structural-width response profiles. Session capacity,
+    # duplicated forward-graph lanes, and injected backward capacity are one
+    # coupled factor; they cannot be varied independently by this runtime.
+    for session_width in (128, 64, 32, 16, 8, 4, 2, 1):
+        register_vjp_diagnostic_profile(
+            profile_suffix=f"injected-width-{session_width}-caps-1",
+            version=1,
+            physical_overrides={
+                "backward_engine_mode": "duplicated_lanes",
+                "nnsight_session_capacity": session_width,
+                "phase1_trace_batch_policy": "cap_effective_batches",
+                "phase1_trace_batch_size_max": 1,
+                "phase3_compute_microbatch_max_rows": 1,
+                "phase4_execution_batch_max_rows": 1,
+            },
+        )
+
     mapped_4b_requirements = CapabilityRequirements(
         **{
             **_PLT_MAPPED_DECODER_ROWS.__dict__,
@@ -975,20 +1140,18 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
             ),
             evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
         )
-    contracts["plt-selective-mapped-rows-lifecycle-reference-4b-v1"] = (
-        CandidateProfile(
-            name="plt-selective-mapped-rows-lifecycle-reference-4b-v1",
-            variants=(
-                _candidate_variant(
-                    {
-                        **mapped_4b_controls,
-                        "checkpoint_asset_scope": "shared",
-                    },
-                    mapped_4b_requirements,
-                ),
+    contracts["plt-selective-mapped-rows-lifecycle-reference-4b-v1"] = CandidateProfile(
+        name="plt-selective-mapped-rows-lifecycle-reference-4b-v1",
+        variants=(
+            _candidate_variant(
+                {
+                    **mapped_4b_controls,
+                    "checkpoint_asset_scope": "shared",
+                },
+                mapped_4b_requirements,
             ),
-            evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
-        )
+        ),
+        evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
     )
     contracts["plt-selective-mapped-rows-lifecycle-private-4b-v1"] = CandidateProfile(
         name="plt-selective-mapped-rows-lifecycle-private-4b-v1",
@@ -1026,6 +1189,12 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
         evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
     )
     for mode, extra_overrides in (
+        (
+            "cpu-exact",
+            {
+                "feature_row_influence_mode": "cpu_exact",
+            },
+        ),
         (
             "cpu-prepared",
             {
@@ -1071,6 +1240,44 @@ def _profile_contracts() -> dict[str, CandidateProfile]:
             ),
             evidence_scope=EvidenceScope(BaselineScope.MECHANISM),
         )
+    source_profile = contracts["plt-selective-mapped-rows-cuda-windowed-12b-v1"]
+    contracts["ls5-12b-cuda-windowed-width1-batched-vjp-v1"] = CandidateProfile(
+        name="ls5-12b-cuda-windowed-width1-batched-vjp-v1",
+        variants=tuple(
+            _candidate_variant(
+                {
+                    **dict(variant.compatibility_controls),
+                    **variant.physical.as_overrides(),
+                    "checkpoint_asset_scope": "shared",
+                    "backward_engine_mode": "single_forward_batched_vjp",
+                    "feature_row_influence_requirement": "required",
+                },
+                variant.requires,
+            )
+            for variant in source_profile.variants
+        ),
+        evidence_scope=source_profile.evidence_scope,
+    )
+    source_profile = contracts["ls5-12b-cuda-windowed-width1-batched-vjp-v1"]
+    contracts["ls5-12b-cuda-windowed-width1-batched-vjp-dynamic-rows-v2"] = (
+        CandidateProfile(
+            name="ls5-12b-cuda-windowed-width1-batched-vjp-dynamic-rows-v2",
+            variants=tuple(
+                _candidate_variant(
+                    {
+                        **dict(variant.compatibility_controls),
+                        **variant.physical.as_overrides(),
+                        "decoder_active_row_max_bytes": 0,
+                        "decoder_active_row_safety_margin_bytes": 16 * 1024**3,
+                        "decoder_active_row_residency_requirement": "required",
+                    },
+                    variant.requires,
+                )
+                for variant in source_profile.variants
+            ),
+            evidence_scope=source_profile.evidence_scope,
+        )
+    )
     for encoder_mode in ("active_cpu",):
         profile_name = (
             f"plt-selective-mapped-rows-{encoder_mode.replace('_', '-')}-large-v1"
@@ -1711,7 +1918,12 @@ def _case_scenario(
     diagnostic_stop_mode: str = "none",
     diagnostic_stop_phase4_batches: int | None = None,
 ) -> dict[str, Any]:
-    if diagnostic_stop_mode not in {"none", "phase0_probe", "transition_probe"}:
+    if diagnostic_stop_mode not in {
+        "none",
+        "phase0_probe",
+        "phase3_probe",
+        "transition_probe",
+    }:
         raise ValueError("invalid diagnostic stop mode")
     if (
         diagnostic_stop_phase4_batches is not None
@@ -2211,13 +2423,10 @@ def _active_row_mechanism_gate(
                 ],
             )
         return None, []
-    if phase0_ranges_requested and (not is_int(max_bytes) or max_bytes <= 0):
+    if not is_int(max_bytes) or max_bytes < 0:
         return (
             False,
-            [
-                "phase0_decoder_row_ranges requires a positive "
-                "decoder_active_row_max_bytes"
-            ],
+            ["decoder_active_row_max_bytes must be a non-negative integer"],
         )
     if not isinstance(diagnostics, dict):
         return False, ["active-row diagnostics missing from result artifact summary"]
@@ -2261,15 +2470,31 @@ def _active_row_mechanism_gate(
         and resident_bytes != estimated_bytes
     ):
         reasons.append("active-row resident bytes differ from admitted estimate")
-    if (
-        not is_int(max_bytes)
-        or max_bytes <= 0
-        or not is_int(resident_bytes)
-        or resident_bytes > max_bytes
-    ):
-        reasons.append(
-            "active-row resident bytes exceed or lack the configured byte cap"
-        )
+    recorded_max_bytes = diagnostics.get("max_bytes_requested")
+    if recorded_max_bytes != max_bytes:
+        reasons.append("active-row recorded byte ceiling differs from configuration")
+    if is_int(resident_bytes):
+        if max_bytes > 0 and resident_bytes > max_bytes:
+            reasons.append("active-row resident bytes exceed the configured byte cap")
+        if max_bytes == 0:
+            effective_budget = diagnostics.get("effective_budget_bytes")
+            safety_margin = diagnostics.get("safety_margin_bytes")
+            hbm = diagnostics.get("hbm")
+            if diagnostics.get("admission_policy") != "live_hbm_headroom":
+                reasons.append("dynamic active-row admission policy was not recorded")
+            if not is_int(safety_margin) or safety_margin <= 0:
+                reasons.append("dynamic active-row safety margin must be positive")
+            if not is_int(effective_budget) or effective_budget <= 0:
+                reasons.append("dynamic active-row effective budget must be positive")
+            elif resident_bytes > effective_budget:
+                reasons.append("active-row resident bytes exceed the dynamic budget")
+            if not isinstance(hbm, dict):
+                reasons.append("dynamic active-row HBM observation is missing")
+            elif not all(
+                is_int(hbm.get(key)) and hbm.get(key) > 0
+                for key in ("free_bytes", "total_bytes")
+            ):
+                reasons.append("dynamic active-row HBM headroom is invalid")
     if (
         expected_bytes is not None
         and is_int(resident_bytes)
@@ -2754,10 +2979,7 @@ def _result_report(
         and runner_returncode == 0
     )
     code_retention_eligible = bool(code_retention_allowed and parity_passed)
-    automatic_promotion_eligible = bool(
-        automatic_promotion_allowed
-        and passed
-    )
+    automatic_promotion_eligible = bool(automatic_promotion_allowed and passed)
     return {
         "case": case.key,
         "status": result.get("status"),
@@ -3064,9 +3286,7 @@ def _run(args: argparse.Namespace) -> int:
         },
         "suite": args.suite,
         "fidelity": args.fidelity,
-        "code_retention_allowed": (
-            args.fidelity in CODE_RETENTION_ALLOWED_FIDELITIES
-        ),
+        "code_retention_allowed": (args.fidelity in CODE_RETENTION_ALLOWED_FIDELITIES),
         "code_retention_policy": (
             "Bounded-or-stronger fidelity is necessary but not sufficient for "
             "runtime inclusion. Retain only a non-dominated implementation or "
@@ -3313,6 +3533,27 @@ def _full_answer_shard_command(
 def _prepare_campaign_workload(args: argparse.Namespace) -> int:
     resolved = resolve_frozen_campaign_workload(args.manifest, args.workload_id)
     workload = resolved.workload
+    comparison_policy = workload.get("comparison_policy")
+    if not isinstance(comparison_policy, Mapping):
+        raise ValueError("campaign workload comparison_policy must be an object")
+    required_execution_mode = comparison_policy.get("required_execution_mode")
+    if (
+        required_execution_mode is not None
+        and args.execution_mode != required_execution_mode
+    ):
+        raise ValueError(
+            f"campaign workload requires execution mode {required_execution_mode!r}, "
+            f"not {args.execution_mode!r}"
+        )
+    required_resource_policy = comparison_policy.get("runtime_resource_policy")
+    if (
+        required_resource_policy is not None
+        and args.runtime_resource_policy != required_resource_policy
+    ):
+        raise ValueError(
+            "campaign workload requires runtime resource policy "
+            f"{required_resource_policy!r}, not {args.runtime_resource_policy!r}"
+        )
     profiles = workload.get("profiles")
     if not isinstance(profiles, Mapping):
         raise ValueError("campaign workload profiles must be an object")
@@ -3348,6 +3589,9 @@ def _prepare_campaign_workload(args: argparse.Namespace) -> int:
     elif args.execution_mode == "phase0-probe":
         diagnostic_stop_mode = "phase0_probe"
         diagnostic_stop_phase4_batches = None
+    elif args.execution_mode == "phase3-probe":
+        diagnostic_stop_mode = "phase3_probe"
+        diagnostic_stop_phase4_batches = None
     else:
         diagnostic_stop_mode = "transition_probe"
         diagnostic_stop_phase4_batches = args.probe_batches
@@ -3358,8 +3602,14 @@ def _prepare_campaign_workload(args: argparse.Namespace) -> int:
             "incremental_telemetry_jsonl": True,
             "profile_attribution": True,
             "profile_log_interval": 1,
+            "runtime_resource_policy": args.runtime_resource_policy,
+            "resource_planning_envelope": dict(workload["resource_envelope"]),
         }
     )
+    if args.feature_row_influence_requirement is not None:
+        graph_overrides["feature_row_influence_requirement"] = (
+            args.feature_row_influence_requirement
+        )
     selection = select_tokens(
         dict(resolved.trajectory),
         explicit_indices=[resolved.generated_index],
@@ -3401,16 +3651,139 @@ def _prepare_campaign_workload(args: argparse.Namespace) -> int:
         if args.launch_output_root is not None
         else output_dir / "output"
     )
-    command = _full_answer_shard_command(
+    scheduler_request = {
+        "cluster": args.allocation_cluster,
+        "resource_profile": args.allocation_profile,
+        "account": args.allocation_account,
+        "partition": args.allocation_partition,
+        "qos": args.allocation_qos,
+        "gpus_per_task": args.allocation_gpus_per_task,
+        "cpus_per_task": args.allocation_cpus_per_task,
+        "memory": args.allocation_mem,
+        "walltime": args.allocation_walltime,
+    }
+    if args.preheat_policy == "file_cache" and not args.preheat_path:
+        raise ValueError("file_cache preheat policy requires --preheat-path")
+    launch_spec = build_full_answer_launch_spec(
         trajectory_path=resolved.trajectory_path,
         trace_specs_path=specs_path,
         shards_path=shards_path,
         output_root=launch_output_root,
-        run_id=run_id,
-        workload_id=args.workload_id,
-        profile_role=args.profile_role,
-        execution_mode=args.execution_mode,
+        shard_selection="0",
+        run={
+            "run_id": run_id,
+            "run_name": "Exact-trace long-prefix scaling",
+            "run_description": (
+                f"{args.workload_id} {args.profile_role} {args.execution_mode}"
+            ),
+            "run_goal": (
+                "Establish and optimize the exact-trace long-prefix scaling envelope."
+            ),
+        },
+        specs=specs,
+        planning_envelope=workload["resource_envelope"],
+        scheduler_request=scheduler_request,
+        runtime_resource_policy=args.runtime_resource_policy,
+        runtime_resource_override_rationale=(args.runtime_resource_override_rationale),
+        preheat={
+            "policy": args.preheat_policy,
+            "paths": [str(path.resolve()) for path in args.preheat_path],
+        },
+        workspace={
+            "policy": "immutable_snapshot_required",
+            "project_root": (
+                None
+                if args.workspace_project_root is None
+                else str(args.workspace_project_root.resolve())
+            ),
+            "library_root": (
+                None
+                if args.workspace_library_root is None
+                else str(args.workspace_library_root.resolve())
+            ),
+        },
+        monitoring={
+            "gpu_sampler": True,
+            "runtime_resource_samples": args.runtime_resource_policy != "off",
+            "incremental_trace_telemetry": True,
+            "postrun_mechanism_validation": True,
+        },
     )
+    declared_arms = comparison_policy.get("arms")
+    if isinstance(declared_arms, Mapping) and args.profile_role in declared_arms:
+        declared_arm = declared_arms[args.profile_role]
+        if not isinstance(declared_arm, Mapping):
+            raise ValueError(
+                f"comparison_policy.arms.{args.profile_role} must be an object"
+            )
+        mechanism = launch_spec.mechanism_selections[0]
+        mismatches = {
+            key: (expected, mechanism.get(key))
+            for key, expected in declared_arm.items()
+            if key not in {"config_pins", "physical_caps", "derived_execution"}
+            if mechanism.get(key) != expected
+        }
+        declared_physical_caps = declared_arm.get("physical_caps")
+        if declared_physical_caps is not None:
+            if not isinstance(declared_physical_caps, Mapping):
+                raise ValueError(
+                    f"comparison_policy.arms.{args.profile_role}.physical_caps "
+                    "must be an object"
+                )
+            mismatches.update(
+                {
+                    f"physical_caps.{key}": (expected, spec["graph_knobs"].get(key))
+                    for key, expected in declared_physical_caps.items()
+                    if spec["graph_knobs"].get(key) != expected
+                }
+            )
+        declared_config_pins = declared_arm.get("config_pins")
+        if declared_config_pins is not None:
+            if not isinstance(declared_config_pins, Mapping):
+                raise ValueError(
+                    f"comparison_policy.arms.{args.profile_role}.config_pins "
+                    "must be an object"
+                )
+            mismatches.update(
+                {
+                    f"config_pins.{key}": (expected, spec["graph_knobs"].get(key))
+                    for key, expected in declared_config_pins.items()
+                    if spec["graph_knobs"].get(key) != expected
+                }
+            )
+        declared_derived_execution = declared_arm.get("derived_execution")
+        if declared_derived_execution is not None:
+            if not isinstance(declared_derived_execution, Mapping):
+                raise ValueError(
+                    f"comparison_policy.arms.{args.profile_role}.derived_execution "
+                    "must be an object"
+                )
+            derived_execution = {
+                "actual_phase1_forward_trace_width": mechanism.get(
+                    "forward_lane_count"
+                ),
+                "backward_batch_capacity": spec["graph_knobs"].get(
+                    "nnsight_session_capacity"
+                ),
+            }
+            mismatches.update(
+                {
+                    f"derived_execution.{key}": (
+                        expected,
+                        derived_execution.get(key),
+                    )
+                    for key, expected in declared_derived_execution.items()
+                    if derived_execution.get(key) != expected
+                }
+            )
+        if mismatches:
+            raise ValueError(
+                f"prepared profile {profile_name!r} disagrees with declared "
+                f"comparison arm {args.profile_role!r}: {mismatches!r}"
+            )
+    launch_spec_path = output_dir / "launch_spec.json"
+    write_json(launch_spec_path, launch_spec.to_record())
+    command = render_local_full_answer_command(launch_spec)
     write_json(
         output_dir / "prepared_workload.json",
         {
@@ -3433,7 +3806,9 @@ def _prepare_campaign_workload(args: argparse.Namespace) -> int:
             "profile_role": args.profile_role,
             "profile_name": profile_name,
             "profile_selection_source": (
-                "explicit_override" if args.profile_name is not None else "campaign_role"
+                "explicit_override"
+                if args.profile_name is not None
+                else "campaign_role"
             ),
             "profile_contract": {
                 "requires": profile_variant.requires.__dict__,
@@ -3448,6 +3823,10 @@ def _prepare_campaign_workload(args: argparse.Namespace) -> int:
             "trace_specs_path": str(specs_path),
             "shards_path": str(shards_path),
             "launch_output_root": str(launch_output_root),
+            "launch_spec_path": str(launch_spec_path),
+            "launch_selection_fingerprint": launch_spec.to_record()[
+                "selection_fingerprint"
+            ],
             "launch_command": command,
         },
     )
@@ -3458,52 +3837,190 @@ def _prepare_campaign_workload(args: argparse.Namespace) -> int:
 
 
 def _run_prepared_campaign_workload(args: argparse.Namespace) -> int:
-    """Run one immutable prepared command through the existing resource guard."""
+    """Validate or run one immutable prepared command through the resource guard."""
 
-    prepared_path = args.prepared_workload.resolve()
-    prepared = read_json(prepared_path)
-    if prepared.get("launcher") != "existing_full_answer_shard_runner":
-        raise ValueError("prepared workload must use the existing full-answer shard runner")
-    command = prepared.get("launch_command")
-    if (
-        not isinstance(command, list)
-        or not command
-        or not all(isinstance(item, str) and item for item in command)
-        or command[:4]
-        != ["uv", "run", "exact-trace-bench", "run-full-answer-shard"]
-    ):
-        raise ValueError("prepared workload has an invalid recorded launch command")
-    output_root_raw = prepared.get("launch_output_root")
-    if not isinstance(output_root_raw, str) or not output_root_raw:
-        raise ValueError("prepared workload lacks launch_output_root")
-    resource_envelope = prepared.get("resource_envelope")
-    if not isinstance(resource_envelope, Mapping):
-        raise ValueError("prepared workload lacks a resource envelope")
-    host_memory_stop_gib = (
-        args.host_memory_stop_gib
-        if args.host_memory_stop_gib is not None
-        else float(resource_envelope["host_memory_stop_gib"])
-    )
-    host_rss_stop_gib = (
-        args.host_rss_stop_gib
-        if args.host_rss_stop_gib is not None
-        else float(resource_envelope["host_rss_stop_gib"])
-    )
-    if host_memory_stop_gib <= 0 or host_rss_stop_gib <= 0:
-        raise ValueError("prepared workload host-memory guard thresholds must be positive")
-    output_root = Path(output_root_raw).resolve()
-    print(f"Running prepared workload: {prepared_path}")
+    workload = validate_prepared_workload(args.prepared_workload)
+    launch_spec = workload.launch_spec
+    if args.host_memory_stop_gib is not None or args.host_rss_stop_gib is not None:
+        raise ValueError(
+            "resource overrides must be represented in launch_spec.json; "
+            "renderer-only guard overrides are forbidden"
+        )
+    runtime_policy = launch_spec["runtime_resource_policy"]
+    planning_envelope = launch_spec["planning_envelope"]
+    assert isinstance(planning_envelope, Mapping)
+    host_memory_stop_gib = None
+    host_rss_stop_gib = None
+    if runtime_policy == "enforce":
+        raw_host_memory = planning_envelope.get("host_memory_stop_gib")
+        raw_host_rss = planning_envelope.get("host_rss_stop_gib")
+        host_memory_stop_gib = (
+            None if raw_host_memory is None else float(raw_host_memory)
+        )
+        host_rss_stop_gib = None if raw_host_rss is None else float(raw_host_rss)
+    if host_memory_stop_gib is not None and host_memory_stop_gib <= 0:
+        raise ValueError(
+            "prepared workload host-memory guard thresholds must be positive"
+        )
+    if host_rss_stop_gib is not None and host_rss_stop_gib <= 0:
+        raise ValueError(
+            "prepared workload host-memory guard thresholds must be positive"
+        )
+    output_root = workload.launch_output_root
+    print(f"Running prepared workload: {workload.path}")
     print(f"Launch output: {output_root}")
     print(
         "Host guards: "
-        f"cgroup={host_memory_stop_gib:g} GiB, rss={host_rss_stop_gib:g} GiB"
+        f"cgroup={host_memory_stop_gib if host_memory_stop_gib is not None else 'off'} "
+        f"GiB, rss={host_rss_stop_gib if host_rss_stop_gib is not None else 'off'} GiB"
     )
+    if args.validate_only:
+        print("Prepared workload validation: passed")
+        return 0
     return _stream_runner(
-        command,
+        list(workload.launch_command),
         output_root=output_root,
         host_memory_stop_gib=host_memory_stop_gib,
         host_rss_stop_gib=host_rss_stop_gib,
     )
+
+
+def _parse_sequence_entry(value: str) -> tuple[str, Path]:
+    entry_id, separator, path = value.partition("=")
+    if not separator or not entry_id or not path:
+        raise argparse.ArgumentTypeError("sequence entries must use ENTRY_ID=PATH")
+    return entry_id, Path(path)
+
+
+def _prepare_campaign_sequence(args: argparse.Namespace) -> int:
+    record = build_prepared_sequence(args.entry)
+    output = write_prepared_sequence(args.output, record)
+    print(f"Prepared sequence: {output}")
+    print(f"Sequence fingerprint: {record['sequence_fingerprint']}")
+    return 0
+
+
+def _prepared_workload_args(
+    entry: PreparedSequenceEntry, *, validate_only: bool
+) -> argparse.Namespace:
+    return argparse.Namespace(
+        prepared_workload=entry.prepared_workload_path,
+        host_memory_stop_gib=None,
+        host_rss_stop_gib=None,
+        validate_only=validate_only,
+    )
+
+
+def _validate_prepared_sequence_entry(entry: PreparedSequenceEntry) -> dict[str, Any]:
+    expectations = entry.mechanism_expectations
+    command = [
+        sys.executable,
+        str(
+            REPO_ROOT
+            / "slurm/exact_trace_bench/validate_full_answer_feature_row_mode.py"
+        ),
+        "--label",
+        entry.entry_id,
+        "--output-root",
+        str(entry.launch_output_root),
+    ]
+    for expectation, flag in (
+        ("feature_row_influence_mode", "--expected-mode"),
+        ("backward_engine_mode", "--expected-backward-engine-mode"),
+        ("forward_graph_mode", "--expected-forward-graph-mode"),
+        ("vjp_kernel_mode", "--expected-vjp-kernel-mode"),
+        ("forward_lane_count", "--expected-forward-lane-count"),
+        ("session_capacity", "--expected-session-capacity"),
+        ("backward_batch_capacity", "--expected-backward-batch-capacity"),
+        (
+            "phase1_trace_batch_size_max",
+            "--expected-phase1-trace-batch-size-max",
+        ),
+        (
+            "actual_phase1_forward_trace_width",
+            "--expected-phase1-effective-trace-batch-size",
+        ),
+        ("phase3_batch_size", "--expected-phase3-batch-size"),
+        ("phase4_batch_size", "--expected-phase4-batch-size"),
+        (
+            "decoder_active_row_residency",
+            "--expected-decoder-active-row-residency",
+        ),
+        (
+            "decoder_active_row_residency_requirement",
+            "--expected-decoder-active-row-residency-requirement",
+        ),
+        (
+            "decoder_active_row_max_bytes",
+            "--expected-decoder-active-row-max-bytes",
+        ),
+        (
+            "decoder_active_row_safety_margin_bytes",
+            "--expected-decoder-active-row-safety-margin-bytes",
+        ),
+    ):
+        value = expectations[expectation]
+        command.extend([flag, str(int(value) if isinstance(value, bool) else value)])
+    require_full_completion = expectations["require_full_completion"]
+    if not isinstance(require_full_completion, bool):
+        raise RuntimeError(
+            f"prepared mechanism expectations for {entry.entry_id} have an "
+            "invalid require_full_completion value"
+        )
+    if require_full_completion:
+        # This gate also makes the validator strictly reopen every compact graph.
+        command.append("--require-full-completion")
+    result = subprocess.run(command, check=False, capture_output=True, text=True)
+    if result.returncode:
+        detail = result.stderr.strip() or result.stdout.strip()
+        raise RuntimeError(
+            f"mechanism validation failed for {entry.entry_id}: {detail}"
+        )
+    payload = json.loads(result.stdout)
+    if not isinstance(payload, dict):
+        raise RuntimeError(
+            f"mechanism validation returned no object for {entry.entry_id}"
+        )
+    return payload
+
+
+def _run_prepared_campaign_sequence(args: argparse.Namespace) -> int:
+    sequence = load_prepared_sequence(
+        args.prepared_sequence, require_outputs_absent=True
+    )
+    if args.validate_only:
+        for entry in sequence.entries:
+            _run_prepared_campaign_workload(
+                _prepared_workload_args(entry, validate_only=True)
+            )
+        print("Prepared sequence validation: passed")
+        return 0
+    return run_prepared_sequence(
+        sequence,
+        state_root=args.state_root,
+        preflight_entry=lambda entry: _run_prepared_campaign_workload(
+            _prepared_workload_args(entry, validate_only=True)
+        ),
+        run_entry=lambda entry: _run_prepared_campaign_workload(
+            _prepared_workload_args(entry, validate_only=False)
+        ),
+        validate_entry=_validate_prepared_sequence_entry,
+    )
+
+
+def _inspect_prepared_campaign_sequence(args: argparse.Namespace) -> int:
+    sequence = load_prepared_sequence(
+        args.prepared_sequence, require_outputs_absent=True
+    )
+    if args.format == "prepared-paths":
+        for entry in sequence.entries:
+            print(entry.prepared_workload_path)
+    elif args.format == "output-paths":
+        for entry in sequence.entries:
+            print(entry.launch_output_root)
+    else:
+        print(json.dumps(sequence.record, sort_keys=True))
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -3544,8 +4061,8 @@ def build_parser() -> argparse.ArgumentParser:
     prepare_campaign.add_argument("workload_id")
     prepare_campaign.add_argument(
         "--profile-role",
-        choices=("control", "candidate"),
         required=True,
+        help="Named arm from the frozen workload profiles object",
     )
     prepare_campaign.add_argument(
         "--profile-name",
@@ -3557,7 +4074,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     prepare_campaign.add_argument(
         "--execution-mode",
-        choices=("full", "phase0-probe", "transition-probe"),
+        choices=("full", "phase0-probe", "phase3-probe", "transition-probe"),
         default="full",
     )
     prepare_campaign.add_argument(
@@ -3569,6 +4086,39 @@ def build_parser() -> argparse.ArgumentParser:
     prepare_campaign.add_argument("--output-dir", type=Path, required=True)
     prepare_campaign.add_argument("--launch-output-root", type=Path)
     prepare_campaign.add_argument("--run-id")
+    prepare_campaign.add_argument(
+        "--feature-row-influence-requirement",
+        choices=("preferred", "required"),
+    )
+    prepare_campaign.add_argument(
+        "--runtime-resource-policy",
+        choices=("off", "measure_only", "enforce"),
+        default="measure_only",
+    )
+    prepare_campaign.add_argument(
+        "--runtime-resource-override-rationale",
+        default=(
+            "optimization measurement uses scheduler limits while estimate-based "
+            "runtime guards remain disabled"
+        ),
+    )
+    prepare_campaign.add_argument(
+        "--preheat-policy", choices=("none", "file_cache"), default="none"
+    )
+    prepare_campaign.add_argument(
+        "--preheat-path", type=Path, action="append", default=[]
+    )
+    prepare_campaign.add_argument("--workspace-project-root", type=Path)
+    prepare_campaign.add_argument("--workspace-library-root", type=Path)
+    prepare_campaign.add_argument("--allocation-cluster", default="granite")
+    prepare_campaign.add_argument("--allocation-profile")
+    prepare_campaign.add_argument("--allocation-account")
+    prepare_campaign.add_argument("--allocation-partition")
+    prepare_campaign.add_argument("--allocation-qos")
+    prepare_campaign.add_argument("--allocation-gpus-per-task", type=int)
+    prepare_campaign.add_argument("--allocation-cpus-per-task", type=int)
+    prepare_campaign.add_argument("--allocation-mem")
+    prepare_campaign.add_argument("--allocation-walltime")
     run_prepared = subparsers.add_parser(
         "run-prepared-campaign-workload",
         help=(
@@ -3579,6 +4129,34 @@ def build_parser() -> argparse.ArgumentParser:
     run_prepared.add_argument("prepared_workload", type=Path)
     run_prepared.add_argument("--host-memory-stop-gib", type=float)
     run_prepared.add_argument("--host-rss-stop-gib", type=float)
+    run_prepared.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="Validate the prepared workload and launch specification without running",
+    )
+    prepare_sequence = subparsers.add_parser(
+        "prepare-campaign-sequence",
+        help="Freeze an ordered, same-allocation sequence of prepared workloads",
+    )
+    prepare_sequence.add_argument(
+        "--entry", type=_parse_sequence_entry, action="append", required=True
+    )
+    prepare_sequence.add_argument("--output", type=Path, required=True)
+    run_sequence = subparsers.add_parser(
+        "run-prepared-campaign-sequence",
+        help="Execute a frozen prepared sequence after one wrapper-owned preheat",
+    )
+    run_sequence.add_argument("prepared_sequence", type=Path)
+    run_sequence.add_argument("--state-root", type=Path, required=True)
+    run_sequence.add_argument("--validate-only", action="store_true")
+    inspect_sequence = subparsers.add_parser(
+        "inspect-prepared-campaign-sequence",
+        help="Validate and inspect a frozen prepared sequence",
+    )
+    inspect_sequence.add_argument("prepared_sequence", type=Path)
+    inspect_sequence.add_argument(
+        "--format", choices=("json", "prepared-paths", "output-paths"), default="json"
+    )
     run = subparsers.add_parser("run", help="Run one suite and enforce parity")
     run.add_argument("suite", choices=tuple(SUITES))
     run.add_argument(
@@ -3613,7 +4191,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument(
         "--diagnostic-stop-mode",
-        choices=("none", "phase0_probe", "transition_probe"),
+        choices=("none", "phase0_probe", "phase3_probe", "transition_probe"),
         default="none",
     )
     run.add_argument("--diagnostic-stop-phase4-batches", type=int)
@@ -3642,6 +4220,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _prepare_campaign_workload(args)
     if args.command == "run-prepared-campaign-workload":
         return _run_prepared_campaign_workload(args)
+    if args.command == "prepare-campaign-sequence":
+        return _prepare_campaign_sequence(args)
+    if args.command == "run-prepared-campaign-sequence":
+        return _run_prepared_campaign_sequence(args)
+    if args.command == "inspect-prepared-campaign-sequence":
+        return _inspect_prepared_campaign_sequence(args)
     if args.host_memory_stop_gib is not None and args.host_memory_stop_gib <= 0:
         raise ValueError("--host-memory-stop-gib must be positive")
     if args.host_rss_stop_gib is not None and args.host_rss_stop_gib <= 0:

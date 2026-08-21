@@ -21,15 +21,6 @@ MODEL_REPOS="${MODEL_REPOS:-google/gemma-3-1b-it,google/gemma-3-4b-it,google/gem
 PROVIDER_FAMILIES="${PROVIDER_FAMILIES:-gemmascope2-clt-1b-medium-affine,gemmascope2-plt-1b-small,gemmascope2-plt-4b-small,gemmascope2-plt-12b-small}"
 
 cd "$WORKSPACE_ROOT"
-source "$WORKSPACE_ROOT/slurm/exact_trace_bench/chpc_env.sh"
-
-export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
-export TOKENIZERS_PARALLELISM=false
-export PYTHONUNBUFFERED=1
-: "${UV_PROJECT_ENVIRONMENT:?UV_PROJECT_ENVIRONMENT must point to the external environment}"
-export UV_PROJECT_ENVIRONMENT
-export PYTHONPATH="$WORKSPACE_ROOT/src:$WORKSPACE_ROOT:$LIB_WORKSPACE_ROOT${PYTHONPATH:+:$PYTHONPATH}"
-
 if [[ -f "$ENV_FILE" ]]; then
     set -a
     # shellcheck disable=SC1090
@@ -39,6 +30,17 @@ fi
 if [[ -n "${HF_TOKEN:-}" && -z "${HUGGING_FACE_HUB_TOKEN:-}" ]]; then
     export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"
 fi
+# Prefetch is the only standard batch workflow that intentionally contacts the
+# Hub. Apply cache normalization after the env file, then opt into online mode.
+export EXACT_TRACE_HF_OFFLINE=0
+source "$WORKSPACE_ROOT/slurm/exact_trace_bench/chpc_env.sh"
+
+export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
+export TOKENIZERS_PARALLELISM=false
+export PYTHONUNBUFFERED=1
+: "${UV_PROJECT_ENVIRONMENT:?UV_PROJECT_ENVIRONMENT must point to the external environment}"
+export UV_PROJECT_ENVIRONMENT
+export PYTHONPATH="$WORKSPACE_ROOT/src:$WORKSPACE_ROOT:$LIB_WORKSPACE_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 echo "Job ID: ${SLURM_JOB_ID}"
 echo "Node: $(hostname)"

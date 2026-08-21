@@ -21,11 +21,20 @@ from nlp_research_project.exact_trace_bench.trace_runtime.generation import (  #
     CompletionPlan,
     trace_completion_compact_chunked,
 )
+from nlp_research_project.exact_trace_bench.trace_runtime.artifacts import (  # noqa: E402
+    CaptureArtifactContractError,
+)
+from nlp_research_project.exact_trace_bench.trace_runtime.completion_workspace import (  # noqa: E402
+    CompletionWorkspace,
+)
 from nlp_research_project.exact_trace_bench.trace_runtime.request import (  # noqa: E402
     trace_policy_from_scenario,
 )
 from nlp_research_project.exact_trace_bench.trace_runtime.tracing import (  # noqa: E402
     DiagnosticTraceCompletion,
+)
+from nlp_research_project.exact_trace_bench.trace_runtime.step_artifacts import (  # noqa: E402
+    StepArtifactWriter,
 )
 
 
@@ -86,12 +95,21 @@ def test_physical_frontier_knobs_change_only_execution_fingerprint() -> None:
             1024,
         ),
         ("decoder_page_prefetch_depth", 1),
-        ("decoder_active_row_residency", True),
         ("decoder_active_row_max_bytes", 1024),
+        ("decoder_active_row_safety_margin_bytes", 1024),
     ):
         changed = _fingerprints({key: value})
         assert changed[0] == baseline[0], key
         assert changed[1] != baseline[1], key
+    changed = _fingerprints(
+        {
+            "decoder_active_row_residency": True,
+            "decoder_active_row_residency_requirement": "required",
+            "decoder_active_row_safety_margin_bytes": 1024,
+        }
+    )
+    assert changed[0] == baseline[0]
+    assert changed[1] != baseline[1]
     changed = _fingerprints(
         {
             "feature_vjp_tape_batch_window": 2,
@@ -166,7 +184,7 @@ def test_phase0_decoder_row_ranges_requires_a_bool() -> None:
                 "phase0_decoder_row_ranges": True,
                 "decoder_active_row_residency": True,
             },
-            "positive decoder_active_row_max_bytes",
+            "positive decoder_active_row_safety_margin_bytes",
         ),
         (
             {
@@ -193,7 +211,10 @@ def test_phase0_decoder_row_ranges_rejects_invalid_scenario_dependencies(
 def test_exact_child_boundary_is_scenario_file_not_flat_flags(tmp_path: Path) -> None:
     output = tmp_path / "scenario" / "artifacts"
     command = build_command(output, {"method": "exact", "name": "typed"})
-    assert command[1:3] == ["-m", "nlp_research_project.exact_trace_bench.trace_runtime"]
+    assert command[1:3] == [
+        "-m",
+        "nlp_research_project.exact_trace_bench.trace_runtime",
+    ]
     assert command[3:] == [
         "--scenario-file",
         str(output.parent / "scenario.json"),
@@ -258,21 +279,24 @@ def test_active_sparsification_runtime_has_no_old_patch_mode() -> None:
     production = [
         ROOT / "experiments" / "run_sparsification_experiment.py",
         ROOT / "experiments" / "build_sparsification_experiment_configs.py",
-        ROOT / "experiments" / "generated" / "sparsification_calibration_scenarios.json",
+        ROOT
+        / "experiments"
+        / "generated"
+        / "sparsification_calibration_scenarios.json",
         ROOT / "src" / "nlp_research_project" / "exact_trace_bench" / "trace_runtime",
     ]
     stale = []
     for path in production:
         files = path.rglob("*.py") if path.is_dir() else [path]
         stale.extend(
-            file.relative_to(ROOT)
-            for file in files
-            if "old_patch" in file.read_text()
+            file.relative_to(ROOT) for file in files if "old_patch" in file.read_text()
         )
     assert stale == []
 
 
-def test_completion_preserves_compact_artifact_layout(monkeypatch, tmp_path: Path) -> None:
+def test_completion_preserves_compact_artifact_layout(
+    monkeypatch, tmp_path: Path
+) -> None:
     from nlp_research_project.exact_trace_bench.trace_runtime import generation
 
     compact = {
@@ -466,7 +490,16 @@ def test_diagnostic_completion_persists_telemetry_without_graph_packaging(
             diagnostic_artifacts={
                 "phase3_seed_bundle": {
                     "status": "captured",
-                    "active_features": torch.tensor([1, 2]),
+                    "active_features": torch.tensor([[0, 0, 1], [0, 1, 2]]),
+                    "activation_values": torch.tensor([0.25, 0.5]),
+                    "seed_feature_influences": torch.tensor([0.125, 0.0625]),
+                    "frontier_pre_locality": torch.tensor([0, 1]),
+                    "frontier_post_locality": torch.tensor([1, 0]),
+                    "queue_size": 2,
+                    "actual_max_feature_nodes": 2,
+                    "total_active_features": 2,
+                    "planner_compute_dtype": "float32",
+                    "influence_compute_dtype": "float32",
                 }
             },
         ),
@@ -518,5 +551,78 @@ def test_diagnostic_completion_persists_telemetry_without_graph_packaging(
     assert manifest["n_steps_traced"] == 0
     assert not (root / "step_000.npz").exists()
     assert manifest["sidecar_status"]["phase3_seed_bundle"] == "captured"
+    assert manifest["capture_artifact_status"]["requested"] == ["phase3_seed_bundle"]
+    assert manifest["capture_artifact_status"]["written"] == ["phase3_seed_bundle"]
+    assert manifest["capture_artifact_status"]["complete"] is True
     assert (root / "step_000_phase3_seed_bundle.npz").is_file()
+    assert (root / "step_000_capture_artifacts.json").is_file()
     assert (root / "telemetry.jsonl").is_file()
+
+
+def test_step_artifact_writer_fails_closed_and_persists_missing_capture_status(
+    tmp_path: Path,
+) -> None:
+    workspace = CompletionWorkspace.create(
+        tmp_path,
+        prompt_index=0,
+        completion_index=0,
+    )
+    writer = StepArtifactWriter(
+        workspace=workspace,
+        trace_policy=trace_policy_from_scenario(
+            {
+                "method": "exact",
+                "capture_phase3_gradient_bundle": True,
+            }
+        ),
+        model=FakeModel(),
+        max_edges=10,
+    )
+
+    with pytest.raises(CaptureArtifactContractError, match="missing=phase3_gradient"):
+        writer.write_diagnostic_sidecars(0, {})
+
+    status = json.loads(
+        (workspace.root / "step_000_capture_artifacts.json").read_text()
+    )
+    assert status["requested"] == ["phase3_gradient_bundle"]
+    assert status["written"] == []
+    assert status["missing"] == ["phase3_gradient_bundle"]
+    assert status["failed"] == []
+    assert status["complete"] is False
+
+
+def test_step_artifact_writer_rejects_truncated_capture_payload(
+    tmp_path: Path,
+) -> None:
+    workspace = CompletionWorkspace.create(
+        tmp_path,
+        prompt_index=0,
+        completion_index=0,
+    )
+    writer = StepArtifactWriter(
+        workspace=workspace,
+        trace_policy=trace_policy_from_scenario(
+            {
+                "method": "exact",
+                "capture_phase3_gradient_bundle": True,
+            }
+        ),
+        model=FakeModel(),
+        max_edges=10,
+    )
+
+    with pytest.raises(CaptureArtifactContractError, match="failed=phase3_gradient"):
+        writer.write_diagnostic_sidecars(
+            0,
+            {"phase3_gradient_bundle": {"status": "captured"}},
+        )
+
+    status = json.loads(
+        (workspace.root / "step_000_capture_artifacts.json").read_text()
+    )
+    assert status["missing"] == []
+    assert status["failed"][0]["name"] == "phase3_gradient_bundle"
+    assert status["failed"][0]["error_type"] == "ValueError"
+    assert "missing required fields" in status["failed"][0]["message"]
+    assert status["complete"] is False

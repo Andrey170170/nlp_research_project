@@ -174,9 +174,7 @@ def test_sp5_exact_finalist_uses_canonical_phase0_mapped_lazy_cpu_exact(
 )
 def test_sp5_bounded_phase0_finalist_is_explicitly_selectable(variant: str) -> None:
     case = perf_cli.Case(variant, "361_base")
-    profile = perf_cli.CANDIDATE_PROFILES[
-        "sp5-bounded-phase0-finalist-plt-v1"
-    ]
+    profile = perf_cli.CANDIDATE_PROFILES["sp5-bounded-phase0-finalist-plt-v1"]
     overrides = perf_cli._candidate_overrides(case, profile.name)
 
     assert profile.variant_for(case.provider_capabilities()) is not None
@@ -365,18 +363,28 @@ def test_canonical_fidelity_taxonomy_and_promotion_policy() -> None:
         "strict_exact",
         "exact",
     }
-    assert perf_cli.FIDELITY_THRESHOLDS["strict_exact"][
-        "worst_step_all_edge_signed_normalized_l1_deviation_max"
-    ] == 0.0
-    assert perf_cli.FIDELITY_THRESHOLDS["exact"][
-        "worst_step_all_edge_jaccard_min"
-    ] == 0.995
-    assert perf_cli.FIDELITY_THRESHOLDS["close"][
-        "worst_step_all_edge_signed_normalized_l1_deviation_max"
-    ] == 0.01
-    assert perf_cli.FIDELITY_THRESHOLDS["bounded"][
-        "worst_step_all_edge_signed_normalized_l1_deviation_max"
-    ] == 0.02
+    assert (
+        perf_cli.FIDELITY_THRESHOLDS["strict_exact"][
+            "worst_step_all_edge_signed_normalized_l1_deviation_max"
+        ]
+        == 0.0
+    )
+    assert (
+        perf_cli.FIDELITY_THRESHOLDS["exact"]["worst_step_all_edge_jaccard_min"]
+        == 0.995
+    )
+    assert (
+        perf_cli.FIDELITY_THRESHOLDS["close"][
+            "worst_step_all_edge_signed_normalized_l1_deviation_max"
+        ]
+        == 0.01
+    )
+    assert (
+        perf_cli.FIDELITY_THRESHOLDS["bounded"][
+            "worst_step_all_edge_signed_normalized_l1_deviation_max"
+        ]
+        == 0.02
+    )
     assert perf_cli.FIDELITY_THRESHOLDS["best_effort"] == {}
     assert perf_cli.FIDELITY_THRESHOLDS["research"] == {}
 
@@ -2122,16 +2130,16 @@ def test_phase0_coalesced_row_gate_rejects_boolean_legacy_counters() -> None:
 
 
 @pytest.mark.parametrize(
-    ("active_rows", "max_bytes", "reason"),
+    ("active_rows", "max_bytes", "safety_margin_bytes", "reason"),
     [
-        (False, 1024**3, "decoder_active_row_residency=true"),
-        (True, 0, "positive decoder_active_row_max_bytes"),
+        (False, 1024**3, 0, "decoder_active_row_residency=true"),
     ],
 )
 def test_phase0_coalesced_row_report_rejects_invalid_scenario_dependencies(
     tmp_path: Path,
     active_rows: bool,
     max_bytes: int,
+    safety_margin_bytes: int,
     reason: str,
 ) -> None:
     case = perf_cli.Case("gemma3_1b_plt", "361_base")
@@ -2142,6 +2150,7 @@ def test_phase0_coalesced_row_report_rejects_invalid_scenario_dependencies(
             {
                 "decoder_active_row_residency": active_rows,
                 "decoder_active_row_max_bytes": max_bytes,
+                "decoder_active_row_safety_margin_bytes": safety_margin_bytes,
                 "phase0_decoder_row_ranges": True,
             }
         )
@@ -2213,6 +2222,53 @@ def test_active_row_mechanism_gate_rejects_invalid_evidence(
 
     assert passed is False
     assert reason in " ".join(reasons)
+
+
+def test_active_row_mechanism_gate_accepts_dynamic_live_hbm_evidence() -> None:
+    diagnostics = _active_row_diagnostics()
+    dynamic_budget = 100 * 1024**3
+    diagnostics.update(
+        {
+            "requirement": "required",
+            "admission_reason": "admitted",
+            "admission_policy": "live_hbm_headroom",
+            "max_bytes_requested": 0,
+            "max_bytes_effective": dynamic_budget,
+            "safety_margin_bytes": 16 * 1024**3,
+            "dynamic_budget_bytes": dynamic_budget,
+            "effective_budget_bytes": dynamic_budget,
+            "hbm": {
+                "free_bytes": 116 * 1024**3,
+                "total_bytes": 140 * 1024**3,
+                "allocated_bytes": 20 * 1024**3,
+                "reserved_bytes": 22 * 1024**3,
+                "device": "cuda:0",
+            },
+        }
+    )
+    passed, reasons = perf_cli._active_row_mechanism_gate(True, diagnostics, 0)
+
+    assert passed is True
+    assert reasons == []
+
+
+def test_active_row_mechanism_gate_rejects_dynamic_evidence_without_headroom() -> None:
+    diagnostics = _active_row_diagnostics()
+    diagnostics.update(
+        {
+            "admission_reason": "admitted",
+            "admission_policy": "live_hbm_headroom",
+            "max_bytes_requested": 0,
+            "safety_margin_bytes": 16 * 1024**3,
+            "dynamic_budget_bytes": 100 * 1024**3,
+            "effective_budget_bytes": 100 * 1024**3,
+        }
+    )
+
+    passed, reasons = perf_cli._active_row_mechanism_gate(True, diagnostics, 0)
+
+    assert passed is False
+    assert "HBM observation is missing" in " ".join(reasons)
 
 
 @pytest.mark.parametrize(

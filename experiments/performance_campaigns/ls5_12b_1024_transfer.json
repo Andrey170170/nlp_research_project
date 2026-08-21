@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "campaign_id": "ls5-gemma3-12b-1024-transfer-v1",
+  "description": "Frozen Gemma 3 12B PLT feasibility transfer over the existing LS0 1,024-token development prefix and target. The trajectory tokens are intentionally reused to isolate model-size and tracing-runtime effects.",
+  "workloads": [
+    {
+      "workload_id": "ls5-12b-361-dev-1024",
+      "preparation_status": "frozen",
+      "fixture": {
+        "catalog": "experiments/generated/performance_campaigns/ls0/fixture_catalog.json",
+        "catalog_sha256": "4ba856c8f0964a06834343990d905413f16f56b8331c29b5bb6ebc7aed758fb7",
+        "fixture_name": "361_length_v1",
+        "prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt",
+        "prompt_sha256": "938319d4a0c5740d60f31ec015bdba975e7952670a3d94e5b7438f7fff7648ee"
+      },
+      "model": {"variant": "gemma3_12b", "provider": "plt"},
+      "prompt": {"family": "gsm8k_361_length_v1", "role": "development"},
+      "trajectory": {
+        "trajectory_id": "ls0-gemma3-1b-361-greedy-v1",
+        "path": "experiments/generated/performance_campaigns/ls0/361_trajectory.json",
+        "sha256": "fc59c4512187a8b40fbfc62c5fadf0d0b5c2228ff35890a30b567fa9e64e158e"
+      },
+      "prefix": {
+        "requested_tokens": 1024,
+        "actual_tokens": 1024,
+        "token_ids_sha256": "75346f1791031a997292f1b625eda54d86cdc28244f811658f343f1ef9fa9625"
+      },
+      "target": {
+        "absolute_position": 1024,
+        "token_id": 9338,
+        "token_text": " journey"
+      },
+      "operational_class": "long_trace",
+      "profiles": {
+        "control": "plt-selective-mapped-rows-cpu-exact-12b-v1",
+        "candidate": "plt-selective-mapped-rows-cuda-windowed-12b-v1"
+      },
+      "run_disposition": "deep_probe_project_then_pair",
+      "resource_envelope": {
+        "gpu": "NVIDIA H200",
+        "gpu_count": 1,
+        "host_memory_stop_gib": 600,
+        "host_rss_stop_gib": 500,
+        "hbm_peak_fraction_max": 0.9,
+        "walltime_seconds": 28800
+      },
+      "comparison_policy": {
+        "fidelity": "canonical_taxonomy_classified_separately",
+        "mechanism_control": "matched_selective_phase0_cpu_exact",
+        "probe_before_full": true,
+        "full_trace_runtime_ceiling_seconds": 28800,
+        "ceiling_source": "accepted_full_h200_600g_8h_route"
+      }
+    }
+  ]
+}

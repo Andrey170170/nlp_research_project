@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
-import hashlib
 import subprocess
 import time
 from pathlib import Path
@@ -11,7 +11,6 @@ from typing import Any
 from .config import DEFAULT_SCRATCH_ROOT, REPO_ROOT
 from .graph_compare import compare_artifact_dirs
 from .io_utils import read_json, write_csv, write_json
-
 
 BASELINE_DISABLED = {
     "enabled": False,
@@ -82,6 +81,9 @@ SCENARIO_KNOB_KEYS = (
     "cross_batch_decoder_cache_bytes",
     "phase1_trace_batch_policy",
     "phase1_trace_batch_size_max",
+    "backward_engine_mode",
+    "forward_graph_mode",
+    "vjp_kernel_mode",
     "chunked_feature_replay_window",
     "error_vector_prefetch_lookahead",
     "stage_encoder_vecs_on_cpu",

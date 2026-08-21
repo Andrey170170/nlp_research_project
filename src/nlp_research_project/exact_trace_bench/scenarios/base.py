@@ -6,7 +6,6 @@ from typing import Any
 from ..config import base_trace_defaults, gib_to_bytes, recommended_output_root
 from ..fixtures import FixtureRef, resolve_fixture
 
-
 SCENARIO_TIERS = ("fast", "anomaly", "long_eval")
 WAVE2A_PHASE1_TIERS = ("fast", "anomaly")
 WAVE2B_PHASE4_TIERS = ("fast", "anomaly")
@@ -114,6 +113,7 @@ WAVE2C_ROW_ENCODER_LEGACY_DEFAULTS: dict[str, Any] = {
     "phase4_refresh_optimization": "off",
     "phase4_row_executor": "batched",
     "phase1_trace_batch_policy": "legacy",
+    "backward_engine_mode": "duplicated_lanes",
 }
 WAVE2C_ROW_ENCODER_VARIANTS: tuple[dict[str, Any], ...] = (
     {
@@ -219,13 +219,18 @@ ADVANCED_PUBLIC_TUNING_KEYS = (
     "stage_error_vectors_on_cpu",
     "row_subchunk_size",
     "nnsight_session_capacity",
+    "backward_engine_mode",
+    "forward_graph_mode",
+    "vjp_kernel_mode",
     "phase3_compute_microbatch_max_rows",
     "phase4_execution_batch_max_rows",
     "feature_vjp_tape_batch_window",
     "feature_vjp_tape_max_bytes",
     "decoder_page_prefetch_depth",
     "decoder_active_row_residency",
+    "decoder_active_row_residency_requirement",
     "decoder_active_row_max_bytes",
+    "decoder_active_row_safety_margin_bytes",
     "phase0_decoder_row_ranges",
     "diagnostic_stop_mode",
     "diagnostic_stop_phase4_batches",

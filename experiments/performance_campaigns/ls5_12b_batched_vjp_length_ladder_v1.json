@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "campaign_id": "ls5-gemma3-12b-batched-vjp-length-ladder-v1",
+  "description": "Three ordered full 12B development traces at 129, 256, and 512 tokens in one preheated H200 allocation. The sequence stops on the first execution or validation failure. Later artifacts may already have been prepared, but no later rung advances the ladder past a failed predecessor. The 1,024-token rung remains blocked.",
+  "execution_policy": {
+    "ordered_workload_ids": [
+      "ls5-batched-vjp-12b-361-dev-129",
+      "ls5-batched-vjp-12b-361-dev-256",
+      "ls5-batched-vjp-12b-361-dev-512"
+    ],
+    "ordered_profile_roles": ["run"],
+    "full_execution_required": true,
+    "same_scheduler_allocation_required": true,
+    "preheat_policy": "file_cache_once_before_sequence",
+    "failure_policy": "stop_on_first_failure",
+    "classification_policy": "no_advance_past_failed_predecessor",
+    "required_scheduler_request": {
+      "gpu": "NVIDIA H200",
+      "gpu_count": 1,
+      "cpus_per_task": 32,
+      "memory": "600G",
+      "walltime": "02:00:00"
+    },
+    "scheduler_walltime_ceiling_seconds": 7200,
+    "stop_on_required_mode_mismatch": true,
+    "qualification_only_no_default_or_promotion": true,
+    "qualification_only_no_repeatability_claim": true,
+    "qualification_only_no_cross_regime_claim": true,
+    "token_1024_rung_blocked": true
+  },
+  "workloads": [
+    {
+      "workload_id": "ls5-batched-vjp-12b-361-dev-129",
+      "preparation_status": "frozen",
+      "fixture": {
+        "catalog": "experiments/generated/performance_campaigns/ls0/fixture_catalog.json",
+        "catalog_sha256": "4ba856c8f0964a06834343990d905413f16f56b8331c29b5bb6ebc7aed758fb7",
+        "fixture_name": "361_length_v1",
+        "prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt",
+        "prompt_sha256": "938319d4a0c5740d60f31ec015bdba975e7952670a3d94e5b7438f7fff7648ee"
+      },
+      "model": {"variant": "gemma3_12b", "provider": "plt"},
+      "prompt": {"family": "gsm8k_361_length_v1", "role": "development"},
+      "trajectory": {
+        "trajectory_id": "ls0-gemma3-1b-361-greedy-v1",
+        "path": "experiments/generated/performance_campaigns/ls0/361_trajectory.json",
+        "sha256": "fc59c4512187a8b40fbfc62c5fadf0d0b5c2228ff35890a30b567fa9e64e158e"
+      },
+      "prefix": {"requested_tokens": 129, "actual_tokens": 129, "token_ids_sha256": "43544860d20d475fd848f26d50d696fa1e98b0a5d89279afae67001e9881f2d9"},
+      "target": {"absolute_position": 129, "token_id": 19058, "token_text": "Okay"},
+      "operational_class": "long_trace",
+      "profiles": {"run": "ls5-12b-cuda-windowed-width1-batched-vjp-v1"},
+      "run_disposition": "ordered_full_feasibility_and_artifact_validation",
+      "resource_envelope": {"gpu": "NVIDIA H200", "gpu_count": 1, "host_memory_stop_gib": 600, "host_rss_stop_gib": 500, "hbm_peak_fraction_max": 0.9, "walltime_seconds": 7200},
+      "comparison_policy": {
+        "comparison_domain": "none_single_run",
+        "claim_boundary": "A pass establishes 12B/129 resource feasibility and validates this artifact only. It does not establish repeatability, cross-regime equivalence, or a default. Classification may advance to 256 only if this rung passes.",
+        "required_execution_mode": "full",
+        "required_exact_trace_internal_dtype": "fp32",
+        "required_checkpoint_asset_scope": "shared",
+        "required_feature_row_influence_mode": "cuda_windowed",
+        "feature_row_influence_requirement": "required",
+        "required_backward_engine_mode": "single_forward_batched_vjp",
+        "required_forward_graph_mode": "single_lane",
+        "required_vjp_kernel_mode": "autograd_batched",
+        "required_forward_lane_count": 1,
+        "required_actual_phase1_forward_trace_width": 1,
+        "capacity_contract": "Physical forward lane count and actual Phase-1 forward trace width are one; logical/session/backward capacity and configured Phase-1, Phase-3, and Phase-4 caps remain 64.",
+        "runtime_resource_policy": "measure_only",
+        "predecessor_gate": "ls4-batched-vjp-4b-828-holdout-512",
+        "advance_only_if_predecessor_passes": true,
+        "arms": {"run": {"backward_engine_mode": "single_forward_batched_vjp", "forward_graph_mode": "single_lane", "vjp_kernel_mode": "autograd_batched", "forward_lane_count": 1, "config_pins": {"exact_trace_internal_dtype": "fp32", "checkpoint_asset_scope": "shared"}, "physical_caps": {"nnsight_session_capacity": 64, "phase1_trace_batch_size_max": 64, "phase3_compute_microbatch_max_rows": 64, "phase4_execution_batch_max_rows": 64}, "derived_execution": {"actual_phase1_forward_trace_width": 1, "backward_batch_capacity": 64}}},
+        "artifact_acceptance_contract": {"classification": "single_run_feasibility_and_artifact_only", "required": ["full_trace_completion", "strict_artifact_validation", "graph_reopen_success", "frozen_mechanism_telemetry_match", "resource_telemetry_persisted"], "forbidden_claims": ["repeatability", "cross_regime_equivalence", "default_promotion"]},
+        "fidelity": "single_run_same_regime_feasibility_and_artifact_only"
+      }
+    },
+    {
+      "workload_id": "ls5-batched-vjp-12b-361-dev-256",
+      "preparation_status": "frozen",
+      "fixture": {
+        "catalog": "experiments/generated/performance_campaigns/ls0/fixture_catalog.json",
+        "catalog_sha256": "4ba856c8f0964a06834343990d905413f16f56b8331c29b5bb6ebc7aed758fb7",
+        "fixture_name": "361_length_v1",
+        "prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt",
+        "prompt_sha256": "938319d4a0c5740d60f31ec015bdba975e7952670a3d94e5b7438f7fff7648ee"
+      },
+      "model": {"variant": "gemma3_12b", "provider": "plt"},
+      "prompt": {"family": "gsm8k_361_length_v1", "role": "development"},
+      "trajectory": {"trajectory_id": "ls0-gemma3-1b-361-greedy-v1", "path": "experiments/generated/performance_campaigns/ls0/361_trajectory.json", "sha256": "fc59c4512187a8b40fbfc62c5fadf0d0b5c2228ff35890a30b567fa9e64e158e"},
+      "prefix": {"requested_tokens": 256, "actual_tokens": 256, "token_ids_sha256": "cfee207d0bce712e77190bcf4a7dbc4a0c69e410602a89bd5c5462794fa1d983"},
+      "target": {"absolute_position": 256, "token_id": 236751, "token_text": "s"},
+      "operational_class": "long_trace",
+      "profiles": {"run": "ls5-12b-cuda-windowed-width1-batched-vjp-v1"},
+      "run_disposition": "ordered_full_feasibility_and_artifact_validation",
+      "resource_envelope": {"gpu": "NVIDIA H200", "gpu_count": 1, "host_memory_stop_gib": 600, "host_rss_stop_gib": 500, "hbm_peak_fraction_max": 0.9, "walltime_seconds": 7200},
+      "comparison_policy": {
+        "comparison_domain": "none_single_run",
+        "claim_boundary": "A pass establishes 12B/256 resource feasibility and validates this artifact only if the 129 rung passed. It does not establish repeatability, cross-regime equivalence, or a default, and cannot advance the ladder past a failed predecessor.",
+        "required_execution_mode": "full",
+        "required_exact_trace_internal_dtype": "fp32",
+        "required_checkpoint_asset_scope": "shared",
+        "required_feature_row_influence_mode": "cuda_windowed",
+        "feature_row_influence_requirement": "required",
+        "required_backward_engine_mode": "single_forward_batched_vjp",
+        "required_forward_graph_mode": "single_lane",
+        "required_vjp_kernel_mode": "autograd_batched",
+        "required_forward_lane_count": 1,
+        "required_actual_phase1_forward_trace_width": 1,
+        "capacity_contract": "Physical forward lane count and actual Phase-1 forward trace width are one; logical/session/backward capacity and configured Phase-1, Phase-3, and Phase-4 caps remain 64.",
+        "runtime_resource_policy": "measure_only",
+        "predecessor_gate": "ls5-batched-vjp-12b-361-dev-129",
+        "advance_only_if_predecessor_passes": true,
+        "arms": {"run": {"backward_engine_mode": "single_forward_batched_vjp", "forward_graph_mode": "single_lane", "vjp_kernel_mode": "autograd_batched", "forward_lane_count": 1, "config_pins": {"exact_trace_internal_dtype": "fp32", "checkpoint_asset_scope": "shared"}, "physical_caps": {"nnsight_session_capacity": 64, "phase1_trace_batch_size_max": 64, "phase3_compute_microbatch_max_rows": 64, "phase4_execution_batch_max_rows": 64}, "derived_execution": {"actual_phase1_forward_trace_width": 1, "backward_batch_capacity": 64}}},
+        "artifact_acceptance_contract": {"classification": "single_run_feasibility_and_artifact_only", "required": ["full_trace_completion", "strict_artifact_validation", "graph_reopen_success", "frozen_mechanism_telemetry_match", "resource_telemetry_persisted"], "forbidden_claims": ["repeatability", "cross_regime_equivalence", "default_promotion"]},
+        "fidelity": "single_run_same_regime_feasibility_and_artifact_only"
+      }
+    },
+    {
+      "workload_id": "ls5-batched-vjp-12b-361-dev-512",
+      "preparation_status": "frozen",
+      "fixture": {
+        "catalog": "experiments/generated/performance_campaigns/ls0/fixture_catalog.json",
+        "catalog_sha256": "4ba856c8f0964a06834343990d905413f16f56b8331c29b5bb6ebc7aed758fb7",
+        "fixture_name": "361_length_v1",
+        "prompt_file": "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt",
+        "prompt_sha256": "938319d4a0c5740d60f31ec015bdba975e7952670a3d94e5b7438f7fff7648ee"
+      },
+      "model": {"variant": "gemma3_12b", "provider": "plt"},
+      "prompt": {"family": "gsm8k_361_length_v1", "role": "development"},
+      "trajectory": {"trajectory_id": "ls0-gemma3-1b-361-greedy-v1", "path": "experiments/generated/performance_campaigns/ls0/361_trajectory.json", "sha256": "fc59c4512187a8b40fbfc62c5fadf0d0b5c2228ff35890a30b567fa9e64e158e"},
+      "prefix": {"requested_tokens": 512, "actual_tokens": 512, "token_ids_sha256": "8a01ec6a0f7fe0f91a1ebf8c489f258af140086aac7db35eccb2e0016091b78b"},
+      "target": {"absolute_position": 512, "token_id": 33036, "token_text": " travels"},
+      "operational_class": "long_trace",
+      "profiles": {"run": "ls5-12b-cuda-windowed-width1-batched-vjp-v1"},
+      "run_disposition": "ordered_full_feasibility_and_artifact_validation",
+      "resource_envelope": {"gpu": "NVIDIA H200", "gpu_count": 1, "host_memory_stop_gib": 600, "host_rss_stop_gib": 500, "hbm_peak_fraction_max": 0.9, "walltime_seconds": 7200},
+      "comparison_policy": {
+        "comparison_domain": "none_single_run",
+        "claim_boundary": "A pass establishes 12B/512 resource feasibility and validates this artifact only if both earlier 12B rungs passed. It does not establish repeatability, cross-regime equivalence, a default, or authorization for 1,024 tokens, and cannot advance the ladder past a failed predecessor.",
+        "required_execution_mode": "full",
+        "required_exact_trace_internal_dtype": "fp32",
+        "required_checkpoint_asset_scope": "shared",
+        "required_feature_row_influence_mode": "cuda_windowed",
+        "feature_row_influence_requirement": "required",
+        "required_backward_engine_mode": "single_forward_batched_vjp",
+        "required_forward_graph_mode": "single_lane",
+        "required_vjp_kernel_mode": "autograd_batched",
+        "required_forward_lane_count": 1,
+        "required_actual_phase1_forward_trace_width": 1,
+        "capacity_contract": "Physical forward lane count and actual Phase-1 forward trace width are one; logical/session/backward capacity and configured Phase-1, Phase-3, and Phase-4 caps remain 64.",
+        "runtime_resource_policy": "measure_only",
+        "predecessor_gate": "ls5-batched-vjp-12b-361-dev-256",
+        "advance_only_if_predecessor_passes": true,
+        "next_rung_1024_blocked": true,
+        "arms": {"run": {"backward_engine_mode": "single_forward_batched_vjp", "forward_graph_mode": "single_lane", "vjp_kernel_mode": "autograd_batched", "forward_lane_count": 1, "config_pins": {"exact_trace_internal_dtype": "fp32", "checkpoint_asset_scope": "shared"}, "physical_caps": {"nnsight_session_capacity": 64, "phase1_trace_batch_size_max": 64, "phase3_compute_microbatch_max_rows": 64, "phase4_execution_batch_max_rows": 64}, "derived_execution": {"actual_phase1_forward_trace_width": 1, "backward_batch_capacity": 64}}},
+        "artifact_acceptance_contract": {"classification": "single_run_feasibility_and_artifact_only", "required": ["full_trace_completion", "strict_artifact_validation", "graph_reopen_success", "frozen_mechanism_telemetry_match", "resource_telemetry_persisted"], "forbidden_claims": ["repeatability", "cross_regime_equivalence", "default_promotion", "1024_authorization"]},
+        "fidelity": "single_run_same_regime_feasibility_and_artifact_only"
+      }
+    }
+  ]
+}

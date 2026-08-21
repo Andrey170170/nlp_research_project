@@ -209,6 +209,28 @@ def test_full_answer_trace_spec_perf_knob_overrides(tmp_path: Path) -> None:
         "--no-stage-error-vectors-on-cpu",
         "--exact-encoder-residency",
         "active_cpu",
+        "--feature-row-influence-mode",
+        "cuda_windowed",
+        "--feature-row-influence-requirement",
+        "required",
+        "--feature-row-gpu-window-max-bytes",
+        "1048576",
+        "--feature-row-gpu-resident-safety-margin-bytes",
+        "4096",
+        "--runtime-resource-policy",
+        "measure_only",
+        "--planning-host-memory-gib",
+        "400",
+        "--planning-host-rss-gib",
+        "350",
+        "--planning-hbm-peak-fraction",
+        "0.9",
+        "--planning-walltime-seconds",
+        "7200",
+        "--diagnostic-stop-mode",
+        "transition_probe",
+        "--diagnostic-stop-phase4-batches",
+        "8",
         "--input-context-mode",
         "full_sequence",
         "--verbose-attribution",
@@ -252,6 +274,19 @@ def test_full_answer_trace_spec_perf_knob_overrides(tmp_path: Path) -> None:
     assert knobs["stage_encoder_vecs_on_cpu"] is False
     assert knobs["stage_error_vectors_on_cpu"] is False
     assert knobs["exact_encoder_residency"] == "active_cpu"
+    assert knobs["feature_row_influence_mode"] == "cuda_windowed"
+    assert knobs["feature_row_influence_requirement"] == "required"
+    assert knobs["feature_row_gpu_window_max_bytes"] == 1048576
+    assert knobs["feature_row_gpu_resident_safety_margin_bytes"] == 4096
+    assert knobs["runtime_resource_policy"] == "measure_only"
+    assert knobs["resource_planning_envelope"] == {
+        "host_memory_stop_gib": 400.0,
+        "host_rss_stop_gib": 350.0,
+        "hbm_peak_fraction_max": 0.9,
+        "walltime_seconds": 7200.0,
+    }
+    assert knobs["diagnostic_stop_mode"] == "transition_probe"
+    assert knobs["diagnostic_stop_phase4_batches"] == 8
     assert knobs["input_context_mode"] == "full_sequence"
     assert knobs["verbose_attribution"] is True
     assert knobs["profile_attribution"] is True
@@ -510,6 +545,13 @@ def test_full_answer_shard_print_only_plan_uses_snapshot_paths(tmp_path: Path) -
     assert "--run-name" in plan["sbatch_command"]
     assert "--run-description" in plan["sbatch_command"]
     assert "--run-goal" in plan["sbatch_command"]
+    assert "EXACT_TRACE_REQUESTED_ACCOUNT=" in plan["sbatch_command"]
+    assert "EXACT_TRACE_REQUESTED_PARTITION=" in plan["sbatch_command"]
+    assert "EXACT_TRACE_REQUESTED_QOS=" in plan["sbatch_command"]
+    assert "EXACT_TRACE_REQUESTED_GPUS_PER_TASK=" in plan["sbatch_command"]
+    assert "EXACT_TRACE_REQUESTED_CPUS=" in plan["sbatch_command"]
+    assert "EXACT_TRACE_REQUESTED_MEM=" in plan["sbatch_command"]
+    assert "EXACT_TRACE_REQUESTED_WALLTIME=" in plan["sbatch_command"]
 
 
 def test_full_answer_shard_plan_supports_quad_partial_array(tmp_path: Path) -> None:

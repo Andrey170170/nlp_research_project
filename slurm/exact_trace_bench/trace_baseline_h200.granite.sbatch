@@ -21,8 +21,6 @@ source "$WORKSPACE_ROOT/slurm/exact_trace_bench/require_snapshot_workspace.sh"
 ENV_FILE="${ENV_FILE:-$WORKSPACE_ROOT/.env}"
 
 cd "$WORKSPACE_ROOT"
-source "$WORKSPACE_ROOT/slurm/exact_trace_bench/chpc_env.sh"
-
 if [[ -f "$ENV_FILE" ]]; then
     set -a
     # shellcheck disable=SC1090
@@ -32,6 +30,9 @@ fi
 if [[ -n "${HF_TOKEN:-}" && -z "${HUGGING_FACE_HUB_TOKEN:-}" ]]; then
     export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"
 fi
+# Normalize cache and offline policy after the optional env file so it cannot
+# accidentally redirect a scientific job through inherited legacy settings.
+source "$WORKSPACE_ROOT/slurm/exact_trace_bench/chpc_env.sh"
 
 SCENARIOS_FILE="${SCENARIOS_FILE:-experiments/generated/exact_trace_bench/exact_trace_bench_baseline_gemma3_1b_clt_granite_scenarios.json}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-/scratch/general/vast/${USER}/nlp_research_project/exact_trace_bench/granite/baseline/manual}"

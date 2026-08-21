@@ -17,6 +17,7 @@ if str(EXPERIMENTS_DIR) not in sys.path:
 
 from nlp_research_project.exact_trace_bench.graph_compare import (  # noqa: E402
     compare_artifact_dirs,
+    compare_compact_paths,
     compare_step_pair,
 )
 from nlp_research_project.exact_trace_bench.baselines import (  # noqa: E402
@@ -213,6 +214,98 @@ def test_topk_overlap_defines_both_empty_as_identical() -> None:
 def _write_npz(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(str(path), payload=np.asarray([1], dtype=np.int32))
+
+
+def _write_bucketed_graph(
+    path: Path,
+    *,
+    bucket_names: list[str],
+    bucket_rows: list[int],
+    bucket_cols: list[int],
+    bucket_weights: list[float],
+    bucket_ids: list[int],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        path,
+        row_idx=np.asarray([1], dtype=np.int32),
+        col_idx=np.asarray([0], dtype=np.int32),
+        weights=np.asarray([1.0], dtype=np.float32),
+        feature_ids=np.asarray([(0, 0, 1)], dtype=np.int64),
+        token_text=np.asarray("A"),
+        logprob=np.asarray(-0.1),
+        n_features=np.asarray(1, dtype=np.int32),
+        step_idx=np.asarray(0, dtype=np.int32),
+        bucket_row_idx=np.asarray(bucket_rows, dtype=np.int64),
+        bucket_col_idx=np.asarray(bucket_cols, dtype=np.int64),
+        bucket_weights=np.asarray(bucket_weights, dtype=np.float32),
+        bucket_ids=np.asarray(bucket_ids, dtype=np.int16),
+        bucket_names=np.asarray(bucket_names),
+    )
+
+
+def test_typed_bucket_comparison_is_invariant_to_coo_and_bucket_order(
+    tmp_path: Path,
+) -> None:
+    left = tmp_path / "left.npz"
+    right = tmp_path / "right.npz"
+    _write_bucketed_graph(
+        left,
+        bucket_names=["feature<-feature", "feature<-error"],
+        bucket_rows=[10, 10, 20],
+        bucket_cols=[11, 11, 1],
+        bucket_weights=[0.25, 0.75, -0.5],
+        bucket_ids=[0, 0, 1],
+    )
+    _write_bucketed_graph(
+        right,
+        bucket_names=["feature<-error", "feature<-feature"],
+        bucket_rows=[20, 10, 10],
+        bucket_cols=[1, 11, 11],
+        bucket_weights=[-0.5, 0.75, 0.25],
+        bucket_ids=[0, 1, 1],
+    )
+
+    result = compare_compact_paths(left, right)
+    typed = result["typed_bucket_comparison"]
+
+    assert typed["classification"] == "strict_exact"
+    assert typed["aggregate"]["exact"] is True
+    assert typed["buckets"]["feature<-feature"]["edge_count_a"] == 1
+    assert typed["buckets"]["feature<-feature"]["support_jaccard"] == 1.0
+    assert typed["buckets"]["feature<-feature"]["topk_overlap"]["64"]["jaccard"] == 1.0
+
+
+def test_typed_bucket_comparison_is_separate_from_legacy_all_edge_scope(
+    tmp_path: Path,
+) -> None:
+    left = tmp_path / "left.npz"
+    right = tmp_path / "right.npz"
+    common = {
+        "bucket_names": ["feature<-feature", "feature<-error"],
+        "bucket_rows": [10, 20],
+        "bucket_cols": [11, 1],
+        "bucket_ids": [0, 1],
+    }
+    _write_bucketed_graph(left, bucket_weights=[1.0, -1.0], **common)
+    _write_bucketed_graph(right, bucket_weights=[1.0, -0.995], **common)
+
+    result = compare_compact_paths(left, right)
+    typed = result["typed_bucket_comparison"]
+    error_bucket = typed["buckets"]["feature<-error"]
+
+    assert result["all_edge_jaccard"] == 1.0
+    assert result["all_edge_weighted_jaccard"] == 1.0
+    assert result["all_edge_scope"] == "legacy_feature_source_edges_only"
+    assert result["all_edge_includes_typed_buckets"] is False
+    assert typed["classification"] == "non_exact"
+    assert typed["non_exact_buckets"] == ["feature<-error"]
+    assert typed["buckets"]["feature<-feature"]["exact"] is True
+    assert error_bucket["support_jaccard"] == 1.0
+    assert error_bucket["weighted_jaccard"] == pytest.approx(0.995)
+    assert error_bucket["signed_normalized_l1_deviation"] == pytest.approx(0.005)
+    assert error_bucket["shared_sign_agreement"] == 1.0
+    assert error_bucket["exact"] is False
 
 
 def test_compare_artifact_dirs_ignores_auxiliary_step_npz(

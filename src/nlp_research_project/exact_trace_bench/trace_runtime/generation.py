@@ -10,6 +10,7 @@ from typing import Any
 
 import torch
 
+from .artifacts import legacy_capture_artifact_status
 from .completion_workspace import CompletionWorkspace
 from .observations import CompletionObservations
 from .request import TracePolicy
@@ -51,7 +52,9 @@ class TokenGenerationPolicy:
             candidates.append(end_of_turn)
         return cls(
             temperature=temperature,
-            stop_token_ids=frozenset(value for value in candidates if value is not None),
+            stop_token_ids=frozenset(
+                value for value in candidates if value is not None
+            ),
         )
 
     def generate(self, model: Any, input_ids: torch.Tensor) -> dict[str, Any]:
@@ -184,7 +187,7 @@ def trace_completion_compact_chunked(
             incremental_telemetry=completion.incremental_telemetry_jsonl,
         )
         if isinstance(step, DiagnosticStepResult):
-            sidecar_status = writer.write_diagnostic_sidecars(
+            capture_artifacts = writer.write_diagnostic_sidecars(
                 step_index, step.diagnostic.diagnostic_artifacts or {}
             )
             telemetry_records = [
@@ -196,9 +199,7 @@ def trace_completion_compact_chunked(
                     **event,
                 }
                 for event_index, event in enumerate(
-                    normalize_telemetry_events(
-                        list(step.diagnostic.telemetry_events)
-                    )
+                    normalize_telemetry_events(list(step.diagnostic.telemetry_events))
                 )
             ]
             workspace.append_jsonl(workspace.telemetry_path, telemetry_records)
@@ -222,12 +223,11 @@ def trace_completion_compact_chunked(
                 "execution_fingerprint": step.diagnostic.execution_fingerprint,
                 "graph_packaging_mode": "diagnostic_no_graph",
                 "diagnostic_stop_mode": step.diagnostic.diagnostic_stop_mode,
-                "phase4_batches_completed": (
-                    step.diagnostic.phase4_batches_completed
-                ),
+                "phase4_batches_completed": (step.diagnostic.phase4_batches_completed),
                 "telemetry_summary": dict(step.diagnostic.telemetry_summary),
                 "telemetry_event_count": len(telemetry_records),
-                "sidecar_status": sidecar_status,
+                "sidecar_status": legacy_capture_artifact_status(capture_artifacts),
+                "capture_artifact_status": capture_artifacts,
                 "admission_report": step.diagnostic.admission_report,
                 "resource_snapshot": capture_resource_snapshot(),
                 "timing_summary": build_completion_timing_summary(

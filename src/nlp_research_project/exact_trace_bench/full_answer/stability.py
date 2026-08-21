@@ -1,16 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any
 
 import numpy as np
 
-from ..graph_compare import compare_step_pair
+from ..graph_compare import compare_compact_paths
 from ..io_utils import ensure_dir, write_json
-
-if TYPE_CHECKING:
-    from nlp_research_project.exact_trace_bench.compact_io import StepData
 
 DEFAULT_TOP_KS = (128, 512, 1024, 4096, 8192, 16384)
 DEFAULT_NEAR_CUTOFF_FRACTIONS = (0.001, 0.01, 0.05)
@@ -312,21 +308,6 @@ def _phase3_summary(
     }
 
 
-def _load_graph_step(path: Path) -> SimpleNamespace:
-    with np.load(str(path), allow_pickle=False) as data:
-        logprob = float(data["logprob"])
-        return SimpleNamespace(
-            step_idx=int(data["step_idx"]),
-            row_idx=data["row_idx"],
-            col_idx=data["col_idx"],
-            weights=data["weights"],
-            feature_ids=data["feature_ids"],
-            token_text=str(data["token_text"]),
-            logprob=None if np.isnan(logprob) else logprob,
-            n_features=int(data["n_features"]),
-        )
-
-
 def _graph_summary(
     left_token_dir: Path, right_token_dir: Path
 ) -> dict[str, Any] | None:
@@ -334,10 +315,7 @@ def _graph_summary(
     right_graph = right_token_dir / "graph.npz"
     if not left_graph.exists() or not right_graph.exists():
         return None
-    return compare_step_pair(
-        cast("StepData", _load_graph_step(left_graph)),
-        cast("StepData", _load_graph_step(right_graph)),
-    )
+    return compare_compact_paths(left_graph, right_graph)
 
 
 def compare_token_stability(
