@@ -122,13 +122,22 @@ sbatch slurm/exact_trace_bench/download_transcoders.granite.sbatch
 The `.env` file should contain `HF_TOKEN=...` if gated Hugging Face access is
 needed. The job loads it without printing secrets.
 
-Model weights for `google/gemma-3-1b-it` are normally pulled by the first
-model-loading SLURM job into `HF_HOME`. To pre-seed from OSC instead, copy the
-old Hugging Face cache into:
+Model weights are populated by the dedicated model/transcoder prefetch SLURM
+job before a scientific run. To pre-seed from OSC instead, copy the old
+Hugging Face cache into:
 
 ```text
 /scratch/general/vast/$USER/nlp_research_project/huggingface
 ```
+
+Scientific Granite jobs use that directory authoritatively for `HF_HOME`,
+`HF_HUB_CACHE`, and `TRANSFORMERS_CACHE`, and default both Hugging Face and
+Transformers to offline mode. This prevents an inherited login-shell cache or
+missing gated-repository credential from changing a run. Set the single
+supported path override `EXACT_TRACE_HF_CACHE_ROOT` to an absolute shared-cache
+path when needed. Standard prefetch jobs explicitly enable online access; do
+not enable it for tracing jobs. Preheated wrappers resolve each selected model
+ID from the offline cache before reading the large preheat set.
 
 ## Likely Local-Only Artifacts To Copy From OSC
 

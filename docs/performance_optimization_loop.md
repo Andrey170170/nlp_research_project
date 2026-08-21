@@ -1,6 +1,6 @@
 # Exact-trace performance optimization loop
 
-Status: isolated engineering workflow  
+Status: isolated engineering workflow
 Branch: `perf/exact-trace-loop`
 
 This loop measures candidate runtime changes without disturbing governor
@@ -36,6 +36,77 @@ The active successor campaign is
 the fixed suites below as short-prefix regression aliases and adds the planned
 manifest-driven prefix/prompt/model scaling workflow.
 
+## Execution routing (v2.0)
+
+Long-prefix scaling is now a submit-and-inspect loop rather than an
+interactive-H200 development loop:
+
+- develop, inspect artifacts, prepare immutable snapshots, and run focused CPU
+  tests from the separate CPU compute-node workbench;
+- submit long-prompt, high-host-memory, complete-pair, and promotion-evidence
+  traces through the existing project-owned per-trace Slurm launch path with a
+  workload-sized RAM request;
+- use an interactive GPU allocation only for short, guarded checks such as
+  model/provider loading, candidate activation, admission, and immediate crash
+  localization; and
+- never convert an interactive smoke into timing, fidelity, or promotion
+  evidence. After the check passes, submit the corresponding immutable job.
+
+Do not wrap project launchers or `sbatch` with the `chpc` interactive helper,
+and do not create a nested allocation from an existing compute-node workbench.
+GPU checks still follow the repository workspace policy: use an immutable
+snapshot, or explicitly record the exceptional live-workspace rationale and
+freeze both runtime checkouts until the check terminates.
+
+## Current LS4 admitted envelope (2026-08-07)
+
+The frozen Gemma 3 4B PLT 512-token development workload is now demonstrated
+on the ordinary per-trace route with one full H200, 32 CPUs, a 400 GiB host
+request, and a deterministic 49-file / 178.11 GiB preheat. The accepted
+`cuda_windowed` candidate completed in 168.067 seconds versus 346.773 seconds
+for the retained `cpu_exact` control and produced a `strict_exact` compact
+graph. It resolved to the requested mode with no fallback or copy failure.
+
+This establishes a safe operational allocation, not the minimum allocation.
+Peak CUDA reservation was 63.08 GiB on a 139.80 GiB H200, so device capacity is
+comfortable. Host totals are not directly comparable because the control
+cgroup owned about 191.5 GiB of shared file cache while the later candidate
+cgroup owned only about 13.1 GiB. Candidate anonymous memory reached 21.13 GiB.
+Keep 400 GiB for the next formal 4B long-prefix gate until a controlled cache-
+ownership measurement supports downsizing. Do not use the candidate's roughly
+34.37 GiB MaxRSS as a RAM-sizing estimate.
+
+For active optimization, the old 200 GiB fitted stop is not an execution safety
+contract. Use Slurm allocation limits plus the now-landed typed `off`,
+`measure_only`, or `enforce` runtime policy. Mechanism-isolation jobs use the
+landed `preferred | required` contract, which rejects admission mismatch and
+fails on late copy/append demotion or fallback reads. The canonical launch
+record, requested-to-effective deltas, allocation, runtime samples, counters,
+and terminal disposition are durable artifacts.
+
+The frozen 4B/1,024 development probe passed launch/preheat/Phase 0 but filled
+one H200 to 142,553/143,771 MiB and failed in Phase 1 before
+required-`cuda_windowed` resolution. This is now an architecture gate, not a
+request to tune one workload until it passes. Preserve the primary exception,
+then investigate a reusable single-forward, chunked multi-VJP Phase 1 that
+avoids identical-prompt activation duplication across NNsight lanes. A smaller
+global session capacity is a valid diagnostic/safety fallback, but because it
+also bounds later Phase-3/4 physical batches it does not by itself close this
+rung. Classify the general mechanism at 4B/1,024 before changing model scale or
+running the frozen 828/512 holdout.
+
+Then transfer to 12B in order at canonical short, 256, 512, and 1,024-token
+rungs. Every rung begins with a probe no longer than one hour, and no full run
+is admitted above a two-hour operational ceiling. Classify exactness,
+required-mode resolution, resources, and performance before advancing. Stop
+and optimize the first failing rung rather than widening its time request or
+skipping ahead. The cancelled zero-runtime 12B/1,024 job `1740811` and its
+eight-hour bundle remain superseded provenance, not scaling evidence.
+
+The single registry for non-immediate, conditional, deferred, and rejected work
+is `docs/exact_trace_optimization_registry.md`. Add new review or test findings
+there before deciding whether to promote them into the active plan.
+
 ## Suites
 
 | Suite | Provider | Fixtures | Intended use |
@@ -54,11 +125,12 @@ List the fixed cases without loading a model:
 uv run exact-trace-perf list
 ```
 
-## Running inside an H200 job
+## Quick checks inside an H200 job
 
 The command is intentionally allocation-local: it does not submit or wrap a
 Slurm job. Start or enter a Granite H200 allocation using the normal project
-workflow, then run:
+workflow, then run it only for a bounded check that fits the interactive
+resource envelope:
 
 ```bash
 uv run exact-trace-perf run clt-smoke

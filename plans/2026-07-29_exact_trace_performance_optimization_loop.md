@@ -1,8 +1,10 @@
 # Exact-trace performance optimization loop: short-prefix promotion and scaling
 
-Status: in progress; SP0-SP5 and LS0-LS3 complete; LS3 retained the windowed
-CUDA finalist as a selectable close-or-better 1B mode but rejected broad exact
-auto-promotion; LS4 4B transfer is next
+Status: active optimization follow-on; SP0-SP5 and LS0-LS3 are complete; LS4
+closed through the frozen 4B/1,024 development point and 828/512 holdout; LS5
+completed the 12B ladder through a cross-node-repeat-qualified 1,024-token
+selected circuit. The qualified library point is handed to CIE while evidence
+hardening and further 12B optimization continue independently.
 
 Date: 2026-07-29
 
@@ -27,6 +29,8 @@ Starting results: `reports/2026-07-27_large_model_optimization_results.md`
 
 Workflow reference: `docs/performance_optimization_loop.md`
 
+Idea/code-quality registry: `docs/exact_trace_optimization_registry.md`
+
 This plan has two ordered campaigns:
 
 1. finish, prove, and package the short-prefix work, including the current
@@ -44,7 +48,7 @@ The stage prefixes are descriptive:
 | Prefix | Meaning | Current state |
 |---|---|---|
 | `SP` | canonical short-prefix completion and promotion evidence | SP0-SP5 complete; exact candidates admitted, selection deferred |
-| `LS` | prefix-length, prompt, and model-size scaling | LS0-LS3 complete; LS4 next |
+| `LS` | prefix-length, prompt, and model-size scaling | LS0-LS3 complete; LS4 closed through 4B/1,024 plus holdout; LS5 repeat-qualified the frozen 12B/1,024 selected circuit |
 
 Within each campaign the number is execution order, not a governor phase or
 calibration wave.
@@ -301,6 +305,22 @@ Before launch, record:
 A live-workspace launch is an explicit exception only. It must record the
 reason and both dirty states, and neither runtime checkout may be edited until
 the job terminates. Live runs do not become formal promotion evidence.
+
+### 4.6 Scaling failures are architecture evidence
+
+Every longer-prefix, larger-model, and harder-prompt rung is a deliberate
+stress test of the implementation. A failure is not merely a launch obstacle:
+it identifies the next missing general mechanism. Do not close a rung by
+introducing a prompt/model/length-specific cap, accepting an avoidable fallback,
+or widening the resource/walltime request until the point happens to pass.
+
+Small batches, reduced session capacities, extra resources, and diagnostic
+stops remain valid for localization and safe fallback. They count as a fix only
+when they are part of a capability/shape-based runtime mechanism with explicit
+semantic-versus-physical identity, general selection/admission behavior, and
+evidence at the stress point that exposed the limitation. Stop the scaling
+ladder until that mechanism is implemented and classified; do not skip the
+failed rung.
 
 ## 5. Campaign SP — finish and promote the short-prefix work
 
@@ -859,6 +879,8 @@ Admission prerequisites:
 - SP5 exact 12B short-prefix finalist;
 - LS2 exact 1B length result;
 - LS4 exact 4B transfer;
+- canonical selected-config, required-mode, resource-policy, and execution-
+  resolution controls with focused propagation and failure tests;
 - projected row-store, HBM, host, and walltime fit;
 - immutable dual-repo snapshot; and
 - successful abbreviated 12B probe.
@@ -875,6 +897,87 @@ Use two repeats for any 12B result proposed as a stable performance claim.
 **Gate LS5:** exact completed 12B artifacts for admitted workloads, explicit
 probe/refusal records elsewhere, and a measured rather than extrapolated
 large-model scaling boundary.
+
+#### Ordered 4B-to-12B feasibility and scoped freeze gate
+
+The 4B finalist is now `strict_exact` through the 512-token development rung.
+The next length rung is therefore 4B/1,024, not a direct jump to 12B/1,024.
+Obtaining a reusable 12B/1,024 point remains the eventual operational goal, but
+it does not override the prefix/model scaling ladder or justify long queue and
+runtime requests that hide an impractical configuration.
+
+First land and test the config-selection and resource-control slice:
+
+1. one canonical selected-config/launch record consumed by local and Slurm
+   rendering;
+2. runtime-level `preferred | required` mechanism selection that rejects
+   `auto + required` and fails at admission mismatch, copy/append failure, or
+   fallback use;
+3. separate planning envelope, actual scheduler request, and runtime
+   `off | measure_only | enforce` policy; and
+4. machine-readable requested-to-effective field deltas with resolution stage,
+   reason, and semantic/fidelity/physical classification.
+
+Use the controls first at the frozen 4B/1,024 workload. Run a deterministic,
+preheated, required-`cuda_windowed`, `measure_only` transition probe in a
+one-hour full-H200/400-GiB job. Probe enough physical batches to observe more
+than initial admission and one refresh cycle. Audit mechanism resolution,
+fallback/copy counters, active rows, HBM, anonymous/file host charge, and a
+conservative projection. Admit the full candidate and matched `cpu_exact`
+control only when each is projected to finish within a two-hour job. Classify
+the pair before advancing the model-size axis. Run the frozen 828/512 holdout
+before claiming broad LS4 transfer; it may overlap preparation of the first
+12B rung but cannot be omitted from LS4 closure.
+
+Job `1741690` completed that launch attempt far enough to expose the next
+architectural boundary. Prepared-bundle validation, full-H200 admission,
+preheat, model load, and Phase 0 succeeded, then Phase 1 filled one H200 to
+142,553 of 143,771 MiB before failing. The current NNsight runtime constructs
+the forward graph by expanding the identical prefix across the full session
+lane capacity; later Phase-3/4 physical batches may be smaller than that
+capacity but cannot grow beyond it. Reducing the shared session capacity is
+therefore a useful survival probe and fallback, not the general closure for
+this rung. The primary exception was additionally masked by unsafe NNsight
+exception formatting and must be preserved correctly before the next GPU test.
+
+The single-forward multi-VJP Phase-1 mechanism is now implemented as the opt-in
+`single_forward_batched_vjp` engine. It retains one physical forward lane,
+groups logical cotangents by source layer, uses batched autograd VJPs, restores
+canonical row/tape order, and leaves `duplicated_lanes` as the unchanged
+default. Login-safe tensor parity, realized-NNSight lifecycle compatibility,
+selection propagation, failure cleanup, and architecture guards pass. This is
+not yet model/GPU acceptance. Qualify it through the frozen 4B/256 then 4B/512
+candidate-probe and matched-pair ladder, requiring strict semantic/graph parity
+plus measured Phase-1 HBM reduction, before a 4B/1,024 rerun. A saved-tensor
+CPU-offload prototype remains secondary only if the batched engine leaves a
+measured residual activation wall and demonstrates bounded transfer traffic.
+
+After 4B/1,024 is classified, transfer the unchanged mechanism through ordered
+12B development rungs: canonical short, 256, 512, then 1,024 tokens. Existing
+12B short-prefix measurements may inform projections but do not admit the
+current required-`cuda_windowed` configuration. For every new 12B rung:
+
+1. freeze the deterministic prefix and target plus one immutable dual-repo
+   workspace;
+2. begin with a preheated required-mode transition probe in a job no longer
+   than one hour;
+3. compare a conservative full-run projection against a two-hour operational
+   ceiling;
+4. run and classify the candidate and matched control before admitting the next
+   length; and
+5. stop at the first unsafe, fallback, or over-two-hour point and optimize only
+   its measured binding component before resuming the ladder.
+
+The cancelled 12B/1,024 32-batch `600G/8h` job `1740811` consumed no runtime.
+Keep its immutable bundle as superseded preparation evidence; it is not an
+admitted ladder result and must not be relaunched unchanged.
+
+The downstream freeze card must include immutable two-repo provenance,
+workload hashes, canonical fidelity, requested/resolved mode, fallback/copy
+counters, allocation and measured resources, cache protocol, and exact scope.
+Passing the ordered gate may freeze a narrow 12B development point for reuse by
+the Llama 8B top-k transcoder tracing project. It does not establish arbitrary
+prompts, complete LS5, or mutate defaults.
 
 ### LS6 — Publish the performance envelope
 
@@ -1036,13 +1139,61 @@ Start here:
 12. [x] Extend the harness with the LS0 campaign manifest and dry-run listing.
 13. [x] Prepare deterministic 256/512/1,024-token trajectories in SLURM.
 14. [x] Run the LS1 1B reference/probe ladder.
-15. [ ] Optimize only the measured 1B scaling bottleneck, then freeze it.
-16. [ ] Validate held-out prompts before 4B/12B transfer.
+15. [x] Optimize only the measured 1B scaling bottleneck, then freeze it.
+16. [x] Validate held-out prompts before 4B/12B transfer and record the
+        narrower arbitrary-prompt applicability boundary.
 17. [x] Publish the short-prefix report; scaling report remains an LS deliverable.
+18. [x] Transfer the frozen finalist through the admitted 4B/129, 256, and 512
+        development rungs with canonical comparisons.
+19. [x] Land one canonical selected-config/launch record and its provenance.
+20. [x] Land first-class `preferred | required` mechanism selection with
+        fail-closed admission, append/copy, and fallback behavior.
+21. [x] Separate planning envelope, scheduler allocation, and runtime
+        `off | measure_only | enforce` resource policy with durable telemetry.
+22. [x] Persist machine-readable requested-to-effective resolution deltas and
+        complete focused propagation and failure-injection tests for items
+        19-21.
+23. [x] Prepare and run the preheated, required-mode 4B/1,024 candidate
+        transition probe in a one-hour full-H200/400-GiB job; retain its Phase-1
+        capacity refusal as diagnostic evidence, not a completed rung.
+24. [x] Qualify the implemented opt-in single-forward batched-VJP engine at
+        frozen 4B/256, then 4B/512, with preheated required-mode probes, matched
+        pairs, strict graph comparison, Phase-1 HBM, runtime, group/autograd
+        telemetry, and failure-stage review. The login-safe implementation and
+        architecture portion is complete; this item closes only on GPU evidence.
+25. [x] Rerun and classify frozen 4B/1,024 with the qualified mechanism. Do not
+        close this item with only a workload-specific legacy session cap.
+26. [x] Validate the frozen 828/512 holdout before broad LS4 closure.
+27. [x] Freeze the 12B short, 256, 512, and 1,024 development ladder with no
+        per-job operational ceiling above two hours.
+28. [x] Probe, complete, and classify 12B short before admitting 256.
+29. [x] Probe, complete, and classify 12B/256 before admitting 512.
+30. [x] Probe, complete, and classify 12B/512 before admitting 1,024.
+31. [x] Probe, complete, and classify 12B/1,024; repeat and freeze it only when
+        exact, mechanism-correct, resource-safe, and practical below two hours.
 
-The immediate scaling task is item 15. The first LS2 mechanism is an exact
-Phase-1 physical fix for the 1024-token LM-head allocation localized by LS1;
-holdouts and larger-model transfer remain behind the LS2 gate.
+Items 24-31 are complete. Jobs `1832086` and `1834396` repeat-qualified the
+selected 12B/1,024 compact circuit and resource envelope in the frozen dynamic-
+row, single-forward batched-VJP regime; auxiliary typed error buckets remain
+bounded rather than exact. The immediate work now runs in parallel: CIE validates
+the tagged library point directly against original upstream on Llama 8B through
+prefix 500, while this worktree hardens graph/timing/device evidence and tests
+`cuda_full`, normalization, and one measured feature-dataflow seam in separate
+arms. Gemma 27B remains an exploratory ladder only after the next stable 12B
+optimization point.
+
+Items 19-22 landed on 2026-08-07 across the project harness and sibling
+runtime. The focused gates cover launch/config fingerprints, per-trace config
+selection, scheduler request versus allocation, measure-only behavior,
+required-mode propagation, admission/allocation/copy/fallback failures, and
+post-admission/post-Phase-4 effective identity. Project tests passed 94 focused
+cases and the full suite passed after relocating the preheat helpers into the
+Slurm subsystem; sibling focused tests passed 20 with seven CUDA-only skips.
+The direct 12B/1,024 job `1740811` was cancelled pending with zero runtime after
+review showed that it bypassed the scaling ladder and encoded an undesirable
+eight-hour operational ceiling. Preserve its immutable bundle as superseded
+preparation evidence. Versioned remaining-gate manifests now own the corrected
+one-hour-probe/two-hour-full-run policy.
 
 ### 2026-07-29 execution update
 
@@ -1523,3 +1674,78 @@ the 250 GiB short QOS was refused before submission; switching to the normal
 QOS was the intended high-memory route. Slurm did not honor the environment-form
 test-only flag on the accepted request and created `1703320`; treat it as the
 single real probe and do not submit a duplicate.
+
+The first submitted 4B/512 pair (`1712546_0`, `1712550_0`) is diagnostic only:
+both jobs received a 70 GiB H200 slice, and the candidate resolved to
+`cpu_exact`. Full-H200 job `1714134` then preheated the complete 49-file,
+178.11 GiB asset set and produced the valid `cpu_exact` control before a
+post-trace wrapper validator rejected the native mode. Candidate-only job
+`1721614` reused the frozen workload and runtime revisions, repeated the
+preheat, required `cuda_windowed`, and completed successfully on a full H200.
+
+The accepted 4B/512 comparison is `strict_exact`. Candidate trace wall is
+168.067 seconds versus 346.773 seconds for the control (51.5% reduction,
+2.06x); Phase 4 is 121.596 versus 276.521 seconds; and refresh is 53.521 versus
+201.158 seconds. All 8,192 features, all 20,000 edges and weights, signs,
+target token, and Top-64 through Top-1,024 views match. The candidate resolved
+to `cuda_windowed`, issued no fallback reads or copy failures, and recorded no
+telemetry drops or sink errors. Retain it as a non-dominated selectable 4B
+development profile; do not promote it to an arbitrary-prompt or global
+default.
+
+The full H200 and 400 GiB allocation is a demonstrated safe execution contract
+for this frozen 4B/512 workload. Peak CUDA reservation was 63.08 GiB on a
+139.80 GiB device, leaving substantial HBM headroom. The 400 GiB request was
+also operationally ample, but it is not a measured minimum: the control cgroup
+owned about 191.5 GiB of shared file cache, while the later candidate cgroup
+owned only about 13.1 GiB of those pages. Candidate anonymous memory reached
+21.13 GiB, consistent with its 11.92 GiB host mirror. Do not infer a total host-
+memory reduction or downsize the formal 400 GiB request from the candidate's
+34.37 GiB MaxRSS. Keep the stale 200 GiB estimate stop disabled for this active
+optimization family while retaining Slurm limits and measure-only telemetry.
+
+### 2026-08-07 LS4 result and next-work gate
+
+The completed review is
+`reports/2026-08-04_exact_trace_performance_review_provisional.md`; the filename
+is retained for provenance, but its status and content are final. The ranked
+next work is:
+
+1. define one canonical selected-config/launch record, including the workload,
+   mode requirement, preheat, resource policy, scheduler request, snapshot, and
+   monitoring selection;
+2. separate planning envelope, Slurm allocation, and runtime policy with typed
+   `off | measure_only | enforce` behavior;
+3. implement first-class `preferred | required` mechanism selection, rejecting
+   `auto + required` and failing at admission, append/copy failure, and fallback
+   use sites rather than only after the trace;
+4. persist a machine-readable requested-to-effective execution delta with
+   resolution stage and reason, then exercise the controls with focused
+   propagation and failure-injection tests;
+5. use those controls for the unchanged `ls4-4b-361-dev-1024` transition probe:
+   preheated, required `cuda_windowed`, `measure_only`, full H200, 400 GiB,
+   and a one-hour job;
+6. admit and classify the full 4B/1,024 candidate/control pair only when each is
+   projected to complete within two hours;
+7. run the frozen 828/512 holdout before broad LS4 closure;
+8. transfer to 12B in order at short, 256, 512, and 1,024 tokens, beginning each
+   rung with a one-hour probe and admitting only full runs projected below two
+   hours;
+9. stop at the first unsafe or over-ceiling rung, profile that exact point, and
+   promote only its binding optimization before resuming the ladder;
+10. retain cancelled zero-runtime job `1740811` and its immutable 12B/1,024
+    bundle as superseded preparation evidence, not a ladder result;
+11. before changing normalization, replace wall-only CUDA timing with event-
+   aware attribution; if normalization remains material, test one exact batched
+   or fused denominator application without changing reduction order;
+12. prove any normalization candidate first against an existing smaller frozen
+   artifact, then at 4B/512, before mixing it into the 1,024-token evidence; and
+13. do not request jobs longer than two hours for this ladder; an over-ceiling
+    projection is an optimization or checkpointing gate, not a reason to widen
+    the request.
+
+The single-owner canonical host-row design remains conditional. Unequal page-
+cache ownership prevents a reliable duplicate-store charge measurement, so do
+not open that refactor until job-private ownership or explicit file-residency
+telemetry demonstrates that duplication is actually binding. The rejected
+file-only window family remains closed.

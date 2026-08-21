@@ -1,7 +1,7 @@
 # Current Project Roadmap
 
 Status: Current scratch roadmap
-Last updated: 2026-07-29
+Last updated: 2026-08-21
 
 ## Active Priority
 
@@ -16,13 +16,168 @@ plan in
 completed July 27 4B/12B engineering plan and has two ordered campaigns:
 formally finish and package the current short-prefix mechanisms, then measure
 and improve prefix/prompt/model scaling with 1B as the fast development case
-before 4B/12B transfer. SP0 now freezes the claim ledger, SP2/SP3 have closed,
-and the immediate order is SP4 formal telemetry/lifecycle evidence, then the
-SP1 active-CPU exactness ladder and SP5 composition. The login-safe LS0
-campaign scaffold is implemented; deterministic trajectory generation remains.
-Governor calibration, response
-models, fidelity authorization, baseline-registry changes, and launch-default
-promotion remain outside that performance plan.
+before 4B/12B transfer. SP0-SP5 and LS0-LS3 are complete. LS4 closed through
+the frozen 4B/1,024 development rung and 828/512 holdout under the
+single-forward batched-VJP regime. LS5 closed through cross-node repeat
+qualification of the frozen 12B/1,024 selected circuit and resource envelope.
+Governor
+calibration, response models, fidelity authorization, baseline-registry
+changes, and launch-default promotion remain outside that performance plan.
+
+**Isolated performance-worktree status (2026-08-18):** LS2 and LS3 are closed.
+LS4 has admitted the frozen one-lane batched-VJP 4B development curve through
+1,024 tokens as one-run feasibility, after independent repeat qualification
+through 512. The earlier fail-closed full-H200 `cuda_windowed` candidate was
+`strict_exact` at 4B/512 and reduced
+trace wall from 346.773 to 168.067 seconds; retain it as a selectable measured
+4B mode, not an arbitrary-prompt or global default. One H200 plus 400 GiB is a
+demonstrated safe allocation for this workload, but not a measured minimum
+because control and candidate cgroups owned different amounts of shared page
+cache. Keep the formal 400 GiB request until controlled ownership evidence
+supports downsizing.
+
+The selection and resource-control prerequisite is now implemented: one
+fingerprinted selected-config/launch record, runtime-level
+`preferred | required` mechanism enforcement, typed
+`off | measure_only | enforce` resource policy, and machine-readable
+requested-to-effective resolution deltas. Admission, allocation, late
+copy/append, fallback, propagation, and artifact behavior have focused tests.
+
+The legacy duplicated-lane 4B/1,024 development probe passed wrapper
+validation, preheat, model load, and Phase 0, then filled one H200 to
+142,553/143,771 MiB and failed in Phase 1 before `cuda_windowed` could resolve.
+The first general opt-in response, `single_forward_batched_vjp`, retains one
+physical forward lane, groups
+cotangents by source layer, uses batched autograd VJPs, restores canonical
+row/tape order, and preserves the legacy default behind a typed engine boundary.
+Primary-error formatting, partial cleanup, topology identity, and fail-closed
+mode/capacity/lane checks are hardened.
+
+The original wide-versus-narrow 4B/256 full pair proved the memory mechanism
+(37,003 to 14,597 MiB sampled HBM) but showed that the two execution regimes
+are not numerically interchangeable (feature Jaccard 0.97827, edge Jaccard
+0.95417, normalized L1 0.04683). The corrected four-arm Phase-3 diagnostic
+(`1791882`--`1791885`) completed with required `cuda_windowed`, exact prepared
+mechanisms, all requested captures valid, and no Phase 4. Moving injected
+execution from 128 lanes to one preserved Phase-0 and Phase-1 target state but
+first diverged in every captured Phase-3 layer gradient: gradient symmetric L1
+was 2.63 percent, feature-row L1 2.43 percent, and pre-locality Top-1,024
+overlap was 1,013/1,024. The one-lane arms used 14,597--14,661 MiB versus
+34,443 MiB wide, confirming a 57.4--57.6 percent HBM reduction at this boundary.
+
+At singleton width, injected versus serial and serial versus batched produced
+bit-exact gradients and active-feature rows. Their first persisted difference
+is the nonfeature error-column L1 contribution; row-denominator and seed drift
+is only 40--54 ppm and both frontier arrays remain exactly ordered. Therefore
+batched autograd is not the source of the earlier large bounded failure at one
+lane, but this does not validate multi-vector batched VJP. The wide/narrow
+contrast remains composite across graph/session/Phase-1 width and must not be
+attributed to one kernel without further evidence. The comparator checkpoint
+order has been corrected to test error-column and row-denominator arrays before
+seed influence; focused validation passes, with integrated campaign validation
+required before the next launch. See the
+[factorial result](../reports/2026-08-12_vjp_early_localization_results.md).
+
+The separate frozen one-lane batched-VJP regime is now qualified through
+4B/512. Independent full jobs `1807387` and `1807388` on `grn027` and `grn031`
+held the single-lane, batched-autograd, logical-capacity-128 identity fixed.
+The canonical selected feature circuit and all four non-error typed buckets
+were `strict_exact` across nodes. Auxiliary feature-from-error edges remained
+bounded at 0.9946394 support Jaccard, 0.9942986 weighted Jaccard, and 0.0057175
+signed L1; logit-from-error edges were bounded at 1.0, 0.9958178, and 0.0041973
+respectively. Sampled peaks were 17,177/17,175 MiB HBM and process RSS was
+34.86/34.69 GiB. The 168.44/200.44-second traces are descriptive because the
+independent nodes had 27/266-second preheats and different cache states.
+
+Job `1818091` completed the full 4B/1,024 development point with that frozen
+regime unchanged. Trace time was 288.93 seconds, sampled peak HBM was 25,693
+MiB, and process peak RSS was 60.89 GiB. Strict artifact reopen validated the
+complete 8,192-feature/20,000-edge graph, while required `cuda_windowed`, the
+single forward lane, batched-autograd VJP, and all capacity pins resolved
+exactly. This closes one-run resource and artifact feasibility only; it does not
+establish 1,024-token repeatability, arbitrary-prompt validity, or cross-regime
+equivalence. Backward selection remains decomposed into forward-graph and
+VJP-kernel axes, with named presets and the legacy default intact.
+
+The frozen 4B 828/512 holdout completed in job `1818336`. The dependent 12B
+ladder job `1818349` then completed the ordered 129-to-256-to-512 sequence in
+one allocation and one preheat. Every rung preserved required `cuda_windowed`,
+single-forward batched VJP, shared checkpoint scope, and the native 12B
+session/backward/Phase-1/Phase-3/Phase-4 capacities of 64. Strict reopen and
+telemetry gates passed. Sampled HBM was 32,227/32,457/33,079 MiB and process RSS
+was 29.59/38.28/56.07 GiB. This establishes single-run feasibility and valid
+compact artifacts only, not repeatability, cross-regime equivalence, or native
+12B continuation behavior.
+
+Job `1819287` attempted the full 12B/1,024 endpoint and timed out after two
+hours with Phase 4 at 702/8,192 rows and no graph. The reusable live-HBM repair
+then passed in job `1832086`: exact 8,691,901,440-byte active-row demand was
+admitted after a 16 GiB safety margin, Phase 4 performed zero decoder-page
+loads, and the full trace completed in 517.46s. Peak HBM was 48,861 MiB and
+process RSS 93.41 GiB. Strict independent audit reopened the 8,192-feature,
+20,000-edge typed graph and found no future-position violations. This closes
+single-run feasibility and artifact qualification in the frozen v2 regime.
+The cancelled eight-hour job `1740811` remains superseded preparation evidence.
+
+Cross-node repeat job `1834396` completed on `grn028` from the same read-only
+snapshot with a byte-identical trace spec. The selected 8,192-feature,
+20,000-edge compact circuit was exact across jobs `1832086` and `1834396`, as
+were all non-error typed buckets apart from one equal-weight cutoff tie in the
+million-edge feature-to-feature bucket. Required dynamic residency admitted the
+same 8,691,901,440-byte row set, peak HBM repeated at 48,861 MiB, and process
+RSS repeated at about 93.4 GiB. Error buckets remain bounded rather than exact:
+feature-from-error weighted Jaccard was 0.97398 with signed L1 0.02614, while
+logit-from-error weighted Jaccard was 0.99418 with signed L1 0.00585. This
+qualifies repeatability of the selected compact circuit and resource envelope
+inside the frozen v2 regime; it does not make the whole typed NPZ exact, prove
+cross-regime equivalence, change defaults, or establish native-12B continuation
+behavior.
+
+Bounded parallel preheat is now implemented behind a reusable module and all
+three preheated wrappers. Deterministic file discovery and inode deduplication
+are preserved; a bounded file-level worker pool uses positional reads, exact
+byte accounting, and fail-closed short-read/error handling. The allocation-
+derived default is `min(8, max(1, CPUs / 4))`, so current 32-CPU jobs use eight
+readers, while `PREHEAT_WORKERS=1..8` remains an explicit override and the
+manifest records requested/admitted/effective concurrency. Unit, wrapper,
+lint, typing, and shell-syntax gates pass. Job `1832086` read the exact 411 GB
+set in 14.09s with 7.57x summed-file-time overlap, proving the eight-worker
+implementation and cache-hot path. It does not establish cold-storage
+throughput or shared-filesystem safety; retain the single-worker fallback and
+run controlled warm 1-vs-8 plus cold-client qualification before treating the
+27.8 GiB/s observation as general.
+
+The immediate post-repeat work splits into two parallel lanes:
+
+1. **CIE handoff and Llama 8B verification.** The qualified sibling library is
+   merged into local `main` at `0a5a384`; the clean integration point is
+   `ca92ea1`, tagged `cie-scorer-baseline-2026-08-21`. Let CIE create and compile its own worktree
+   from that ref. This is a library/CIE integration point, not a claim that the
+   older project `main` is compatible with the removed legacy library entry
+   points. Validate directly against the
+   original upstream library on Llama 8B at frozen prefixes through 500 tokens
+   (start with 64/128/256/500). Hold model revision, token IDs, target, provider,
+   hooks, thresholds, and graph budgets fixed. Compare the selected circuit,
+   typed buckets, and the CIE-consumed score/output; add an intermediate
+   unoptimized-fork arm only if upstream versus current diverges materially.
+2. **Further 12B optimization.** First harden schema-owned typed-graph
+   validation, per-device GPU sampling, CUDA-event-aware timing, and structured
+   batched-VJP fallback evidence. Then test `cuda_full` independently at frozen
+   4B/512 before 12B/1,024; if admitted and scientifically acceptable, evaluate
+   exact ordered normalization. Use event-aware profiling to choose one concrete
+   feature-kernel, encoder-materialization, CPU-staging, or row-store-write seam.
+   Do not combine numerical mechanisms in one arm.
+3. **27B curiosity lane.** Start only after the next 12B optimization point is
+   stable. First verify that the exact model/transcoder assets and layer shapes
+   exist, then use a 129-to-256-to-512 ladder before a separate 1,024 run. Keep
+   it exploratory and do not let it interrupt the CIE handoff or 12B work.
+
+The measured Phase-4 targets behind lane 2 are refresh normalization (81.48s),
+row-store reads (45.76s), feature compute (119.26s), encoder materialization
+(52.22s), CPU staging (38.77s), and row-store writes (31.62s). The ranked
+execution order and code-quality backlog are maintained in
+`docs/exact_trace_optimization_registry.md`; incremental refresh remains a
+research direction until simpler physical mechanisms are exhausted.
 
 Phase A is closed for implementation purposes:
 

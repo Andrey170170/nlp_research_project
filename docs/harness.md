@@ -1,7 +1,7 @@
 # Current exact-bench harness
 
 Status: Current harness overview
-Last updated: 2026-07-10
+Last updated: 2026-08-08
 
 The current exact-trace benchmark harness is centered on the package-style module:
 
@@ -139,6 +139,28 @@ Advanced public/research-tuning knobs remain intentionally available for sweeps,
 including Phase-1 trace-batch sizing, Phase-4 scheduler/refresh/ranker/executor
 controls, row-store/cache/residency controls, and feature-batch planner controls.
 They should be treated as explicit sweep dimensions, not hidden defaults.
+
+Backward execution has one canonical resolver. `backward_engine_mode` retains
+the named presets `duplicated_lanes`, `single_forward_serial_vjp`, and
+`single_forward_batched_vjp`; its absent/default behavior remains
+`duplicated_lanes`. Diagnostic callers may instead provide both
+`forward_graph_mode` (`logical_capacity | single_lane`) and `vjp_kernel_mode`
+(`nnsight_injected | autograd_serial | autograd_batched`). A preset and explicit
+pair are mutually exclusive, partial pairs and unsupported combinations fail
+closed, and inherited defaults are removed before an explicit pair is frozen.
+
+Launch and result artifacts record the canonical preset, forward-graph mode,
+VJP kernel, and physical forward-lane count. Post-run validation checks all four
+against the effective execution descriptor, in addition to the required
+feature-row mechanism. Source-layer grouping, autograd calls/timing, cotangent
+peak bytes, and failure stage remain engine telemetry. Do not infer selection
+from the requested scenario alone, and do not combine either autograd VJP mode
+with Phase-3 gradient-donor replay.
+
+Phase-3 localization flags are available directly from the full-answer spec
+CLI: `--capture-phase3-gradient-bundle`, `--capture-phase3-row-bundle`, and
+`--capture-phase3-seed-bundle`. The frozen three-arm 4B/256 campaign is
+[`ls4_4b_vjp_decomposition_diagnostic_v1.json`](../experiments/performance_campaigns/ls4_4b_vjp_decomposition_diagnostic_v1.json).
 
 Track-A replay/debug controls are also public for validation work, but they must
 stay opt-in and provenance-heavy: donor paths, capture flags, semantic descriptor

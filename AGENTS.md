@@ -44,6 +44,16 @@ preserving hard user pins and already-frozen state. Its fidelity policies are
 fidelity-scope authorization, and launch-default changes are separate reviewed
 actions; do not treat a fitted or selected plan as a default promotion.
 
+Scaling workloads are architecture diagnostics, not hurdles to clear with
+workload-specific exceptions. When a longer prefix, larger model, or harder
+prompt exposes a resource or runtime failure, stop the ladder and fix the
+general capability/shape-dependent mechanism that failed. A narrower batch,
+larger allocation, longer walltime, or one-off profile may be used to localize
+the boundary or remain as an explicit safety fallback, but it does not close the
+rung or authorize progression by itself. Promotion requires a reusable physical
+mechanism with unchanged semantic pins, explicit selection/provenance, and
+evidence on the stress point that exposed the limitation.
+
 Tracing cleanup phases must extract logging and telemetry mechanics into deep
 sibling modules. Tracing algorithms should emit typed domain events or
 lifecycle spans; schema construction, sequencing, resource sampling,
@@ -102,6 +112,9 @@ When in doubt, do not run it locally; prepare or inspect the SLURM command.
 - `CLAUDE.md` — pointer to `AGENTS.md`; do not duplicate policy there.
 - `docs/README.md` — documentation index.
 - `docs/harness.md` — current exact-bench harness overview.
+- `docs/exact_trace_optimization_registry.md` — single intake/triage ledger for
+  performance ideas, code-quality work, deferred experiments, and rejected
+  directions; the active plan still owns execution order.
 - `docs/current_project_roadmap.md` — current scratch roadmap for active work.
 - `docs/post_consolidation_cleanup_spec.md` — durable cleanup strategy.
 - `EXPERIMENTS.md` — compact current baseline, run-family meanings, and current

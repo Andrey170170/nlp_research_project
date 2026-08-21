@@ -1,7 +1,7 @@
 # Experiments inventory
 
 Status: Current compact index and interpretation summary
-Last updated: 2026-07-31
+Last updated: 2026-08-20
 
 This file is the readable front page for experiment provenance. It should stay
 small enough to edit by hand.
@@ -63,6 +63,93 @@ Baseline preservation notes:
   understood and repeated.
 
 ## Current interpretation
+
+LS4 now admits mirrored `cuda_windowed` through the frozen 4B/512 development
+point. Against the retained preheated `cpu_exact` control, the fail-closed
+candidate reduced trace wall from 346.773s to 168.067s (51.5%, 2.06x), Phase 4
+from 276.521s to 121.596s, and refresh from 201.158s to 53.521s. Its compact
+graph was `strict_exact`: all 8,192 features and 20,000 edges, weights, signs,
+target token, and Top-64 through Top-1,024 views matched. Retain
+`cuda_windowed` as a selectable non-dominated 4B development mode; do not make
+it an arbitrary-prompt or global default. The control and candidate cgroups
+owned different amounts of shared page cache, so their total MaxRSS/cgroup
+charges do not establish a mode-level host-memory reduction or a minimum RAM
+request. A full H200 plus 400 GiB is the demonstrated safe 4B/512 contract;
+retain that request for the next formal long-prefix gate despite the
+candidate's low charged MaxRSS. Canonical selected-config provenance,
+runtime-level required-mode enforcement, explicit resource policy, and
+requested-to-effective execution deltas are now implemented. The legacy
+duplicated-lane, fail-closed 4B/1,024 probe passed launch/preheat/Phase 0 but
+filled one H200 to
+142,553/143,771 MiB and failed in Phase 1 before `cuda_windowed` resolution;
+its primary exception was masked by NNsight formatting. Preserve that error
+correctly.
+
+The opt-in `single_forward_batched_vjp` engine is now qualified as a separate
+frozen numerical regime through 4B/512. The independent 256-token jobs
+`1796289`/`1796290` first established a `strict_exact` canonical selected
+feature circuit across nodes. The 512-token jobs `1807387`/`1807388` then
+repeated that result on `grn027` and `grn031`: all 8,192 selected features,
+20,000 selected edges, weights, signs, and Top-64 through Top-1,024 views were
+exact, as were all four non-error typed buckets. The auxiliary error buckets
+remained bounded rather than bit-exact. Feature-from-error support/weighted
+Jaccard were 0.9946394/0.9942986 with signed L1 0.0057175; logit-from-error
+support/weighted Jaccard were 1.0/0.9958178 with signed L1 0.0041973. Sampled
+peak HBM repeated at 17,177/17,175 MiB and process RSS at 34.86/34.69 GiB.
+Trace times were 168.44/200.44 seconds, but 27/266-second preheats and
+independent nodes make those timings descriptive rather than a benchmark.
+
+The unchanged frozen batched-VJP regime then completed the 4B/1,024
+development point in job `1818091`. The trace took 288.93 seconds, sampled peak
+HBM was 25,693 MiB, process peak RSS was 60.89 GiB, and strict artifact reopen
+validated the complete 8,192-feature/20,000-edge compact graph. Required
+`cuda_windowed`, single-lane forward execution, batched-autograd VJP, and all
+recorded capacity pins resolved exactly with no fallback. This is one-run
+resource and artifact feasibility only; it does not establish 1,024-token
+self-consistency, arbitrary-prompt validity, or cross-regime equivalence.
+
+This qualification does not make the narrow and duplicated-lane regimes
+interchangeable: the earlier cross-regime compact comparison remains bounded,
+and the width-localization evidence remains valid. It instead freezes execution
+width and the full mechanism identity alongside existing experiment identity
+bits such as decoder chunk size. The frozen 4B 828/512 holdout completed in job
+`1818336`, and the dependent ordered 12B sequence completed in job `1818349`.
+All 129-, 256-, and 512-token 12B rungs retained required `cuda_windowed`, the
+single-forward batched-VJP regime, native 12B capacities of 64, complete
+telemetry, and compact artifacts that passed strict reopen. Sampled HBM was
+32,227/32,457/33,079 MiB and process RSS was 29.59/38.28/56.07 GiB. These are
+single-run feasibility artifacts against the frozen 1B-generated trajectory,
+not repeatability or native-12B-generation evidence.
+
+The first full 12B/1,024 attempt, job `1819287`, exposed a discrete active-row
+admission cliff rather than an HBM-capacity failure and timed out without a
+graph. The repaired v2 job `1832086` then completed the same frozen endpoint in
+517.46s trace time and 11m34s allocation wall. Dynamic admission accepted the
+exact 8,691,901,440-byte decoder-row demand from 114,088,345,600 free HBM after
+a 16 GiB margin; Phase 4 performed zero decoder-page loads and finished in
+399.97s. Peak HBM was 48,861 MiB and process RSS 93.41 GiB. Independent strict
+audit reopened a finite typed graph with 8,192 features, 20,000 selected edges,
+all six expected typed buckets, and no future-position violations. Cross-node
+repeat job `1834396` then completed on `grn028` with the byte-identical trace
+spec. The selected compact circuit was exact, required dynamic residency
+admitted the identical 8,691,901,440-byte row set, peak HBM was exactly 48,861
+MiB in both runs, and process RSS stayed near 93.4 GiB. Non-error typed buckets
+were exact except one equal-weight cutoff tie in the million-edge
+feature-to-feature bucket. Error buckets remained bounded rather than exact:
+feature-from-error weighted Jaccard was 0.97398 with signed L1 0.02614, and
+logit-from-error was 0.99418 with signed L1 0.00585. This qualifies the selected
+circuit and resource envelope only inside the frozen v2 regime; it does not
+establish whole-NPZ exactness, cross-regime equivalence, a default, or
+native-12B continuation behavior.
+
+The bounded parallel preheater also completed its first real 411 GB execution:
+eight workers read 411,062,639,478 bytes in 14.09s with 7.57x summed-file-time
+overlap and exact accounting. This proves concurrency and a valid cache-hot
+path, not 27.8 GiB/s cold-storage throughput; controlled warm 1-vs-8 and
+cold-client qualification remain separate work.
+The legacy direct eight-hour job `1740811` remains superseded zero-runtime
+preparation evidence. No result changes the global default, fidelity policy, or
+baseline registry.
 
 The 4B/12B mapped-row campaign ran the remaining optimization lanes in
 `reports/2026-07-27_large_model_optimization_results.md`; formal diagnostic

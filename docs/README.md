@@ -1,7 +1,7 @@
 # Documentation index
 
 Status: Current docs map
-Last updated: 2026-07-29
+Last updated: 2026-08-07
 
 This directory mixes current-state references, active specs, and historical
 material. Use the sections below to separate descriptive maps from working
@@ -25,6 +25,7 @@ plans.
 | `../EXPERIMENTS.md` | Compact experiment baseline/index and current interpretation |
 | `harness.md` | Current exact-bench harness overview |
 | `performance_optimization_loop.md` | Isolated H200 performance and graph-parity loop on `perf/exact-trace-loop` |
+| `exact_trace_optimization_registry.md` | Single triage ledger for immediate, candidate, deferred, and rejected performance/code-quality ideas |
 | `chpc_setup.md` | CHPC Granite setup, caches, SLURM profiles, and migration checklist |
 | `chpc_resource_pools.md` | CHPC GPU pool candidates and job-class routing |
 | `metric_calibration.md` | Phase-0/Phase-1 decoder-cache and metric calibration workflow |
