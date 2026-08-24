@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+import hashlib
+import json
 from pathlib import Path
 import re
 from typing import TYPE_CHECKING, Any
@@ -18,12 +20,25 @@ COMPACT_STEP_RE = re.compile(r"step_\d+\.npz\Z")
 LEGACY_ALL_EDGE_SCOPE = "legacy_feature_source_edges_only"
 LEGACY_ALL_EDGE_BUCKETS = ("feature<-feature", "logit<-feature")
 TYPED_BUCKET_SCOPE = "typed_bucket_edges_only"
+HISTORICAL_RETENTION_POLICY_ID = "historical_bucket_top_p_unstable_argsort_v0"
+HISTORICAL_RETENTION_ALGORITHM_VERSION = "absolute_mass_top_p_then_cap_unstable_ties_v0"
+HISTORICAL_RETENTION_ALGORITHM = {
+    "algorithm": HISTORICAL_RETENTION_ALGORITHM_VERSION,
+    "input_cast": "float32_before_abs",
+    "nonzero_rule": "float32_abs_not_equal_zero",
+    "mass_accumulator": "float64",
+    "sort": "torch_argsort_descending_tie_order_unspecified",
+    "top_p_boundary": "smallest_prefix_with_cumulative_mass_greater_or_equal",
+    "cap_application": "after_top_p_prefix_selection",
+    "retained_order": "torch_argsort_descending_tie_order_unspecified",
+    "persisted_weight": "signed_float32",
+}
 
 
 @dataclass(frozen=True)
 class _LoadedCompact:
-    step: "StepData"
-    bucket_graph: "SignedGraph | None"
+    graph: Any
+    historical_reference: bool
 
 
 @dataclass(frozen=True)
@@ -204,7 +219,7 @@ def _classify_feature(
     return "shared" if label in shared_features else "unique"
 
 
-def _all_edge_map(step: "StepData") -> dict[tuple[object, object], float]:
+def _historical_all_edge_map(step: "StepData") -> dict[tuple[object, object], float]:
     edge_map: dict[tuple[object, object], float] = {}
     for row, col, weight in zip(step.row_idx, step.col_idx, step.weights):
         row_value = int(row)
@@ -220,7 +235,9 @@ def _all_edge_map(step: "StepData") -> dict[tuple[object, object], float]:
     return edge_map
 
 
-def _all_edge_signed_map(step: "StepData") -> dict[tuple[object, object], float]:
+def _historical_all_edge_signed_map(
+    step: "StepData",
+) -> dict[tuple[object, object], float]:
     edge_map: dict[tuple[object, object], float] = {}
     for row, col, weight in zip(step.row_idx, step.col_idx, step.weights):
         row_value = int(row)
@@ -396,6 +413,49 @@ def _bucket_metric_report(
     }
 
 
+def _validate_current_domain_compatibility(
+    left_graph: "SignedGraph", right_graph: "SignedGraph"
+) -> None:
+    """Fail closed when local COO identities refer to different typed domains."""
+
+    domain_arrays = (
+        ("token_ids", left_graph.token_ids, right_graph.token_ids),
+        (
+            "logit_token_ids",
+            left_graph.logit_token_ids,
+            right_graph.logit_token_ids,
+        ),
+    )
+    for name, left, right in domain_arrays:
+        if (
+            left is None
+            or right is None
+            or not np.array_equal(np.asarray(left), np.asarray(right))
+        ):
+            raise ValueError(f"typed graph {name} domain mismatch")
+    left_error_shape = left_graph.error_node_shape
+    right_error_shape = right_graph.error_node_shape
+    if (
+        left_error_shape is None
+        or right_error_shape is None
+        or tuple(left_error_shape) != tuple(right_error_shape)
+    ):
+        raise ValueError("typed graph error_node_shape domain mismatch")
+
+
+def _validate_historical_current_domain_compatibility(
+    historical_graph: Any, current_graph: "SignedGraph"
+) -> None:
+    """Admit historical domains only when their semantic identities are known."""
+
+    historical_logit_ids = historical_graph.logit_token_ids
+    if historical_logit_ids is None or np.any(
+        np.asarray(historical_logit_ids, dtype=np.int64) == -1
+    ):
+        raise ValueError("historical logit_token_ids comparison scope is unavailable")
+    _validate_current_domain_compatibility(historical_graph, current_graph)
+
+
 def _typed_bucket_comparison(
     left_graph: "SignedGraph | None", right_graph: "SignedGraph | None"
 ) -> dict[str, Any]:
@@ -546,7 +606,7 @@ def _shared_endpoint_edge_stability(
     }
 
 
-def _compare_step_pair(
+def _compare_historical_step_pair(
     step_a: "StepData",
     step_b: "StepData",
     *,
@@ -558,10 +618,10 @@ def _compare_step_pair(
     shared_features = features_a & features_b
     edges_a = _edge_map(step_a)
     edges_b = _edge_map(step_b)
-    all_edges_a = _all_edge_map(step_a)
-    all_edges_b = _all_edge_map(step_b)
-    signed_all_edges_a = _all_edge_signed_map(step_a)
-    signed_all_edges_b = _all_edge_signed_map(step_b)
+    all_edges_a = _historical_all_edge_map(step_a)
+    all_edges_b = _historical_all_edge_map(step_b)
+    signed_all_edges_a = _historical_all_edge_signed_map(step_a)
+    signed_all_edges_b = _historical_all_edge_signed_map(step_b)
     edge_class_maps_a = _edge_class_maps(step_a, shared_features)
     edge_class_maps_b = _edge_class_maps(step_b, shared_features)
 
@@ -626,47 +686,201 @@ def _compare_step_pair(
     }
 
 
-def compare_step_pair(step_a: "StepData", step_b: "StepData") -> dict[str, Any]:
-    """Compare legacy compact step data.
-
-    Typed buckets are intentionally reported as unavailable because ``StepData``
-    does not carry them. Use :func:`compare_compact_paths` when comparing saved
-    full-answer graph artifacts.
-    """
-    return _compare_step_pair(step_a, step_b)
+def compare_historical_step_pair(
+    step_a: "StepData", step_b: "StepData"
+) -> dict[str, Any]:
+    """Compare two explicitly historical global-projection steps."""
+    return _compare_historical_step_pair(step_a, step_b)
 
 
-def _load_compact_for_compare(path: Path) -> _LoadedCompact:
-    from nlp_research_project.circuit_stability_analysis.signed_graph import (
-        load_signed_graph,
+def _load_compact_for_compare(
+    path: Path, *, historical_reference: bool
+) -> _LoadedCompact:
+    if historical_reference:
+        from nlp_research_project.exact_trace_bench.compact_io import (
+            load_historical_compact_graph,
+        )
+        from nlp_research_project.exact_trace_bench.typed_compact_graph import (
+            CANONICAL_BUCKET_NAMES,
+            DEFAULT_RETENTION_POLICY_ID,
+            get_retention_policy,
+        )
+
+        compact = load_historical_compact_graph(path)
+        if compact.bucket_row_idx is None:
+            raise ValueError(f"historical reference lacks typed bucket arrays: {path}")
+        policy = get_retention_policy(DEFAULT_RETENTION_POLICY_ID)
+        if compact.bucket_names != CANONICAL_BUCKET_NAMES or any(
+            compact.bucket_metadata.get(name, {}).get("policy")
+            != policy.buckets[name].to_json()
+            for name in CANONICAL_BUCKET_NAMES
+        ):
+            raise ValueError(
+                f"historical reference does not implement {policy.policy_id}: {path}"
+            )
+        return _LoadedCompact(graph=compact, historical_reference=True)
+
+    from nlp_research_project.exact_trace_bench.typed_compact_graph import (
+        load_typed_compact_graph,
     )
-    from nlp_research_project.exact_trace_bench.compact_io import load_compact
 
-    step = load_compact(path)
-    try:
-        bucket_graph = load_signed_graph(path)
-    except ValueError as exc:
-        if "requires typed bucket arrays" not in str(exc):
-            raise
-        bucket_graph = None
-    return _LoadedCompact(step=step, bucket_graph=bucket_graph)
-
-
-def compare_compact_paths(left_path: Path, right_path: Path) -> dict[str, Any]:
-    """Compare legacy and typed-bucket graph semantics from two compact files."""
-    left = _load_compact_for_compare(Path(left_path))
-    right = _load_compact_for_compare(Path(right_path))
-    return _compare_step_pair(
-        left.step,
-        right.step,
-        bucket_graph_a=left.bucket_graph,
-        bucket_graph_b=right.bucket_graph,
+    return _LoadedCompact(
+        graph=load_typed_compact_graph(path), historical_reference=False
     )
 
 
-def _load_completion_steps(completion_dir: Path) -> list[_LoadedCompact]:
+def _step_view(loaded: _LoadedCompact) -> Any:
+    return loaded.graph.step if loaded.historical_reference else loaded.graph
+
+
+def _bucket_view(loaded: _LoadedCompact) -> Any:
+    return loaded.graph
+
+
+def _historical_retention_policy_fingerprint(graph: Any) -> str:
+    payload = {
+        "policy_id": HISTORICAL_RETENTION_POLICY_ID,
+        "algorithm": HISTORICAL_RETENTION_ALGORITHM,
+        "buckets": {
+            name: graph.bucket_metadata[name]["policy"] for name in graph.bucket_names
+        },
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _fingerprint_report(left: _LoadedCompact, right: _LoadedCompact) -> dict[str, Any]:
+    from nlp_research_project.exact_trace_bench.typed_compact_graph import (
+        DEFAULT_RETENTION_POLICY_ID,
+        get_retention_policy,
+    )
+
+    policy = get_retention_policy(DEFAULT_RETENTION_POLICY_ID)
+    right_graph = right.graph
+    if right.historical_reference:
+        raise ValueError("the candidate graph may not use the historical adapter")
+    fields = (
+        "content_fingerprint",
+        "graph_fingerprint",
+        "target_fingerprint",
+        "provider_fingerprint",
+        "trace_fingerprint",
+        "step_fingerprint",
+    )
+    missing = [name for name in fields if not getattr(right_graph, name, None)]
+    if missing:
+        raise ValueError(f"candidate graph lacks required fingerprints: {missing}")
+    if right_graph.retention_policy_id != policy.policy_id:
+        raise ValueError("candidate graph retention policy id is not typed_top_p_v1")
+    if right_graph.retention_policy_fingerprint != policy.fingerprint:
+        raise ValueError("candidate graph retention policy fingerprint mismatch")
+    report: dict[str, Any] = {
+        "candidate_schema_version": right_graph.schema_version,
+        "candidate_retention_policy_id": right_graph.retention_policy_id,
+        "candidate_retention_policy_fingerprint": (
+            right_graph.retention_policy_fingerprint
+        ),
+        "candidate_current_policy_valid": True,
+        "historical_reference": left.historical_reference,
+        "policy_compatible": True,
+    }
+    if left.historical_reference:
+        report.update(
+            {
+                "reference_policy_identity": HISTORICAL_RETENTION_POLICY_ID,
+                "reference_retention_policy_id": HISTORICAL_RETENTION_POLICY_ID,
+                "reference_retention_algorithm_version": (
+                    HISTORICAL_RETENTION_ALGORITHM_VERSION
+                ),
+                "reference_retention_policy_fingerprint": (
+                    _historical_retention_policy_fingerprint(left.graph)
+                ),
+                "reference_bucket_rules_match_candidate": True,
+                "fingerprint_comparisons_available": False,
+                "policy_compatible": False,
+            }
+        )
+    else:
+        left_graph = left.graph
+        if not all(getattr(left_graph, name, None) for name in fields):
+            raise ValueError("reference graph lacks required fingerprints")
+        report["fingerprint_comparisons_available"] = True
+        report["policy_compatible"] = bool(
+            left_graph.retention_policy_id == right_graph.retention_policy_id
+            and left_graph.retention_policy_fingerprint
+            == right_graph.retention_policy_fingerprint
+        )
+        for name in fields:
+            report[f"{name}_match"] = bool(
+                getattr(left_graph, name) == getattr(right_graph, name)
+            )
+    return report
+
+
+def _compare_loaded_pair(left: _LoadedCompact, right: _LoadedCompact) -> dict[str, Any]:
+    left_step = _step_view(left)
+    right_step = _step_view(right)
+    if left.historical_reference:
+        _validate_historical_current_domain_compatibility(left.graph, right.graph)
+    else:
+        _validate_current_domain_compatibility(left.graph, right.graph)
+    features_a = _feature_set(left_step)
+    features_b = _feature_set(right_step)
+    typed = _typed_bucket_comparison(_bucket_view(left), _bucket_view(right))
+    if not typed.get("comparable"):
+        raise ValueError("all six typed edge buckets are required for comparison")
+    fingerprints = _fingerprint_report(left, right)
+    row: dict[str, Any] = {
+        "step_index_a": int(left_step.step_idx),
+        "step_index_b": int(right_step.step_idx),
+        "n_features_a": len(features_a),
+        "n_features_b": len(features_b),
+        "n_features_shared": len(features_a & features_b),
+        "feature_jaccard": _jaccard(features_a, features_b),
+        "target_token_match": float(left_step.token_text == right_step.token_text),
+        "target_token_a": left_step.token_text,
+        "target_token_b": right_step.token_text,
+        "feature_support_decomposition": _feature_support_decomposition(
+            features_a, features_b
+        ),
+        "typed_bucket_comparison": typed,
+        "fingerprints": fingerprints,
+        "policy_compatible": fingerprints["policy_compatible"],
+    }
+    for name, report in typed["buckets"].items():
+        prefix = f"bucket_{name.replace('<-', '_').replace('-', '_')}"
+        for metric in (
+            "support_jaccard",
+            "weighted_jaccard",
+            "normalized_l1_deviation",
+            "shared_sign_agreement",
+            "signed_normalized_l1_deviation",
+        ):
+            row[f"{prefix}_{metric}"] = report[metric]
+        row[f"{prefix}_exact"] = float(bool(report["exact"]))
+        row[f"{prefix}_top256_jaccard"] = report["topk_overlap"]["256"]["jaccard"]
+    return row
+
+
+def compare_compact_paths(
+    left_path: Path,
+    right_path: Path,
+    *,
+    historical_reference: bool = False,
+) -> dict[str, Any]:
+    """Compare typed graphs, optionally naming the left side as historical."""
+    left = _load_compact_for_compare(
+        Path(left_path), historical_reference=historical_reference
+    )
+    right = _load_compact_for_compare(Path(right_path), historical_reference=False)
+    return _compare_loaded_pair(left, right)
+
+
+def _load_completion_steps(
+    completion_dir: Path, *, historical_reference: bool
+) -> list[_LoadedCompact]:
     return [
-        _load_compact_for_compare(path)
+        _load_compact_for_compare(path, historical_reference=historical_reference)
         for path in sorted(completion_dir.glob("step_*.npz"))
         if COMPACT_STEP_RE.fullmatch(path.name)
     ]
@@ -706,7 +920,10 @@ def _completion_key(artifacts_dir: Path, completion_dir: Path) -> str:
 
 
 def compare_artifact_dirs(
-    left_artifacts: Path, right_artifacts: Path
+    left_artifacts: Path,
+    right_artifacts: Path,
+    *,
+    historical_reference: bool = False,
 ) -> dict[str, Any]:
     left_completions = {
         _completion_key(left_artifacts, path): path
@@ -723,22 +940,22 @@ def compare_artifact_dirs(
 
     for completion_key in shared_completion_keys:
         steps_a = {
-            loaded.step.step_idx: loaded
-            for loaded in _load_completion_steps(left_completions[completion_key])
+            _step_view(loaded).step_idx: loaded
+            for loaded in _load_completion_steps(
+                left_completions[completion_key],
+                historical_reference=historical_reference,
+            )
         }
         steps_b = {
-            loaded.step.step_idx: loaded
-            for loaded in _load_completion_steps(right_completions[completion_key])
+            _step_view(loaded).step_idx: loaded
+            for loaded in _load_completion_steps(
+                right_completions[completion_key], historical_reference=False
+            )
         }
         shared_step_indices = sorted(set(steps_a) & set(steps_b))
         n_aligned_steps = len(shared_step_indices)
         step_rows = [
-            _compare_step_pair(
-                steps_a[step_idx].step,
-                steps_b[step_idx].step,
-                bucket_graph_a=steps_a[step_idx].bucket_graph,
-                bucket_graph_b=steps_b[step_idx].bucket_graph,
-            )
+            _compare_loaded_pair(steps_a[step_idx], steps_b[step_idx])
             for step_idx in shared_step_indices
         ]
         all_step_rows.extend(
@@ -756,45 +973,13 @@ def compare_artifact_dirs(
                 "mean_feature_jaccard": _finite_mean(
                     [row["feature_jaccard"] for row in step_rows]
                 ),
-                "mean_edge_jaccard": _finite_mean(
-                    [row["edge_jaccard"] for row in step_rows]
-                ),
-                "mean_weighted_edge_jaccard": _finite_mean(
-                    [row["weighted_edge_jaccard"] for row in step_rows]
-                ),
-                "mean_top256_edge_jaccard": _finite_mean(
-                    [row["topk_edge_overlap"]["256"]["jaccard"] for row in step_rows]
-                ),
-                "mean_all_edge_jaccard": _finite_mean(
-                    [row["all_edge_jaccard"] for row in step_rows]
-                ),
-                "mean_all_edge_weighted_jaccard": _finite_mean(
-                    [row["all_edge_weighted_jaccard"] for row in step_rows]
-                ),
-                "mean_all_edge_top256_jaccard": _finite_mean(
-                    [
-                        row["all_edge_topk_overlap"]["256"]["jaccard"]
-                        for row in step_rows
-                    ]
-                ),
                 "mean_target_token_match": _finite_mean(
                     [row["target_token_match"] for row in step_rows]
-                ),
-                "mean_all_edge_normalized_l1_deviation": _finite_mean(
-                    [row["all_edge_normalized_l1_deviation"] for row in step_rows]
-                ),
-                "mean_all_edge_shared_sign_agreement": _finite_mean(
-                    [row["all_edge_shared_sign_agreement"] for row in step_rows]
-                ),
-                "mean_all_edge_signed_normalized_l1_deviation": _finite_mean(
-                    [
-                        row["all_edge_signed_normalized_l1_deviation"]
-                        for row in step_rows
-                    ]
                 ),
                 "mean_shared_features": _finite_mean(
                     [row["n_features_shared"] for row in step_rows]
                 ),
+                "policy_compatible": all(row["policy_compatible"] for row in step_rows),
                 "typed_bucket_comparison": _comparison_set_summary(step_rows),
             }
         )
@@ -821,11 +1006,26 @@ def compare_artifact_dirs(
             and row["right_only_step_count"] == 0
             for row in completion_rows
         ),
+        "historical_reference": historical_reference,
+        "policy_compatible": bool(all_step_rows)
+        and all(row["policy_compatible"] for row in all_step_rows),
+        "candidate_current_policy_valid": bool(all_step_rows)
+        and all(
+            row["fingerprints"].get("candidate_current_policy_valid") is True
+            for row in all_step_rows
+        ),
+        "reference_bucket_rules_match_candidate": (
+            bool(all_step_rows)
+            and all(
+                row["fingerprints"].get("reference_bucket_rules_match_candidate")
+                is True
+                for row in all_step_rows
+            )
+            if historical_reference
+            else None
+        ),
         "completion_comparisons": completion_rows,
         "step_comparisons": all_step_rows,
-        "all_edge_scope": LEGACY_ALL_EDGE_SCOPE,
-        "all_edge_included_buckets": list(LEGACY_ALL_EDGE_BUCKETS),
-        "all_edge_includes_typed_buckets": False,
         "typed_bucket_comparison": _comparison_set_summary(all_step_rows),
     }
     summary["overall_typed_bucket_classification"] = summary["typed_bucket_comparison"][
@@ -836,68 +1036,40 @@ def compare_artifact_dirs(
         summary["overall_mean_feature_jaccard"] = _finite_mean(
             [row["mean_feature_jaccard"] for row in completion_rows]
         )
-        summary["overall_mean_edge_jaccard"] = _finite_mean(
-            [row["mean_edge_jaccard"] for row in completion_rows]
-        )
-        summary["overall_mean_weighted_edge_jaccard"] = _finite_mean(
-            [row["mean_weighted_edge_jaccard"] for row in completion_rows]
-        )
-        summary["overall_mean_top256_edge_jaccard"] = _finite_mean(
-            [row["mean_top256_edge_jaccard"] for row in completion_rows]
-        )
-        summary["overall_mean_all_edge_jaccard"] = _finite_mean(
-            [row["mean_all_edge_jaccard"] for row in completion_rows]
-        )
-        summary["overall_mean_all_edge_weighted_jaccard"] = _finite_mean(
-            [row["mean_all_edge_weighted_jaccard"] for row in completion_rows]
-        )
-        summary["overall_mean_all_edge_top256_jaccard"] = _finite_mean(
-            [row["mean_all_edge_top256_jaccard"] for row in completion_rows]
-        )
         summary["overall_mean_target_token_match"] = _finite_mean(
             [row["mean_target_token_match"] for row in completion_rows]
         )
-        summary["overall_mean_all_edge_normalized_l1_deviation"] = _finite_mean(
-            [row["mean_all_edge_normalized_l1_deviation"] for row in completion_rows]
-        )
-        summary["overall_mean_all_edge_shared_sign_agreement"] = _finite_mean(
-            [row["mean_all_edge_shared_sign_agreement"] for row in completion_rows]
-        )
-        summary["overall_mean_all_edge_signed_normalized_l1_deviation"] = _finite_mean(
-            [
-                row["mean_all_edge_signed_normalized_l1_deviation"]
-                for row in completion_rows
-            ]
-        )
-
     worst_metric_sources = {
         "worst_step_feature_jaccard": "feature_jaccard",
-        "worst_step_all_edge_jaccard": "all_edge_jaccard",
-        "worst_step_all_edge_weighted_jaccard": "all_edge_weighted_jaccard",
-        "worst_step_all_edge_top256_jaccard": "all_edge_top256_jaccard",
         "worst_step_target_token_match": "target_token_match",
-        "worst_step_all_edge_normalized_l1_deviation": (
-            "all_edge_normalized_l1_deviation"
-        ),
-        "worst_step_all_edge_shared_sign_agreement": ("all_edge_shared_sign_agreement"),
-        "worst_step_all_edge_signed_normalized_l1_deviation": (
-            "all_edge_signed_normalized_l1_deviation"
-        ),
     }
+    bucket_metric_suffixes = (
+        "support_jaccard",
+        "weighted_jaccard",
+        "top256_jaccard",
+        "shared_sign_agreement",
+        "exact",
+        "normalized_l1_deviation",
+        "signed_normalized_l1_deviation",
+    )
+    from nlp_research_project.exact_trace_bench.typed_compact_graph import (
+        CANONICAL_BUCKET_NAMES,
+    )
+
+    for bucket_name in CANONICAL_BUCKET_NAMES:
+        prefix = f"bucket_{bucket_name.replace('<-', '_').replace('-', '_')}"
+        for suffix in bucket_metric_suffixes:
+            row_key = f"{prefix}_{suffix}"
+            summary_key = f"worst_step_{row_key}"
+            worst_metric_sources[summary_key] = row_key
+            summary[f"overall_mean_{row_key}"] = _finite_mean(
+                [row[row_key] for row in all_step_rows]
+            )
     for summary_key, row_key in worst_metric_sources.items():
-        if row_key == "all_edge_top256_jaccard":
-            values = [
-                row["all_edge_topk_overlap"]["256"]["jaccard"] for row in all_step_rows
-            ]
-        else:
-            values = [row[row_key] for row in all_step_rows]
+        values = [row[row_key] for row in all_step_rows]
         summary[summary_key] = (
             _finite_max(values)
-            if row_key
-            in {
-                "all_edge_normalized_l1_deviation",
-                "all_edge_signed_normalized_l1_deviation",
-            }
+            if row_key.endswith("normalized_l1_deviation")
             else _finite_min(values)
         )
 
@@ -906,11 +1078,7 @@ def compare_artifact_dirs(
         worst_value = summary[summary_key]
         matching_rows = []
         for row in all_step_rows:
-            value = (
-                row["all_edge_topk_overlap"]["256"]["jaccard"]
-                if row_key == "all_edge_top256_jaccard"
-                else row[row_key]
-            )
+            value = row[row_key]
             if worst_value is not None and value == worst_value:
                 matching_rows.append(
                     {

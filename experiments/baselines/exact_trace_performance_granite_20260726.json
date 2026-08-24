@@ -3,6 +3,9 @@
   "registry_id": "exact-trace-performance-granite-20260726",
   "created_at": "2026-07-26",
   "description": "Merged pinned Granite H200 performance references for Gemma 3 1B CLT/PLT and 4B/12B PLT exact-trace optimization.",
+  "compact_graph_reference": {
+    "format": "historical_mixed_compact_v1"
+  },
   "source_registry_ids": [
     "exact-trace-performance-granite-20260709",
     "governor-calibration-granite-20260719"

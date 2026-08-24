@@ -55,9 +55,9 @@ def _plot_adjacent_jaccards(rows: list[dict[str, Any]], output_dir: Path) -> Pat
         x_key="generated_index_b",
         y_keys=(
             "feature_jaccard",
-            "edge_jaccard",
-            "weighted_edge_jaccard",
-            "all_edge_weighted_jaccard",
+            "bucket_feature_feature_jaccard",
+            "bucket_feature_feature_weighted_jaccard",
+            "bucket_logit_feature_weighted_jaccard",
         ),
         title="Adjacent-token Jaccards",
         ylabel="Jaccard",
@@ -84,11 +84,11 @@ def _plot_adjacent_churn(rows: list[dict[str, Any]], output_dir: Path) -> Path:
         rows,
         x_key="generated_index_b",
         y_keys=(
-            "all_edges_entered_rate",
-            "all_edges_exited_rate",
-            "all_edges_stayed_rate",
+            "bucket_feature_feature_entered_rate",
+            "bucket_feature_feature_exited_rate",
+            "bucket_feature_feature_stayed_rate",
         ),
-        title="All-edge churn rates",
+        title="Feature-to-feature bucket churn rates",
         ylabel="Rate",
     )
     return _save(fig, output_dir / "adjacent_churn_rates.png")
@@ -100,8 +100,12 @@ def _plot_weighted_churn(rows: list[dict[str, Any]], output_dir: Path) -> Path:
         ax,
         rows,
         x_key="generated_index_b",
-        y_keys=("mass_entered", "mass_exited", "mass_stayed"),
-        title="Weighted all-edge churn mass",
+        y_keys=(
+            "bucket_feature_feature_mass_entered",
+            "bucket_feature_feature_mass_exited",
+            "bucket_feature_feature_mass_stayed",
+        ),
+        title="Weighted feature-to-feature bucket churn mass",
         ylabel="Mass",
     )
     return _save(fig, output_dir / "weighted_churn_mass.png")
@@ -120,9 +124,9 @@ def _plot_lag_jaccards(summary: dict[str, Any], output_dir: Path) -> Path:
         x_key="lag",
         y_keys=(
             "mean_feature_jaccard",
-            "mean_edge_jaccard",
-            "mean_weighted_edge_jaccard",
-            "mean_all_edge_weighted_jaccard",
+            "mean_bucket_feature_feature_jaccard",
+            "mean_bucket_feature_feature_weighted_jaccard",
+            "mean_bucket_logit_feature_weighted_jaccard",
         ),
         title="Mean Jaccard by lag",
         ylabel="Mean Jaccard",
@@ -155,18 +159,18 @@ def _plot_rolling_core_sizes(rows: list[dict[str, Any]], output_dir: Path) -> Pa
         )
         axes[1].plot(
             xs,
-            _values(window_rows, "all_edge_intersection_core_size"),
+            _values(window_rows, "bucket_feature_feature_intersection_core_size"),
             marker="o",
             label=f"w{window} intersection",
         )
         axes[1].plot(
             xs,
-            _values(window_rows, "all_edge_persistence80_core_size"),
+            _values(window_rows, "bucket_feature_feature_persistence80_core_size"),
             marker="o",
             label=f"w{window} persistence80",
         )
     for ax, title in zip(
-        axes, ("Feature rolling core sizes", "All-edge rolling core sizes")
+        axes, ("Feature rolling core sizes", "Feature-to-feature rolling core sizes")
     ):
         ax.set_title(title)
         ax.set_xlabel("end_generated_index")
@@ -180,7 +184,10 @@ def _plot_rolling_union_churn(rows: list[dict[str, Any]], output_dir: Path) -> P
     fig, axes = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
     for window, window_rows in _by_window(rows).items():
         xs = _values(window_rows, "end_generated_index")
-        for ax, prefix in ((axes[0], "feature_union"), (axes[1], "all_edge_union")):
+        for ax, prefix in (
+            (axes[0], "feature_union"),
+            (axes[1], "bucket_feature_feature_union"),
+        ):
             for suffix in ("entered_rate", "exited_rate", "stayed_rate"):
                 key = f"{prefix}_{suffix}"
                 ax.plot(
@@ -191,7 +198,7 @@ def _plot_rolling_union_churn(rows: list[dict[str, Any]], output_dir: Path) -> P
                 )
     for ax, title in zip(
         axes,
-        ("Feature union rolling churn", "All-edge union rolling churn"),
+        ("Feature union rolling churn", "Feature-to-feature union rolling churn"),
     ):
         ax.set_title(title)
         ax.set_xlabel("end_generated_index")
@@ -208,11 +215,11 @@ def _plot_edge_core_stability(rows: list[dict[str, Any]], output_dir: Path) -> P
         rows,
         x_key="generated_index_b",
         y_keys=(
-            "all_edge_core50_jaccard",
-            "all_edge_core80_jaccard",
-            "all_edge_core95_jaccard",
+            "bucket_feature_feature_core50_jaccard",
+            "bucket_feature_feature_core80_jaccard",
+            "bucket_feature_feature_core95_jaccard",
         ),
-        title="Adjacent all-edge mass-core stability",
+        title="Adjacent feature-to-feature mass-core stability",
         ylabel="Jaccard",
     )
     return _save(fig, output_dir / "edge_core_stability.png")
@@ -244,9 +251,8 @@ def _plot_layer_flow_stability(rows: list[dict[str, Any]], output_dir: Path) -> 
         rows,
         x_key="generated_index_b",
         y_keys=(
-            "layer_flow_weighted_jaccard",
-            "layer_flow_logit_mass_fraction_a",
-            "layer_flow_logit_mass_fraction_b",
+            "bucket_feature_feature_layer_flow_weighted_jaccard",
+            "bucket_feature_feature_positionless_flow_weighted_jaccard",
         ),
         title="Layer-flow stability",
         ylabel="Fraction",
@@ -255,15 +261,13 @@ def _plot_layer_flow_stability(rows: list[dict[str, Any]], output_dir: Path) -> 
 
 
 def _plot_layer_flow_heatmaps(rows: list[dict[str, Any]], output_dir: Path) -> Path:
-    labels = sorted(
-        {f"{r['source_layer']}->{r['target_kind']}:{r['target_layer']}" for r in rows}
-    )
+    labels = sorted({f"{r['source_layer']}->{r['target_layer']}" for r in rows})
     xs = sorted({int(r["generated_index"]) for r in rows})
     matrix = [[0.0 for _ in xs] for _ in labels]
     x_index = {x: i for i, x in enumerate(xs)}
     y_index = {label: i for i, label in enumerate(labels)}
     for r in rows:
-        label = f"{r['source_layer']}->{r['target_kind']}:{r['target_layer']}"
+        label = f"{r['source_layer']}->{r['target_layer']}"
         matrix[y_index[label]][x_index[int(r["generated_index"])]] = float(
             r.get("mass_fraction") or 0.0
         )
@@ -288,7 +292,7 @@ def _plot_global_core_churn(rows: list[dict[str, Any]], output_dir: Path) -> Pat
         y_keys=(
             "feature_persistence50_core_size",
             "positionless_feature_persistence50_core_size",
-            "all_edge_persistence50_core_size",
+            "bucket_feature_feature_persistence50_core_size",
         ),
         title="Cumulative global core sizes",
         ylabel="Core size",

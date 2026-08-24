@@ -8,7 +8,9 @@ from typing import Any, Iterator
 
 import numpy as np
 
-from nlp_research_project.exact_trace_bench.compact_io import load_compact_graph
+from nlp_research_project.exact_trace_bench.typed_compact_graph import (
+    load_typed_compact_graph,
+)
 
 FEATURE_ID_BASE = 1_000_000
 
@@ -100,20 +102,15 @@ def load_signed_graph(
     path: str | Path, *, validate_step_path: bool = True
 ) -> SignedGraph:
     graph_path = Path(path)
-    compact = load_compact_graph(graph_path, validate_step_path=validate_step_path)
-    if compact.bucket_row_idx is None:
-        raise ValueError(
-            f"signed graph analysis requires typed bucket arrays: {graph_path}"
-        )
-    assert compact.bucket_col_idx is not None
-    assert compact.bucket_weights is not None
-    assert compact.bucket_ids is not None
+    compact = load_typed_compact_graph(
+        graph_path, validate_step_path=validate_step_path
+    )
     return SignedGraph(
         path=graph_path,
-        step_idx=compact.step.step_idx,
-        token_text=compact.step.token_text,
-        logprob=compact.step.logprob,
-        feature_ids=compact.step.feature_ids,
+        step_idx=compact.step_idx,
+        token_text=compact.token_text,
+        logprob=compact.logprob,
+        feature_ids=compact.feature_ids,
         token_ids=compact.token_ids,
         logit_token_ids=compact.logit_token_ids,
         error_node_shape=compact.error_node_shape,

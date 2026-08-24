@@ -222,7 +222,8 @@ module owns the serialization seam and exposes:
 - graph, target, provider, trace, step, and policy fingerprints required for
   comparison and intervention evidence.
 
-The initial policy preserves the already-established typed behavior:
+The initial policy preserves the established per-bucket top-p and cap rules,
+while intentionally versioning and stabilizing cutoff-tie ordering:
 
 | Bucket | Top-p | Cap |
 |---|---:|---:|
@@ -256,6 +257,16 @@ the same typed schema, all active consumers use typed buckets, historical files
 remain explicitly readable, and the strict new-run gate refuses legacy-only or
 mixed-schema drift. Existing 12B references remain usable because their typed
 buckets are already present; no trace rerun is required merely to recover them.
+
+**Implementation status (2026-08-23):** the atomic code migration is complete.
+The full-answer and canonical multi-step writers share schema v2 and policy
+`typed_top_p_v1`; active consumers and gates use the six named buckets; generic
+`max_edges` is absent from canonical configuration; and legacy loading is an
+explicit historical adapter. The focused CPU integration gate passed. Step 1a
+remains qualification-pending until one frozen 12B/1,024 full run writes,
+strictly reopens, and validates the new artifact on the real GPU path. This run
+qualifies persistence and packaging only; it does not supply Step 1b stability
+or faithfulness evidence.
 
 ### 6.2 Step 1b: three independent correctness verdicts
 

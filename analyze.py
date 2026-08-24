@@ -29,8 +29,8 @@ from nlp_research_project.exact_trace_bench.compact_io import (
     STABLE_CORE_WINDOW,
     StepData,
     compute_temporal_metrics,
-    load_compact,
-    step_from_pt,
+    load_historical_compact_step,
+    load_historical_step_from_pt,
 )
 
 END_OF_TURN_ID = 106
@@ -52,10 +52,12 @@ def load_completion_steps(
     pt_files = sorted(completion_dir.glob("step_*.pt"))
 
     def _load_npz(path_idx: tuple[Path, int]) -> StepData:
-        return load_compact(path_idx[0])
+        return load_historical_compact_step(path_idx[0])
 
     def _load_pt(path_idx: tuple[Path, int]) -> StepData:
-        return step_from_pt(path_idx[0], path_idx[1], max_edges=max_edges)
+        return load_historical_step_from_pt(
+            path_idx[0], path_idx[1], max_edges=max_edges
+        )
 
     if npz_files:
         paths = [(p, int(p.stem.split("_")[1])) for p in npz_files]

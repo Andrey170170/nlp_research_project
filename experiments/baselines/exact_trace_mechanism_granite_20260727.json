@@ -4,6 +4,9 @@
   "created_at": "2026-07-27",
   "description": "Same-regime active-row and mapped-lazy controls for compact-strict mechanism validation. This registry is separate from and does not promote or replace the frozen scientific baseline registry.",
   "scope": "same_regime_mechanism",
+  "compact_graph_reference": {
+    "format": "historical_mixed_compact_v1"
+  },
   "entries": {
     "performance/gemma3_1b_plt/361_base": {
       "scope": "same_regime_mechanism",

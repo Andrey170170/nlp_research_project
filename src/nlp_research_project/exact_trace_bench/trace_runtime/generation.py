@@ -10,6 +10,10 @@ from typing import Any
 
 import torch
 
+from nlp_research_project.exact_trace_bench.typed_compact_graph import (
+    DEFAULT_RETENTION_POLICY_ID,
+)
+
 from .artifacts import legacy_capture_artifact_status
 from .completion_workspace import CompletionWorkspace
 from .observations import CompletionObservations
@@ -30,7 +34,7 @@ class CompletionPlan:
 
     temperature: float = 0.7
     max_steps: int = 256
-    max_edges: int = 10_000
+    edge_retention_policy_id: str = DEFAULT_RETENTION_POLICY_ID
     incremental_telemetry_jsonl: bool = False
     prompt_token_count: int | None = None
     prompt_source: str = "gsm8k"
@@ -157,7 +161,7 @@ def trace_completion_compact_chunked(
         workspace=workspace,
         trace_policy=trace_policy,
         model=model,
-        max_edges=completion.max_edges,
+        edge_retention_policy_id=completion.edge_retention_policy_id,
     )
     observations = CompletionObservations()
     tokenizer = model.tokenizer
@@ -218,7 +222,7 @@ def trace_completion_compact_chunked(
                 "generated_token_count": 0,
                 "n_steps_traced": 0,
                 "temperature": completion.temperature,
-                "max_edges": completion.max_edges,
+                "edge_retention_policy_id": completion.edge_retention_policy_id,
                 "semantic_fingerprint": step.diagnostic.semantic_fingerprint,
                 "execution_fingerprint": step.diagnostic.execution_fingerprint,
                 "graph_packaging_mode": "diagnostic_no_graph",
@@ -284,7 +288,7 @@ def trace_completion_compact_chunked(
         "initial_input_token_count": initial_input_token_count,
         "generated_token_count": len(generated_token_ids),
         "temperature": completion.temperature,
-        "max_edges": completion.max_edges,
+        "edge_retention_policy_id": completion.edge_retention_policy_id,
         "semantic_fingerprint": _last(observations, "semantic_fingerprint"),
         "execution_fingerprint": _last(observations, "execution_fingerprint"),
         "graph_packaging_mode": "compact_chunked_no_full_graph",

@@ -134,7 +134,7 @@ def test_schema_and_trace_spec_round_trip(tmp_path: Path) -> None:
         trajectory,
         selection,
         graph_knob_overrides={
-            "max_edges": 7,
+            "edge_retention_policy_id": "typed_top_p_v1",
             "row_store_cache_control": "fadvise_dontneed_after_append_and_read_v1",
         },
     )
@@ -147,7 +147,7 @@ def test_schema_and_trace_spec_round_trip(tmp_path: Path) -> None:
     assert specs[0]["target_mode"] == "frozen_target_only"
     assert specs[0]["estimated_cost"] == 13
     assert specs[0]["graph_knobs"]["exact_trace_internal_dtype"] == "fp32"
-    assert specs[0]["graph_knobs"]["max_edges"] == 7
+    assert specs[0]["graph_knobs"]["edge_retention_policy_id"] == "typed_top_p_v1"
     assert (
         specs[0]["graph_knobs"]["row_store_cache_control"]
         == "fadvise_dontneed_after_append_and_read_v1"

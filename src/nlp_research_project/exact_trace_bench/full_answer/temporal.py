@@ -8,15 +8,16 @@ from typing import Any, Iterable, cast
 
 import numpy as np
 
-from ..compact_io import CompactGraph, load_compact_graph
 from ..graph_compare import (
-    _all_edge_map,
-    _edge_map,
-    _feature_set,
     _jaccard,
     _weighted_edge_jaccard,
 )
 from ..io_utils import ensure_dir, write_json, write_jsonl
+from ..typed_compact_graph import (
+    FEATURE_ID_BASE,
+    TypedCompactGraph,
+    load_typed_compact_graph,
+)
 
 DEFAULT_WINDOWS = (5, 10, 25)
 DEFAULT_LAGS = (1, 2, 4, 8, 16, 32)
@@ -29,8 +30,6 @@ class GraphSnapshot:
     generated_index: int
     token_text: str
     features: set[tuple[int, int, int]]
-    edges: dict[tuple[object, object], float]
-    all_edges: dict[tuple[object, object], float]
     bucket_edges: dict[str, dict[tuple[object, object], float]]
     bucket_metadata: dict[str, dict[str, Any]]
     error_node_shape: tuple[int, ...] | None = None
@@ -63,16 +62,16 @@ def discover_graph_paths(
 
 
 def _load_snapshot(path: Path) -> GraphSnapshot:
-    graph = load_compact_graph(path)
-    step = graph.step
-    generated_index = int(step.step_idx)
+    graph = load_typed_compact_graph(path)
+    generated_index = int(graph.step_idx)
     bucket_edges, bucket_metadata = _load_bucket_edges(graph)
     return GraphSnapshot(
         generated_index=generated_index,
-        token_text=str(getattr(step, "token_text", "")),
-        features=_feature_set(step),
-        edges=_edge_map(step),
-        all_edges=_all_edge_map(step),
+        token_text=graph.token_text,
+        features={
+            (int(layer), int(position), int(feature_id))
+            for layer, position, feature_id in graph.feature_ids.tolist()
+        },
         bucket_edges=bucket_edges,
         bucket_metadata=bucket_metadata,
         error_node_shape=graph.error_node_shape,
@@ -80,16 +79,57 @@ def _load_snapshot(path: Path) -> GraphSnapshot:
 
 
 def _load_bucket_edges(
-    graph: CompactGraph,
+    graph: TypedCompactGraph,
 ) -> tuple[dict[str, dict[tuple[object, object], float]], dict[str, dict[str, Any]]]:
-    if graph.bucket_row_idx is None:
-        return {}, {}
-    assert graph.bucket_col_idx is not None
-    assert graph.bucket_weights is not None
-    assert graph.bucket_ids is not None
     names = list(graph.bucket_names)
     metadata = graph.bucket_metadata
     out = {name: {} for name in names}
+    n_pos = len(graph.token_ids)
+    feature_endpoints = {
+        int(layer) * n_pos * FEATURE_ID_BASE
+        + int(position) * FEATURE_ID_BASE
+        + int(feature_id): (
+            "feature",
+            int(layer),
+            int(position),
+            int(feature_id),
+        )
+        for layer, position, feature_id in graph.feature_ids.tolist()
+    }
+
+    def feature_endpoint(encoded: int) -> tuple[object, ...]:
+        try:
+            return feature_endpoints[encoded]
+        except KeyError as exc:
+            raise ValueError(f"unknown persisted feature endpoint: {encoded}") from exc
+
+    def error_endpoint(index: int) -> tuple[object, ...]:
+        layer, position = divmod(index, n_pos)
+        return ("error", layer, position, int(graph.token_ids[position]))
+
+    def token_endpoint(position: int) -> tuple[object, ...]:
+        return ("token", position, int(graph.token_ids[position]))
+
+    def logit_endpoint(index: int) -> tuple[object, ...]:
+        return ("logit", int(graph.logit_token_ids[index]))
+
+    def canonical_edge(
+        name: str, row: int, col: int
+    ) -> tuple[tuple[object, ...], tuple[object, ...]]:
+        if name == "feature<-feature":
+            return feature_endpoint(row), feature_endpoint(col)
+        if name == "feature<-error":
+            return feature_endpoint(row), error_endpoint(col)
+        if name == "feature<-token":
+            return feature_endpoint(row), token_endpoint(col)
+        if name == "logit<-feature":
+            return logit_endpoint(row), feature_endpoint(col)
+        if name == "logit<-error":
+            return logit_endpoint(row), error_endpoint(col)
+        if name == "logit<-token":
+            return logit_endpoint(row), token_endpoint(col)
+        raise ValueError(f"unsupported typed bucket: {name!r}")
+
     for row, col, weight, bucket_id in zip(
         graph.bucket_row_idx,
         graph.bucket_col_idx,
@@ -97,7 +137,8 @@ def _load_bucket_edges(
         graph.bucket_ids,
     ):
         name = names[int(bucket_id)]
-        out[name][(int(row), int(col))] = float(abs(weight))
+        edge = canonical_edge(name, int(row), int(col))
+        out[name][edge] = out[name].get(edge, 0.0) + float(abs(weight))
     return out, metadata
 
 
@@ -115,14 +156,19 @@ def _bucket_pair_metrics(a: GraphSnapshot, b: GraphSnapshot) -> dict[str, Any]:
         row[f"{prefix}_edge_count_b"] = len(eb)
         row[f"{prefix}_jaccard"] = _jaccard(set(ea), set(eb))
         row[f"{prefix}_weighted_jaccard"] = _weighted_edge_jaccard(ea, eb)
+        row.update(_churn(set(ea), set(eb), prefix=prefix))
+        row.update(_mass_churn(ea, eb, prefix=prefix))
+        row.update(_topk_metrics(ea, eb, prefix=prefix))
+        row.update(_mass_core_metrics(ea, eb, prefix=prefix))
         for side, snap in (("a", a), ("b", b)):
             meta = snap.bucket_metadata.get(name, {})
             for key in (
-                "raw_total_abs_mass",
+                "raw_edge_count",
+                "raw_abs_mass",
+                "retained_edge_count",
                 "retained_abs_mass",
                 "retained_fraction",
-                "raw_nnz",
-                "retained_nnz",
+                "cap_bound_before_top_p",
             ):
                 if key in meta:
                     row[f"{prefix}_{key}_{side}"] = meta[key]
@@ -145,7 +191,10 @@ def _churn(a: set[Any], b: set[Any], *, prefix: str) -> dict[str, int | float]:
 
 
 def _mass_churn(
-    a: dict[tuple[object, object], float], b: dict[tuple[object, object], float]
+    a: dict[tuple[object, object], float],
+    b: dict[tuple[object, object], float],
+    *,
+    prefix: str,
 ) -> dict[str, float]:
     keys = set(a) | set(b)
     mass_stayed = sum(min(a.get(key, 0.0), b.get(key, 0.0)) for key in keys)
@@ -153,14 +202,10 @@ def _mass_churn(
     mass_exited = sum(max(a.get(key, 0.0) - b.get(key, 0.0), 0.0) for key in keys)
     total_mass = mass_stayed + mass_entered + mass_exited
     return {
-        "mass_entered": float(mass_entered),
-        "mass_exited": float(mass_exited),
-        "mass_stayed": float(mass_stayed),
-        "total_mass": float(total_mass),
-        "all_edges_mass_entered": float(mass_entered),
-        "all_edges_mass_exited": float(mass_exited),
-        "all_edges_mass_stayed": float(mass_stayed),
-        "all_edges_total_mass": float(total_mass),
+        f"{prefix}_mass_entered": float(mass_entered),
+        f"{prefix}_mass_exited": float(mass_exited),
+        f"{prefix}_mass_stayed": float(mass_stayed),
+        f"{prefix}_total_mass": float(total_mass),
     }
 
 
@@ -184,7 +229,10 @@ def _weighted_jaccard_keys(
 
 
 def _topk_metrics(
-    a: dict[tuple[object, object], float], b: dict[tuple[object, object], float]
+    a: dict[tuple[object, object], float],
+    b: dict[tuple[object, object], float],
+    *,
+    prefix: str,
 ) -> dict[str, Any]:
     row: dict[str, Any] = {}
     total_a = _mass(a)
@@ -195,24 +243,27 @@ def _topk_metrics(
         ak = set(a_sorted[: min(k, len(a_sorted))])
         bk = set(b_sorted[: min(k, len(b_sorted))])
         shared = ak & bk
-        prefix = f"all_edge_top{k}"
+        topk_prefix = f"{prefix}_top{k}"
         denom = min(k, len(a_sorted), len(b_sorted))
-        row[f"{prefix}_jaccard"] = _jaccard(ak, bk)
-        row[f"{prefix}_overlap_fraction"] = len(shared) / denom if denom else None
-        row[f"{prefix}_weighted_jaccard"] = _weighted_jaccard_keys(a, b, ak | bk)
-        row[f"{prefix}_mass_fraction_a"] = (
+        row[f"{topk_prefix}_jaccard"] = _jaccard(ak, bk)
+        row[f"{topk_prefix}_overlap_fraction"] = len(shared) / denom if denom else None
+        row[f"{topk_prefix}_weighted_jaccard"] = _weighted_jaccard_keys(a, b, ak | bk)
+        row[f"{topk_prefix}_mass_fraction_a"] = (
             sum(a[e] for e in ak) / total_a if total_a else None
         )
-        row[f"{prefix}_mass_fraction_b"] = (
+        row[f"{topk_prefix}_mass_fraction_b"] = (
             sum(b[e] for e in bk) / total_b if total_b else None
         )
-        row[f"{prefix}_count_a"] = len(ak)
-        row[f"{prefix}_count_b"] = len(bk)
+        row[f"{topk_prefix}_count_a"] = len(ak)
+        row[f"{topk_prefix}_count_b"] = len(bk)
     return row
 
 
 def _mass_core_metrics(
-    a: dict[tuple[object, object], float], b: dict[tuple[object, object], float]
+    a: dict[tuple[object, object], float],
+    b: dict[tuple[object, object], float],
+    *,
+    prefix: str,
 ) -> dict[str, Any]:
     def core(
         edge_map: dict[tuple[object, object], float], threshold: float
@@ -231,7 +282,7 @@ def _mass_core_metrics(
     total_a = _mass(a)
     total_b = _mass(b)
     for threshold in MASS_CORE_THRESHOLDS:
-        name = f"all_edge_core{int(threshold * 100):02d}"
+        name = f"{prefix}_core{int(threshold * 100):02d}"
         ca = core(a, threshold)
         cb = core(b, threshold)
         shared = ca & cb
@@ -266,42 +317,28 @@ def _layer_flow(
     return flows
 
 
-def _feature_feature_n_pos(snap: GraphSnapshot) -> int | None:
-    if snap.error_node_shape is not None and len(snap.error_node_shape) > 1:
-        return int(snap.error_node_shape[1])
-    meta = snap.bucket_metadata.get("feature<-feature", {})
-    shape = meta.get("error_node_shape")
-    if isinstance(shape, (list, tuple)) and len(shape) > 1:
-        return int(shape[1])
-    return None
-
-
-def _decode_feature_feature_id(encoded: object, n_pos: int) -> tuple[int, int, int]:
-    value = int(cast(Any, encoded))
-    stride = n_pos * 1_000_000
-    layer = value // stride
-    rem = value % stride
-    position = rem // 1_000_000
-    feature_idx = rem % 1_000_000
-    return int(layer), int(position), int(feature_idx)
-
-
 def _feature_feature_collapsed_flows(
     snap: GraphSnapshot,
 ) -> tuple[dict[tuple[int, int], float], dict[tuple[int, int, int, int], float]]:
     edges = snap.bucket_edges.get("feature<-feature")
-    n_pos = _feature_feature_n_pos(snap)
     layer_flow: dict[tuple[int, int], float] = {}
     positionless_flow: dict[tuple[int, int, int, int], float] = {}
-    if not edges or not n_pos:
+    if not edges:
         return layer_flow, positionless_flow
     for target, source in edges:
-        target_layer, _target_pos, target_feature = _decode_feature_feature_id(
-            target, n_pos
-        )
-        source_layer, _source_pos, source_feature = _decode_feature_feature_id(
-            source, n_pos
-        )
+        if not (
+            isinstance(target, tuple)
+            and len(target) == 4
+            and target[0] == "feature"
+            and isinstance(source, tuple)
+            and len(source) == 4
+            and source[0] == "feature"
+        ):
+            raise ValueError("feature<-feature edge has non-feature endpoint")
+        target_layer = int(cast(Any, target[1]))
+        target_feature = int(cast(Any, target[3]))
+        source_layer = int(cast(Any, source[1]))
+        source_feature = int(cast(Any, source[3]))
         mass = edges[(target, source)]
         layer_key = (source_layer, target_layer)
         positionless_key = (source_layer, source_feature, target_layer, target_feature)
@@ -320,29 +357,16 @@ def pair_metrics(a: GraphSnapshot, b: GraphSnapshot) -> dict[str, Any]:
     posa = a.positionless_features
     posb = b.positionless_features
     shifted = posa & posb
-    flow_a = _layer_flow(a.all_edges)
-    flow_b = _layer_flow(b.all_edges)
     ff_layer_flow_a, ff_positionless_flow_a = a.feature_feature_collapsed_flows
     ff_layer_flow_b, ff_positionless_flow_b = b.feature_feature_collapsed_flows
-    flow_mass_a = float(sum(flow_a.values()))
-    flow_mass_b = float(sum(flow_b.values()))
-    logit_a = sum(v for (_sl, kind, _tl), v in flow_a.items() if kind == "logit")
-    logit_b = sum(v for (_sl, kind, _tl), v in flow_b.items() if kind == "logit")
     row: dict[str, Any] = {
         "generated_index_a": a.generated_index,
         "generated_index_b": b.generated_index,
         "token_text_a": a.token_text,
         "token_text_b": b.token_text,
         "feature_jaccard": _jaccard(a.features, b.features),
-        "edge_jaccard": _jaccard(set(a.edges), set(b.edges)),
-        "weighted_edge_jaccard": _weighted_edge_jaccard(a.edges, b.edges),
-        "all_edge_weighted_jaccard": _weighted_edge_jaccard(a.all_edges, b.all_edges),
         "feature_count_a": len(a.features),
         "feature_count_b": len(b.features),
-        "edge_count_a": len(a.edges),
-        "edge_count_b": len(b.edges),
-        "all_edge_count_a": len(a.all_edges),
-        "all_edge_count_b": len(b.all_edges),
         "positionless_feature_jaccard": _jaccard(posa, posb),
         "positionless_feature_count_a": len(posa),
         "positionless_feature_count_b": len(posb),
@@ -355,22 +379,12 @@ def pair_metrics(a: GraphSnapshot, b: GraphSnapshot) -> dict[str, Any]:
         ),
         "shifted_position_reuse_fraction_a": len(shifted) / len(posa) if posa else None,
         "shifted_position_reuse_fraction_b": len(shifted) / len(posb) if posb else None,
-        "layer_flow_weighted_jaccard": _weighted_jaccard_keys(
-            flow_a, flow_b, set(flow_a) | set(flow_b)
-        ),
-        "layer_flow_l1_distance": _l1_distance(flow_a, flow_b),
-        "layer_flow_logit_mass_fraction_a": logit_a / flow_mass_a
-        if flow_mass_a
-        else None,
-        "layer_flow_logit_mass_fraction_b": logit_b / flow_mass_b
-        if flow_mass_b
-        else None,
-        "feature_feature_layer_flow_weighted_jaccard": _weighted_jaccard_keys(
+        "bucket_feature_feature_layer_flow_weighted_jaccard": _weighted_jaccard_keys(
             ff_layer_flow_a,
             ff_layer_flow_b,
             set(ff_layer_flow_a) | set(ff_layer_flow_b),
         ),
-        "feature_feature_positionless_flow_weighted_jaccard": _weighted_jaccard_keys(
+        "bucket_feature_feature_positionless_flow_weighted_jaccard": _weighted_jaccard_keys(
             ff_positionless_flow_a,
             ff_positionless_flow_b,
             set(ff_positionless_flow_a) | set(ff_positionless_flow_b),
@@ -378,10 +392,6 @@ def pair_metrics(a: GraphSnapshot, b: GraphSnapshot) -> dict[str, Any]:
     }
     row.update(_churn(a.features, b.features, prefix="features"))
     row.update(_churn(posa, posb, prefix="positionless_features"))
-    row.update(_churn(set(a.all_edges), set(b.all_edges), prefix="all_edges"))
-    row.update(_mass_churn(a.all_edges, b.all_edges))
-    row.update(_topk_metrics(a.all_edges, b.all_edges))
-    row.update(_mass_core_metrics(a.all_edges, b.all_edges))
     row.update(_bucket_pair_metrics(a, b))
     return row
 
@@ -396,19 +406,34 @@ def _mean(rows: Iterable[dict[str, Any]], key: str) -> float | None:
 
 
 def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    return {
+    summary = {
         "pair_count": len(rows),
         "mean_feature_jaccard": _mean(rows, "feature_jaccard"),
-        "mean_edge_jaccard": _mean(rows, "edge_jaccard"),
-        "mean_weighted_edge_jaccard": _mean(rows, "weighted_edge_jaccard"),
-        "mean_all_edge_weighted_jaccard": _mean(rows, "all_edge_weighted_jaccard"),
-        "mean_feature_feature_layer_flow_weighted_jaccard": _mean(
-            rows, "feature_feature_layer_flow_weighted_jaccard"
+        "mean_bucket_feature_feature_layer_flow_weighted_jaccard": _mean(
+            rows, "bucket_feature_feature_layer_flow_weighted_jaccard"
         ),
-        "mean_feature_feature_positionless_flow_weighted_jaccard": _mean(
-            rows, "feature_feature_positionless_flow_weighted_jaccard"
+        "mean_bucket_feature_feature_positionless_flow_weighted_jaccard": _mean(
+            rows, "bucket_feature_feature_positionless_flow_weighted_jaccard"
         ),
     }
+    bucket_prefixes = sorted(
+        {
+            key.removesuffix("_weighted_jaccard")
+            for row in rows
+            for key in row
+            if key.startswith("bucket_")
+            and key.endswith("_weighted_jaccard")
+            and "_top" not in key
+            and "_core" not in key
+            and "_flow_" not in key
+        }
+    )
+    for prefix in bucket_prefixes:
+        summary[f"mean_{prefix}_jaccard"] = _mean(rows, f"{prefix}_jaccard")
+        summary[f"mean_{prefix}_weighted_jaccard"] = _mean(
+            rows, f"{prefix}_weighted_jaccard"
+        )
+    return summary
 
 
 def rolling_window_rows(
@@ -423,28 +448,19 @@ def rolling_window_rows(
             positionless_counts = Counter(
                 f for snap in chunk for f in snap.positionless_features
             )
-            edge_counts = Counter(e for snap in chunk for e in snap.all_edges)
             threshold = int(np.ceil(window * 0.8))
             threshold50 = int(np.ceil(window * 0.5))
             feature_union = set(feature_counts)
             positionless_union = set(positionless_counts)
-            edge_union = set(edge_counts)
             feature_intersection = {k for k, v in feature_counts.items() if v == window}
             positionless_intersection = {
                 k for k, v in positionless_counts.items() if v == window
             }
-            edge_intersection = {k for k, v in edge_counts.items() if v == window}
-            total_edge_mass = sum(sum(snap.all_edges.values()) for snap in chunk)
-            edge_mass_by_count = Counter()
-            for snap in chunk:
-                edge_mass_by_count.update(snap.all_edges)
             current = {
                 "feature_union": feature_union,
                 "positionless_union": positionless_union,
-                "edge_union": edge_union,
                 "feature_intersection": feature_intersection,
                 "positionless_intersection": positionless_intersection,
-                "edge_intersection": edge_intersection,
             }
             row: dict[str, Any] = {
                 "window": window,
@@ -472,40 +488,49 @@ def rolling_window_rows(
                 "positionless_feature_persistence100_core_size": len(
                     positionless_intersection
                 ),
-                "all_edge_union_size": len(edge_union),
-                "all_edge_intersection_core_size": len(edge_intersection),
-                "all_edge_persistence50_core_size": sum(
-                    v >= threshold50 for v in edge_counts.values()
-                ),
-                "all_edge_persistence80_core_size": sum(
-                    v >= threshold for v in edge_counts.values()
-                ),
-                "all_edge_persistence100_core_size": len(edge_intersection),
-                "all_edge_persistence50_mass_fraction": sum(
-                    mass
-                    for edge, mass in edge_mass_by_count.items()
-                    if edge_counts[edge] >= threshold50
-                )
-                / total_edge_mass
-                if total_edge_mass
-                else None,
-                "all_edge_persistence80_mass_fraction": sum(
-                    mass
-                    for edge, mass in edge_mass_by_count.items()
-                    if edge_counts[edge] >= threshold
-                )
-                / total_edge_mass
-                if total_edge_mass
-                else None,
-                "all_edge_persistence100_mass_fraction": sum(
-                    mass
-                    for edge, mass in edge_mass_by_count.items()
-                    if edge_counts[edge] == window
-                )
-                / total_edge_mass
-                if total_edge_mass
-                else None,
             }
+            bucket_names = sorted(
+                {name for snap in chunk for name in snap.bucket_edges}
+            )
+            for bucket_name in bucket_names:
+                prefix = f"bucket_{_sanitize_bucket(bucket_name)}"
+                edge_counts = Counter(
+                    edge
+                    for snap in chunk
+                    for edge in snap.bucket_edges.get(bucket_name, {})
+                )
+                edge_mass: Counter[Any] = Counter()
+                total_mass = 0.0
+                for snap in chunk:
+                    edges = snap.bucket_edges.get(bucket_name, {})
+                    edge_mass.update(edges)
+                    total_mass += sum(edges.values())
+                edge_union = set(edge_counts)
+                edge_intersection = {
+                    edge for edge, count in edge_counts.items() if count == window
+                }
+                current[f"{prefix}_union"] = edge_union
+                current[f"{prefix}_intersection"] = edge_intersection
+                row[f"{prefix}_union_size"] = len(edge_union)
+                row[f"{prefix}_intersection_core_size"] = len(edge_intersection)
+                for label, cutoff in (
+                    ("50", threshold50),
+                    ("80", threshold),
+                    ("100", window),
+                ):
+                    row[f"{prefix}_persistence{label}_core_size"] = sum(
+                        count >= cutoff for count in edge_counts.values()
+                    )
+                    row[f"{prefix}_persistence{label}_mass_fraction"] = (
+                        sum(
+                            mass
+                            for edge, mass in edge_mass.items()
+                            if edge_counts[edge] >= cutoff
+                        )
+                        / total_mass
+                        if total_mass
+                        else None
+                    )
             if window in previous:
                 prev = previous[window]
                 row.update(
@@ -519,22 +544,15 @@ def rolling_window_rows(
                     )
                 )
                 row.update(
-                    _churn(prev["edge_union"], edge_union, prefix="all_edge_union")
-                )
-                row.update(
                     _churn(
                         prev["feature_intersection"],
                         feature_intersection,
                         prefix="feature_intersection",
                     )
                 )
-                row.update(
-                    _churn(
-                        prev["edge_intersection"],
-                        edge_intersection,
-                        prefix="all_edge_intersection",
-                    )
-                )
+                for key, value in current.items():
+                    if key.startswith("bucket_") and key in prev:
+                        row.update(_churn(prev[key], value, prefix=key))
             previous[window] = current
             rows.append(row)
     return rows
@@ -570,15 +588,16 @@ def cumulative_core_rows(
     rows: list[dict[str, Any]] = []
     feature_counts: Counter[Any] = Counter()
     positionless_counts: Counter[Any] = Counter()
-    edge_counts: Counter[Any] = Counter()
-    edge_mass: Counter[Any] = Counter()
-    total_edge_mass = 0.0
+    bucket_counts: dict[str, Counter[Any]] = {}
+    bucket_mass: dict[str, Counter[Any]] = {}
+    bucket_total_mass: Counter[str] = Counter()
     for i, snap in enumerate(snapshots, start=1):
         feature_counts.update(snap.features)
         positionless_counts.update(snap.positionless_features)
-        edge_counts.update(snap.all_edges)
-        edge_mass.update(snap.all_edges)
-        total_edge_mass += sum(snap.all_edges.values())
+        for bucket_name, edges in snap.bucket_edges.items():
+            bucket_counts.setdefault(bucket_name, Counter()).update(edges)
+            bucket_mass.setdefault(bucket_name, Counter()).update(edges)
+            bucket_total_mass[bucket_name] += sum(edges.values())
         thresholds = {
             "50": int(np.ceil(i * 0.5)),
             "80": int(np.ceil(i * 0.8)),
@@ -589,7 +608,6 @@ def cumulative_core_rows(
             "prefix_length": i,
             "feature_union_size": len(feature_counts),
             "positionless_feature_union_size": len(positionless_counts),
-            "all_edge_union_size": len(edge_counts),
         }
         for name, threshold in thresholds.items():
             row[f"feature_persistence{name}_core_size"] = sum(
@@ -598,15 +616,23 @@ def cumulative_core_rows(
             row[f"positionless_feature_persistence{name}_core_size"] = sum(
                 v >= threshold for v in positionless_counts.values()
             )
-            row[f"all_edge_persistence{name}_core_size"] = sum(
-                v >= threshold for v in edge_counts.values()
-            )
-            row[f"all_edge_persistence{name}_mass_fraction"] = (
-                sum(m for e, m in edge_mass.items() if edge_counts[e] >= threshold)
-                / total_edge_mass
-                if total_edge_mass
-                else None
-            )
+            for bucket_name, edge_counts in sorted(bucket_counts.items()):
+                prefix = f"bucket_{_sanitize_bucket(bucket_name)}"
+                row[f"{prefix}_union_size"] = len(edge_counts)
+                row[f"{prefix}_persistence{name}_core_size"] = sum(
+                    count >= threshold for count in edge_counts.values()
+                )
+                total_mass = bucket_total_mass[bucket_name]
+                row[f"{prefix}_persistence{name}_mass_fraction"] = (
+                    sum(
+                        mass
+                        for edge, mass in bucket_mass[bucket_name].items()
+                        if edge_counts[edge] >= threshold
+                    )
+                    / total_mass
+                    if total_mass
+                    else None
+                )
         rows.append(row)
     return rows, (rows[-1] if rows else {})
 
@@ -614,15 +640,15 @@ def cumulative_core_rows(
 def layer_flow_rows(snapshots: list[GraphSnapshot]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for snap in snapshots:
-        flows = _layer_flow(snap.all_edges)
+        flows, _positionless = snap.feature_feature_collapsed_flows
         total = sum(flows.values())
-        for (source_layer, target_kind, target_layer), mass in sorted(flows.items()):
+        for (source_layer, target_layer), mass in sorted(flows.items()):
             rows.append(
                 {
                     "generated_index": snap.generated_index,
                     "token_text": snap.token_text,
                     "source_layer": source_layer,
-                    "target_kind": target_kind,
+                    "bucket": "feature<-feature",
                     "target_layer": target_layer,
                     "mass": mass,
                     "mass_fraction": mass / total if total else None,

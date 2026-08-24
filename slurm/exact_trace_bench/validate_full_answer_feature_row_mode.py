@@ -11,6 +11,8 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from circuit_tracer.observability.device_timing import (
     PHASE4_CUDA_ACCOUNTING_SCOPE_V2,
     PHASE4_CUDA_ESTIMATOR_V2,
@@ -27,10 +29,13 @@ from circuit_tracer.observability.device_timing import (
 from nlp_research_project.exact_trace_bench.backward_selection import (
     backward_mechanism_record,
 )
-from nlp_research_project.exact_trace_bench.compact_io import (
-    CANONICAL_TYPED_BUCKET_NAMES,
-    load_compact_graph,
-    summarize_feature_positions,
+from nlp_research_project.exact_trace_bench.typed_compact_graph import (
+    CANONICAL_BUCKET_NAMES,
+    COMPACT_SAVE_FORMAT,
+    DEFAULT_RETENTION_POLICY_ID,
+    SCHEMA_VERSION,
+    get_retention_policy,
+    load_typed_compact_graph,
 )
 from nlp_research_project.exact_trace_bench.trace_runtime.artifacts import (
     load_and_validate_capture_artifact,
@@ -886,8 +891,18 @@ def validate_feature_row_mode(
     expected_graph_feature_count: int | None = None,
     expected_graph_edge_count: int | None = None,
     require_canonical_typed_buckets: bool = False,
+    require_typed_only_graph: bool = False,
+    expected_graph_schema_version: int | None = None,
+    expected_graph_save_format: str | None = None,
+    expected_graph_retention_policy_id: str | None = None,
+    expected_graph_retention_policy_fingerprint: str | None = None,
     require_full_completion: bool = False,
 ) -> dict[str, Any]:
+    if expected_graph_edge_count is not None:
+        raise FeatureRowModeValidationError(
+            "expected_graph_edge_count is a removed legacy global-projection gate; "
+            "validate typed per-bucket counts and the policy fingerprint instead"
+        )
     shard_root = output_root / "shards" / "shard_000"
     shard = _load_json(shard_root / "shard.json")
     shard_status = shard.get("status")
@@ -1048,8 +1063,15 @@ def validate_feature_row_mode(
                     trace=trace,
                     label=label,
                     expected_feature_count=expected_graph_feature_count,
-                    expected_edge_count=expected_graph_edge_count,
-                    require_canonical_typed_buckets=(require_canonical_typed_buckets),
+                    require_typed_only_graph=(
+                        require_canonical_typed_buckets or require_typed_only_graph
+                    ),
+                    expected_schema_version=expected_graph_schema_version,
+                    expected_save_format=expected_graph_save_format,
+                    expected_policy_id=expected_graph_retention_policy_id,
+                    expected_policy_fingerprint=(
+                        expected_graph_retention_policy_fingerprint
+                    ),
                 )
             )
             graph_count += 1
@@ -1341,8 +1363,14 @@ def validate_feature_row_mode(
         ),
         "per_device_gpu_resource_evidence": per_device_gpu_resource_evidence,
         "expected_graph_feature_count": expected_graph_feature_count,
-        "expected_graph_edge_count": expected_graph_edge_count,
         "require_canonical_typed_buckets": require_canonical_typed_buckets,
+        "require_typed_only_graph": require_typed_only_graph,
+        "expected_graph_schema_version": expected_graph_schema_version,
+        "expected_graph_save_format": expected_graph_save_format,
+        "expected_graph_retention_policy_id": (expected_graph_retention_policy_id),
+        "expected_graph_retention_policy_fingerprint": (
+            expected_graph_retention_policy_fingerprint
+        ),
         "require_full_completion": require_full_completion,
         "validated_graph_count": graph_count,
         "graph_validation_reports": graph_validation_reports,
@@ -1530,8 +1558,11 @@ def _validate_compact_graph(
     trace: dict[str, Any],
     label: str,
     expected_feature_count: int | None,
-    expected_edge_count: int | None,
-    require_canonical_typed_buckets: bool,
+    require_typed_only_graph: bool,
+    expected_schema_version: int | None,
+    expected_save_format: str | None,
+    expected_policy_id: str | None,
+    expected_policy_fingerprint: str | None,
 ) -> dict[str, Any]:
     raw_path = trace.get("graph_path")
     if not isinstance(raw_path, str) or not raw_path:
@@ -1547,7 +1578,7 @@ def _validate_compact_graph(
         )
     try:
         generated_index = trace.get("generated_index")
-        graph = load_compact_graph(
+        graph = load_typed_compact_graph(
             path,
             expected_step_idx=(
                 generated_index
@@ -1570,49 +1601,70 @@ def _validate_compact_graph(
             f"{label} full trace has invalid target_position={target_position!r}: "
             f"{trace_path}"
         )
-    positions = summarize_feature_positions(
-        graph, max_position_exclusive=target_position
-    )
-    if positions.has_future_positions:
+    feature_positions = graph.feature_ids[:, 1]
+    future_position_count = int(np.count_nonzero(feature_positions >= target_position))
+    if future_position_count:
         raise FeatureRowModeValidationError(
-            f"{label} full trace graph has {positions.future_position_count} "
+            f"{label} full trace graph has {future_position_count} "
             f"feature endpoints at or after target position {target_position}: {path}"
         )
-    feature_count = graph.step.n_features
-    edge_count = len(graph.step.weights)
+    feature_count = graph.n_features
+    typed_edge_count = graph.edge_count
     if expected_feature_count is not None and feature_count != expected_feature_count:
         raise FeatureRowModeValidationError(
             f"{label} full trace graph has {feature_count} selected features; "
             f"expected {expected_feature_count}: {path}"
         )
-    if expected_edge_count is not None and edge_count != expected_edge_count:
-        raise FeatureRowModeValidationError(
-            f"{label} full trace graph has {edge_count} compact edges; expected "
-            f"{expected_edge_count}: {path}"
-        )
-    if require_canonical_typed_buckets and (
-        graph.compact_save_format != "typed_bucketed"
-        or graph.bucket_names != CANONICAL_TYPED_BUCKET_NAMES
+    if require_typed_only_graph and (
+        graph.schema_version != SCHEMA_VERSION
+        or graph.compact_save_format != COMPACT_SAVE_FORMAT
+        or graph.bucket_names != CANONICAL_BUCKET_NAMES
     ):
         raise FeatureRowModeValidationError(
             f"{label} full trace graph is not in canonical typed-bucket format: "
             f"format={graph.compact_save_format!r}, buckets={graph.bucket_names!r}: "
             f"{path}"
         )
+    expected_fields = {
+        "schema_version": expected_schema_version,
+        "compact_save_format": expected_save_format,
+        "retention_policy_id": expected_policy_id,
+        "retention_policy_fingerprint": expected_policy_fingerprint,
+    }
+    for field, expected in expected_fields.items():
+        if expected is not None and getattr(graph, field) != expected:
+            raise FeatureRowModeValidationError(
+                f"{label} full trace graph {field}={getattr(graph, field)!r}; "
+                f"expected {expected!r}: {path}"
+            )
     return {
         "path": str(path),
-        "step_idx": graph.step.step_idx,
+        "step_idx": graph.step_idx,
         "target_position": target_position,
         "feature_count": feature_count,
-        "compact_edge_count": edge_count,
+        "schema_version": graph.schema_version,
         "compact_save_format": graph.compact_save_format,
         "bucket_names": list(graph.bucket_names),
-        "typed_edge_count": (
-            0 if graph.bucket_weights is None else len(graph.bucket_weights)
+        "typed_edge_count": typed_edge_count,
+        "typed_edge_count_by_bucket": {
+            name: int(np.count_nonzero(graph.bucket_ids == bucket_id))
+            for bucket_id, name in enumerate(CANONICAL_BUCKET_NAMES)
+        },
+        "retention_policy_id": graph.retention_policy_id,
+        "retention_policy_fingerprint": graph.retention_policy_fingerprint,
+        "expected_retention_policy_fingerprint": get_retention_policy(
+            DEFAULT_RETENTION_POLICY_ID
+        ).fingerprint,
+        "content_fingerprint": graph.content_fingerprint,
+        "graph_fingerprint": graph.graph_fingerprint,
+        "target_fingerprint": graph.target_fingerprint,
+        "provider_fingerprint": graph.provider_fingerprint,
+        "trace_fingerprint": graph.trace_fingerprint,
+        "step_fingerprint": graph.step_fingerprint,
+        "max_feature_position": (
+            int(feature_positions.max()) if feature_positions.size else None
         ),
-        "typed_feature_endpoint_count": positions.typed_feature_endpoint_count,
-        "max_feature_position": positions.max_position,
-        "future_position_count": positions.future_position_count,
+        "future_position_count": future_position_count,
     }
 
 
@@ -1707,6 +1759,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--expected-graph-feature-count", type=int)
     parser.add_argument("--expected-graph-edge-count", type=int)
     parser.add_argument("--require-canonical-typed-buckets", action="store_true")
+    parser.add_argument("--require-typed-only-graph", action="store_true")
+    parser.add_argument("--expected-graph-schema-version", type=int)
+    parser.add_argument("--expected-graph-save-format")
+    parser.add_argument("--expected-graph-retention-policy-id")
+    parser.add_argument("--expected-graph-retention-policy-fingerprint")
     parser.add_argument("--require-full-completion", action="store_true")
     parser.add_argument("--label", required=True)
     return parser.parse_args()
@@ -1758,6 +1815,15 @@ def main() -> int:
             expected_graph_feature_count=args.expected_graph_feature_count,
             expected_graph_edge_count=args.expected_graph_edge_count,
             require_canonical_typed_buckets=args.require_canonical_typed_buckets,
+            require_typed_only_graph=args.require_typed_only_graph,
+            expected_graph_schema_version=args.expected_graph_schema_version,
+            expected_graph_save_format=args.expected_graph_save_format,
+            expected_graph_retention_policy_id=(
+                args.expected_graph_retention_policy_id
+            ),
+            expected_graph_retention_policy_fingerprint=(
+                args.expected_graph_retention_policy_fingerprint
+            ),
             require_full_completion=args.require_full_completion,
         )
     except (FeatureRowModeValidationError, OSError, json.JSONDecodeError) as exc:

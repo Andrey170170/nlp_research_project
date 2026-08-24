@@ -42,7 +42,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from nlp_research_project.exact_trace_bench.compact_io import StepData, load_compact  # noqa: E402
+from nlp_research_project.exact_trace_bench.compact_io import (  # noqa: E402
+    StepData,
+    load_historical_compact_step,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +135,7 @@ def edge_mass_retained(approx: StepData) -> float:
 
 def _load_npz_steps(completion_dir: Path) -> list[StepData]:
     files = sorted(completion_dir.glob("step_*.npz"))
-    return [load_compact(p) for p in files]
+    return [load_historical_compact_step(p) for p in files]
 
 
 def _load_pt_topk_steps(
@@ -168,7 +171,10 @@ def _step_from_dict_topk(
     max_edges: int,
 ) -> StepData:
     """Apply step_from_pt logic but with activation_values explicitly absent."""
-    from nlp_research_project.exact_trace_bench.compact_io import sparsify_edges, StepData
+    from nlp_research_project.exact_trace_bench.compact_io import (
+        sparsify_edges,
+        StepData,
+    )
     import numpy as np
     import torch
 

@@ -138,13 +138,23 @@ def test_preheated_prepared_wrapper_resolves_and_preflights_bundle() -> None:
     )
     assert '"${EXPECTED_GRAPH_FEATURE_COUNT:-}"' in text
     assert '--expected-graph-feature-count "$EXPECTED_GRAPH_FEATURE_COUNT"' in text
-    assert '"${EXPECTED_GRAPH_EDGE_COUNT:-}"' in text
-    assert '--expected-graph-edge-count "$EXPECTED_GRAPH_EDGE_COUNT"' in text
-    assert "validation_args+=(--require-canonical-typed-buckets)" in text
-    assert (
-        'REQUIRE_CANONICAL_TYPED_BUCKETS="${REQUIRE_CANONICAL_TYPED_BUCKETS:-0}"'
-        in text
-    )
+    assert "EXPECTED_GRAPH_EDGE_COUNT" not in text
+    assert "validation_args+=(--require-typed-only-graph)" in text
+    assert 'REQUIRE_TYPED_ONLY_GRAPH="${REQUIRE_TYPED_ONLY_GRAPH:-0}"' in text
+    for variable, flag in (
+        ("EXPECTED_TYPED_SCHEMA_VERSION", "--expected-graph-schema-version"),
+        ("EXPECTED_TYPED_SAVE_FORMAT", "--expected-graph-save-format"),
+        (
+            "EXPECTED_TYPED_RETENTION_POLICY_ID",
+            "--expected-graph-retention-policy-id",
+        ),
+        (
+            "EXPECTED_TYPED_RETENTION_POLICY_FINGERPRINT",
+            "--expected-graph-retention-policy-fingerprint",
+        ),
+    ):
+        assert variable in text
+        assert flag in text
     assert "--expected-graph-feature-count 8192" not in text
     assert "--expected-graph-edge-count 20000" not in text
     assert "--expected-decoder-active-row-residency" in text

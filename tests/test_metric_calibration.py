@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import numpy as np
-
 from nlp_research_project.exact_trace_bench.full_answer.calibration import (
     build_scorecard,
     load_calibration_pairs,
@@ -15,6 +13,7 @@ from nlp_research_project.exact_trace_bench.full_answer.calibration import (
 from nlp_research_project.exact_trace_bench.full_answer.calibration_plots import (
     plot_metric_calibration,
 )
+from typed_graph_fixtures import write_typed_graph
 
 
 def _write_graph(
@@ -24,18 +23,25 @@ def _write_graph(
     weights: list[float] | None = None,
 ) -> Path:
     path = run_root / "shards" / "shard_000" / f"token_{index:06d}" / "graph.npz"
-    path.parent.mkdir(parents=True, exist_ok=True)
     weights = weights or [1.0, 2.0]
-    np.savez_compressed(
+    feature_count = len(features)
+    feature_feature = [
+        [0.0 for _column in range(feature_count)] for _row in range(feature_count)
+    ]
+    feature_feature[min(1, feature_count - 1)][0] = weights[0]
+    logit_feature = [[0.0 for _column in range(feature_count)]]
+    logit_feature[0][0] = weights[1]
+    token_count = max(position for _layer, position, _feature_id in features) + 1
+    write_typed_graph(
         path,
-        row_idx=np.asarray([1, len(features)], dtype=np.int64),
-        col_idx=np.asarray([0, 0], dtype=np.int64),
-        weights=np.asarray(weights, dtype=np.float32),
-        feature_ids=np.asarray(features, dtype=np.int64),
-        token_text=np.asarray(f"tok{index}"),
-        logprob=np.asarray(np.nan),
-        n_features=np.asarray(len(features), dtype=np.int64),
-        step_idx=np.asarray(index, dtype=np.int64),
+        step_idx=index,
+        feature_ids=features,
+        token_ids=list(range(100, 100 + token_count)),
+        token_text=f"tok{index}",
+        bucket_values={
+            "feature<-feature": feature_feature,
+            "logit<-feature": logit_feature,
+        },
     )
     return path
 
@@ -66,7 +72,7 @@ def test_rebucket_metric_calibration_uses_classification_token_counts(
             "answer_label": "correct",
             "generated_index": 80,
             "position_band": "late",
-            "bucket": "all_edges",
+            "bucket": "feature<-feature",
             "metric": "similarity_metric",
             "params_json": "{}",
             "value": 1.0,
@@ -79,7 +85,7 @@ def test_rebucket_metric_calibration_uses_classification_token_counts(
             "prompt_id": "prompt_a",
             "generated_index": 20,
             "position_band": "mid",
-            "bucket": "all_edges",
+            "bucket": "feature<-feature",
             "metric": "similarity_metric",
             "params_json": "{}",
             "value": 0.1,

@@ -18,6 +18,9 @@ from nlp_research_project.exact_trace_bench.io_utils import write_json
 from nlp_research_project.exact_trace_bench.trace_runtime.request import (
     trace_policy_from_scenario,
 )
+from nlp_research_project.exact_trace_bench.typed_compact_graph import (
+    CANONICAL_BUCKET_NAMES,
+)
 
 
 def test_static_coalescing_matrix_preserves_semantics_and_scales_execution() -> None:
@@ -81,6 +84,16 @@ def test_static_coalescing_metadata_is_launch_ready() -> None:
         for row in payload["scenarios"]
     )
     assert all(row["baseline_check"]["mode"] == "gate" for row in payload["scenarios"])
+    expected_bucket_thresholds = {
+        f"overall_mean_bucket_{name.replace('<-', '_').replace('-', '_')}_exact_min": 1.0
+        for name in CANONICAL_BUCKET_NAMES
+    }
+    assert all(
+        row["baseline_check"]["thresholds"]
+        == {"overall_mean_feature_jaccard_min": 1.0, **expected_bucket_thresholds}
+        for row in payload["scenarios"]
+    )
+    assert metadata["acceptance"]["typed_bucket_gate"] == "six_bucket_strict_exact"
 
 
 def _write_validation_case(
@@ -143,10 +156,12 @@ def _write_validation_case(
 def _exact_graph_comparison(*args: object, **kwargs: object) -> dict[str, object]:
     return {
         "comparison_complete": True,
+        "policy_compatible": True,
         "overall_mean_feature_jaccard": 1.0,
-        "overall_mean_edge_jaccard": 1.0,
-        "overall_mean_weighted_edge_jaccard": 0.9999999,
-        "overall_mean_top256_edge_jaccard": 1.0,
+        **{
+            f"overall_mean_bucket_{name.replace('<-', '_').replace('-', '_')}_exact": 1.0
+            for name in CANONICAL_BUCKET_NAMES
+        },
     }
 
 
@@ -174,6 +189,7 @@ def test_static_coalescing_post_matrix_validator_accepts_physical_regrouping(
     assert report["passed"] is True
     assert report["status"] == "pass"
     assert not report["failures"]
+    assert report["typed_bucket_gate"] == "six_bucket_strict_exact"
     assert all(
         comparison["ranker_pre_locality_order_hash_equal"] is False
         for comparison in report["comparisons"]
@@ -202,4 +218,6 @@ def test_static_coalescing_post_matrix_validator_rejects_refresh_drift(
     report = validate_phase4_static_coalescing_run(tmp_path)
 
     assert report["passed"] is False
-    assert any("semantic schedule or refresh identity" in row for row in report["failures"])
+    assert any(
+        "semantic schedule or refresh identity" in row for row in report["failures"]
+    )

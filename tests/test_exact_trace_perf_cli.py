@@ -15,6 +15,24 @@ from experiments import run_sparsification_experiment as experiment_runner  # no
 from nlp_research_project.exact_trace_bench import perf_cli  # noqa: E402
 
 
+def _typed_exact_thresholds(feature_jaccard: float) -> dict[str, float]:
+    return {
+        "worst_step_feature_jaccard_min": feature_jaccard,
+        "worst_step_target_token_match_min": 1.0,
+        **{
+            f"worst_step_bucket_{name.replace('<-', '_').replace('-', '_')}_exact_min": 1.0
+            for name in perf_cli.CANONICAL_BUCKET_NAMES
+        },
+    }
+
+
+def _typed_exact_comparison(value: float = 1.0) -> dict[str, float]:
+    return {
+        f"worst_step_bucket_{name.replace('<-', '_').replace('-', '_')}_exact": value
+        for name in perf_cli.CANONICAL_BUCKET_NAMES
+    }
+
+
 class _FakeProcess:
     def __init__(
         self,
@@ -77,42 +95,12 @@ def test_suites_have_fixed_requested_cases() -> None:
 
 
 def test_fidelity_thresholds_are_explicit() -> None:
-    assert perf_cli.FIDELITY_THRESHOLDS["strict_exact"] == {
-        "worst_step_feature_jaccard_min": 1.0,
-        "worst_step_all_edge_jaccard_min": 1.0,
-        "worst_step_all_edge_top256_jaccard_min": 1.0,
-        "worst_step_all_edge_weighted_jaccard_min": 1.0,
-        "worst_step_target_token_match_min": 1.0,
-        "worst_step_all_edge_normalized_l1_deviation_max": 0.0,
-        "worst_step_all_edge_shared_sign_agreement_min": 1.0,
-        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.0,
-    }
-    assert perf_cli.FIDELITY_THRESHOLDS["exact"] == {
-        "worst_step_feature_jaccard_min": 0.995,
-        "worst_step_all_edge_jaccard_min": 0.995,
-        "worst_step_all_edge_top256_jaccard_min": 1.0,
-        "worst_step_all_edge_weighted_jaccard_min": 0.995,
-        "worst_step_target_token_match_min": 1.0,
-        "worst_step_all_edge_normalized_l1_deviation_max": 0.005,
-        "worst_step_all_edge_shared_sign_agreement_min": 1.0,
-        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.005,
-    }
-    assert perf_cli.FIDELITY_THRESHOLDS["close"] == {
-        "worst_step_feature_jaccard_min": 0.99,
-        "worst_step_all_edge_jaccard_min": 0.99,
-        "worst_step_all_edge_weighted_jaccard_min": 0.99,
-        "worst_step_target_token_match_min": 1.0,
-        "worst_step_all_edge_normalized_l1_deviation_max": 0.01,
-        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.01,
-    }
-    assert perf_cli.FIDELITY_THRESHOLDS["bounded"] == {
-        "worst_step_feature_jaccard_min": 0.98,
-        "worst_step_all_edge_jaccard_min": 0.98,
-        "worst_step_all_edge_weighted_jaccard_min": 0.98,
-        "worst_step_target_token_match_min": 1.0,
-        "worst_step_all_edge_normalized_l1_deviation_max": 0.02,
-        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.02,
-    }
+    assert perf_cli.FIDELITY_THRESHOLDS["strict_exact"] == (
+        _typed_exact_thresholds(1.0)
+    )
+    assert perf_cli.FIDELITY_THRESHOLDS["exact"] == _typed_exact_thresholds(0.995)
+    assert perf_cli.FIDELITY_THRESHOLDS["close"] == _typed_exact_thresholds(0.99)
+    assert perf_cli.FIDELITY_THRESHOLDS["bounded"] == _typed_exact_thresholds(0.98)
 
 
 def test_capability_contract_distinguishes_same_layer_and_cross_layer() -> None:
@@ -286,6 +274,7 @@ def test_exact_pin_facts_verify_reference_and_generated_scenario(
     assert verified["status"] == "verified_referenced_scenario"
     assert verified["values"] == {
         "exact_trace_internal_dtype": "fp32",
+        "edge_retention_policy_id": "typed_top_p_v1",
         "decoder_chunk_size": 4096,
     }
 
@@ -316,14 +305,14 @@ def test_exact_pin_facts_verify_reference_and_generated_scenario(
 
 def test_compact_strict_semantics_prohibit_exact_semantics_claim() -> None:
     assert perf_cli.COMPARISON_SEMANTICS == {
-        "strict_exact": "signed_compact_strict_exact",
-        "exact": "signed_compact_exact",
-        "close": "signed_compact_close",
-        "bounded": "signed_compact_bounded",
-        "best_effort": "signed_compact_best_effort",
-        "research": "signed_compact_research",
+        "strict_exact": "typed_bucket_v2_strict_exact",
+        "exact": "typed_bucket_v2_exact_only_pending_step1b",
+        "close": "typed_bucket_v2_exact_only_pending_step1b",
+        "bounded": "typed_bucket_v2_exact_only_pending_step1b",
+        "best_effort": "typed_bucket_v2_metrics_only",
+        "research": "typed_bucket_v2_metrics_only",
     }
-    assert "not exact semantic" in perf_cli.COMPARISON_CLAIM_LIMITATION
+    assert "wait for Step 1b" in perf_cli.COMPARISON_CLAIM_LIMITATION
     strict_scenario = perf_cli._case_scenario(
         perf_cli.Case("gemma3_1b_clt", "361_base"),
         "strict_exact",
@@ -331,7 +320,7 @@ def test_compact_strict_semantics_prohibit_exact_semantics_claim() -> None:
     )["scenarios"][0]
     assert (
         strict_scenario["baseline_check"]["comparison_semantics"]
-        == "signed_compact_strict_exact"
+        == "typed_bucket_v2_strict_exact"
     )
     bounded_scenario = perf_cli._case_scenario(
         perf_cli.Case("gemma3_1b_clt", "361_base"),
@@ -340,7 +329,7 @@ def test_compact_strict_semantics_prohibit_exact_semantics_claim() -> None:
     )["scenarios"][0]
     assert (
         bounded_scenario["baseline_check"]["comparison_semantics"]
-        == "signed_compact_bounded"
+        == "typed_bucket_v2_exact_only_pending_step1b"
     )
 
 
@@ -359,32 +348,15 @@ def test_canonical_fidelity_taxonomy_and_promotion_policy() -> None:
         "close",
         "bounded",
     }
-    assert perf_cli.AUTOMATIC_PROMOTION_ALLOWED_FIDELITIES == {
+    assert perf_cli.EXACT_BASELINE_FIDELITIES == {
         "strict_exact",
         "exact",
     }
-    assert (
-        perf_cli.FIDELITY_THRESHOLDS["strict_exact"][
-            "worst_step_all_edge_signed_normalized_l1_deviation_max"
-        ]
-        == 0.0
-    )
-    assert (
-        perf_cli.FIDELITY_THRESHOLDS["exact"]["worst_step_all_edge_jaccard_min"]
-        == 0.995
-    )
-    assert (
-        perf_cli.FIDELITY_THRESHOLDS["close"][
-            "worst_step_all_edge_signed_normalized_l1_deviation_max"
-        ]
-        == 0.01
-    )
-    assert (
-        perf_cli.FIDELITY_THRESHOLDS["bounded"][
-            "worst_step_all_edge_signed_normalized_l1_deviation_max"
-        ]
-        == 0.02
-    )
+    assert perf_cli.AUTOMATIC_PROMOTION_ALLOWED_FIDELITIES == set()
+    for fidelity in ("strict_exact", "exact", "close", "bounded"):
+        thresholds = perf_cli.FIDELITY_THRESHOLDS[fidelity]
+        assert not any("all_edge" in key for key in thresholds)
+        assert sum(key.endswith("_exact_min") for key in thresholds) == 6
     assert perf_cli.FIDELITY_THRESHOLDS["best_effort"] == {}
     assert perf_cli.FIDELITY_THRESHOLDS["research"] == {}
 
@@ -1729,12 +1701,9 @@ def test_result_report_enforces_plt_duration_target(
         json.dumps(
             {
                 "worst_step_feature_jaccard": 1.0,
-                "worst_step_all_edge_jaccard": 0.99,
-                "worst_step_all_edge_top256_jaccard": 0.98,
-                "worst_step_all_edge_weighted_jaccard": 0.97,
                 "worst_step_target_token_match": 1.0,
-                "worst_step_all_edge_normalized_l1_deviation": 0.01,
-                "worst_step_evidence": {"worst_step_all_edge_jaccard": []},
+                **_typed_exact_comparison(),
+                "worst_step_evidence": {"worst_step_bucket_feature_feature_exact": []},
             }
         )
     )
@@ -1754,15 +1723,18 @@ def test_result_report_enforces_plt_duration_target(
     )
 
     assert report["speedup"] == pytest.approx(1200.0 / duration_seconds)
-    assert report["top256_edge_jaccard"] == 0.98
-    assert report["edge_magnitude_l1_deviation"] == 0.01
+    assert all(
+        report[f"bucket_{name.replace('<-', '_').replace('-', '_')}_exact"] == 1.0
+        for name in perf_cli.CANONICAL_BUCKET_NAMES
+    )
+    assert not any("all_edge" in key for key in report)
     assert report["performance_target_seconds"] == 600.0
     assert report["performance_stretch_target_seconds"] == 300.0
     assert report["performance_stretch_passed"] is (duration_seconds <= 300.0)
     assert report["parity_passed"] is True
     assert report["performance_passed"] is performance_passed
     assert report["passed"] is passed
-    assert report["comparison_semantics"] == "signed_compact_strict_exact"
+    assert report["comparison_semantics"] == "typed_bucket_v2_strict_exact"
     assert report["exact_semantics_claim_allowed"] is False
     assert report["resource_validation_passed"] is True
     assert report["resource_failure_reasons"] == []
@@ -2606,7 +2578,8 @@ def test_print_report_handles_missing_compare_metrics(
     )
 
     output = capsys.readouterr().out
-    assert "all_edge=n/a" in output
+    assert "feature_feature=n/a" in output
+    assert "all_edge" not in output
     assert "gate=FAIL" in output
 
 
@@ -2674,8 +2647,8 @@ def test_print_report_includes_compact_phase_timings(
                 "promotion_eligible": True,
                 "code_retention_eligible": True,
                 "code_retention_selected": False,
-                "automatic_promotion_allowed": True,
-                "automatic_promotion_eligible": True,
+                "automatic_promotion_allowed": False,
+                "automatic_promotion_eligible": False,
                 "automatic_promotion_selected": False,
                 "reconciliation_required": False,
                 "passed": True,
@@ -2700,7 +2673,7 @@ def test_print_report_includes_compact_phase_timings(
                 "promotion_eligible": True,
                 "code_retention_eligible": True,
                 "code_retention_selected": False,
-                "automatic_promotion_allowed": True,
+                "automatic_promotion_allowed": False,
                 "automatic_promotion_eligible": False,
                 "automatic_promotion_selected": False,
                 "reconciliation_required": False,
@@ -2726,7 +2699,7 @@ def test_print_report_includes_compact_phase_timings(
                 "promotion_eligible": True,
                 "code_retention_eligible": False,
                 "code_retention_selected": False,
-                "automatic_promotion_allowed": True,
+                "automatic_promotion_allowed": False,
                 "automatic_promotion_eligible": False,
                 "automatic_promotion_selected": False,
                 "reconciliation_required": False,

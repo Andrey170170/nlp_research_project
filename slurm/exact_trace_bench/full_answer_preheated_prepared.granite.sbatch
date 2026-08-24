@@ -223,7 +223,7 @@ validation_args=(
 )
 REQUIRE_PHASE4_DEVICE_TIMING="${REQUIRE_PHASE4_DEVICE_TIMING:-0}"
 REQUIRE_UNAMBIGUOUS_PER_DEVICE_GPU_EVIDENCE="${REQUIRE_UNAMBIGUOUS_PER_DEVICE_GPU_EVIDENCE:-0}"
-REQUIRE_CANONICAL_TYPED_BUCKETS="${REQUIRE_CANONICAL_TYPED_BUCKETS:-0}"
+REQUIRE_TYPED_ONLY_GRAPH="${REQUIRE_TYPED_ONLY_GRAPH:-0}"
 
 if [[ "$REQUIRE_PHASE4_DEVICE_TIMING" == "1" ]]; then
     validation_args+=(--require-phase4-device-timing)
@@ -246,14 +246,26 @@ fi
 if [[ -n "${EXPECTED_GRAPH_FEATURE_COUNT:-}" ]]; then
     validation_args+=(--expected-graph-feature-count "$EXPECTED_GRAPH_FEATURE_COUNT")
 fi
-if [[ -n "${EXPECTED_GRAPH_EDGE_COUNT:-}" ]]; then
-    validation_args+=(--expected-graph-edge-count "$EXPECTED_GRAPH_EDGE_COUNT")
-fi
-if [[ "$REQUIRE_CANONICAL_TYPED_BUCKETS" == "1" ]]; then
-    validation_args+=(--require-canonical-typed-buckets)
-elif [[ "$REQUIRE_CANONICAL_TYPED_BUCKETS" != "0" ]]; then
-    echo "REQUIRE_CANONICAL_TYPED_BUCKETS must be 0 or 1: $REQUIRE_CANONICAL_TYPED_BUCKETS" >&2
+if [[ "$REQUIRE_TYPED_ONLY_GRAPH" == "1" ]]; then
+    validation_args+=(--require-typed-only-graph)
+elif [[ "$REQUIRE_TYPED_ONLY_GRAPH" != "0" ]]; then
+    echo "REQUIRE_TYPED_ONLY_GRAPH must be 0 or 1: $REQUIRE_TYPED_ONLY_GRAPH" >&2
     exit 2
+fi
+if [[ -n "${EXPECTED_TYPED_SCHEMA_VERSION:-}" ]]; then
+    validation_args+=(--expected-graph-schema-version "$EXPECTED_TYPED_SCHEMA_VERSION")
+fi
+if [[ -n "${EXPECTED_TYPED_SAVE_FORMAT:-}" ]]; then
+    validation_args+=(--expected-graph-save-format "$EXPECTED_TYPED_SAVE_FORMAT")
+fi
+if [[ -n "${EXPECTED_TYPED_RETENTION_POLICY_ID:-}" ]]; then
+    validation_args+=(--expected-graph-retention-policy-id "$EXPECTED_TYPED_RETENTION_POLICY_ID")
+fi
+if [[ -n "${EXPECTED_TYPED_RETENTION_POLICY_FINGERPRINT:-}" ]]; then
+    validation_args+=(
+        --expected-graph-retention-policy-fingerprint
+        "$EXPECTED_TYPED_RETENTION_POLICY_FINGERPRINT"
+    )
 fi
 if [[ "$EXPECTED_VJP_KERNEL_MODE" == "autograd_batched" ]]; then
     validation_args+=(--require-structured-vjp-evidence)

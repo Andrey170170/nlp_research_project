@@ -7,6 +7,12 @@ from typing import Any
 import numpy as np
 
 from ..io_utils import read_json, write_json
+from ..typed_compact_graph import (
+    CANONICAL_BUCKET_NAMES,
+    FEATURE_ID_BASE,
+    TypedCompactGraph,
+    load_typed_compact_graph,
+)
 
 from .stability import _jaccard_from_keys, _load_npz, _row_keys, _topk_overlap
 
@@ -23,31 +29,53 @@ def _feature_set(rows: np.ndarray) -> set[FeatureKey]:
     return {_key(row) for row in np.asarray(rows, dtype=np.int64)}
 
 
-def _load_graph(path: Path) -> dict[str, Any]:
-    with np.load(str(path), allow_pickle=False) as data:
-        return {key: data[key] for key in data.files}
-
-
-def _edge_and_mass(
-    graph: dict[str, Any],
-) -> tuple[dict[tuple[Any, Any], float], dict[FeatureKey, float]]:
-    features = np.asarray(graph["feature_ids"], dtype=np.int64)
-    n_features = int(graph.get("n_features", np.asarray(features.shape[0])))
-    edges: dict[tuple[Any, Any], float] = {}
+def _typed_bucket_edges_and_feature_mass(
+    graph: TypedCompactGraph,
+) -> tuple[
+    dict[str, dict[tuple[Any, Any], float]],
+    dict[FeatureKey, float],
+]:
+    n_pos = len(graph.token_ids)
+    feature_by_identity = {
+        int(layer) * n_pos * FEATURE_ID_BASE
+        + int(position) * FEATURE_ID_BASE
+        + int(feature): (int(layer), int(position), int(feature))
+        for layer, position, feature in graph.feature_ids
+    }
+    edges_by_bucket: dict[str, dict[tuple[Any, Any], float]] = {
+        name: {} for name in CANONICAL_BUCKET_NAMES
+    }
     mass: dict[FeatureKey, float] = defaultdict(float)
-    for row, col, weight in zip(graph["row_idx"], graph["col_idx"], graph["weights"]):
-        col_i = int(col)
+    for row, col, weight, bucket_id in zip(
+        graph.bucket_row_idx,
+        graph.bucket_col_idx,
+        graph.bucket_weights,
+        graph.bucket_ids,
+        strict=True,
+    ):
+        name = graph.bucket_names[int(bucket_id)]
         row_i = int(row)
-        if not 0 <= col_i < n_features:
-            continue
-        source = _key(features[col_i])
-        target: Any = ("logit", row_i - n_features)
-        if row_i < n_features:
-            target = _key(features[row_i])
-            mass[target] += abs(float(weight))
-        mass[source] += abs(float(weight))
-        edges[(target, source)] = abs(float(weight))
-    return edges, dict(mass)
+        col_i = int(col)
+        target: Any = (
+            feature_by_identity[row_i]
+            if name.startswith("feature<-")
+            else ("logit", int(graph.logit_token_ids[row_i]))
+        )
+        source_feature: FeatureKey | None = None
+        if name.endswith("<-feature"):
+            source_feature = feature_by_identity[col_i]
+            source: Any = source_feature
+        elif name.endswith("<-error"):
+            source = ("error", col_i // n_pos, col_i % n_pos)
+        else:
+            source = ("token", col_i, int(graph.token_ids[col_i]))
+        magnitude = abs(float(weight))
+        edges_by_bucket[name][(target, source)] = magnitude
+        if name.startswith("feature<-"):
+            mass[target] += magnitude
+        if source_feature is not None:
+            mass[source_feature] += magnitude
+    return edges_by_bucket, dict(mass)
 
 
 def _jaccard(a: set[Any], b: set[Any]) -> float | None:
@@ -468,22 +496,37 @@ def diagnose_full_answer_stability(
     left_graph_mass: dict[FeatureKey, float] = {}
     right_graph_mass: dict[FeatureKey, float] = {}
     if caps["compact_graph"]:
-        lg = _load_graph(left_token_dir / "graph.npz")
-        rg = _load_graph(right_token_dir / "graph.npz")
-        selected_left = _feature_set(lg["feature_ids"])
-        selected_right = _feature_set(rg["feature_ids"])
+        lg = load_typed_compact_graph(left_token_dir / "graph.npz")
+        rg = load_typed_compact_graph(right_token_dir / "graph.npz")
+        selected_left = _feature_set(lg.feature_ids)
+        selected_right = _feature_set(rg.feature_ids)
         left_unique = selected_left - selected_right
         right_unique = selected_right - selected_left
-        le, left_graph_mass = _edge_and_mass(lg)
-        re, right_graph_mass = _edge_and_mass(rg)
+        left_bucket_edges, left_graph_mass = _typed_bucket_edges_and_feature_mass(lg)
+        right_bucket_edges, right_graph_mass = _typed_bucket_edges_and_feature_mass(rg)
         shared = selected_left & selected_right
         result["summary"].update(
             {
                 "compact_feature_count_jaccard": _jaccard(
                     selected_left, selected_right
                 ),
-                "edge_jaccard": _jaccard(set(le), set(re)),
-                "weighted_edge_jaccard": _edge_weighted_jaccard(le, re),
+                **{
+                    f"bucket_{name.replace('<-', '_').replace('-', '_')}_support_jaccard": _jaccard(
+                        set(left_bucket_edges[name]), set(right_bucket_edges[name])
+                    )
+                    for name in CANONICAL_BUCKET_NAMES
+                },
+                **{
+                    f"bucket_{name.replace('<-', '_').replace('-', '_')}_weighted_jaccard": _edge_weighted_jaccard(
+                        left_bucket_edges[name], right_bucket_edges[name]
+                    )
+                    for name in CANONICAL_BUCKET_NAMES
+                },
+                "graph_node_mass_aggregation_rule": (
+                    "retained absolute incident mass over feature endpoint roles "
+                    "across all six typed buckets; feature-feature edges contribute "
+                    "once for each endpoint role"
+                ),
                 "graph_node_mass_weighted_jaccard": _weighted_jaccard(
                     left_graph_mass, right_graph_mass
                 ),

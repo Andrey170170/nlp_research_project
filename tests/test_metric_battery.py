@@ -34,24 +34,16 @@ class FakeDecoderStore:
         return values
 
 
-def _encode_feature_feature_id(
-    layer: int, position: int, feature_idx: int, *, n_pos: int = 2
-) -> int:
-    return layer * n_pos * 1_000_000 + position * 1_000_000 + feature_idx
-
-
 def _snapshot(
     index: int,
     features: set[tuple[int, int, int]],
-    all_edges: dict[tuple[object, object], float],
+    _historical_all_edges: dict[tuple[object, object], float],
     bucket_edges: dict[str, dict[tuple[object, object], float]] | None = None,
 ) -> GraphSnapshot:
     return GraphSnapshot(
         generated_index=index,
         token_text=f"tok{index}",
         features=features,
-        edges={k: v for k, v in all_edges.items() if k[0] != ("logit", 0)},
-        all_edges=all_edges,
         bucket_edges=bucket_edges or {},
         bucket_metadata={"feature<-feature": {"error_node_shape": [1, 2]}},
         error_node_shape=(1, 2),
@@ -133,10 +125,10 @@ def test_soft_feature_matching_uses_decoder_cosine_greedily() -> None:
 
 
 def test_metric_battery_rows_cover_edges_nodes_flows_and_soft_matching() -> None:
-    left_ff_source = _encode_feature_feature_id(0, 0, 1)
-    left_ff_target = _encode_feature_feature_id(1, 1, 2)
-    right_ff_source = _encode_feature_feature_id(0, 1, 2)
-    right_ff_target = _encode_feature_feature_id(1, 0, 2)
+    left_ff_source = ("feature", 0, 0, 1)
+    left_ff_target = ("feature", 1, 1, 2)
+    right_ff_source = ("feature", 0, 1, 2)
+    right_ff_target = ("feature", 1, 0, 2)
     left = _snapshot(
         0,
         {(0, 0, 1), (1, 1, 2)},
@@ -166,8 +158,10 @@ def test_metric_battery_rows_cover_edges_nodes_flows_and_soft_matching() -> None
         soft_thresholds=[0.8],
     )
     keys = {(row["bucket"], row["metric"]) for row in rows}
-    assert ("all_edges", "derived_k_weighted_jaccard") in keys
     assert ("feature<-feature", "top_p_core_weighted_jaccard") in keys
-    assert ("positionless_feature_nodes", "rbo_ext") in keys
-    assert ("feature_feature_layer_flow", "total_variation_distance") in keys
-    assert ("positionless_feature_nodes", "decoder_soft_weighted_jaccard") in keys
+    assert ("feature<-feature:positionless_feature_nodes", "rbo_ext") in keys
+    assert ("feature<-feature:layer_flow", "total_variation_distance") in keys
+    assert (
+        "feature<-feature:positionless_feature_nodes",
+        "decoder_soft_weighted_jaccard",
+    ) in keys

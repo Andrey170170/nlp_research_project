@@ -52,7 +52,7 @@ def base_trace_defaults() -> dict[str, Any]:
         "completions": 1,
         "temperature": 0.0,
         "max_feature_nodes": 8192,
-        "max_edges": 20000,
+        "edge_retention_policy_id": "typed_top_p_v1",
         "max_n_logits": 3,
         "desired_logit_prob": 0.8,
         "verbose_attribution": False,

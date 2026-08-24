@@ -149,10 +149,12 @@ equivalent `nvidia-smi` spelling. The bounded validator repair and full gate
 replay accepted the immutable output. Its selected 8,192 features and historical
 20,000-edge global projection are exact against both qualified references; all
 six typed buckets and 1,323,157 typed edges reopen with no future-position
-violations. Step 1a will make those typed buckets exclusive for new artifacts:
-the generic global `max_edges` projection is still present in the profiled
-artifact and remains in current writers/consumers until that atomic migration;
-legacy loading will then remain only for historical results. The canonical
+violations. Step 1a now makes those typed buckets exclusive for new artifacts:
+both writers share schema v2 and `typed_top_p_v1`, active consumers no longer
+use the generic global `max_edges` projection, and legacy loading is explicit
+and historical-only. The profiled artifact itself remains a historical dual-
+format reference. The atomic migration has passed focused CPU integration and
+awaits one frozen 12B/1,024 GPU persistence qualification. The canonical
 trace took 617.90s and Phase 4 took 405.18s, so this is profiling evidence rather
 than a new speed baseline. Current-stream interval estimates locate 157.36s in
 feature compute, 116.02s in refresh row-store reads, and 44.26s in encoder

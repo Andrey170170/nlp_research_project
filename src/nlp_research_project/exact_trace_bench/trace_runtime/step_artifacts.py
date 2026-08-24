@@ -9,15 +9,20 @@ from typing import Any
 
 import torch
 
-from nlp_research_project.exact_trace_bench.compact_io import save_compact
+from nlp_research_project.exact_trace_bench.typed_compact_graph import (
+    ArtifactProvenance,
+    DEFAULT_RETENTION_POLICY_ID,
+    build_typed_compact_graph,
+    save_typed_compact_graph,
+)
 
 from .artifacts import (
     legacy_capture_artifact_status,
     require_complete_capture_artifacts,
     write_capture_artifacts,
 )
-from .compact_graph import compact_result_to_step_data
 from .completion_workspace import CompletionWorkspace
+from .provider import get_model_transcoder_metadata
 from .request import TracePolicy
 from .support import capture_resource_snapshot, capture_transcoder_diagnostics
 from .telemetry import normalize_telemetry_events
@@ -28,7 +33,7 @@ class StepArtifactWriter:
     workspace: CompletionWorkspace
     trace_policy: TracePolicy
     model: Any
-    max_edges: int
+    edge_retention_policy_id: str = DEFAULT_RETENTION_POLICY_ID
     _debug_written: bool = False
 
     def write(
@@ -43,15 +48,47 @@ class StepArtifactWriter:
         step_started: float,
         stop: bool,
     ) -> dict[str, Any]:
-        step_data = compact_result_to_step_data(
+        provider_identity = get_model_transcoder_metadata(self.model) or {
+            "provider_id": getattr(self.model, "provider_id", None)
+        }
+        if not provider_identity or not any(
+            value is not None for value in provider_identity.values()
+        ):
+            raise ValueError("canonical graph artifact requires provider identity")
+        trace_identity = {
+            "semantic_fingerprint": compact_result.get("semantic_fingerprint"),
+            "execution_fingerprint": compact_result.get("execution_fingerprint"),
+        }
+        if not all(
+            isinstance(value, str) and value for value in trace_identity.values()
+        ):
+            raise ValueError(
+                "canonical graph artifact requires semantic and execution fingerprints"
+            )
+        graph = build_typed_compact_graph(
             compact_result,
             step_index,
             token_text=token_result["token_text"],
             logprob=token_result["token_logprob"],
-            max_edges=self.max_edges,
+            retention_policy_id=self.edge_retention_policy_id,
+            provenance=ArtifactProvenance(
+                provider=provider_identity,
+                trace=trace_identity,
+                target={
+                    "token_id": int(token_result["token_id"]),
+                    "token_text": str(token_result["token_text"]),
+                    "logprob": token_result["token_logprob"],
+                    "prefix_token_count": prefix_token_count,
+                },
+                step={
+                    "prompt_id": self.workspace.prompt_id,
+                    "completion_id": self.workspace.completion_id,
+                    "step_idx": step_index,
+                },
+            ),
         )
         artifact_started = time.perf_counter()
-        save_compact(step_data, self.workspace.step_path(step_index))
+        save_typed_compact_graph(graph, self.workspace.step_path(step_index))
         artifact_seconds = time.perf_counter() - artifact_started
 
         telemetry = self._write_telemetry(step_index, compact_result)
@@ -68,8 +105,11 @@ class StepArtifactWriter:
             "next_token_id": int(token_result["token_id"]),
             "next_token_text": str(token_result["token_text"]),
             "next_token_logprob": token_result["token_logprob"],
-            "n_active_features": int(step_data.n_features),
-            "n_edges_retained": len(step_data.weights),
+            "n_active_features": graph.n_features,
+            "n_edges_retained": graph.edge_count,
+            "edge_retention_policy_id": graph.retention_policy_id,
+            "edge_retention_policy_fingerprint": (graph.retention_policy_fingerprint),
+            "graph_fingerprint": graph.graph_fingerprint,
             "stop_reason": "eos" if stop else None,
             "step_end_to_end_seconds": round(time.perf_counter() - step_started, 6),
             "attribution_seconds": round(attribution_seconds, 6),

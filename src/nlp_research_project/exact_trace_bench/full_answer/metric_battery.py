@@ -8,12 +8,7 @@ from typing import Any, Iterable, Sequence, cast
 import numpy as np
 
 from .decoder_signature_cache import DecoderSignatureStore
-from .temporal import (
-    GraphSnapshot,
-    _decode_feature_feature_id,
-    _feature_feature_n_pos,
-    _layer_flow,
-)
+from .temporal import GraphSnapshot
 
 DEFAULT_DERIVED_KS = (128, 512, 1024, 2048, 4096, 8192)
 DEFAULT_TOP_P_THRESHOLDS = (0.50, 0.80, 0.90, 0.95)
@@ -410,17 +405,16 @@ def _l1(a: dict[Any, float], b: dict[Any, float]) -> float | None:
 
 def collapsed_flow_rows(a: GraphSnapshot, b: GraphSnapshot) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    flow_pairs: list[tuple[str, dict[Any, float], dict[Any, float]]] = [
-        ("all_edge_layer_flow", _layer_flow(a.all_edges), _layer_flow(b.all_edges)),
-    ]
     ff_layer_a, ff_positionless_a = a.feature_feature_collapsed_flows
     ff_layer_b, ff_positionless_b = b.feature_feature_collapsed_flows
-    flow_pairs.extend(
-        [
-            ("feature_feature_layer_flow", ff_layer_a, ff_layer_b),
-            ("feature_feature_positionless_flow", ff_positionless_a, ff_positionless_b),
-        ]
-    )
+    flow_pairs: list[tuple[str, dict[Any, float], dict[Any, float]]] = [
+        ("feature<-feature:layer_flow", ff_layer_a, ff_layer_b),
+        (
+            "feature<-feature:positionless_flow",
+            ff_positionless_a,
+            ff_positionless_b,
+        ),
+    ]
     for bucket, left, right in flow_pairs:
         left_norm = _normalize_distribution(left)
         right_norm = _normalize_distribution(right)
@@ -446,14 +440,16 @@ def collapsed_flow_rows(a: GraphSnapshot, b: GraphSnapshot) -> list[dict[str, An
 def _feature_feature_bucket_positionless_mass(
     snap: GraphSnapshot,
 ) -> dict[PositionlessFeature, float]:
-    n_pos = _feature_feature_n_pos(snap)
     edges = snap.bucket_edges.get("feature<-feature")
     masses: dict[PositionlessFeature, float] = defaultdict(float)
-    if not n_pos or not edges:
+    if not edges:
         return {}
     for (target, source), weight in edges.items():
-        for encoded in (target, source):
-            layer, _position, feature_id = _decode_feature_feature_id(encoded, n_pos)
+        for endpoint in (target, source):
+            feature = _feature_label_to_tuple(endpoint)
+            if feature is None:
+                raise ValueError("feature<-feature edge has non-feature endpoint")
+            layer, _position, feature_id = feature
             masses[(layer, feature_id)] += float(weight)
     return dict(masses)
 
@@ -582,7 +578,6 @@ def soft_feature_matching_rows(
 def _edge_buckets(
     a: GraphSnapshot, b: GraphSnapshot
 ) -> Iterable[tuple[str, dict[Any, float], dict[Any, float]]]:
-    yield "all_edges", a.all_edges, b.all_edges
     for name in sorted(set(a.bucket_edges) | set(b.bucket_edges)):
         yield name, a.bucket_edges.get(name, {}), b.bucket_edges.get(name, {})
 
@@ -608,20 +603,13 @@ def metric_battery_rows(
         rows.extend(rbo_rows(left, right, bucket=bucket, persistence=rbo_persistence))
         rows.extend(union_support_similarity_rows(left, right, bucket=bucket))
 
-    feature_mass_a = feature_incident_mass(a.all_edges)
-    feature_mass_b = feature_incident_mass(b.all_edges)
-    positionless_a = positionless_feature_mass(feature_mass_a)
-    positionless_b = positionless_feature_mass(feature_mass_b)
-    node_buckets: list[tuple[str, dict[Any, float], dict[Any, float]]] = [
-        ("feature_nodes", feature_mass_a, feature_mass_b),
-        ("positionless_feature_nodes", positionless_a, positionless_b),
-    ]
     ff_bucket_a = _feature_feature_bucket_positionless_mass(a)
     ff_bucket_b = _feature_feature_bucket_positionless_mass(b)
+    node_buckets: list[tuple[str, dict[Any, float], dict[Any, float]]] = []
     if ff_bucket_a or ff_bucket_b:
         node_buckets.append(
             (
-                "feature_feature_bucket_positionless_feature_nodes",
+                "feature<-feature:positionless_feature_nodes",
                 ff_bucket_a,
                 ff_bucket_b,
             )
@@ -637,22 +625,13 @@ def metric_battery_rows(
     rows.extend(collapsed_flow_rows(a, b))
 
     if decoder_store is not None:
-        rows.extend(
-            soft_feature_matching_rows(
-                positionless_a,
-                positionless_b,
-                decoder_store=decoder_store,
-                bucket="positionless_feature_nodes",
-                thresholds=soft_thresholds,
-            )
-        )
         if ff_bucket_a or ff_bucket_b:
             rows.extend(
                 soft_feature_matching_rows(
                     ff_bucket_a,
                     ff_bucket_b,
                     decoder_store=decoder_store,
-                    bucket="feature_feature_bucket_positionless_feature_nodes",
+                    bucket="feature<-feature:positionless_feature_nodes",
                     thresholds=soft_thresholds,
                 )
             )

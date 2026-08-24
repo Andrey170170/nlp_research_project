@@ -11,6 +11,13 @@ from typing import Any
 from .config import DEFAULT_SCRATCH_ROOT, REPO_ROOT
 from .graph_compare import compare_artifact_dirs
 from .io_utils import read_json, write_csv, write_json
+from .typed_compact_graph import (
+    CANONICAL_BUCKET_NAMES,
+    COMPACT_SAVE_FORMAT,
+    DEFAULT_RETENTION_POLICY_ID,
+    SCHEMA_VERSION,
+    get_retention_policy,
+)
 
 BASELINE_DISABLED = {
     "enabled": False,
@@ -27,25 +34,28 @@ COMPARISON_SUMMARY_KEYS = (
     "comparison_complete",
     "left_only_completion_count",
     "right_only_completion_count",
+    "historical_reference",
+    "policy_compatible",
+    "candidate_current_policy_valid",
+    "reference_bucket_rules_match_candidate",
     "overall_mean_feature_jaccard",
-    "overall_mean_edge_jaccard",
-    "overall_mean_weighted_edge_jaccard",
-    "overall_mean_top256_edge_jaccard",
-    "overall_mean_all_edge_jaccard",
-    "overall_mean_all_edge_weighted_jaccard",
-    "overall_mean_all_edge_top256_jaccard",
     "overall_mean_target_token_match",
-    "overall_mean_all_edge_normalized_l1_deviation",
-    "overall_mean_all_edge_shared_sign_agreement",
-    "overall_mean_all_edge_signed_normalized_l1_deviation",
     "worst_step_feature_jaccard",
-    "worst_step_all_edge_jaccard",
-    "worst_step_all_edge_weighted_jaccard",
-    "worst_step_all_edge_top256_jaccard",
     "worst_step_target_token_match",
-    "worst_step_all_edge_normalized_l1_deviation",
-    "worst_step_all_edge_shared_sign_agreement",
-    "worst_step_all_edge_signed_normalized_l1_deviation",
+    *(
+        f"{scope}_bucket_{bucket.replace('<-', '_').replace('-', '_')}_{metric}"
+        for bucket in CANONICAL_BUCKET_NAMES
+        for metric in (
+            "support_jaccard",
+            "weighted_jaccard",
+            "top256_jaccard",
+            "shared_sign_agreement",
+            "exact",
+            "normalized_l1_deviation",
+            "signed_normalized_l1_deviation",
+        )
+        for scope in ("overall_mean", "worst_step")
+    ),
 )
 
 SCENARIO_IDENTITY_KEYS = (
@@ -145,6 +155,57 @@ METRICS_PREFERRED_HEADERS = (
 
 
 BASELINE_SCOPES = frozenset({"frozen_scientific", "same_regime_mechanism"})
+COMPACT_GRAPH_REFERENCE_KEY = "compact_graph_reference"
+HISTORICAL_COMPACT_GRAPH_FORMAT = "historical_mixed_compact_v1"
+COMPACT_GRAPH_REFERENCE_FORMATS = frozenset(
+    {HISTORICAL_COMPACT_GRAPH_FORMAT, COMPACT_SAVE_FORMAT}
+)
+
+
+def typed_compact_graph_reference_contract() -> dict[str, Any]:
+    policy = get_retention_policy()
+    return {
+        "format": COMPACT_SAVE_FORMAT,
+        "schema_version": SCHEMA_VERSION,
+        "retention_policy_id": DEFAULT_RETENTION_POLICY_ID,
+        "retention_policy_fingerprint": policy.fingerprint,
+    }
+
+
+def historical_compact_graph_reference_contract() -> dict[str, str]:
+    return {"format": HISTORICAL_COMPACT_GRAPH_FORMAT}
+
+
+def _normalize_compact_graph_reference(
+    raw: Any,
+    *,
+    context: str,
+) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f"{context} must declare object {COMPACT_GRAPH_REFERENCE_KEY!r}"
+        )
+    graph_format = raw.get("format")
+    if graph_format not in COMPACT_GRAPH_REFERENCE_FORMATS:
+        raise ValueError(
+            f"{context} has unsupported compact graph reference format: "
+            f"{graph_format!r}"
+        )
+    normalized = dict(raw)
+    normalized["format"] = str(graph_format)
+    if graph_format == COMPACT_SAVE_FORMAT:
+        expected = typed_compact_graph_reference_contract()
+        mismatches = [
+            f"{key}={normalized.get(key)!r} (expected {value!r})"
+            for key, value in expected.items()
+            if normalized.get(key) != value
+        ]
+        if mismatches:
+            raise ValueError(
+                f"{context} typed compact graph identity mismatch: "
+                + "; ".join(mismatches)
+            )
+    return normalized
 
 
 class LoadedBaselineRegistry(dict[str, dict[str, Any]]):
@@ -155,11 +216,13 @@ class LoadedBaselineRegistry(dict[str, dict[str, Any]]):
         scope: str,
         scope_declared: bool,
         registry_id: str | None,
+        compact_graph_reference: dict[str, Any] | None,
     ) -> None:
         super().__init__(entries)
         self.scope = scope
         self.scope_declared = scope_declared
         self.registry_id = registry_id
+        self.compact_graph_reference = compact_graph_reference
 
 
 def load_baseline_registry(path: Path) -> LoadedBaselineRegistry:
@@ -172,6 +235,15 @@ def load_baseline_registry(path: Path) -> LoadedBaselineRegistry:
     scope = str(declared_scope or "frozen_scientific")
     if scope not in BASELINE_SCOPES:
         raise ValueError(f"Unsupported baseline registry scope: {scope!r}")
+    registry_graph_reference_raw = payload.get(COMPACT_GRAPH_REFERENCE_KEY)
+    registry_graph_reference = (
+        None
+        if registry_graph_reference_raw is None
+        else _normalize_compact_graph_reference(
+            registry_graph_reference_raw,
+            context=f"Baseline registry {path}",
+        )
+    )
     normalized: dict[str, dict[str, Any]] = {}
     for key, value in entries.items():
         if not isinstance(value, dict):
@@ -187,7 +259,14 @@ def load_baseline_registry(path: Path) -> LoadedBaselineRegistry:
                 f"Baseline registry entry {key!r} scope {entry_scope_raw!r} "
                 f"does not match registry scope {scope!r}"
             )
-        normalized[str(key)] = value
+        entry_graph_reference = _normalize_compact_graph_reference(
+            value.get(COMPACT_GRAPH_REFERENCE_KEY, registry_graph_reference),
+            context=f"Baseline registry entry {key!r}",
+        )
+        normalized[str(key)] = {
+            **value,
+            COMPACT_GRAPH_REFERENCE_KEY: entry_graph_reference,
+        }
     return LoadedBaselineRegistry(
         normalized,
         scope=scope,
@@ -195,6 +274,7 @@ def load_baseline_registry(path: Path) -> LoadedBaselineRegistry:
         registry_id=(
             None if payload.get("registry_id") is None else str(payload["registry_id"])
         ),
+        compact_graph_reference=registry_graph_reference,
     )
 
 
@@ -316,6 +396,16 @@ def validate_baseline_entry(
     *,
     status: dict[str, Any],
 ) -> dict[str, Any]:
+    try:
+        graph_reference = _normalize_compact_graph_reference(
+            entry.get(COMPACT_GRAPH_REFERENCE_KEY),
+            context="Baseline entry",
+        )
+    except ValueError as exc:
+        _append_reason(status, str(exc))
+    else:
+        status[COMPACT_GRAPH_REFERENCE_KEY] = graph_reference
+
     artifacts_dir = entry.get("artifacts_dir")
     result_json = entry.get("result_json")
     if artifacts_dir is None:
@@ -451,8 +541,17 @@ def run_baseline_comparison(
         return status, {}
 
     reference_artifacts = Path(str(baseline_entry["artifacts_dir"]))
+    graph_reference = _normalize_compact_graph_reference(
+        baseline_entry.get(COMPACT_GRAPH_REFERENCE_KEY),
+        context="Baseline entry",
+    )
+    historical_reference = graph_reference["format"] == HISTORICAL_COMPACT_GRAPH_FORMAT
     try:
-        summary = compare_artifact_dirs(reference_artifacts, current_artifacts)
+        summary = compare_artifact_dirs(
+            reference_artifacts,
+            current_artifacts,
+            historical_reference=historical_reference,
+        )
     except Exception as exc:  # noqa: BLE001 - preserve trace success, report validation
         status["status"] = "compare_error"
         status["passed"] = False
@@ -461,9 +560,11 @@ def run_baseline_comparison(
 
     required_metrics = (
         "overall_mean_feature_jaccard",
-        "overall_mean_edge_jaccard",
-        "overall_mean_weighted_edge_jaccard",
-        "overall_mean_top256_edge_jaccard",
+        "overall_mean_target_token_match",
+        *(
+            f"overall_mean_bucket_{name.replace('<-', '_').replace('-', '_')}_exact"
+            for name in CANONICAL_BUCKET_NAMES
+        ),
     )
     structural_reasons: list[str] = []
     if not summary.get("comparison_complete"):
@@ -474,6 +575,28 @@ def run_baseline_comparison(
         structural_reasons.append("baseline comparison had no aligned completions")
     if int(summary.get("aligned_step_count") or 0) <= 0:
         structural_reasons.append("baseline comparison had no aligned steps")
+    if summary.get("historical_reference") is not historical_reference:
+        structural_reasons.append(
+            "baseline comparison historical-reference discriminator does not match "
+            "the registry contract"
+        )
+    if summary.get("candidate_current_policy_valid") is not True:
+        structural_reasons.append(
+            "baseline comparison did not validate the candidate current policy"
+        )
+    if historical_reference:
+        if summary.get("reference_bucket_rules_match_candidate") is not True:
+            structural_reasons.append(
+                "historical reference bucket rules do not match the candidate policy"
+            )
+        if summary.get("policy_compatible") is not False:
+            structural_reasons.append(
+                "historical reference must remain explicitly policy-incompatible"
+            )
+    elif summary.get("policy_compatible") is not True:
+        structural_reasons.append(
+            "typed-v2 baseline comparison did not establish policy compatibility"
+        )
     for key in required_metrics:
         if _as_finite_float(summary.get(key)) is None:
             structural_reasons.append(f"baseline comparison missing finite {key}")
@@ -651,7 +774,7 @@ def _comparison_contract(scenario: dict[str, Any]) -> dict[str, Any]:
         "completions",
         "max_steps",
         "max_feature_nodes",
-        "max_edges",
+        "edge_retention_policy_id",
         "max_n_logits",
         "desired_logit_prob",
     )
@@ -726,7 +849,16 @@ def build_baseline_registry_from_run_roots(
     registry_id: str,
     project_root: Path = REPO_ROOT,
     library_root: Path | None = None,
+    compact_graph_reference: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    graph_reference = _normalize_compact_graph_reference(
+        (
+            typed_compact_graph_reference_contract()
+            if compact_graph_reference is None
+            else compact_graph_reference
+        ),
+        context="Built baseline registry",
+    )
     entries: dict[str, dict[str, Any]] = {}
     invalid_roots: list[str] = []
     duplicate_keys: list[str] = []
@@ -743,6 +875,7 @@ def build_baseline_registry_from_run_roots(
             ):
                 continue
             entry = _entry_from_scenario_root(scenario_root)
+            entry[COMPACT_GRAPH_REFERENCE_KEY] = dict(graph_reference)
             if entry.get("result_status") != "success":
                 continue
             for key in _keys_for_entry(entry):
@@ -756,6 +889,7 @@ def build_baseline_registry_from_run_roots(
         "registry_id": registry_id,
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "created_from": "nlp_research_project.exact_trace_bench build-baseline-registry",
+        COMPACT_GRAPH_REFERENCE_KEY: graph_reference,
         "source_roots": [str(root) for root in run_roots],
         "invalid_roots": invalid_roots,
         "duplicate_keys": duplicate_keys,

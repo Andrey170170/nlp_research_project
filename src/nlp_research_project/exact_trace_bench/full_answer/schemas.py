@@ -35,6 +35,7 @@ FEATURE_ROW_INFLUENCE_MODES = {
 FEATURE_ROW_INFLUENCE_REQUIREMENTS = {"preferred", "required"}
 RUNTIME_RESOURCE_POLICIES = {"off", "measure_only", "enforce"}
 BACKWARD_ENGINE_MODES = frozenset(BACKWARD_ENGINE_PRESETS)
+EDGE_RETENTION_POLICY_IDS = {"typed_top_p_v1"}
 
 
 class GeneratedToken(TypedDict, total=False):
@@ -199,6 +200,17 @@ def validate_trace_spec(spec: Mapping[str, Any]) -> None:
         raise ValueError("trace spec selection_reasons must be a list of strings")
     if not isinstance(spec.get("graph_knobs"), dict):
         raise ValueError("trace spec graph_knobs must be an object")
+    if "max_edges" in spec["graph_knobs"]:
+        raise ValueError(
+            "trace spec graph_knobs.max_edges is a legacy global projection; "
+            "use edge_retention_policy_id"
+        )
+    retention_policy_id = spec["graph_knobs"].get("edge_retention_policy_id")
+    if retention_policy_id not in EDGE_RETENTION_POLICY_IDS:
+        raise ValueError(
+            "trace spec graph_knobs.edge_retention_policy_id must be one of "
+            f"{sorted(EDGE_RETENTION_POLICY_IDS)!r}"
+        )
     try:
         backward_selection = resolve_backward_execution_selection(spec["graph_knobs"])
     except ValueError as error:

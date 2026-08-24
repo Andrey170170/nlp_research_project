@@ -7,10 +7,6 @@ from .artifacts import (
     save_phase3_row_bundle,
     save_phase3_seed_bundle,
 )
-from .compact_graph import (
-    compact_result_to_bucketed_compact,
-    compact_result_to_step_data,
-)
 from .telemetry import (
     Phase4TelemetryContext,
     TraceStepContext,
@@ -27,8 +23,6 @@ __all__ = [
     "TracePolicy",
     "build_cross_cluster_debug_records",
     "build_step_telemetry_records",
-    "compact_result_to_bucketed_compact",
-    "compact_result_to_step_data",
     "normalize_cross_cluster_debug_records",
     "normalize_telemetry_events",
     "save_feature_semantic_descriptors",

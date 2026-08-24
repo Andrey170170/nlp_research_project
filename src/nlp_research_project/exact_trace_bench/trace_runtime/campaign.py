@@ -103,7 +103,9 @@ def _run_completion(
         completion=CompletionPlan(
             temperature=float(scenario.get("temperature", 0.7)),
             max_steps=int(scenario.get("max_steps", 256)),
-            max_edges=int(scenario.get("max_edges", 10_000)),
+            edge_retention_policy_id=str(
+                scenario.get("edge_retention_policy_id", "typed_top_p_v1")
+            ),
             incremental_telemetry_jsonl=bool(
                 scenario.get("incremental_telemetry_jsonl", False)
             ),

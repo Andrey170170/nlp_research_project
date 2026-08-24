@@ -31,8 +31,12 @@ from nlp_research_project.exact_trace_bench.trace_runtime.completion_workspace i
 from nlp_research_project.exact_trace_bench.trace_runtime.request import (  # noqa: E402
     trace_policy_from_scenario,
 )
+from nlp_research_project.exact_trace_bench.trace_runtime import (  # noqa: E402
+    tracing as tracing_module,
+)
 from nlp_research_project.exact_trace_bench.trace_runtime.tracing import (  # noqa: E402
     DiagnosticTraceCompletion,
+    extract_compact_chunked_attribution,
 )
 from nlp_research_project.exact_trace_bench.trace_runtime.step_artifacts import (  # noqa: E402
     StepArtifactWriter,
@@ -42,6 +46,76 @@ from nlp_research_project.exact_trace_bench.trace_runtime.step_artifacts import 
 class FakeModel:
     backend = "nnsight"
     provider_id = "c2-project-test"
+
+
+def _trace_result(output: dict[str, object]) -> SimpleNamespace:
+    return SimpleNamespace(
+        output=output,
+        status="succeeded",
+        semantic_fingerprint="semantic-test",
+        execution_fingerprint="execution-test",
+        telemetry_summary={},
+        telemetry_events=(),
+        admission_report=None,
+    )
+
+
+def _typed_compact_result(**extras: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "active_features": torch.tensor([[0, 0, 7]], dtype=torch.int64),
+        "selected_features": torch.tensor([0], dtype=torch.int64),
+        "feature_row_node_indices": torch.tensor([0], dtype=torch.int64),
+        "logit_row_node_indices": torch.tensor([0], dtype=torch.int64),
+        "feature_feature_edges": torch.tensor([[1.0]]),
+        "feature_error_edges": torch.tensor([[0.0, 0.0, 0.0, 0.0]]),
+        "feature_token_edges": torch.tensor([[0.0, 0.0]]),
+        "logit_feature_edges": torch.tensor([[0.5]]),
+        "logit_error_edges": torch.tensor([[0.0, 0.0, 0.0, 0.0]]),
+        "logit_token_edges": torch.tensor([[0.0, 0.0]]),
+        "n_error_nodes": 4,
+        "n_token_nodes": 2,
+        "input_tokens": torch.tensor([1, 2], dtype=torch.int64),
+        "logit_targets": [SimpleNamespace(vocab_idx=9)],
+        "semantic_fingerprint": "semantic-test",
+        "execution_fingerprint": "execution-test",
+    }
+    payload.update(extras)
+    return payload
+
+
+def test_multistep_seam_injects_trace_result_fingerprints(monkeypatch) -> None:
+    output = _typed_compact_result()
+    del output["semantic_fingerprint"]
+    del output["execution_fingerprint"]
+    monkeypatch.setattr(
+        tracing_module, "trace_one", lambda *_args, **_kwargs: _trace_result(output)
+    )
+
+    compact = extract_compact_chunked_attribution(
+        FakeModel(),
+        [1, 2],
+        policy=trace_policy_from_scenario({"method": "exact"}),
+    )
+
+    assert isinstance(compact, dict)
+    assert compact["semantic_fingerprint"] == "semantic-test"
+    assert compact["execution_fingerprint"] == "execution-test"
+    assert "semantic_fingerprint" not in output
+    assert "execution_fingerprint" not in output
+
+
+def test_multistep_seam_rejects_output_fingerprint_conflict(monkeypatch) -> None:
+    output = _typed_compact_result(semantic_fingerprint="untrusted-output-value")
+    monkeypatch.setattr(
+        tracing_module, "trace_one", lambda *_args, **_kwargs: _trace_result(output)
+    )
+
+    with pytest.raises(ValueError, match="conflicts with authoritative TraceResult"):
+        extract_compact_chunked_attribution(
+            FakeModel(),
+            [1, 2],
+            policy=trace_policy_from_scenario({"method": "exact"}),
+        )
 
 
 def _fingerprints(overrides: dict[str, object]) -> tuple[str, str]:
@@ -300,17 +374,12 @@ def test_completion_preserves_compact_artifact_layout(
 ) -> None:
     from nlp_research_project.exact_trace_bench.trace_runtime import generation
 
-    compact = {
-        "active_features": torch.tensor([[0, 0, 7]], dtype=torch.int64),
-        "selected_features": torch.tensor([0], dtype=torch.int64),
-        "feature_row_node_indices": torch.tensor([0], dtype=torch.int64),
-        "feature_feature_edges": torch.tensor([[1.0]]),
-        "logit_feature_edges": torch.tensor([[0.5]]),
-        "semantic_fingerprint": "semantic",
-        "execution_fingerprint": "execution",
-        "telemetry_events": [{"event": "phase_complete"}],
-        "phase4_feature_batch_size": 8,
-    }
+    compact = _typed_compact_result(
+        semantic_fingerprint="semantic",
+        execution_fingerprint="execution",
+        telemetry_events=[{"event": "phase_complete"}],
+        phase4_feature_batch_size=8,
+    )
     monkeypatch.setattr(
         generation,
         "extract_compact_chunked_attribution",
@@ -378,7 +447,6 @@ def test_step_artifact_writer_preserves_phase4_timing_runtime_metadata(
         workspace=workspace,
         trace_policy=trace_policy_from_scenario({"method": "exact"}),
         model=FakeModel(),
-        max_edges=10,
     )
     timing_by_substage = {
         "executor_compute_batch": {
@@ -395,16 +463,11 @@ def test_step_artifact_writer_preserves_phase4_timing_runtime_metadata(
     step = writer.write(
         step_index=0,
         prefix_token_count=2,
-        compact_result={
-            "active_features": torch.tensor([[0, 0, 7]], dtype=torch.int64),
-            "selected_features": torch.tensor([0], dtype=torch.int64),
-            "feature_row_node_indices": torch.tensor([0], dtype=torch.int64),
-            "feature_feature_edges": torch.tensor([[1.0]]),
-            "logit_feature_edges": torch.tensor([[0.5]]),
-            "phase4_timing_backend": "cuda_events_systematic_sample_deferred_v1",
-            "phase4_timing_cuda_event_elapsed_ms": 19.75,
-            "phase4_timing_by_substage": timing_by_substage,
-        },
+        compact_result=_typed_compact_result(
+            phase4_timing_backend="cuda_events_systematic_sample_deferred_v1",
+            phase4_timing_cuda_event_elapsed_ms=19.75,
+            phase4_timing_by_substage=timing_by_substage,
+        ),
         token_result={"token_id": 9, "token_text": "done", "token_logprob": -0.1},
         attribution_seconds=1.0,
         token_generation_seconds=0.1,
@@ -431,13 +494,7 @@ def test_completion_preserves_decoder_prefetch_diagnostics(
     monkeypatch.setattr(
         generation,
         "extract_compact_chunked_attribution",
-        lambda *_args, **_kwargs: {
-            "active_features": torch.tensor([[0, 0, 7]], dtype=torch.int64),
-            "selected_features": torch.tensor([0], dtype=torch.int64),
-            "feature_row_node_indices": torch.tensor([0], dtype=torch.int64),
-            "feature_feature_edges": torch.tensor([[1.0]]),
-            "logit_feature_edges": torch.tensor([[0.5]]),
-        },
+        lambda *_args, **_kwargs: _typed_compact_result(),
     )
 
     class Tokenizer:
@@ -634,7 +691,6 @@ def test_step_artifact_writer_fails_closed_and_persists_missing_capture_status(
             }
         ),
         model=FakeModel(),
-        max_edges=10,
     )
 
     with pytest.raises(CaptureArtifactContractError, match="missing=phase3_gradient"):
@@ -667,7 +723,6 @@ def test_step_artifact_writer_rejects_truncated_capture_payload(
             }
         ),
         model=FakeModel(),
-        max_edges=10,
     )
 
     with pytest.raises(CaptureArtifactContractError, match="failed=phase3_gradient"):

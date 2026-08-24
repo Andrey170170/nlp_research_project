@@ -48,6 +48,7 @@ from .performance_campaign import (
 )
 from .scenarios.chpc_baseline import build_chpc_baseline_config
 from .transcoder_config import PUBLIC_TRANSCODER_KNOB_KEYS
+from .typed_compact_graph import CANONICAL_BUCKET_NAMES, DEFAULT_RETENTION_POLICY_ID
 
 DEFAULT_OUTPUT_ROOT = (
     DEFAULT_SCRATCH_ROOT / "granite" / "sweep" / "performance_optimization"
@@ -67,15 +68,15 @@ DEFAULT_MECHANISM_BASELINE_REGISTRY = (
 RUNNER = REPO_ROOT / "experiments" / "run_sparsification_experiment.py"
 SIBLING_ROOT = REPO_ROOT.parent / "circuit-tracer_chunked"
 
-METRIC_KEYS = {
+METRIC_KEYS: dict[str, str] = {
     "feature_jaccard": "worst_step_feature_jaccard",
-    "edge_jaccard": "worst_step_all_edge_jaccard",
-    "top256_edge_jaccard": "worst_step_all_edge_top256_jaccard",
-    "weighted_edge_jaccard": "worst_step_all_edge_weighted_jaccard",
     "target_token_match": "worst_step_target_token_match",
-    "edge_magnitude_l1_deviation": ("worst_step_all_edge_normalized_l1_deviation"),
-    "edge_sign_agreement": "worst_step_all_edge_shared_sign_agreement",
-    "edge_signed_l1_deviation": ("worst_step_all_edge_signed_normalized_l1_deviation"),
+    **{
+        f"bucket_{name.replace('<-', '_').replace('-', '_')}_exact": (
+            f"worst_step_bucket_{name.replace('<-', '_').replace('-', '_')}_exact"
+        )
+        for name in CANONICAL_BUCKET_NAMES
+    },
 }
 FIDELITY_LEVELS = (
     "strict_exact",
@@ -88,59 +89,43 @@ FIDELITY_LEVELS = (
 CODE_RETENTION_ALLOWED_FIDELITIES = frozenset(
     {"strict_exact", "exact", "close", "bounded"}
 )
-AUTOMATIC_PROMOTION_ALLOWED_FIDELITIES = frozenset({"strict_exact", "exact"})
+EXACT_BASELINE_FIDELITIES = frozenset({"strict_exact", "exact"})
+AUTOMATIC_PROMOTION_ALLOWED_FIDELITIES: frozenset[str] = frozenset()
+
+
+def _typed_exact_thresholds(feature_jaccard: float) -> dict[str, float]:
+    """Conservative Step-1a gate pending calibrated Step-1b bucket thresholds."""
+
+    return {
+        "worst_step_feature_jaccard_min": feature_jaccard,
+        "worst_step_target_token_match_min": 1.0,
+        **{
+            f"worst_step_bucket_{name.replace('<-', '_').replace('-', '_')}_exact_min": 1.0
+            for name in CANONICAL_BUCKET_NAMES
+        },
+    }
+
+
 FIDELITY_THRESHOLDS = {
-    "strict_exact": {
-        "worst_step_feature_jaccard_min": 1.0,
-        "worst_step_all_edge_jaccard_min": 1.0,
-        "worst_step_all_edge_top256_jaccard_min": 1.0,
-        "worst_step_all_edge_weighted_jaccard_min": 1.0,
-        "worst_step_target_token_match_min": 1.0,
-        "worst_step_all_edge_normalized_l1_deviation_max": 0.0,
-        "worst_step_all_edge_shared_sign_agreement_min": 1.0,
-        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.0,
-    },
-    "exact": {
-        "worst_step_feature_jaccard_min": 0.995,
-        "worst_step_all_edge_jaccard_min": 0.995,
-        "worst_step_all_edge_top256_jaccard_min": 1.0,
-        "worst_step_all_edge_weighted_jaccard_min": 0.995,
-        "worst_step_target_token_match_min": 1.0,
-        "worst_step_all_edge_normalized_l1_deviation_max": 0.005,
-        "worst_step_all_edge_shared_sign_agreement_min": 1.0,
-        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.005,
-    },
-    "close": {
-        "worst_step_feature_jaccard_min": 0.99,
-        "worst_step_all_edge_jaccard_min": 0.99,
-        "worst_step_all_edge_weighted_jaccard_min": 0.99,
-        "worst_step_target_token_match_min": 1.0,
-        "worst_step_all_edge_normalized_l1_deviation_max": 0.01,
-        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.01,
-    },
-    "bounded": {
-        "worst_step_feature_jaccard_min": 0.98,
-        "worst_step_all_edge_jaccard_min": 0.98,
-        "worst_step_all_edge_weighted_jaccard_min": 0.98,
-        "worst_step_target_token_match_min": 1.0,
-        "worst_step_all_edge_normalized_l1_deviation_max": 0.02,
-        "worst_step_all_edge_signed_normalized_l1_deviation_max": 0.02,
-    },
+    "strict_exact": _typed_exact_thresholds(1.0),
+    "exact": _typed_exact_thresholds(0.995),
+    "close": _typed_exact_thresholds(0.99),
+    "bounded": _typed_exact_thresholds(0.98),
     "best_effort": {},
     "research": {},
 }
 COMPARISON_SEMANTICS = {
-    "strict_exact": "signed_compact_strict_exact",
-    "exact": "signed_compact_exact",
-    "close": "signed_compact_close",
-    "bounded": "signed_compact_bounded",
-    "best_effort": "signed_compact_best_effort",
-    "research": "signed_compact_research",
+    "strict_exact": "typed_bucket_v2_strict_exact",
+    "exact": "typed_bucket_v2_exact_only_pending_step1b",
+    "close": "typed_bucket_v2_exact_only_pending_step1b",
+    "bounded": "typed_bucket_v2_exact_only_pending_step1b",
+    "best_effort": "typed_bucket_v2_metrics_only",
+    "research": "typed_bucket_v2_metrics_only",
 }
 COMPARISON_CLAIM_LIMITATION = (
-    "Compact graph artifacts preserve signed retained edge weights, but omit "
-    "raw intermediates and non-retained state. Passing this gate establishes "
-    "only signed compact-graph parity, not exact semantic or full-mechanism parity."
+    "Typed compact graphs preserve six signed retained edge buckets, but omit raw "
+    "intermediates and non-retained state. Step 1a permits only exact per-bucket "
+    "edge gating; calibrated non-exact and behavioral claims wait for Step 1b."
 )
 DEFAULT_RUN_GOAL = (
     "Improve exact-trace runtime without exceeding the selected parity budget."
@@ -499,6 +484,7 @@ class CapabilityRequirements:
 @dataclass(frozen=True)
 class SemanticBaselinePins:
     exact_trace_internal_dtype: str = "fp32"
+    edge_retention_policy_id: str = DEFAULT_RETENTION_POLICY_ID
 
 
 @dataclass(frozen=True)
@@ -514,6 +500,7 @@ class BaselinePins:
     def as_overrides(self) -> dict[str, Any]:
         return {
             "exact_trace_internal_dtype": self.semantic.exact_trace_internal_dtype,
+            "edge_retention_policy_id": self.semantic.edge_retention_policy_id,
             "decoder_chunk_size": self.compatibility_mixed.decoder_chunk_size,
         }
 
@@ -524,7 +511,14 @@ class PhysicalControls:
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, Any]) -> PhysicalControls:
-        if "decoder_chunk_size" in values or "exact_trace_internal_dtype" in values:
+        if any(
+            key in values
+            for key in (
+                "decoder_chunk_size",
+                "exact_trace_internal_dtype",
+                "edge_retention_policy_id",
+            )
+        ):
             raise ValueError(
                 "semantic and compatibility-mixed values belong in baseline_pins"
             )
@@ -542,7 +536,7 @@ class EvidenceScope:
     def for_fidelity(self, fidelity: str) -> BaselineScope:
         return (
             self.exact_baseline
-            if fidelity in AUTOMATIC_PROMOTION_ALLOWED_FIDELITIES
+            if fidelity in EXACT_BASELINE_FIDELITIES
             else self.bounded_baseline
         )
 
@@ -1814,6 +1808,11 @@ def _verify_baseline_pin_facts(
         scenario = read_json(scenario_path)
         observed = {
             "exact_trace_internal_dtype": scenario.get("exact_trace_internal_dtype"),
+            # Pre-Step-1a scenarios did not name the policy even though the
+            # historical adapter verifies the same typed bucket metadata.
+            "edge_retention_policy_id": scenario.get(
+                "edge_retention_policy_id", DEFAULT_RETENTION_POLICY_ID
+            ),
             "decoder_chunk_size": scenario.get("decoder_chunk_size"),
         }
         expected_sha = baseline_entry.get("scenario_sha256")
@@ -1851,6 +1850,7 @@ def _verify_baseline_pin_facts(
         if isinstance(declared, Mapping)
         else {
             "exact_trace_internal_dtype": "fp32",
+            "edge_retention_policy_id": DEFAULT_RETENTION_POLICY_ID,
             "decoder_chunk_size": 4096,
         }
     )
@@ -1941,6 +1941,7 @@ def _case_scenario(
         row for row in payload["scenarios"] if row["fixture_name"] == case.fixture
     )
     scenario = dict(scenario)
+    scenario.setdefault("edge_retention_policy_id", DEFAULT_RETENTION_POLICY_ID)
     scenario["name"] = f"perf_{case.variant}_{case.fixture}"
     scenario["stage"] = "exact_trace_performance_optimization"
     scenario["tier"] = "sweep"
@@ -2896,7 +2897,7 @@ def _result_report(
         scenario.get("fidelity_level")
         or (
             "strict_exact"
-            if comparison_semantics in {None, "signed_compact_strict"}
+            if comparison_semantics in {None, COMPARISON_SEMANTICS["strict_exact"]}
             else "research"
         )
     )
@@ -3196,6 +3197,11 @@ def _print_report(report: dict[str, Any]) -> None:
     acceptance_status = (
         "ELIGIBLE" if report.get("promotion_eligible", True) else "MEASUREMENT_ONLY"
     )
+    typed_bucket_metrics = "".join(
+        f"{name.replace('<-', '_')}="
+        f"{render(report.get(f'bucket_{name.replace("<-", "_").replace("-", "_")}_exact'), 0)} "
+        for name in CANONICAL_BUCKET_NAMES
+    )
     print(
         f"{report['case']}: "
         f"candidate={render(report.get('candidate_duration_seconds'), 2)}s "
@@ -3205,12 +3211,7 @@ def _print_report(report: dict[str, Any]) -> None:
         f"stretch={render(stretch_target, 2)}s "
         f"{phase_timings} "
         f"feature={render(report.get('feature_jaccard'), 6)} "
-        f"all_edge={render(report.get('edge_jaccard'), 6)} "
-        f"all_top256={render(report.get('top256_edge_jaccard'), 6)} "
-        f"all_weighted={render(report.get('weighted_edge_jaccard'), 6)} "
-        f"edge_magnitude_l1={render(report.get('edge_magnitude_l1_deviation'), 6)} "
-        f"edge_sign={render(report.get('edge_sign_agreement'), 6)} "
-        f"edge_signed_l1={render(report.get('edge_signed_l1_deviation'), 6)} "
+        f"{typed_bucket_metrics}"
         f"token={render(report.get('target_token_match'), 0)} "
         f"parity={'n/a' if report.get('parity_passed') is None else ('PASS' if report.get('parity_passed') else 'FAIL')} "
         f"performance={performance_status} "
@@ -3266,9 +3267,7 @@ def _gate_summary(reports: Sequence[dict[str, Any]]) -> dict[str, bool | None]:
         report.get("code_retention_eligible", report.get("parity_passed")) is True
         for report in reports
     )
-    automatic_promotion_allowed = bool(reports) and all(
-        report.get("automatic_promotion_allowed", True) is True for report in reports
-    )
+    automatic_promotion_allowed = False
     passed = (
         bool(reports)
         and parity_passed
@@ -3323,7 +3322,7 @@ def _run(args: argparse.Namespace) -> int:
                 + ", ".join(missing_baselines)
             )
     verified_baseline_pins: dict[str, dict[str, Any]] = {}
-    if args.fidelity in AUTOMATIC_PROMOTION_ALLOWED_FIDELITIES and not diagnostic:
+    if args.fidelity in EXACT_BASELINE_FIDELITIES and not diagnostic:
         for case in cases:
             verified_baseline_pins[case.key] = _validate_exact_baseline_pins(
                 case=case,
@@ -3389,9 +3388,8 @@ def _run(args: argparse.Namespace) -> int:
             args.fidelity in AUTOMATIC_PROMOTION_ALLOWED_FIDELITIES
         ),
         "automatic_promotion_policy": (
-            "Exactness is necessary but not sufficient. Eligible candidates must "
-            "still win comparative runtime, memory, provider, and prompt-length "
-            "admission review; this harness does not mutate defaults."
+            "Automatic promotion is disabled until Step 1b adds the calibrated "
+            "correctness contract. This harness does not mutate defaults."
         ),
         "comparison_semantics": COMPARISON_SEMANTICS[args.fidelity],
         "claim_limitation": COMPARISON_CLAIM_LIMITATION,

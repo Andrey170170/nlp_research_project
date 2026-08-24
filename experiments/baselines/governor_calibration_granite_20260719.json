@@ -3,6 +3,9 @@
   "registry_id": "governor-calibration-granite-20260719",
   "created_at": "2026-07-19",
   "description": "Pinned corrected-hook Granite H200 361_base references for governor calibration self-scoring.",
+  "compact_graph_reference": {
+    "format": "historical_mixed_compact_v1"
+  },
   "source_roots": [
     "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma-stack-20260709-03",
     "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/baseline/chpc-baseline-gemma3-12b-20260710-04"

@@ -12,6 +12,7 @@ from nlp_research_project.exact_trace_bench.full_answer.runner import (
     reconstruct_prefix_token_ids,
 )
 from nlp_research_project.exact_trace_bench.full_answer.schemas import TraceSpec
+from typed_graph_fixtures import write_typed_graph
 
 
 def _trajectory() -> dict:
@@ -87,18 +88,12 @@ def _write_trace(run_root: Path, trace: dict) -> Path:
 
 
 def _write_graph(path: Path, *, step_idx: int, feature_ids: np.ndarray) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    n_features = int(feature_ids.shape[0])
-    np.savez(
+    write_typed_graph(
         path,
-        row_idx=np.asarray([], dtype=np.int32),
-        col_idx=np.asarray([], dtype=np.int32),
-        weights=np.asarray([], dtype=np.float32),
-        feature_ids=feature_ids,
-        token_text=np.asarray("token"),
-        logprob=np.asarray(np.nan),
-        n_features=np.asarray(n_features, dtype=np.int32),
-        step_idx=np.asarray(step_idx, dtype=np.int32),
+        step_idx=step_idx,
+        feature_ids=[tuple(int(value) for value in row) for row in feature_ids],
+        token_ids=[101, 102, 201],
+        token_text="token",
     )
 
 
@@ -173,4 +168,4 @@ def test_audit_prefix_views_rejects_structurally_invalid_graph(tmp_path: Path) -
     assert summary["counts"]["invalid_graph"] == 1
     row = json.loads((run_root / "prefix_view_audit.jsonl").read_text().splitlines()[0])
     assert row["audit_status"] == "error"
-    assert "mismatched lengths" in row["graph_error"]
+    assert "canonical typed graph contains legacy edge fields" in row["graph_error"]

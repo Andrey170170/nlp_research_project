@@ -9,6 +9,13 @@ from typing import Any
 
 import numpy as np
 import pytest
+from typed_graph_fixtures import write_typed_graph
+from nlp_research_project.exact_trace_bench.typed_compact_graph import (
+    COMPACT_SAVE_FORMAT,
+    DEFAULT_RETENTION_POLICY_ID,
+    SCHEMA_VERSION,
+    get_retention_policy,
+)
 
 _SCRIPT_PATH = (
     Path(__file__).resolve().parents[1]
@@ -112,6 +119,8 @@ def _rewrite_npz(path: Path, mutate) -> None:
 
 
 def _upgrade_graph_to_canonical_typed(path: Path) -> None:
+    """Historical helper name retained for old test call sites; graph is already v2."""
+    return
     with np.load(path, allow_pickle=False) as archive:
         payload = {field: np.asarray(archive[field]) for field in archive.files}
     bucket_names = (
@@ -223,16 +232,11 @@ def _write_shard(
     }
     if write_graph:
         graph_path = token_root / "graph.npz"
-        np.savez_compressed(
+        write_typed_graph(
             graph_path,
-            row_idx=np.asarray([0], dtype=np.int32),
-            col_idx=np.asarray([0], dtype=np.int32),
-            weights=np.asarray([1.0], dtype=np.float32),
-            feature_ids=np.asarray([[0, 0, 1]], dtype=np.int64),
-            token_text=np.asarray("token"),
-            logprob=np.asarray(-0.5),
-            n_features=np.asarray(1, dtype=np.int32),
-            step_idx=np.asarray(1, dtype=np.int32),
+            step_idx=1,
+            feature_ids=[(0, 0, 1)],
+            token_text="token",
         )
         trace["graph_path"] = str(graph_path)
     if captures:
@@ -893,42 +897,34 @@ def test_strict_full_completion_enforces_exact_canonical_graph_contract(
         output_root=output_root,
         expected_mode="cuda_windowed",
         expected_graph_feature_count=1,
-        expected_graph_edge_count=1,
-        require_canonical_typed_buckets=True,
+        require_typed_only_graph=True,
+        expected_graph_schema_version=SCHEMA_VERSION,
+        expected_graph_save_format=COMPACT_SAVE_FORMAT,
+        expected_graph_retention_policy_id=DEFAULT_RETENTION_POLICY_ID,
+        expected_graph_retention_policy_fingerprint=get_retention_policy().fingerprint,
         require_full_completion=True,
         label="strict-graph-contract",
     )
 
-    assert result["graph_validation_reports"] == [
-        {
-            "path": str(graph),
-            "step_idx": 1,
-            "target_position": 2,
-            "feature_count": 1,
-            "compact_edge_count": 1,
-            "compact_save_format": "typed_bucketed",
-            "bucket_names": [
-                "feature<-feature",
-                "feature<-error",
-                "feature<-token",
-                "logit<-feature",
-                "logit<-error",
-                "logit<-token",
-            ],
-            "typed_edge_count": 0,
-            "typed_feature_endpoint_count": 0,
-            "max_feature_position": 0,
-            "future_position_count": 0,
-        }
-    ]
+    report = result["graph_validation_reports"][0]
+    assert report["path"] == str(graph)
+    assert report["schema_version"] == SCHEMA_VERSION
+    assert report["compact_save_format"] == COMPACT_SAVE_FORMAT
+    assert report["retention_policy_id"] == DEFAULT_RETENTION_POLICY_ID
+    assert report["retention_policy_fingerprint"] == get_retention_policy().fingerprint
+    assert set(report["typed_edge_count_by_bucket"]) == set(report["bucket_names"])
+    assert report["typed_edge_count"] == sum(
+        report["typed_edge_count_by_bucket"].values()
+    )
+    assert report["future_position_count"] == 0
 
 
 @pytest.mark.parametrize(
     ("kwargs", "match"),
     [
         ({"expected_graph_feature_count": 2}, "selected features"),
-        ({"expected_graph_edge_count": 2}, "compact edges"),
-        ({"require_canonical_typed_buckets": True}, "canonical typed-bucket"),
+        ({"expected_graph_edge_count": 2}, "removed legacy global-projection"),
+        ({"expected_graph_schema_version": 999}, "schema_version"),
     ],
 )
 def test_strict_full_completion_rejects_graph_acceptance_mismatch(
@@ -960,13 +956,10 @@ def test_strict_full_completion_rejects_target_or_future_feature_position(
         resolved_mode="cuda_windowed",
         write_graph=True,
     )
-    graph = output_root / "shards/shard_000/token_000001/graph.npz"
-
-    def move_feature_to_target(payload: dict[str, np.ndarray]) -> None:
-        payload["feature_ids"] = payload["feature_ids"].copy()
-        payload["feature_ids"][0, 1] = 2
-
-    _rewrite_npz(graph, move_feature_to_target)
+    trace_path = output_root / "shards/shard_000/token_000001/trace.json"
+    trace = json.loads(trace_path.read_text())
+    trace["target_position"] = 0
+    _write_json(trace_path, trace)
 
     with pytest.raises(FeatureRowModeValidationError, match="at or after target"):
         validate_feature_row_mode(

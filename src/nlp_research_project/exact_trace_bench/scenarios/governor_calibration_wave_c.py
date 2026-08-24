@@ -13,6 +13,7 @@ from ..transcoder_config import (
     resolve_transcoder_load_config,
     transcoder_config_to_json,
 )
+from ..typed_compact_graph import CANONICAL_BUCKET_NAMES
 from .governor_calibration import (
     GIB,
     GOVERNOR_CALIBRATION_BASELINE_REGISTRY,
@@ -44,7 +45,11 @@ WAVE_C_VARIANTS = {
 
 _PARITY_BUDGET = {
     "metrics": {
-        "overall_mean_weighted_edge_jaccard": {"minimum": 0.99, "confidence": 0.95}
+        f"overall_mean_bucket_{name.replace('<-', '_').replace('-', '_')}_weighted_jaccard": {
+            "minimum": 0.99,
+            "confidence": 0.95,
+        }
+        for name in CANONICAL_BUCKET_NAMES
     },
 }
 
@@ -338,7 +343,10 @@ def write_wave_c_configs(
     ensure_dir(output_dir)
     outputs: dict[str, Path] = {}
     for variant, variant_payload in split_wave_c_configs(payload).items():
-        path = output_dir / f"exact_trace_governor_calibration_wave_c_{variant}_granite_scenarios.json"
+        path = (
+            output_dir
+            / f"exact_trace_governor_calibration_wave_c_{variant}_granite_scenarios.json"
+        )
         write_json(path, variant_payload)
         outputs[variant] = path
     return outputs

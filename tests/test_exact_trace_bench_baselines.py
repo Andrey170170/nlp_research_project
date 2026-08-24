@@ -22,6 +22,13 @@ from experiments import run_sparsification_experiment as experiment_runner  # no
 from experiments.run_sparsification_experiment import main, run_scenario  # noqa: E402
 
 
+def _overall_typed_exact_metrics(value: float = 1.0) -> dict[str, float]:
+    return {
+        f"overall_mean_bucket_{name.replace('<-', '_').replace('-', '_')}_exact": value
+        for name in baselines.CANONICAL_BUCKET_NAMES
+    }
+
+
 def test_baseline_check_preserves_typed_comparison_scope() -> None:
     scientific = baselines.normalize_baseline_check(
         {"baseline_check": {"enabled": True, "mode": "gate"}}
@@ -49,16 +56,40 @@ def test_baseline_check_preserves_typed_comparison_scope() -> None:
         )
 
 
+def test_comparison_contract_pins_retention_policy_not_legacy_max_edges() -> None:
+    contract = baselines._comparison_contract(
+        {
+            "method": "exact",
+            "edge_retention_policy_id": "typed_top_p_v1",
+            "max_edges": 20_000,
+        }
+    )
+
+    assert contract["edge_retention_policy_id"] == "typed_top_p_v1"
+    assert "max_edges" not in contract
+
+
 def test_registry_loader_and_resolver_enforce_scope_at_shared_boundary(
     tmp_path: Path,
 ) -> None:
     scientific_path = tmp_path / "legacy-scientific.json"
     scientific_path.write_text(
-        json.dumps({"registry_id": "legacy", "entries": {"case": {}}})
+        json.dumps(
+            {
+                "registry_id": "legacy",
+                "compact_graph_reference": (
+                    baselines.historical_compact_graph_reference_contract()
+                ),
+                "entries": {"case": {}},
+            }
+        )
     )
     scientific = baselines.load_baseline_registry(scientific_path)
     assert scientific.scope == "frozen_scientific"
     assert scientific.scope_declared is False
+    assert scientific.compact_graph_reference == {
+        "format": baselines.HISTORICAL_COMPACT_GRAPH_FORMAT
+    }
     status, entry = baselines.resolve_baseline_entry(
         {
             "enabled": True,
@@ -70,7 +101,16 @@ def test_registry_loader_and_resolver_enforce_scope_at_shared_boundary(
         registry_path=scientific_path,
     )
     assert status["registry_scope"] == "frozen_scientific"
-    assert entry == {}
+    assert entry == {
+        "compact_graph_reference": {"format": baselines.HISTORICAL_COMPACT_GRAPH_FORMAT}
+    }
+
+    missing_graph_contract = tmp_path / "missing-graph-contract.json"
+    missing_graph_contract.write_text(
+        json.dumps({"registry_id": "bad", "entries": {"case": {}}})
+    )
+    with pytest.raises(ValueError, match="compact_graph_reference"):
+        baselines.load_baseline_registry(missing_graph_contract)
 
     mechanism_missing_entry_scope = tmp_path / "bad-mechanism.json"
     mechanism_missing_entry_scope.write_text(
@@ -135,58 +175,72 @@ def test_run_scenario_rejects_unscoped_mechanism_registry(tmp_path: Path) -> Non
 
     assert result["status"] == "baseline_invalid"
     assert result["returncode"] is None
-    assert "explicitly scoped" in " ".join(
-        result["baseline_check"]["failure_reasons"]
-    )
+    assert "explicitly scoped" in " ".join(result["baseline_check"]["failure_reasons"])
     assert not (tmp_path / "mechanism_scope_smoke" / "run.log").exists()
 
 
-def test_baseline_comparison_writes_metrics(monkeypatch, tmp_path: Path) -> None:
+def test_historical_baseline_comparison_uses_bucket_drift_not_policy_equality(
+    tmp_path: Path,
+) -> None:
+    from typed_graph_fixtures import (
+        write_historical_tie_cutoff_graph,
+        write_typed_graph,
+    )
+
     baseline_artifacts = tmp_path / "baseline" / "artifacts"
     current_artifacts = tmp_path / "current" / "artifacts"
     scenario_root = tmp_path / "current"
-    baseline_artifacts.mkdir(parents=True)
-    current_artifacts.mkdir(parents=True)
+    historical_step = (
+        baseline_artifacts / "prompt_000" / "completion_000" / "step_000.npz"
+    )
+    candidate_step = (
+        current_artifacts / "prompt_000" / "completion_000" / "step_000.npz"
+    )
+    write_typed_graph(
+        candidate_step,
+        bucket_values={"feature<-feature": [[18.0, 1.0], [1.0, 0.0]]},
+    )
+    write_historical_tie_cutoff_graph(
+        historical_step,
+        canonical_source=candidate_step,
+    )
     baseline_result = tmp_path / "baseline" / "result.json"
     baseline_result.write_text(json.dumps({"status": "success"}))
 
-    def fake_compare(left: Path, right: Path) -> dict:
-        assert left == baseline_artifacts
-        assert right == current_artifacts
-        return {
-            "shared_completion_count": 1,
-            "aligned_completion_count": 1,
-            "aligned_step_count": 1,
-            "comparison_complete": True,
-            "left_only_completion_count": 0,
-            "right_only_completion_count": 0,
-            "overall_mean_feature_jaccard": 1.0,
-            "overall_mean_edge_jaccard": 0.99,
-            "overall_mean_weighted_edge_jaccard": 0.98,
-            "overall_mean_top256_edge_jaccard": 0.97,
-        }
-
-    monkeypatch.setattr(baselines, "compare_artifact_dirs", fake_compare)
     status, metrics = baselines.run_baseline_comparison(
         scenario_root=scenario_root,
         current_artifacts=current_artifacts,
         baseline_check={
             "enabled": True,
             "mode": "gate",
-            "thresholds": {"overall_mean_weighted_edge_jaccard_min": 0.97},
+            "thresholds": {
+                "overall_mean_bucket_feature_feature_weighted_jaccard_min": 0.89
+            },
             "failure_reasons": [],
         },
         baseline_entry={
             "artifacts_dir": str(baseline_artifacts),
             "result_json": str(baseline_result),
+            "compact_graph_reference": (
+                baselines.historical_compact_graph_reference_contract()
+            ),
         },
     )
 
     assert status["status"] == "gate_pass"
     assert status["passed"] is True
-    assert metrics["overall_mean_weighted_edge_jaccard"] == 0.98
-    assert metrics["overall_mean_top256_edge_jaccard"] == 0.97
+    assert metrics["overall_mean_bucket_feature_feature_exact"] == 0.0
+    assert metrics["overall_mean_bucket_feature_feature_weighted_jaccard"] >= 0.89
+    assert status["historical_reference"] is True
+    assert status["policy_compatible"] is False
+    assert status["candidate_current_policy_valid"] is True
+    assert status["reference_bucket_rules_match_candidate"] is True
     assert (scenario_root / "baseline_compare.json").exists()
+    comparison = json.loads((scenario_root / "baseline_compare.json").read_text())
+    assert comparison["historical_reference"] is True
+    assert comparison["policy_compatible"] is False
+    assert comparison["candidate_current_policy_valid"] is True
+    assert comparison["reference_bucket_rules_match_candidate"] is True
 
     row = baselines.build_scenario_metrics_row(
         scenario={"name": "current"},
@@ -198,7 +252,97 @@ def test_baseline_comparison_writes_metrics(monkeypatch, tmp_path: Path) -> None
     persisted = json.loads(
         (scenario_root / "scenario_metrics.json").read_text(encoding="utf-8")
     )
-    assert persisted["metrics"]["overall_mean_top256_edge_jaccard"] == 0.97
+    assert persisted["metrics"]["overall_mean_bucket_feature_feature_exact"] == 0.0
+
+
+def test_baseline_comparison_routes_typed_v2_reference_strictly(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    baseline_artifacts = tmp_path / "baseline" / "artifacts"
+    current_artifacts = tmp_path / "current" / "artifacts"
+    baseline_artifacts.mkdir(parents=True)
+    current_artifacts.mkdir(parents=True)
+    baseline_result = tmp_path / "baseline" / "result.json"
+    baseline_result.write_text(json.dumps({"status": "success"}))
+
+    def fake_compare(left: Path, right: Path, *, historical_reference: bool) -> dict:
+        assert left == baseline_artifacts
+        assert right == current_artifacts
+        assert historical_reference is False
+        return {
+            "shared_completion_count": 1,
+            "aligned_completion_count": 1,
+            "aligned_step_count": 1,
+            "comparison_complete": True,
+            "left_only_completion_count": 0,
+            "right_only_completion_count": 0,
+            "historical_reference": False,
+            "policy_compatible": True,
+            "candidate_current_policy_valid": True,
+            "overall_mean_feature_jaccard": 1.0,
+            "overall_mean_target_token_match": 1.0,
+            **_overall_typed_exact_metrics(),
+        }
+
+    monkeypatch.setattr(baselines, "compare_artifact_dirs", fake_compare)
+    status, _metrics = baselines.run_baseline_comparison(
+        scenario_root=tmp_path / "current",
+        current_artifacts=current_artifacts,
+        baseline_check={
+            "enabled": True,
+            "mode": "metrics",
+            "thresholds": {},
+            "failure_reasons": [],
+        },
+        baseline_entry={
+            "artifacts_dir": str(baseline_artifacts),
+            "result_json": str(baseline_result),
+            "compact_graph_reference": (
+                baselines.typed_compact_graph_reference_contract()
+            ),
+        },
+    )
+
+    assert status["status"] == "compared"
+    assert status["compact_graph_reference"] == (
+        baselines.typed_compact_graph_reference_contract()
+    )
+
+
+def test_baseline_entry_rejects_missing_or_incomplete_typed_graph_identity(
+    tmp_path: Path,
+) -> None:
+    artifacts = tmp_path / "baseline" / "artifacts"
+    artifacts.mkdir(parents=True)
+    result_json = tmp_path / "baseline" / "result.json"
+    result_json.write_text(json.dumps({"status": "success"}))
+
+    missing = baselines.validate_baseline_entry(
+        {"artifacts_dir": str(artifacts), "result_json": str(result_json)},
+        status={"failure_reasons": []},
+    )
+    assert missing["status"] == "baseline_invalid"
+    assert "compact_graph_reference" in " ".join(missing["failure_reasons"])
+
+    incomplete_typed = baselines.validate_baseline_entry(
+        {
+            "artifacts_dir": str(artifacts),
+            "result_json": str(result_json),
+            "compact_graph_reference": {"format": "typed_compact_graph_v2"},
+        },
+        status={"failure_reasons": []},
+    )
+    assert incomplete_typed["status"] == "baseline_invalid"
+    assert "typed compact graph identity mismatch" in " ".join(
+        incomplete_typed["failure_reasons"]
+    )
+
+    with pytest.raises(ValueError, match="unsupported compact graph reference"):
+        baselines.build_baseline_registry_from_run_roots(
+            [],
+            registry_id="empty-contract",
+            compact_graph_reference={},
+        )
 
 
 def test_baseline_comparison_rejects_incomplete_alignment(
@@ -213,11 +357,13 @@ def test_baseline_comparison_rejects_incomplete_alignment(
     monkeypatch.setattr(
         baselines,
         "compare_artifact_dirs",
-        lambda _left, _right: {
+        lambda _left, _right, *, historical_reference: {
             "shared_completion_count": 1,
             "aligned_completion_count": 0,
             "aligned_step_count": 0,
             "comparison_complete": False,
+            "historical_reference": historical_reference,
+            "policy_compatible": False,
         },
     )
 
@@ -233,6 +379,9 @@ def test_baseline_comparison_rejects_incomplete_alignment(
         baseline_entry={
             "artifacts_dir": str(baseline_artifacts),
             "result_json": str(baseline_result),
+            "compact_graph_reference": (
+                baselines.historical_compact_graph_reference_contract()
+            ),
         },
     )
 
@@ -243,12 +392,12 @@ def test_baseline_comparison_rejects_incomplete_alignment(
 
 def test_threshold_evaluation_reports_failures() -> None:
     passed, reasons = baselines.evaluate_thresholds(
-        {"overall_mean_edge_jaccard": 0.9},
-        {"overall_mean_edge_jaccard_min": 0.95},
+        {"overall_mean_bucket_feature_feature_exact": 0.0},
+        {"overall_mean_bucket_feature_feature_exact_min": 1.0},
     )
 
     assert passed is False
-    assert "overall_mean_edge_jaccard" in reasons[0]
+    assert "overall_mean_bucket_feature_feature_exact" in reasons[0]
 
 
 def test_run_scenario_skips_required_missing_baseline(tmp_path: Path) -> None:
@@ -440,9 +589,7 @@ def test_launch_renderers_default_immutable_and_require_live_rationale(
     tmp_path: Path,
 ) -> None:
     assert (
-        inspect.signature(render_launch_plan)
-        .parameters["immutable_workspace"]
-        .default
+        inspect.signature(render_launch_plan).parameters["immutable_workspace"].default
         is True
     )
     assert (
@@ -608,4 +755,10 @@ def test_build_baseline_registry_from_wave0_roots(tmp_path: Path) -> None:
     assert default_key in registry["entries"]
     assert repeat_key in registry["entries"]
     assert registry["entries"][default_key]["artifacts_dir"] == str(artifacts_dir)
+    assert registry["compact_graph_reference"] == (
+        baselines.typed_compact_graph_reference_contract()
+    )
+    assert registry["entries"][default_key]["compact_graph_reference"] == (
+        baselines.typed_compact_graph_reference_contract()
+    )
     assert registry["entries"][default_key]["prompt_identity"]["prepared_prompt_sha256"]

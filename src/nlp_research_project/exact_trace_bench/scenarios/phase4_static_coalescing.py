@@ -6,7 +6,11 @@ from typing import Any
 from ..config import DEFAULT_GENERATED_DIR, DEFAULT_SCRATCH_ROOT, base_trace_defaults
 from ..fixtures import resolve_fixture
 from ..io_utils import ensure_dir, write_json
-from ..transcoder_config import resolve_transcoder_load_config, transcoder_config_to_json
+from ..transcoder_config import (
+    resolve_transcoder_load_config,
+    transcoder_config_to_json,
+)
+from ..typed_compact_graph import CANONICAL_BUCKET_NAMES
 from .governor_calibration import GOVERNOR_CALIBRATION_BASELINE_REGISTRY
 
 
@@ -116,9 +120,10 @@ def build_phase4_static_coalescing_config(
                     "baseline_required": True,
                     "thresholds": {
                         "overall_mean_feature_jaccard_min": 1.0,
-                        "overall_mean_edge_jaccard_min": 1.0,
-                        "overall_mean_top256_edge_jaccard_min": 1.0,
-                        "overall_mean_weighted_edge_jaccard_min": 0.999999,
+                        **{
+                            f"overall_mean_bucket_{name.replace('<-', '_').replace('-', '_')}_exact_min": 1.0
+                            for name in CANONICAL_BUCKET_NAMES
+                        },
                     },
                 },
             }
@@ -152,7 +157,7 @@ def build_phase4_static_coalescing_config(
                 "prepared_frontier_membership_and_order_hashes_equal": True,
                 "ranker_pre_locality_order_hash_advisory": True,
                 "compact_graph_parity_required": True,
-                "weighted_edge_jaccard_min": 0.999999,
+                "typed_bucket_gate": "six_bucket_strict_exact",
                 "validator": "experiments/analyze_phase4_static_coalescing.py",
             },
             "slurm": {

@@ -2904,7 +2904,11 @@ def build_benchmark_index_row(result_path: Path) -> dict[str, Any]:
         "decoder_cache_bytes": cache_bytes,
         "decoder_cache_gib": None if cache_bytes is None else cache_bytes / (1024**3),
         "max_feature_nodes": scenario.get("max_feature_nodes"),
-        "max_edges": scenario.get("max_edges"),
+        "edge_retention_policy_id": run_config.get(
+            "edge_retention_policy_id",
+            scenario.get("edge_retention_policy_id"),
+        ),
+        "legacy_max_edges": scenario.get("max_edges"),
         "max_steps": scenario.get("max_steps"),
         **_summarize_artifacts(artifact_dir),
         **profiling,

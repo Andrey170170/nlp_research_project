@@ -8,6 +8,9 @@ from nlp_research_project.exact_trace_bench.scenarios.governor_calibration_wave_
     build_wave_c_config,
     split_wave_c_configs,
 )
+from nlp_research_project.exact_trace_bench.typed_compact_graph import (
+    CANONICAL_BUCKET_NAMES,
+)
 
 
 def test_wave_c_exact_ten_row_matrix_and_heldouts() -> None:
@@ -50,9 +53,7 @@ def test_wave_c_exact_ten_row_matrix_and_heldouts() -> None:
     assert len(split["gemma3_12b_plt"]["scenarios"]) == 1
     assert split["gemma3_4b_plt"]["metadata"]["slurm"]["mem"] == "400G"
     assert split["gemma3_12b_plt"]["metadata"]["slurm"]["mem"] == "600G"
-    assert {row["resource_profile"] for row in rows} == {
-        "governor_calibration_h200"
-    }
+    assert {row["resource_profile"] for row in rows} == {"governor_calibration_h200"}
 
     for row in rows:
         semantic = 64 if "12b" in row["name"] else 128
@@ -68,6 +69,10 @@ def test_wave_c_exact_ten_row_matrix_and_heldouts() -> None:
             assert row["governor_fidelity_mode"] == "exact"
         else:
             assert row["governor_fidelity_mode"] == "bounded"
+            assert set(row["governor_fidelity_budget"]["metrics"]) == {
+                f"overall_mean_bucket_{name.replace('<-', '_').replace('-', '_')}_weighted_jaccard"
+                for name in CANONICAL_BUCKET_NAMES
+            }
 
     joint = cases["heldout_joint_s256_e256_replay8_cache8gib"]
     assert joint["calibration_campaign"]["split"] == "heldout"

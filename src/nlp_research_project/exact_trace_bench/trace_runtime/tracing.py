@@ -32,7 +32,9 @@ class DiagnosticTraceCompletion:
     @property
     def phase4_batches_completed(self) -> int:
         value = self.telemetry_summary.get("phase4_batches_completed", 0)
-        return int(value) if isinstance(value, int) and not isinstance(value, bool) else 0
+        return (
+            int(value) if isinstance(value, int) and not isinstance(value, bool) else 0
+        )
 
 
 def extract_compact_chunked_attribution(
@@ -85,8 +87,15 @@ def extract_compact_chunked_attribution(
             f"got {type(result.output).__name__}"
         )
     output = dict(result.output)
-    output.setdefault("semantic_fingerprint", result.semantic_fingerprint)
-    output.setdefault("execution_fingerprint", result.execution_fingerprint)
+    for key in ("semantic_fingerprint", "execution_fingerprint"):
+        authoritative = getattr(result, key, None)
+        if not isinstance(authoritative, str) or not authoritative:
+            raise ValueError(f"TraceResult.{key} is required for graph provenance")
+        if key in output and output[key] != authoritative:
+            raise ValueError(
+                f"compact output {key} conflicts with authoritative TraceResult"
+            )
+        output[key] = authoritative
     output.setdefault("telemetry_summary", dict(result.telemetry_summary))
     output.setdefault("telemetry_events", list(result.telemetry_events))
     if result.admission_report is not None:

@@ -8,6 +8,8 @@ import math
 from pathlib import Path
 from typing import Any, Mapping, Protocol
 
+from ..typed_compact_graph import CANONICAL_BUCKET_NAMES
+
 
 _SCHEMA_VERSION = 2
 _NUMERIC_ALIASES = {
@@ -38,11 +40,18 @@ _CATEGORICAL_FEATURES = (
     "row_store_policy",
     "encoder_residency",
 )
+_FIDELITY_BUCKET_METRICS = (
+    "support_jaccard",
+    "weighted_jaccard",
+    "top256_jaccard",
+)
 _FIDELITY_TARGETS = (
     "overall_mean_feature_jaccard",
-    "overall_mean_edge_jaccard",
-    "overall_mean_weighted_edge_jaccard",
-    "overall_mean_top256_edge_jaccard",
+    *(
+        f"overall_mean_bucket_{bucket.replace('<-', '_').replace('-', '_')}_{metric}"
+        for bucket in CANONICAL_BUCKET_NAMES
+        for metric in _FIDELITY_BUCKET_METRICS
+    ),
 )
 _PLANNING_NUMERIC_FEATURES = frozenset(
     {
@@ -157,7 +166,9 @@ class PublicSiblingResponseModelApi:
             if isinstance(raw.get("configuration"), Mapping)
             else {}
         )
-        workload = raw.get("workload") if isinstance(raw.get("workload"), Mapping) else {}
+        workload = (
+            raw.get("workload") if isinstance(raw.get("workload"), Mapping) else {}
+        )
         numeric: dict[str, float] = {}
         for source, target in _NUMERIC_ALIASES.items():
             if (value := _finite(configuration.get(source))) is not None:
@@ -170,8 +181,12 @@ class PublicSiblingResponseModelApi:
         provider_family = str(scope_raw.get("transcoder_provider_family") or "")
         architecture = str(scope_raw.get("transcoder_architecture") or "")
         categorical = {
-            "provider_profile": str(scope_raw.get("governor_profile_name") or "unknown"),
-            "provider_type": "gemmascope2" if provider_family.startswith("gemmascope2") else provider_family or "unknown",
+            "provider_profile": str(
+                scope_raw.get("governor_profile_name") or "unknown"
+            ),
+            "provider_type": "gemmascope2"
+            if provider_family.startswith("gemmascope2")
+            else provider_family or "unknown",
             "architecture": architecture or "unknown",
             "row_store_policy": _ROW_STORE_ALIASES.get(
                 str(configuration.get("feature_row_retention") or ""), "unknown"
@@ -186,7 +201,9 @@ class PublicSiblingResponseModelApi:
             "architecture": categorical["architecture"],
         }
 
-        outcome_raw = raw.get("outcome") if isinstance(raw.get("outcome"), Mapping) else {}
+        outcome_raw = (
+            raw.get("outcome") if isinstance(raw.get("outcome"), Mapping) else {}
+        )
         status = str(outcome_raw.get("status") or "unknown")
         outcome_aliases = {
             "success": "completed",
@@ -195,7 +212,9 @@ class PublicSiblingResponseModelApi:
         }
         outcome = self._module.CalibrationOutcome(outcome_aliases.get(status, status))
         uncertainty = (
-            raw.get("uncertainty") if isinstance(raw.get("uncertainty"), Mapping) else {}
+            raw.get("uncertainty")
+            if isinstance(raw.get("uncertainty"), Mapping)
+            else {}
         )
         censoring_raw = str(uncertainty.get("censoring") or "infrastructure")
         censoring = self._module.CensoringKind(
@@ -206,13 +225,16 @@ class PublicSiblingResponseModelApi:
 
         targets: dict[str, float] = {}
         runtime = raw.get("runtime") if isinstance(raw.get("runtime"), Mapping) else {}
-        if (walltime := _finite(runtime.get("walltime_seconds"))) is not None and walltime > 0:
+        if (
+            walltime := _finite(runtime.get("walltime_seconds"))
+        ) is not None and walltime > 0:
             targets["predicted_walltime_high"] = walltime
-        fidelity = raw.get("fidelity") if isinstance(raw.get("fidelity"), Mapping) else {}
-        comparison = (
-            fidelity.get("comparison")
-            if isinstance(fidelity.get("comparison"), Mapping)
-            else {}
+        fidelity = (
+            raw.get("fidelity") if isinstance(raw.get("fidelity"), Mapping) else {}
+        )
+        comparison_raw = fidelity.get("comparison")
+        comparison: Mapping[str, Any] = (
+            comparison_raw if isinstance(comparison_raw, Mapping) else {}
         )
         for name in _FIDELITY_TARGETS:
             if (value := _finite(comparison.get(name))) is not None:
@@ -227,7 +249,9 @@ class PublicSiblingResponseModelApi:
         execution = provenance.get("execution_fingerprints")
         semantic = provenance.get("semantic_fingerprints")
         if isinstance(execution, list) and execution:
-            fingerprints["execution"] = ",".join(sorted(str(item) for item in execution))
+            fingerprints["execution"] = ",".join(
+                sorted(str(item) for item in execution)
+            )
         if isinstance(semantic, list) and semantic:
             fingerprints["semantic"] = ",".join(sorted(str(item) for item in semantic))
 
@@ -246,7 +270,9 @@ class PublicSiblingResponseModelApi:
 
     def _fit_config(self, samples: tuple[Any, ...]) -> Any:
         numeric_features = tuple(
-            sorted({name for sample in samples for name, _ in sample.numeric_coordinates})
+            sorted(
+                {name for sample in samples for name, _ in sample.numeric_coordinates}
+            )
         )
         models = [
             self._module.FitSpec(
@@ -274,7 +300,12 @@ class PublicSiblingResponseModelApi:
         return self._module.ResponseFitConfig(models=tuple(models))
 
     def publish(self, *, observations: tuple[Path, ...], output: Path) -> Any:
-        samples = tuple(sorted((self._sample(path) for path in observations), key=lambda row: row.sample_id))
+        samples = tuple(
+            sorted(
+                (self._sample(path) for path in observations),
+                key=lambda row: row.sample_id,
+            )
+        )
         dataset = self._module.CalibrationDataset(samples=samples)
         bundle = self._module.fit_response_bundle(
             dataset, self._fit_config(dataset.fit_samples)

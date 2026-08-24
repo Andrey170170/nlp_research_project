@@ -41,11 +41,11 @@ def _campaign() -> dict[str, object]:
                 "governor_fidelity_budget": {
                     "allowed_sensitive_axes": ["feature_microbatch_size"],
                     "metrics": {
-                        "overall_mean_weighted_edge_jaccard": {
+                        "overall_mean_bucket_feature_feature_weighted_jaccard": {
                             "minimum": 0.99,
                             "confidence": 0.95,
                         }
-                    }
+                    },
                 },
             },
         ),
@@ -79,7 +79,7 @@ def test_parse_fidelity_policy_rejects_unstructured_bounded_budget() -> None:
                 "governor_fidelity_mode": "bounded",
                 "governor_fidelity_budget": {
                     "allowed_sensitive_axes": ["feature_microbatch_size"],
-                    "metrics": {"weighted_edge_jaccard": 0.99}
+                    "metrics": {"weighted_edge_jaccard": 0.99},
                 },
             }
         )
@@ -158,9 +158,9 @@ def test_build_observation_joins_structured_artifacts(tmp_path: Path) -> None:
                 "aligned_completion_count": 1,
                 "aligned_step_count": 1,
                 "overall_mean_feature_jaccard": 1.0,
-                "overall_mean_edge_jaccard": 0.99,
-                "overall_mean_weighted_edge_jaccard": 0.995,
-                "overall_mean_top256_edge_jaccard": 1.0,
+                "overall_mean_bucket_feature_feature_support_jaccard": 0.99,
+                "overall_mean_bucket_feature_feature_weighted_jaccard": 0.995,
+                "overall_mean_bucket_feature_feature_top256_jaccard": 1.0,
             }
         )
     )
@@ -239,9 +239,12 @@ def test_build_observation_joins_structured_artifacts(tmp_path: Path) -> None:
     ]
     assert observation["resources"]["step_peaks"]["cuda_peak_reserved_gib"] == 4.0
     assert observation["resources"]["gpu_sidecar"]["sample_count"] == 1
-    assert observation["fidelity"]["comparison"][
-        "overall_mean_weighted_edge_jaccard"
-    ] == 0.995
+    assert (
+        observation["fidelity"]["comparison"][
+            "overall_mean_bucket_feature_feature_weighted_jaccard"
+        ]
+        == 0.995
+    )
     assert observation["uncertainty"]["missing_measurements"] == []
     assert observation["provenance"]["slurm"]["SLURM_JOB_ID"] == "123"
     assert len(observation["observation_fingerprint"]) == 64
@@ -297,6 +300,7 @@ def test_run_scenario_emits_observation_before_execution_error(
         "artifacts_dir": str(reference_artifacts),
         "result_json": str(reference_result),
         "expected_status": "success",
+        "compact_graph_reference": {"format": "historical_mixed_compact_v1"},
     }
 
     def fail_to_start(*args: object, **kwargs: object) -> None:

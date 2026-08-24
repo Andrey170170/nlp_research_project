@@ -6,9 +6,14 @@ from typing import Any
 
 from .graph_compare import compare_artifact_dirs
 from .io_utils import read_json, write_json
+from .typed_compact_graph import CANONICAL_BUCKET_NAMES
 
 
 EXPECTED_CASES = ("execution_b128", "execution_b256", "execution_b512")
+_BUCKET_EXACT_METRICS = {
+    name: f"overall_mean_bucket_{name.replace('<-', '_').replace('-', '_')}_exact"
+    for name in CANONICAL_BUCKET_NAMES
+}
 
 
 def _semantic_batch_rows(value: object, *, path: Path) -> list[int]:
@@ -17,16 +22,21 @@ def _semantic_batch_rows(value: object, *, path: Path) -> list[int]:
             value = json.loads(value)
         except json.JSONDecodeError as exc:
             raise ValueError(f"invalid semantic batch telemetry in {path}") from exc
-    if not isinstance(value, (list, tuple)) or not all(
-        isinstance(row, int) for row in value
-    ):
+    if not isinstance(value, (list, tuple)):
         raise ValueError(f"missing semantic batch telemetry in {path}")
-    return [int(row) for row in value]
+    rows: list[int] = []
+    for row in value:
+        if not isinstance(row, int):
+            raise ValueError(f"missing semantic batch telemetry in {path}")
+        rows.append(row)
+    return rows
 
 
 def _telemetry_evidence(artifacts_dir: Path) -> dict[str, Any]:
     completion_rows: list[dict[str, Any]] = []
-    for path in sorted(artifacts_dir.glob("prompt_*/completion_*/telemetry.live.jsonl")):
+    for path in sorted(
+        artifacts_dir.glob("prompt_*/completion_*/telemetry.live.jsonl")
+    ):
         refreshes: list[dict[str, Any]] = []
         semantic_schedule: list[dict[str, int]] = []
         execution_batch_count = 0
@@ -58,9 +68,7 @@ def _telemetry_evidence(artifacts_dir: Path) -> dict[str, Any]:
                     )
                     refresh_index = attrs.get("scheduler_refresh_index")
                     if not isinstance(start, int) or not isinstance(refresh_index, int):
-                        raise ValueError(
-                            f"missing semantic batch telemetry in {path}"
-                        )
+                        raise ValueError(f"missing semantic batch telemetry in {path}")
                     semantic_schedule.extend(
                         {
                             "semantic_batch_index": start + offset,
@@ -78,7 +86,12 @@ def _telemetry_evidence(artifacts_dir: Path) -> dict[str, Any]:
         if any(
             refresh[key] is None
             for refresh in refreshes
-            for key in ("refresh_index", "pending_hash", "order_hash", "membership_hash")
+            for key in (
+                "refresh_index",
+                "pending_hash",
+                "order_hash",
+                "membership_hash",
+            )
         ):
             raise ValueError(f"missing refresh identity telemetry in {path}")
         completion_rows.append(
@@ -142,8 +155,6 @@ def _ranker_order_hashes(completions: list[dict[str, Any]]) -> list[list[str]]:
 
 def validate_phase4_static_coalescing_run(
     run_root: Path,
-    *,
-    weighted_edge_jaccard_min: float = 0.999999,
 ) -> dict[str, Any]:
     failures: list[str] = []
     try:
@@ -199,13 +210,14 @@ def validate_phase4_static_coalescing_run(
             graph = {"comparison_complete": False, "error": str(exc)}
         graph_requirements = {
             "comparison_complete": graph.get("comparison_complete") is True,
+            "policy_compatible": graph.get("policy_compatible") is True,
             "feature_topology_exact": graph.get("overall_mean_feature_jaccard") == 1.0,
-            "edge_topology_exact": graph.get("overall_mean_edge_jaccard") == 1.0,
-            "top256_exact": graph.get("overall_mean_top256_edge_jaccard") == 1.0,
-            "weighted_edge_within_tolerance": float(
-                graph.get("overall_mean_weighted_edge_jaccard") or 0.0
-            )
-            >= weighted_edge_jaccard_min,
+            **{
+                f"bucket_{name.replace('<-', '_').replace('-', '_')}_exact": (
+                    graph.get(metric) == 1.0
+                )
+                for name, metric in _BUCKET_EXACT_METRICS.items()
+            },
         }
         if not all(graph_requirements.values()):
             failures.append(f"{case}: compact graph parity gate failed")
@@ -220,9 +232,7 @@ def validate_phase4_static_coalescing_run(
                     key: graph.get(key)
                     for key in (
                         "overall_mean_feature_jaccard",
-                        "overall_mean_edge_jaccard",
-                        "overall_mean_weighted_edge_jaccard",
-                        "overall_mean_top256_edge_jaccard",
+                        *_BUCKET_EXACT_METRICS.values(),
                     )
                 },
             }
@@ -232,14 +242,16 @@ def validate_phase4_static_coalescing_run(
         "schema_version": 1,
         "status": "pass" if not failures else "fail",
         "passed": not failures,
-        "weighted_edge_jaccard_min": weighted_edge_jaccard_min,
+        "typed_bucket_gate": "six_bucket_strict_exact",
         "failures": failures,
         "cases": cases,
         "comparisons": comparisons,
     }
 
 
-def write_phase4_static_validation_report(run_root: Path, report: dict[str, Any]) -> Path:
+def write_phase4_static_validation_report(
+    run_root: Path, report: dict[str, Any]
+) -> Path:
     output_path = run_root / "phase4_static_coalescing_validation.json"
     write_json(output_path, report)
     return output_path

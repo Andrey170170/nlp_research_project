@@ -306,49 +306,6 @@ def sparsify_edges(
 # ── compact serialisation ────────────────────────────────────────────
 
 
-def save_compact(step: StepData, path: Path) -> None:
-    """Save a StepData to a compressed .npz file (~1-5 MB)."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(
-        str(path),
-        row_idx=step.row_idx,
-        col_idx=step.col_idx,
-        weights=step.weights,
-        feature_ids=step.feature_ids,
-        token_text=np.array(step.token_text),
-        logprob=np.array(step.logprob if step.logprob is not None else np.nan),
-        n_features=np.array(step.n_features, dtype=np.int32),
-        step_idx=np.array(step.step_idx, dtype=np.int32),
-    )
-
-
-def save_bucketed_compact(bundle: BucketedCompact, path: Path) -> None:
-    """Save legacy compact arrays plus optional typed-bucket edge arrays."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    step = bundle.step
-    np.savez_compressed(
-        str(path),
-        row_idx=step.row_idx,
-        col_idx=step.col_idx,
-        weights=step.weights,
-        feature_ids=step.feature_ids,
-        token_text=np.array(step.token_text),
-        logprob=np.array(step.logprob if step.logprob is not None else np.nan),
-        n_features=np.array(step.n_features, dtype=np.int32),
-        step_idx=np.array(step.step_idx, dtype=np.int32),
-        compact_save_format=np.array("typed_bucketed"),
-        bucket_row_idx=bundle.bucket_row_idx,
-        bucket_col_idx=bundle.bucket_col_idx,
-        bucket_weights=bundle.bucket_weights,
-        bucket_ids=bundle.bucket_ids,
-        bucket_names=bundle.bucket_names,
-        bucket_metadata_json=np.array(bundle.bucket_metadata_json),
-        error_node_shape=bundle.error_node_shape,
-        token_ids=bundle.token_ids,
-        logit_token_ids=bundle.logit_token_ids,
-    )
-
-
 _BASE_COMPACT_FIELDS = frozenset(
     {
         "row_idx",
@@ -617,17 +574,17 @@ def _validate_typed_endpoint_domains(
                 raise ValueError(f"{name} column is outside token_ids")
 
 
-def load_compact_graph(
+def load_historical_compact_graph(
     path: Path,
     *,
     expected_step_idx: int | None = None,
     validate_step_path: bool = True,
 ) -> CompactGraph:
-    """Load and strictly validate one compact graph artifact.
+    """Load and validate one historical legacy or mixed compact artifact.
 
-    This is the serialization seam for both legacy compact and typed-bucketed
-    artifacts. Callers receive owned arrays after the NPZ file is closed, so
-    schema checks cannot drift across audit and analysis paths.
+    New-run artifacts must use ``typed_compact_graph.load_typed_compact_graph``.
+    This explicitly named adapter exists only for provenance-bound artifacts
+    written before the canonical typed-only v2 schema.
     """
     graph_path = Path(path)
     with np.load(str(graph_path), allow_pickle=False) as data:
@@ -864,12 +821,12 @@ def summarize_feature_positions(
     )
 
 
-def load_compact(path: Path) -> StepData:
-    """Load a strictly validated StepData from a compact graph artifact."""
-    return load_compact_graph(path).step
+def load_historical_compact_step(path: Path) -> StepData:
+    """Load historical StepData; canonical v2 graphs have no legacy projection."""
+    return load_historical_compact_graph(path).step
 
 
-def step_from_pt(
+def load_historical_step_from_pt(
     pt_path: Path, step_idx: int, *, max_edges: int = MAX_EDGES
 ) -> StepData:
     """Load a raw .pt graph and convert to compact StepData."""

@@ -13,7 +13,19 @@ EXPERIMENTS_DIR = PROJECT_ROOT / "experiments"
 if str(EXPERIMENTS_DIR) not in sys.path:
     sys.path.insert(0, str(EXPERIMENTS_DIR))
 
-from nlp_research_project.exact_trace_bench import phase0_replay_matrix_compare as matrix_compare  # noqa: E402
+from nlp_research_project.exact_trace_bench import (  # noqa: E402
+    phase0_replay_matrix_compare as matrix_compare,
+)
+from nlp_research_project.exact_trace_bench.typed_compact_graph import (  # noqa: E402
+    CANONICAL_BUCKET_NAMES,
+)
+
+
+def _typed_compact_metrics(weighted: float) -> dict[str, float]:
+    return {
+        f"overall_mean_bucket_{name.replace('<-', '_').replace('-', '_')}_weighted_jaccard": weighted
+        for name in CANONICAL_BUCKET_NAMES
+    }
 
 
 def _mkdirs(tmp_path: Path) -> dict[str, Path]:
@@ -53,7 +65,7 @@ def test_compare_phase0_replay_matrix_reports_cross_swap_movement(
         feature, weighted = compact_scores.get((left.name, right.name), (1.0, 1.0))
         return {
             "overall_mean_feature_jaccard": feature,
-            "overall_mean_weighted_edge_jaccard": weighted,
+            **_typed_compact_metrics(weighted),
         }
 
     def fake_compare_phase3_artifact_dirs(left: Path, right: Path):
@@ -97,9 +109,10 @@ def test_compare_phase0_replay_matrix_reports_cross_swap_movement(
     assert ascend_move["compact_feature_jaccard"]["movement_score"] == pytest.approx(
         0.5
     )
-    assert ascend_move["compact_weighted_edge_jaccard"][
+    assert ascend_move["compact_bucket_feature_feature_weighted_jaccard"][
         "movement_score"
     ] == pytest.approx(0.5)
+    assert sum(key.startswith("compact_bucket_") for key in ascend_move) == 6
     assert ascend_move["phase3_support_jaccard"]["movement_score"] == pytest.approx(0.7)
     assert ascend_move["phase3_seed_influence_pearson"][
         "movement_score"
@@ -135,11 +148,11 @@ def test_compare_phase0_replay_matrix_self_replay_gate_uses_strict_thresholds(
         if left.name == "ascend_baseline" and right.name == "ascend_self_replay":
             return {
                 "overall_mean_feature_jaccard": 1.0,
-                "overall_mean_weighted_edge_jaccard": 0.998,
+                **_typed_compact_metrics(0.998),
             }
         return {
             "overall_mean_feature_jaccard": 1.0,
-            "overall_mean_weighted_edge_jaccard": 1.0,
+            **_typed_compact_metrics(1.0),
         }
 
     def fake_compare_phase3_artifact_dirs(left: Path, right: Path):
@@ -180,7 +193,11 @@ def test_compare_phase0_replay_matrix_self_replay_gate_uses_strict_thresholds(
 
     ascend_gate = result["self_replay_gate"]["ascend_self_replay"]
     assert ascend_gate["pass"] is False
-    assert ascend_gate["checks"]["compact_weighted_edge_jaccard"]["pass"] is False
+    assert (
+        ascend_gate["checks"]["compact_bucket_feature_feature_weighted_jaccard"]["pass"]
+        is False
+    )
+    assert sum(key.startswith("compact_bucket_") for key in ascend_gate["checks"]) == 6
     assert ascend_gate["dtype_roundtrip_loss_detected"] is True
     assert any(
         "strict self-replay thresholds" in warning

@@ -3,8 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
-from ..compact_io import load_compact_graph, summarize_feature_positions
+import numpy as np
+
 from ..io_utils import ensure_dir, read_json, write_json, write_jsonl
+from ..typed_compact_graph import load_typed_compact_graph
 from .runner import prefix_view_metadata, reconstruct_prefix_token_ids
 from .schemas import TraceSpec, load_trajectory
 
@@ -155,18 +157,27 @@ def inspect_compact_graph_positions(
     leakage into a per-token graph.
     """
     try:
-        graph = load_compact_graph(graph_path, expected_step_idx=expected_step_idx)
-        positions = summarize_feature_positions(
-            graph, max_position_exclusive=int(target_position)
+        graph = load_typed_compact_graph(
+            graph_path, expected_step_idx=expected_step_idx
+        )
+        positions = graph.feature_ids[:, 1]
+        future_count = int(np.count_nonzero(positions >= int(target_position)))
+        typed_endpoint_count = sum(
+            int(np.count_nonzero(graph.bucket_ids == bucket_id))
+            * (int(name.startswith("feature<-")) + int(name.endswith("<-feature")))
+            for bucket_id, name in enumerate(graph.bucket_names)
         )
         return {
-            "graph_feature_count": positions.feature_count,
-            "graph_typed_feature_endpoint_count": (
-                positions.typed_feature_endpoint_count
+            "graph_feature_count": graph.n_features,
+            "graph_typed_feature_endpoint_count": typed_endpoint_count,
+            "graph_max_feature_position": (
+                int(positions.max()) if positions.size else None
             ),
-            "graph_max_feature_position": positions.max_position,
-            "future_position_violation": positions.has_future_positions,
-            "future_position_count": positions.future_position_count,
+            "future_position_violation": future_count > 0,
+            "future_position_count": future_count,
+            "retention_policy_id": graph.retention_policy_id,
+            "retention_policy_fingerprint": graph.retention_policy_fingerprint,
+            "graph_fingerprint": graph.graph_fingerprint,
         }
     except Exception as exc:  # pragma: no cover - defensive malformed npz path
         return {"graph_error": repr(exc), "future_position_violation": False}

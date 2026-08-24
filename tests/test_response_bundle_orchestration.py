@@ -10,6 +10,9 @@ from nlp_research_project.exact_trace_bench.calibration.response_bundles import 
 from nlp_research_project.exact_trace_bench.calibration.response_bundle_adapter import (
     PublicSiblingResponseModelApi,
 )
+from nlp_research_project.exact_trace_bench.typed_compact_graph import (
+    CANONICAL_BUCKET_NAMES,
+)
 from circuit_tracer.governor.response_models import load_response_bundle
 
 
@@ -78,9 +81,18 @@ def _observation(sample_id: str, split: str, walltime: float) -> dict[str, objec
         "fidelity": {
             "comparison": {
                 "overall_mean_feature_jaccard": 0.999,
-                "overall_mean_edge_jaccard": 0.998,
-                "overall_mean_weighted_edge_jaccard": 0.997,
-                "overall_mean_top256_edge_jaccard": 1.0,
+                **{
+                    f"overall_mean_bucket_{bucket.replace('<-', '_').replace('-', '_')}_support_jaccard": 0.998
+                    for bucket in CANONICAL_BUCKET_NAMES
+                },
+                **{
+                    f"overall_mean_bucket_{bucket.replace('<-', '_').replace('-', '_')}_weighted_jaccard": 0.997
+                    for bucket in CANONICAL_BUCKET_NAMES
+                },
+                **{
+                    f"overall_mean_bucket_{bucket.replace('<-', '_').replace('-', '_')}_top256_jaccard": 1.0
+                    for bucket in CANONICAL_BUCKET_NAMES
+                },
             }
         },
         "provenance": {
@@ -109,17 +121,27 @@ def test_public_adapter_fits_deterministic_bundle_and_excludes_heldout(
 
     assert first.read_bytes() == second.read_bytes()
     assert first_result["validation"]["diagnostics"]["fit_sample_count"] == 3
-    assert first_result["validation"]["diagnostics"]["heldout_ids"] == [
-        "sample-3"
-    ]
-    assert second_result["validation"]["content_fingerprint"] == (
-        first_result["validation"]["content_fingerprint"]
+    assert first_result["validation"]["diagnostics"]["heldout_ids"] == ["sample-3"]
+    assert (
+        second_result["validation"]["content_fingerprint"]
+        == (first_result["validation"]["content_fingerprint"])
     )
     loaded = load_response_bundle(first)
     assert all(
         "decoder_cache_bytes" not in artifact.numeric_features
         for artifact in loaded.models
     )
+    model_targets = {artifact.target for artifact in loaded.models}
+    assert {
+        "overall_mean_edge_jaccard",
+        "overall_mean_weighted_edge_jaccard",
+        "overall_mean_top256_edge_jaccard",
+    }.isdisjoint(model_targets)
+    assert {
+        f"overall_mean_bucket_{bucket.replace('<-', '_').replace('-', '_')}_{metric}"
+        for bucket in CANONICAL_BUCKET_NAMES
+        for metric in ("support_jaccard", "weighted_jaccard", "top256_jaccard")
+    }.issubset(model_targets)
 
 
 def test_adapter_uses_selected_vector_and_runtime_categories(tmp_path: Path) -> None:

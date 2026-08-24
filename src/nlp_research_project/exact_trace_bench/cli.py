@@ -702,7 +702,6 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
     )
     for flag_name, value in (
         ("--max-feature-nodes", args.max_feature_nodes),
-        ("--max-edges", args.max_edges),
         *positive_int_flags,
     ):
         if value is not None and value <= 0:
@@ -796,7 +795,7 @@ def _cmd_build_full_answer_trace_specs(args: argparse.Namespace) -> None:
         key: value
         for key, value in {
             "max_feature_nodes": args.max_feature_nodes,
-            "max_edges": args.max_edges,
+            "edge_retention_policy_id": args.edge_retention_policy_id,
             "exact_trace_internal_dtype": args.exact_trace_internal_dtype,
             "decoder_chunk_size": args.decoder_chunk_size,
             "cross_batch_decoder_cache_bytes": args.cross_batch_decoder_cache_bytes,
@@ -1280,7 +1279,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     full_answer_trace_specs.add_argument("--output-dir", type=Path, required=True)
     full_answer_trace_specs.add_argument("--max-feature-nodes", type=int, default=None)
-    full_answer_trace_specs.add_argument("--max-edges", type=int, default=None)
+    full_answer_trace_specs.add_argument(
+        "--edge-retention-policy-id",
+        choices=["typed_top_p_v1"],
+        default=None,
+    )
     full_answer_trace_specs.add_argument("--decoder-chunk-size", type=int, default=None)
     full_answer_trace_specs.add_argument(
         "--cross-batch-decoder-cache-bytes", type=int, default=None

@@ -24,8 +24,9 @@ single-forward batched-VJP regime. LS5 closed through cross-node repeat
 qualification of the frozen 12B/1,024 selected circuit and resource envelope.
 The successor completed evidence hardening and the frozen profile rerun. Its
 2026-08-23 revision corrects the primary objective to memory survivability, with
-speed optimized opportunistically inside the admitted set. Step 1a makes the
-six versioned typed edge buckets the only new graph artifact. Step 1b adds
+speed optimized opportunistically inside the admitted set. Step 1a's atomic
+code migration now makes the six versioned typed edge buckets the only new graph
+artifact; frozen 12B/1,024 GPU qualification is pending. Step 1b adds
 separate structural, alias-aware numerical-stability, and behavioral-faithfulness
 verdicts plus a bounded same-process intervention probe. Later work separates
 row retention/access/reduction, selects full -> windowed -> tiled -> recompute,
@@ -182,7 +183,8 @@ The immediate post-repeat work splits into two parallel lanes:
    typed buckets, and the CIE-consumed score/output; add an intermediate
    unoptimized-fork arm only if upstream versus current diverges materially.
 2. **Canonical artifact, correctness, and opportunistic 12B closure.** Step 1a
-   replaces the legacy/dual graph interface with typed-bucket-only persistence:
+   has replaced the legacy/dual graph interface with typed-bucket-only persistence
+   in code and awaits one frozen 12B/1,024 GPU qualification:
    both writers use one versioned six-bucket policy, generic `max_edges` and
    current `all_edge_*` promotion metrics disappear, and legacy reading becomes
    explicitly historical. Step 1b defines independent structural/algorithmic,

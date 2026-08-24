@@ -9,9 +9,17 @@ from .graph_compare import compare_artifact_dirs
 from .io_utils import read_json
 from .phase3_seed_bundle_compare import compare_phase3_seed_bundles
 from .semantic_feature_compare import compare_semantic_feature_descriptors
+from .typed_compact_graph import CANONICAL_BUCKET_NAMES
 
 PHASE3_BUNDLE_PATTERN = "step_*_phase3_seed_bundle.npz"
 SEMANTIC_DESCRIPTOR_PATTERN = "step_*_feature_semantic_descriptors.npz"
+
+_COMPACT_BUCKET_WEIGHTED_METRICS = {
+    f"compact_bucket_{name.replace('<-', '_').replace('-', '_')}_weighted_jaccard": (
+        f"overall_mean_bucket_{name.replace('<-', '_').replace('-', '_')}_weighted_jaccard"
+    )
+    for name in CANONICAL_BUCKET_NAMES
+}
 
 SELF_REPLAY_THRESHOLDS: dict[str, tuple[str, str, float]] = {
     "feature_support_jaccard": ("phase3_support_jaccard", "eq", 1.0),
@@ -21,16 +29,12 @@ SELF_REPLAY_THRESHOLDS: dict[str, tuple[str, str, float]] = {
         0.9999,
     ),
     "phase3_top1024_overlap": ("phase3_seed_top1024_overlap", "ge", 0.999),
-    "compact_weighted_edge_jaccard": (
-        "compact_weighted_edge_jaccard",
-        "ge",
-        0.999,
-    ),
+    **{metric: (metric, "ge", 0.999) for metric in _COMPACT_BUCKET_WEIGHTED_METRICS},
 }
 
 MOVEMENT_METRICS = (
     "compact_feature_jaccard",
-    "compact_weighted_edge_jaccard",
+    *_COMPACT_BUCKET_WEIGHTED_METRICS,
     "phase3_support_jaccard",
     "phase3_seed_influence_pearson",
     "phase3_frontier_post_jaccard",
@@ -261,9 +265,10 @@ def _extract_similarity_metrics(
         "compact_feature_jaccard": _as_float(
             compact_summary.get("overall_mean_feature_jaccard")
         ),
-        "compact_weighted_edge_jaccard": _as_float(
-            compact_summary.get("overall_mean_weighted_edge_jaccard")
-        ),
+        **{
+            output_name: _as_float(compact_summary.get(summary_name))
+            for output_name, summary_name in _COMPACT_BUCKET_WEIGHTED_METRICS.items()
+        },
         "phase3_support_jaccard": _as_float(
             phase3_summary.get("overall_mean_support_jaccard")
         ),

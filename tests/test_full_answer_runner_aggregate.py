@@ -13,7 +13,6 @@ import numpy as np
 import pytest
 
 from nlp_research_project.exact_trace_bench import cli as full_answer_cli
-from nlp_research_project.exact_trace_bench import compact_io
 from nlp_research_project.exact_trace_bench.full_answer import runner as runner_module
 from nlp_research_project.exact_trace_bench.full_answer.aggregate import (
     aggregate_shards,
@@ -40,13 +39,20 @@ SRC_ROOT = PROJECT_ROOT / "src"
 def _stub_compact_packager(monkeypatch) -> None:
     monkeypatch.setattr(
         runner_module,
-        "_compact_result_to_bucketed_compact",
-        lambda *_args, **_kwargs: types.SimpleNamespace(step={}),
+        "_build_typed_compact_graph",
+        lambda *_args, **_kwargs: types.SimpleNamespace(
+            compact_save_format="typed_compact_graph_v2",
+            edge_count=0,
+            n_features=0,
+            retention_policy_id="typed_top_p_v1",
+            retention_policy_fingerprint="sha256:" + "1" * 64,
+            graph_fingerprint="sha256:" + "2" * 64,
+        ),
     )
     monkeypatch.setattr(
-        compact_io,
-        "save_bucketed_compact",
-        lambda _bundle, path: (
+        runner_module,
+        "_save_typed_compact_graph",
+        lambda _graph, path: (
             Path(path).parent.mkdir(parents=True, exist_ok=True),
             Path(path).write_text("graph"),
         ),
@@ -88,7 +94,7 @@ def _write_tiny_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
             "target_token_text": "A",
             "target_mode": "frozen_target_only",
             "selection_reasons": ["explicit"],
-            "graph_knobs": {"max_edges": 10},
+            "graph_knobs": {"edge_retention_policy_id": "typed_top_p_v1"},
             "estimated_cost": 2,
         },
         {
@@ -102,7 +108,7 @@ def _write_tiny_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
             "target_token_text": "7",
             "target_mode": "frozen_target_only",
             "selection_reasons": ["numeric"],
-            "graph_knobs": {"max_edges": 10},
+            "graph_knobs": {"edge_retention_policy_id": "typed_top_p_v1"},
             "estimated_cost": 3,
         },
     ]
@@ -158,7 +164,7 @@ def test_dry_run_shard_writes_expected_files_and_metadata(tmp_path: Path) -> Non
         (shard_dir / "selected_execution.json").read_text(encoding="utf-8")
     )
     assert selected["selection_fingerprint"]
-    assert selected["selected_config"] == {"max_edges": 10}
+    assert selected["selected_config"] == {"edge_retention_policy_id": "typed_top_p_v1"}
     assert selected["mechanism_selection"] == {
         "feature_row_influence_mode": "cpu_exact",
         "feature_row_influence_requirement": "preferred",
@@ -1498,7 +1504,7 @@ def test_real_shard_requires_slurm_before_heavy_imports(
         if name in {
             "torch",
             "nlp_research_project.exact_trace_bench.trace_runtime.provider",
-            "nlp_research_project.exact_trace_bench.compact_io",
+            "nlp_research_project.exact_trace_bench.typed_compact_graph",
             "circuit_tracer",
         }:
             raise AssertionError(f"heavy import attempted: {name}")

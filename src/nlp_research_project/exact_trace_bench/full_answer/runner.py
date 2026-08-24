@@ -6,8 +6,14 @@ import os
 import time
 import traceback
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
+
+if TYPE_CHECKING:
+    from nlp_research_project.exact_trace_bench.typed_compact_graph import (
+        TypedCompactGraph,
+    )
 
 from ..backward_selection import build_backward_plan
 from ..io_utils import ensure_dir, write_json, write_jsonl
@@ -518,7 +524,6 @@ def _graph_summary(
             "node_count",
             "edge_count",
             "feature_node_count",
-            "max_edges",
             "max_feature_nodes",
             "active_feature_count",
         ):
@@ -617,13 +622,62 @@ def _model_load_knobs(specs: list[TraceSpec]) -> dict[str, Any]:
     return resolved or transcoder_config_to_json(resolve_transcoder_load_config())
 
 
-def _compact_result_to_bucketed_compact(*args: Any, **kwargs: Any) -> Any:
-    """Load the canonical compact packager only on the SLURM execution path."""
-    from nlp_research_project.exact_trace_bench.trace_runtime.compact_graph import (
-        compact_result_to_bucketed_compact,
+@dataclass(frozen=True)
+class FullAnswerTypedGraphRequest:
+    compact_result: Mapping[str, Any]
+    step_idx: int
+    token_text: str
+    logprob: float | None
+    retention_policy_id: str
+    provider_identity: Mapping[str, Any]
+    trace_identity: Mapping[str, Any]
+    target_identity: Mapping[str, Any]
+    step_identity: Mapping[str, Any]
+
+
+def _build_typed_compact_graph(
+    request: FullAnswerTypedGraphRequest,
+) -> TypedCompactGraph:
+    """Load the canonical artifact module only on the SLURM execution path."""
+    from nlp_research_project.exact_trace_bench.typed_compact_graph import (
+        ArtifactProvenance,
+        build_typed_compact_graph,
     )
 
-    return compact_result_to_bucketed_compact(*args, **kwargs)
+    bound_result = dict(request.compact_result)
+    for key in ("semantic_fingerprint", "execution_fingerprint"):
+        authoritative = request.trace_identity.get(key)
+        if not isinstance(authoritative, str) or not authoritative:
+            raise ValueError(
+                f"Full Answer TraceResult.{key} is required for graph provenance"
+            )
+        if key in bound_result and bound_result[key] != authoritative:
+            raise ValueError(
+                f"compact output {key} conflicts with authoritative TraceResult"
+            )
+        bound_result[key] = authoritative
+
+    return build_typed_compact_graph(
+        bound_result,
+        request.step_idx,
+        provenance=ArtifactProvenance(
+            provider=request.provider_identity,
+            trace=request.trace_identity,
+            target=request.target_identity,
+            step=request.step_identity,
+        ),
+        token_text=request.token_text,
+        logprob=request.logprob,
+        retention_policy_id=request.retention_policy_id,
+    )
+
+
+def _save_typed_compact_graph(graph: TypedCompactGraph, path: Path) -> None:
+    from nlp_research_project.exact_trace_bench.typed_compact_graph import (
+        save_typed_compact_graph,
+    )
+
+    save_typed_compact_graph(graph, path)
 
 
 def _trace_request(
@@ -1190,7 +1244,6 @@ def run_real_shard(
 
     from circuit_tracer import SessionWindow, open_session, trace_one
 
-    from nlp_research_project.exact_trace_bench import compact_io as circuit_utils
     from nlp_research_project.exact_trace_bench.trace_runtime.provider import (
         get_model_transcoder_metadata,
         load_model,
@@ -1420,16 +1473,56 @@ def run_real_shard(
                                 "compact trace output must be a mapping, got "
                                 f"{type(graph_result).__name__}"
                             )
-                        bucketed = _compact_result_to_bucketed_compact(
-                            compact_result,
-                            spec["generated_index"],
-                            token_text=spec["target_token_text"],
-                            max_edges=int(knobs.get("max_edges", 20000)),
+                        graph = _build_typed_compact_graph(
+                            FullAnswerTypedGraphRequest(
+                                compact_result=compact_result,
+                                step_idx=spec["generated_index"],
+                                token_text=spec["target_token_text"],
+                                logprob=_target_token_metadata(trajectory, spec).get(
+                                    "target_logprob"
+                                ),
+                                retention_policy_id=str(
+                                    knobs["edge_retention_policy_id"]
+                                ),
+                                provider_identity={
+                                    key: knobs.get(key)
+                                    for key in PUBLIC_TRANSCODER_KNOB_KEYS
+                                },
+                                trace_identity={
+                                    "trace_id": spec["trace_id"],
+                                    "semantic_fingerprint": getattr(
+                                        trace_result, "semantic_fingerprint", None
+                                    ),
+                                    "execution_fingerprint": getattr(
+                                        trace_result, "execution_fingerprint", None
+                                    ),
+                                },
+                                target_identity={
+                                    "target_position": spec["target_position"],
+                                    "target_token_id": spec["target_token_id"],
+                                    "target_token_text": spec["target_token_text"],
+                                },
+                                step_identity={
+                                    "trajectory_id": spec["trajectory_id"],
+                                    "generated_index": spec["generated_index"],
+                                    "prefix_token_count": spec["prefix_token_count"],
+                                },
+                            )
                         )
-                        circuit_utils.save_bucketed_compact(bucketed, graph_path)
-                        step = bucketed.step
-                        graph_summary = _graph_summary(step, graph_path)
-                        graph_summary["format"] = "typed_bucketed"
+                        _save_typed_compact_graph(graph, graph_path)
+                        graph_summary = _graph_summary(graph, graph_path)
+                        graph_summary.update(
+                            {
+                                "format": graph.compact_save_format,
+                                "edge_count": graph.edge_count,
+                                "feature_node_count": graph.n_features,
+                                "edge_retention_policy_id": (graph.retention_policy_id),
+                                "edge_retention_policy_fingerprint": (
+                                    graph.retention_policy_fingerprint
+                                ),
+                                "graph_fingerprint": graph.graph_fingerprint,
+                            }
+                        )
                     trace.update(
                         {
                             "status": "ok",
@@ -1441,6 +1534,7 @@ def run_real_shard(
                         }
                     )
                     if not save_raw_graph:
+                        assert compact_result is not None
                         for key in (
                             "phase0_window_state_reuse_requested",
                             "phase0_window_state_reuse_effective",
