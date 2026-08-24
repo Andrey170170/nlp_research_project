@@ -4,6 +4,7 @@ import ast
 import inspect
 import json
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -363,6 +364,63 @@ def test_completion_preserves_compact_artifact_layout(
     assert persisted["semantic_fingerprint"] == "semantic"
     assert persisted["execution_fingerprint"] == "execution"
     assert persisted["steps"][0]["phase4_feature_batch_size"] == 8
+
+
+def test_step_artifact_writer_preserves_phase4_timing_runtime_metadata(
+    tmp_path: Path,
+) -> None:
+    workspace = CompletionWorkspace.create(
+        tmp_path,
+        prompt_index=0,
+        completion_index=0,
+    )
+    writer = StepArtifactWriter(
+        workspace=workspace,
+        trace_policy=trace_policy_from_scenario({"method": "exact"}),
+        model=FakeModel(),
+        max_edges=10,
+    )
+    timing_by_substage = {
+        "executor_compute_batch": {
+            "population_count": 4,
+            "cuda_sample_count": 2,
+            "cuda_estimated_total_elapsed_ms": 12.5,
+        },
+        "refresh_influence_matmul": {
+            "population_count": 3,
+            "cuda_sample_count": 1,
+            "cuda_estimated_total_elapsed_ms": 7.25,
+        },
+    }
+    step = writer.write(
+        step_index=0,
+        prefix_token_count=2,
+        compact_result={
+            "active_features": torch.tensor([[0, 0, 7]], dtype=torch.int64),
+            "selected_features": torch.tensor([0], dtype=torch.int64),
+            "feature_row_node_indices": torch.tensor([0], dtype=torch.int64),
+            "feature_feature_edges": torch.tensor([[1.0]]),
+            "logit_feature_edges": torch.tensor([[0.5]]),
+            "phase4_timing_backend": "cuda_events_systematic_sample_deferred_v1",
+            "phase4_timing_cuda_event_elapsed_ms": 19.75,
+            "phase4_timing_by_substage": timing_by_substage,
+        },
+        token_result={"token_id": 9, "token_text": "done", "token_logprob": -0.1},
+        attribution_seconds=1.0,
+        token_generation_seconds=0.1,
+        step_started=time.perf_counter(),
+        stop=True,
+    )
+
+    assert step["phase4_timing_backend"] == (
+        "cuda_events_systematic_sample_deferred_v1"
+    )
+    assert step["phase4_timing_cuda_event_elapsed_ms"] == 19.75
+    assert step["phase4_timing_by_substage"] == timing_by_substage
+
+    workspace.write_json("completion.json", {"steps": [step]})
+    persisted = json.loads((workspace.root / "completion.json").read_text())
+    assert persisted["steps"][0]["phase4_timing_by_substage"] == timing_by_substage
 
 
 def test_completion_preserves_decoder_prefetch_diagnostics(

@@ -5,6 +5,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -25,6 +26,7 @@ sys.modules[_SPEC.name] = _MODULE
 _SPEC.loader.exec_module(_MODULE)
 FeatureRowModeValidationError = _MODULE.FeatureRowModeValidationError
 validate_feature_row_mode = _MODULE.validate_feature_row_mode
+_validate_phase4_sampled_substage = _MODULE._validate_phase4_sampled_substage
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
@@ -109,6 +111,50 @@ def _rewrite_npz(path: Path, mutate) -> None:
     np.savez_compressed(path, **payload)
 
 
+def _upgrade_graph_to_canonical_typed(path: Path) -> None:
+    with np.load(path, allow_pickle=False) as archive:
+        payload = {field: np.asarray(archive[field]) for field in archive.files}
+    bucket_names = (
+        "feature<-feature",
+        "feature<-error",
+        "feature<-token",
+        "logit<-feature",
+        "logit<-error",
+        "logit<-token",
+    )
+    payload.update(
+        {
+            "compact_save_format": np.asarray("typed_bucketed"),
+            "bucket_row_idx": np.asarray([], dtype=np.int64),
+            "bucket_col_idx": np.asarray([], dtype=np.int64),
+            "bucket_weights": np.asarray([], dtype=np.float32),
+            "bucket_ids": np.asarray([], dtype=np.int16),
+            "bucket_names": np.asarray(bucket_names),
+            "bucket_metadata_json": np.asarray(
+                json.dumps(
+                    [
+                        {
+                            "bucket": bucket,
+                            "raw_total_abs_mass": 0.0,
+                            "retained_abs_mass": 0.0,
+                            "retained_fraction": None,
+                            "raw_nnz": 0,
+                            "retained_nnz": 0,
+                            "policy": {"top_p": 1.0, "cap": None},
+                            "weights_signed": True,
+                        }
+                        for bucket in bucket_names
+                    ]
+                )
+            ),
+            "error_node_shape": np.asarray([1, 2], dtype=np.int32),
+            "token_ids": np.asarray([100, 101], dtype=np.int64),
+            "logit_token_ids": np.asarray([42], dtype=np.int64),
+        }
+    )
+    np.savez_compressed(path, **payload)
+
+
 def _write_shard(
     tmp_path: Path,
     *,
@@ -158,6 +204,8 @@ def _write_shard(
         capture_paths[capture] = str(capture_path)
     trace = {
         "status": "probe_completed" if status == "probe_completed" else "ok",
+        "generated_index": 1,
+        "target_position": 2,
         "graph_knobs": knobs,
         "effective_execution": {
             "batches": {
@@ -184,7 +232,7 @@ def _write_shard(
             token_text=np.asarray("token"),
             logprob=np.asarray(-0.5),
             n_features=np.asarray(1, dtype=np.int32),
-            step_idx=np.asarray(0, dtype=np.int32),
+            step_idx=np.asarray(1, dtype=np.int32),
         )
         trace["graph_path"] = str(graph_path)
     if captures:
@@ -256,6 +304,154 @@ def _dynamic_active_row_evidence() -> dict[str, object]:
             "device": "cuda:0",
         },
     }
+
+
+def _append_telemetry_event(output_root: Path, event: dict[str, Any]) -> None:
+    telemetry_path = output_root / "shards/shard_000/token_000001/telemetry_live.jsonl"
+    with telemetry_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event) + "\n")
+
+
+def _valid_vjp_event() -> dict[str, Any]:
+    return {
+        "phase": "phase4",
+        "name": "context.compute_batch",
+        "attrs": {
+            "vjp_requested_path": "autograd_batched",
+            "vjp_effective_invocation": "torch.autograd.grad",
+            "vjp_is_grads_batched": True,
+            "vjp_fallback_state": "unknown",
+            "vjp_fallback_observation_method": "direct_call_contract_and_success",
+            "vjp_fallback_state_reason": (
+                "pytorch_has_no_programmatic_per_invocation_vmap_fallback_signal"
+            ),
+        },
+    }
+
+
+def _valid_phase4_timing_event() -> dict[str, Any]:
+    attrs: dict[str, object] = {
+        "phase4_timing_backend": "cuda_events_stratified_jitter_deferred_v1",
+        "phase4_timing_device": "cuda:0",
+        "phase4_timing_cuda_visible_device_ordinal": 0,
+        "phase4_timing_cuda_device_uuid": "GPU-bbb",
+        "phase4_timing_unavailable_reason": None,
+        "phase4_timing_cuda_device_identity_unavailable_reason": None,
+        "phase4_timing_synchronization_scope": ("lifecycle_completion_single_boundary"),
+        "phase4_timing_accounting_scope": (
+            "non_overlapping_ranges_stratified_cuda_estimate_v1"
+        ),
+        "phase4_timing_cuda_sampling_scheme": (
+            "deterministic_blake2b_jittered_offset_per_stride_block_v1"
+        ),
+        "phase4_timing_cuda_sampling_seed": 0x0C17C017,
+        "phase4_timing_cuda_sampling_hash": "blake2b_64",
+        "phase4_timing_cuda_estimator": "horvitz_thompson_stride_weight_v1",
+        "phase4_timing_cuda_interval_semantics": (
+            "captured_current_stream_interval_latency_includes_host_enqueue_gaps_"
+            "and_stream_waits_v1"
+        ),
+        "phase4_timing_lifecycle_wall_elapsed_ms": 120.0,
+        "phase4_timing_lifecycle_cuda_event_elapsed_ms": 100.0,
+        "phase4_timing_wall_accounted_elapsed_ms": 80.0,
+        "phase4_timing_wall_residual_elapsed_ms": 40.0,
+        "phase4_timing_cuda_estimated_accounted_elapsed_ms": 424.0,
+        "phase4_timing_cuda_estimated_residual_elapsed_ms": -324.0,
+        "phase4_timing_cuda_event_object_count": 18,
+        "phase4_timing_cuda_event_record_count": 18,
+        "phase4_timing_instrumentation_overhead_scope": (
+            "event_construction_and_record_host_calls"
+        ),
+        "phase4_timing_instrumentation_recording_host_overhead_ms": 0.5,
+        "phase4_timing_instrumentation_total_host_overhead_ms": 0.5,
+        "phase4_timing_resolution_host_elapsed_ms": 0.25,
+    }
+    substages = (
+        "refresh_row_store_read",
+        "refresh_influence_normalization",
+        "refresh_direct_accumulation",
+        "executor_encoder_materialize",
+        "executor_compute_batch",
+        "executor_cpu_staging",
+        "executor_denominator",
+        "executor_row_store_write",
+    )
+    for substage in substages:
+        attrs[f"phase4_timing_{substage}_population_count"] = 1
+        attrs[f"phase4_timing_{substage}_cuda_sample_count"] = 1
+        attrs[f"phase4_timing_{substage}_cuda_sample_stride"] = (
+            16 if substage.startswith("refresh_") else 1
+        )
+        attrs[f"phase4_timing_{substage}_wall_elapsed_ms"] = 10.0
+        attrs[f"phase4_timing_{substage}_cuda_sampled_elapsed_ms"] = 8.0
+        attrs[f"phase4_timing_{substage}_cuda_estimated_total_elapsed_ms"] = (
+            128.0 if substage.startswith("refresh_") else 8.0
+        )
+    return {
+        "phase": "phase4",
+        "name": "phase4.feature_attribution",
+        "attrs": attrs,
+    }
+
+
+def _write_valid_resource_summary(output_root: Path) -> None:
+    devices = [
+        {
+            "gpu_index": 0,
+            "gpu_uuid": "GPU-aaa",
+            "gpu_name": "NVIDIA H200",
+            "sample_count": 3,
+            "gpu_sm_utilization_mean_percent": 10.0,
+            "gpu_sm_utilization_p95_percent": 15.0,
+            "gpu_sm_utilization_max_percent": 20.0,
+            "gpu_memory_utilization_mean_percent": 5.0,
+            "gpu_memory_utilization_p95_percent": 7.0,
+            "gpu_memory_utilization_max_percent": 10.0,
+            "gpu_power_mean_watts": 100.0,
+            "gpu_power_max_watts": 150.0,
+            "gpu_framebuffer_peak_mib": 1000.0,
+            "gpu_framebuffer_total_mib": 143771.0,
+            "gpu_framebuffer_peak_fraction": 1000.0 / 143771.0,
+        },
+        {
+            "gpu_index": 1,
+            "gpu_uuid": "GPU-bbb",
+            "gpu_name": "NVIDIA H200",
+            "sample_count": 3,
+            "gpu_sm_utilization_mean_percent": 80.0,
+            "gpu_sm_utilization_p95_percent": 90.0,
+            "gpu_sm_utilization_max_percent": 100.0,
+            "gpu_memory_utilization_mean_percent": 20.0,
+            "gpu_memory_utilization_p95_percent": 25.0,
+            "gpu_memory_utilization_max_percent": 30.0,
+            "gpu_power_mean_watts": 500.0,
+            "gpu_power_max_watts": 600.0,
+            "gpu_framebuffer_peak_mib": 100000.0,
+            "gpu_framebuffer_total_mib": 143771.0,
+            "gpu_framebuffer_peak_fraction": 100000.0 / 143771.0,
+        },
+    ]
+    primary = devices[1]
+    _write_json(
+        output_root / "resource_summary.json",
+        {
+            "gpu_sampling_status": "ok",
+            "resource_validation_passed": True,
+            "gpu_sample_count": 6,
+            "gpu_device_count": 2,
+            "gpu_devices": devices,
+            "gpu_summary_scope": "busiest_device",
+            "gpu_summary_device_index": 1,
+            "gpu_summary_device_uuid": "GPU-bbb",
+            "gpu_summary_device_name": "NVIDIA H200",
+            **{
+                field: primary[field]
+                for field in primary
+                if field.startswith("gpu_")
+                and field not in {"gpu_index", "gpu_uuid", "gpu_name"}
+            },
+        },
+    )
 
 
 def test_native_cpu_exact_does_not_require_accelerator_resolution_event(
@@ -681,6 +877,106 @@ def test_strict_full_completion_rejects_unreadable_graph(tmp_path: Path) -> None
         )
 
 
+def test_strict_full_completion_enforces_exact_canonical_graph_contract(
+    tmp_path: Path,
+) -> None:
+    output_root = _write_shard(
+        tmp_path,
+        requested_mode="cuda_windowed",
+        resolved_mode="cuda_windowed",
+        write_graph=True,
+    )
+    graph = output_root / "shards/shard_000/token_000001/graph.npz"
+    _upgrade_graph_to_canonical_typed(graph)
+
+    result = validate_feature_row_mode(
+        output_root=output_root,
+        expected_mode="cuda_windowed",
+        expected_graph_feature_count=1,
+        expected_graph_edge_count=1,
+        require_canonical_typed_buckets=True,
+        require_full_completion=True,
+        label="strict-graph-contract",
+    )
+
+    assert result["graph_validation_reports"] == [
+        {
+            "path": str(graph),
+            "step_idx": 1,
+            "target_position": 2,
+            "feature_count": 1,
+            "compact_edge_count": 1,
+            "compact_save_format": "typed_bucketed",
+            "bucket_names": [
+                "feature<-feature",
+                "feature<-error",
+                "feature<-token",
+                "logit<-feature",
+                "logit<-error",
+                "logit<-token",
+            ],
+            "typed_edge_count": 0,
+            "typed_feature_endpoint_count": 0,
+            "max_feature_position": 0,
+            "future_position_count": 0,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"expected_graph_feature_count": 2}, "selected features"),
+        ({"expected_graph_edge_count": 2}, "compact edges"),
+        ({"require_canonical_typed_buckets": True}, "canonical typed-bucket"),
+    ],
+)
+def test_strict_full_completion_rejects_graph_acceptance_mismatch(
+    tmp_path: Path, kwargs: dict[str, object], match: str
+) -> None:
+    output_root = _write_shard(
+        tmp_path,
+        requested_mode="cuda_windowed",
+        resolved_mode="cuda_windowed",
+        write_graph=True,
+    )
+
+    with pytest.raises(FeatureRowModeValidationError, match=match):
+        validate_feature_row_mode(
+            output_root=output_root,
+            expected_mode="cuda_windowed",
+            require_full_completion=True,
+            label="strict-graph-contract",
+            **kwargs,
+        )
+
+
+def test_strict_full_completion_rejects_target_or_future_feature_position(
+    tmp_path: Path,
+) -> None:
+    output_root = _write_shard(
+        tmp_path,
+        requested_mode="cuda_windowed",
+        resolved_mode="cuda_windowed",
+        write_graph=True,
+    )
+    graph = output_root / "shards/shard_000/token_000001/graph.npz"
+
+    def move_feature_to_target(payload: dict[str, np.ndarray]) -> None:
+        payload["feature_ids"] = payload["feature_ids"].copy()
+        payload["feature_ids"][0, 1] = 2
+
+    _rewrite_npz(graph, move_feature_to_target)
+
+    with pytest.raises(FeatureRowModeValidationError, match="at or after target"):
+        validate_feature_row_mode(
+            output_root=output_root,
+            expected_mode="cuda_windowed",
+            require_full_completion=True,
+            label="strict-position-contract",
+        )
+
+
 def test_strict_capacity_gate_rejects_effective_mismatch(tmp_path: Path) -> None:
     output_root = _write_shard(
         tmp_path,
@@ -804,3 +1100,422 @@ def test_required_backward_topology_rejects_effective_mismatch(
             expected_forward_lane_count=1,
             label="batched-vjp-candidate",
         )
+
+
+def test_evidence_hardening_accepts_honest_unknown_vjp_and_device_identity(
+    tmp_path: Path,
+) -> None:
+    output_root = _write_shard(
+        tmp_path,
+        requested_mode="cuda_windowed",
+        resolved_mode="cuda_windowed",
+        backward_engine_mode="single_forward_batched_vjp",
+        effective_backward_engine_mode="single_forward_batched_vjp",
+        effective_forward_graph_mode="single_lane",
+        effective_vjp_kernel_mode="autograd_batched",
+        effective_forward_lane_count=1,
+    )
+    _append_telemetry_event(output_root, _valid_vjp_event())
+    _append_telemetry_event(output_root, _valid_phase4_timing_event())
+    _write_valid_resource_summary(output_root)
+
+    result = validate_feature_row_mode(
+        output_root=output_root,
+        expected_mode="cuda_windowed",
+        expected_vjp_kernel_mode="autograd_batched",
+        require_structured_vjp_evidence=True,
+        require_phase4_device_timing=True,
+        expected_phase4_device_timing_backend=(
+            "cuda_events_stratified_jitter_deferred_v1"
+        ),
+        require_unambiguous_per_device_gpu_evidence=True,
+        label="evidence-hardened-run",
+    )
+
+    assert result["structured_vjp_evidence"]["fallback_states"] == ["unknown"]
+    assert result["phase4_device_timing"]["cuda_visible_device_ordinals"] == [0]
+    assert result["phase4_device_timing"]["optional_substage_presence"] == {
+        "refresh_influence_matmul": False,
+        "refresh_transfer_cast_abs": False,
+    }
+    assert result["per_device_gpu_resource_evidence"]["device_count"] == 2
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "match"),
+    [
+        ("vjp_fallback_observation_method", None, "observation_method"),
+        (
+            "vjp_fallback_observation_method",
+            "pytorch_runtime_warning_only",
+            "observation method",
+        ),
+        ("vjp_is_grads_batched", False, "inconsistent"),
+        ("vjp_fallback_state", "observed", "honest observable state"),
+        ("vjp_fallback_state_reason", None, "fallback_state_reason"),
+        ("vjp_fallback_state_reason", "no warnings seen", "unknown fallback reason"),
+    ],
+)
+def test_structured_vjp_gate_rejects_incomplete_or_inconsistent_evidence(
+    tmp_path: Path, field: str, value: object, match: str
+) -> None:
+    output_root = _write_shard(
+        tmp_path,
+        requested_mode="cuda_windowed",
+        resolved_mode="cuda_windowed",
+        backward_engine_mode="single_forward_batched_vjp",
+        effective_backward_engine_mode="single_forward_batched_vjp",
+        effective_forward_graph_mode="single_lane",
+        effective_vjp_kernel_mode="autograd_batched",
+        effective_forward_lane_count=1,
+    )
+    event = _valid_vjp_event()
+    event["attrs"][field] = value
+    _append_telemetry_event(output_root, event)
+
+    with pytest.raises(FeatureRowModeValidationError, match=match):
+        validate_feature_row_mode(
+            output_root=output_root,
+            expected_mode="cuda_windowed",
+            expected_vjp_kernel_mode="autograd_batched",
+            require_structured_vjp_evidence=True,
+            label="vjp-evidence",
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    [
+        (
+            lambda attrs: attrs.__setitem__("phase4_timing_backend", "wall_clock_v1"),
+            "timing backend",
+        ),
+        (
+            lambda attrs: attrs.pop(
+                "phase4_timing_executor_compute_batch_population_count"
+            ),
+            "executor_compute_batch_population_count",
+        ),
+        (
+            lambda attrs: attrs.__setitem__(
+                "phase4_timing_cuda_estimated_residual_elapsed_ms", None
+            ),
+            "cuda_estimated_residual_elapsed_ms",
+        ),
+        (
+            lambda attrs: attrs.__setitem__(
+                "phase4_timing_cuda_estimated_residual_elapsed_ms", 21.0
+            ),
+            "does not reconcile",
+        ),
+        (
+            lambda attrs: attrs.__setitem__(
+                "phase4_timing_refresh_row_store_read_cuda_sample_stride", 1
+            ),
+            "expected_stride=16",
+        ),
+        (
+            lambda attrs: attrs.__setitem__(
+                "phase4_timing_executor_compute_batch_cuda_sample_count", 2
+            ),
+            "inconsistent sampled timing counts",
+        ),
+        (
+            lambda attrs: attrs.__setitem__(
+                "phase4_timing_refresh_row_store_read_cuda_estimated_total_elapsed_ms",
+                8.0,
+            ),
+            "sampled CUDA estimate",
+        ),
+        (
+            lambda attrs: attrs.__setitem__(
+                "phase4_timing_cuda_sampling_scheme", "fixed_offset_v0"
+            ),
+            "sampling contract is unsupported",
+        ),
+        (
+            lambda attrs: attrs.__setitem__(
+                "phase4_timing_wall_residual_elapsed_ms", -1.0
+            ),
+            "negative",
+        ),
+        (
+            lambda attrs: attrs.__setitem__(
+                "phase4_timing_unavailable_reason", "event_resolution_failed"
+            ),
+            "marked unavailable",
+        ),
+    ],
+)
+def test_phase4_device_timing_gate_rejects_incomplete_evidence(
+    tmp_path: Path, mutation, match: str
+) -> None:
+    output_root = _write_shard(
+        tmp_path,
+        requested_mode="cuda_windowed",
+        resolved_mode="cuda_windowed",
+    )
+    event = _valid_phase4_timing_event()
+    mutation(event["attrs"])
+    _append_telemetry_event(output_root, event)
+
+    with pytest.raises(FeatureRowModeValidationError, match=match):
+        validate_feature_row_mode(
+            output_root=output_root,
+            expected_mode="cuda_windowed",
+            require_phase4_device_timing=True,
+            expected_phase4_device_timing_backend=(
+                "cuda_events_stratified_jitter_deferred_v1"
+            ),
+            label="phase4-timing",
+        )
+
+
+def test_stratified_timing_accepts_unsampled_partial_stride_block(
+    tmp_path: Path,
+) -> None:
+    output_root = _write_shard(
+        tmp_path,
+        requested_mode="cuda_windowed",
+        resolved_mode="cuda_windowed",
+    )
+    event = _valid_phase4_timing_event()
+    event["attrs"]["phase4_timing_refresh_row_store_read_population_count"] = 17
+    event["attrs"]["phase4_timing_refresh_row_store_read_cuda_sample_count"] = 1
+    _append_telemetry_event(output_root, event)
+
+    result = validate_feature_row_mode(
+        output_root=output_root,
+        expected_mode="cuda_windowed",
+        require_phase4_device_timing=True,
+        expected_phase4_device_timing_backend=(
+            "cuda_events_stratified_jitter_deferred_v1"
+        ),
+        label="stratified-partial-block",
+    )
+
+    assert result["phase4_device_timing"]["event_count"] == 1
+
+
+@pytest.mark.parametrize(
+    "mutation", ["duplicate_uuid", "unmapped_primary", "sample_count_mismatch"]
+)
+def test_per_device_gpu_gate_rejects_ambiguous_identity(
+    tmp_path: Path, mutation: str
+) -> None:
+    output_root = _write_shard(
+        tmp_path,
+        requested_mode="cuda_windowed",
+        resolved_mode="cuda_windowed",
+    )
+    _write_valid_resource_summary(output_root)
+    path = output_root / "resource_summary.json"
+    summary = json.loads(path.read_text())
+    if mutation == "duplicate_uuid":
+        summary["gpu_devices"][1]["gpu_uuid"] = "GPU-aaa"
+    elif mutation == "unmapped_primary":
+        summary["gpu_summary_device_uuid"] = "GPU-missing"
+    else:
+        summary["gpu_devices"][1]["sample_count"] = 2
+    _write_json(path, summary)
+
+    with pytest.raises(FeatureRowModeValidationError, match="GPU|busiest"):
+        validate_feature_row_mode(
+            output_root=output_root,
+            expected_mode="cuda_windowed",
+            require_unambiguous_per_device_gpu_evidence=True,
+            label="gpu-evidence",
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    [
+        ("missing_name", "ambiguous GPU device identity"),
+        ("utilization_over_100", "outside.*100"),
+        ("negative_power", "negative gpu_power_mean_watts"),
+        ("framebuffer_peak_over_total", "framebuffer summary is inconsistent"),
+        ("framebuffer_fraction_mismatch", "framebuffer summary is inconsistent"),
+        ("top_level_metric_mismatch", "top-level gpu_power_max_watts"),
+    ],
+)
+def test_per_device_gpu_gate_rejects_invalid_metrics(
+    tmp_path: Path, mutation: str, match: str
+) -> None:
+    output_root = _write_shard(
+        tmp_path,
+        requested_mode="cuda_windowed",
+        resolved_mode="cuda_windowed",
+    )
+    _write_valid_resource_summary(output_root)
+    path = output_root / "resource_summary.json"
+    summary = json.loads(path.read_text())
+    primary = summary["gpu_devices"][1]
+    if mutation == "missing_name":
+        primary["gpu_name"] = ""
+    elif mutation == "utilization_over_100":
+        primary["gpu_sm_utilization_max_percent"] = 101.0
+    elif mutation == "negative_power":
+        primary["gpu_power_mean_watts"] = -1.0
+    elif mutation == "framebuffer_peak_over_total":
+        primary["gpu_framebuffer_peak_mib"] = 200000.0
+    elif mutation == "framebuffer_fraction_mismatch":
+        primary["gpu_framebuffer_peak_fraction"] = 0.5
+    else:
+        summary["gpu_power_max_watts"] = 599.0
+    _write_json(path, summary)
+
+    with pytest.raises(FeatureRowModeValidationError, match=match):
+        validate_feature_row_mode(
+            output_root=output_root,
+            expected_mode="cuda_windowed",
+            require_unambiguous_per_device_gpu_evidence=True,
+            label="gpu-metrics",
+        )
+
+
+def test_phase4_timing_uuid_must_match_busiest_sampled_device(
+    tmp_path: Path,
+) -> None:
+    output_root = _write_shard(
+        tmp_path,
+        requested_mode="cuda_windowed",
+        resolved_mode="cuda_windowed",
+    )
+    event = _valid_phase4_timing_event()
+    event["attrs"]["phase4_timing_cuda_device_uuid"] = "GPU-aaa"
+    _append_telemetry_event(output_root, event)
+    _write_valid_resource_summary(output_root)
+
+    with pytest.raises(FeatureRowModeValidationError, match="busiest sampled GPU UUID"):
+        validate_feature_row_mode(
+            output_root=output_root,
+            expected_mode="cuda_windowed",
+            require_phase4_device_timing=True,
+            expected_phase4_device_timing_backend=(
+                "cuda_events_stratified_jitter_deferred_v1"
+            ),
+            require_unambiguous_per_device_gpu_evidence=True,
+            label="cross-source-device-identity",
+        )
+
+
+def test_phase4_timing_uuid_accepts_torch_uuid_without_nvidia_smi_prefix(
+    tmp_path: Path,
+) -> None:
+    output_root = _write_shard(
+        tmp_path,
+        requested_mode="cuda_windowed",
+        resolved_mode="cuda_windowed",
+    )
+    event = _valid_phase4_timing_event()
+    event["attrs"]["phase4_timing_cuda_device_uuid"] = "bbb"
+    _append_telemetry_event(output_root, event)
+    _write_valid_resource_summary(output_root)
+
+    result = validate_feature_row_mode(
+        output_root=output_root,
+        expected_mode="cuda_windowed",
+        require_phase4_device_timing=True,
+        expected_phase4_device_timing_backend=(
+            "cuda_events_stratified_jitter_deferred_v1"
+        ),
+        require_unambiguous_per_device_gpu_evidence=True,
+        label="cross-source-device-identity",
+    )
+
+    assert result["phase4_device_timing"]["cuda_device_uuids"] == ["bbb"]
+    assert (
+        result["per_device_gpu_resource_evidence"]["summary_device_uuid"] == "GPU-bbb"
+    )
+
+
+def test_v2_device_timing_uses_actual_sampled_tail_size() -> None:
+    attrs = {
+        "phase4_timing_refresh_influence_matmul_population_count": 34,
+        "phase4_timing_refresh_influence_matmul_cuda_sample_count": 3,
+        "phase4_timing_refresh_influence_matmul_cuda_recorded_sample_count": 6,
+        "phase4_timing_refresh_influence_matmul_cuda_sample_stride": 16,
+        "phase4_timing_refresh_influence_matmul_cuda_tail_population_count": 2,
+        "phase4_timing_refresh_influence_matmul_cuda_tail_status": "sampled",
+        "phase4_timing_refresh_influence_matmul_cuda_tail_sample_source": (
+            "hashed_primary"
+        ),
+        "phase4_timing_refresh_influence_matmul_cuda_estimate_status": "complete",
+        "phase4_timing_refresh_influence_matmul_wall_elapsed_ms": 20.0,
+        "phase4_timing_refresh_influence_matmul_cuda_sampled_elapsed_ms": 7.5,
+        "phase4_timing_refresh_influence_matmul_cuda_complete_block_sampled_elapsed_ms": 5.0,
+        "phase4_timing_refresh_influence_matmul_cuda_incomplete_tail_sampled_elapsed_ms": 2.5,
+        "phase4_timing_refresh_influence_matmul_cuda_estimated_total_elapsed_ms": 85.0,
+    }
+
+    _validate_phase4_sampled_substage(
+        attrs=attrs,
+        substage="refresh_influence_matmul",
+        expected_stride=16,
+        contract_version="phase4_device_timing_v2",
+        label="v2-tail",
+        source=Path("telemetry.jsonl"),
+    )
+
+
+def test_v2_device_timing_refuses_unsampled_final_stratum() -> None:
+    attrs = {
+        "phase4_timing_refresh_influence_matmul_population_count": 33,
+        "phase4_timing_refresh_influence_matmul_cuda_sample_count": 2,
+        "phase4_timing_refresh_influence_matmul_cuda_recorded_sample_count": 2,
+        "phase4_timing_refresh_influence_matmul_cuda_sample_stride": 16,
+        "phase4_timing_refresh_influence_matmul_cuda_tail_population_count": 1,
+        "phase4_timing_refresh_influence_matmul_cuda_tail_status": "unsampled",
+        "phase4_timing_refresh_influence_matmul_cuda_tail_sample_source": "missing",
+        "phase4_timing_refresh_influence_matmul_cuda_estimate_status": (
+            "refused_incomplete_tail"
+        ),
+        "phase4_timing_refresh_influence_matmul_wall_elapsed_ms": 20.0,
+        "phase4_timing_refresh_influence_matmul_cuda_sampled_elapsed_ms": 5.0,
+        "phase4_timing_refresh_influence_matmul_cuda_complete_block_sampled_elapsed_ms": 5.0,
+        "phase4_timing_refresh_influence_matmul_cuda_incomplete_tail_sampled_elapsed_ms": 0.0,
+        "phase4_timing_refresh_influence_matmul_cuda_estimated_total_elapsed_ms": None,
+    }
+
+    with pytest.raises(FeatureRowModeValidationError, match="one sample per stratum"):
+        _validate_phase4_sampled_substage(
+            attrs=attrs,
+            substage="refresh_influence_matmul",
+            expected_stride=16,
+            contract_version="phase4_device_timing_v2",
+            label="v2-tail",
+            source=Path("telemetry.jsonl"),
+        )
+
+
+@pytest.mark.parametrize(
+    "substage",
+    ["refresh_influence_normalization", "refresh_direct_accumulation"],
+)
+def test_v2_device_timing_accepts_24101_fallback_tail(substage: str) -> None:
+    prefix = f"phase4_timing_{substage}"
+    attrs = {
+        f"{prefix}_population_count": 24_101,
+        f"{prefix}_cuda_sample_count": 1_507,
+        f"{prefix}_cuda_recorded_sample_count": 3_000,
+        f"{prefix}_cuda_sample_stride": 16,
+        f"{prefix}_cuda_tail_population_count": 5,
+        f"{prefix}_cuda_tail_status": "sampled",
+        f"{prefix}_cuda_tail_sample_source": "block_start_fallback",
+        f"{prefix}_cuda_estimate_status": "complete",
+        f"{prefix}_wall_elapsed_ms": 20.0,
+        f"{prefix}_cuda_sampled_elapsed_ms": 3_767.5,
+        f"{prefix}_cuda_complete_block_sampled_elapsed_ms": 3_765.0,
+        f"{prefix}_cuda_incomplete_tail_sampled_elapsed_ms": 2.5,
+        f"{prefix}_cuda_estimated_total_elapsed_ms": 60_252.5,
+    }
+
+    _validate_phase4_sampled_substage(
+        attrs=attrs,
+        substage=substage,
+        expected_stride=16,
+        contract_version="phase4_device_timing_v2",
+        label="v2-24101-tail",
+        source=Path("telemetry.jsonl"),
+    )

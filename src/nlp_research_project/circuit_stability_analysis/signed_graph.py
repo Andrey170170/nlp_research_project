@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 import warnings
 from dataclasses import dataclass
@@ -8,6 +7,8 @@ from pathlib import Path
 from typing import Any, Iterator
 
 import numpy as np
+
+from nlp_research_project.exact_trace_bench.compact_io import load_compact_graph
 
 FEATURE_ID_BASE = 1_000_000
 
@@ -95,56 +96,34 @@ def graph_path_index(path: Path) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def _metadata(data: Any) -> dict[str, dict[str, Any]]:
-    if "bucket_metadata_json" not in data.files:
-        return {}
-    rows = json.loads(str(data["bucket_metadata_json"]))
-    return {str(row.get("bucket", "")): row for row in rows}
-
-
 def load_signed_graph(
     path: str | Path, *, validate_step_path: bool = True
 ) -> SignedGraph:
     graph_path = Path(path)
-    with np.load(str(graph_path), allow_pickle=False) as data:
-        step_idx = int(data["step_idx"]) if "step_idx" in data.files else -1
-        path_idx = graph_path_index(graph_path)
-        if validate_step_path and path_idx is not None and step_idx != path_idx:
-            raise ValueError(
-                f"graph step_idx {step_idx} does not match path token index {path_idx}: {graph_path}"
-            )
-        logprob = float(data["logprob"]) if "logprob" in data.files else float("nan")
-        names = tuple(str(x) for x in data.get("bucket_names", np.asarray([])).tolist())
-        return SignedGraph(
-            path=graph_path,
-            step_idx=step_idx,
-            token_text=str(data["token_text"]) if "token_text" in data.files else "",
-            logprob=None if np.isnan(logprob) else logprob,
-            feature_ids=data["feature_ids"]
-            if "feature_ids" in data.files
-            else np.empty((0, 3), dtype=np.int64),
-            token_ids=data["token_ids"] if "token_ids" in data.files else None,
-            logit_token_ids=data["logit_token_ids"]
-            if "logit_token_ids" in data.files
-            else None,
-            error_node_shape=tuple(int(x) for x in data["error_node_shape"])
-            if "error_node_shape" in data.files
-            else None,
-            bucket_names=names,
-            bucket_metadata=_metadata(data),
-            bucket_row_idx=data["bucket_row_idx"]
-            if "bucket_row_idx" in data.files
-            else np.asarray([], dtype=np.int64),
-            bucket_col_idx=data["bucket_col_idx"]
-            if "bucket_col_idx" in data.files
-            else np.asarray([], dtype=np.int64),
-            bucket_weights=data["bucket_weights"]
-            if "bucket_weights" in data.files
-            else np.asarray([], dtype=np.float32),
-            bucket_ids=data["bucket_ids"]
-            if "bucket_ids" in data.files
-            else np.asarray([], dtype=np.int16),
+    compact = load_compact_graph(graph_path, validate_step_path=validate_step_path)
+    if compact.bucket_row_idx is None:
+        raise ValueError(
+            f"signed graph analysis requires typed bucket arrays: {graph_path}"
         )
+    assert compact.bucket_col_idx is not None
+    assert compact.bucket_weights is not None
+    assert compact.bucket_ids is not None
+    return SignedGraph(
+        path=graph_path,
+        step_idx=compact.step.step_idx,
+        token_text=compact.step.token_text,
+        logprob=compact.step.logprob,
+        feature_ids=compact.step.feature_ids,
+        token_ids=compact.token_ids,
+        logit_token_ids=compact.logit_token_ids,
+        error_node_shape=compact.error_node_shape,
+        bucket_names=compact.bucket_names,
+        bucket_metadata=compact.bucket_metadata,
+        bucket_row_idx=compact.bucket_row_idx,
+        bucket_col_idx=compact.bucket_col_idx,
+        bucket_weights=compact.bucket_weights,
+        bucket_ids=compact.bucket_ids,
+    )
 
 
 def infer_n_pos_source(graph: SignedGraph) -> tuple[int, str]:

@@ -1,7 +1,7 @@
 # Documentation index
 
 Status: Current docs map
-Last updated: 2026-08-07
+Last updated: 2026-08-23
 
 This directory mixes current-state references, active specs, and historical
 material. Use the sections below to separate descriptive maps from working
@@ -38,7 +38,8 @@ plans.
 | File | Role |
 |---|---|
 | `current_project_roadmap.md` | Current gated Phase B-D, C2, E-F roadmap |
-| `../plans/2026-07-29_exact_trace_performance_optimization_loop.md` | Active short-prefix promotion and prefix/prompt/model scaling plan for the isolated performance worktree |
+| `../plans/2026-08-21_exact_trace_optimization_and_refactoring.md` | Active survivability-first correctness, optimization, scaling, selector, and refactoring sequence for the isolated performance worktree |
+| `../plans/2026-07-29_exact_trace_performance_optimization_loop.md` | Completed short-prefix promotion and prefix/prompt/model scaling plan through LS5; retain as execution provenance |
 | `memory_governor_rearchitecture_spec.md` | Implementation-ready target design for the budget-driven governor and sibling runtime |
 | `governor_calibration_matrix.md` | Staged observation campaign for resource, runtime, and fidelity response models |
 | `tracing_runtime_rewrite_spec.md` | Normative Phase C2 end-to-end tracing architecture and atomic migration plan |

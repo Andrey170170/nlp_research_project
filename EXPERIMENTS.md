@@ -1,7 +1,7 @@
 # Experiments inventory
 
 Status: Current compact index and interpretation summary
-Last updated: 2026-08-20
+Last updated: 2026-08-23
 
 This file is the readable front page for experiment provenance. It should stay
 small enough to edit by hand.
@@ -141,6 +141,34 @@ logit-from-error was 0.99418 with signed L1 0.00585. This qualifies the selected
 circuit and resource envelope only inside the frozen v2 regime; it does not
 establish whole-NPZ exactness, cross-regime equivalence, a default, or
 native-12B continuation behavior.
+
+Evidence-hardening job `1843641` completed the same frozen trace and produced a
+valid graph, although Slurm recorded `FAILED` because the frozen post-run
+validator compared Torch's UUID without the optional `GPU-` prefix against the
+equivalent `nvidia-smi` spelling. The bounded validator repair and full gate
+replay accepted the immutable output. Its selected 8,192 features and historical
+20,000-edge global projection are exact against both qualified references; all
+six typed buckets and 1,323,157 typed edges reopen with no future-position
+violations. Step 1a will make those typed buckets exclusive for new artifacts:
+the generic global `max_edges` projection is still present in the profiled
+artifact and remains in current writers/consumers until that atomic migration;
+legacy loading will then remain only for historical results. The canonical
+trace took 617.90s and Phase 4 took 405.18s, so this is profiling evidence rather
+than a new speed baseline. Current-stream interval estimates locate 157.36s in
+feature compute, 116.02s in refresh row-store reads, and 44.26s in encoder
+materialization. Normalization was 81.25s wall but only 9.58s of sampled stream
+interval, pointing to host launch/synchronization structure rather than one long
+GPU kernel. These historical-v1 interval estimates are localization evidence,
+not exact totals: the sampler could omit the final partial stride block or, when
+it sampled that block, weight its observation as a full stride. At 24,101
+refresh occurrences the affected tail contains five occurrences, leaving a
+small unquantified tail error that future v2 evidence must close. With peak
+framebuffer use still 48,861 MiB of 143,771 MiB, the next
+opportunistic optimization is explicit-admission `cuda_full`, directly at frozen
+12B/1,024 and paired with its windowed control in one allocation when practical.
+The corrected strategic priority is survivability through independently planned
+full/windowed/tiled/recompute rungs; no default or fidelity classification
+changes.
 
 The bounded parallel preheater also completed its first real 411 GB execution:
 eight workers read 411,062,639,478 bytes in 14.09s with 7.57x summed-file-time

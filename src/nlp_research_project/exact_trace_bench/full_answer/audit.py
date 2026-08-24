@@ -3,8 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
-import numpy as np
-
+from ..compact_io import load_compact_graph, summarize_feature_positions
 from ..io_utils import ensure_dir, read_json, write_json, write_jsonl
 from .runner import prefix_view_metadata, reconstruct_prefix_token_ids
 from .schemas import TraceSpec, load_trajectory
@@ -45,6 +44,7 @@ def audit_prefix_views(
             1 for row in rows if row["future_position_violation"]
         ),
         "missing_graph": sum(1 for row in rows if row["graph_missing"]),
+        "invalid_graph": sum(1 for row in rows if row["graph_error"] is not None),
         "missing_metadata": sum(1 for row in rows if row["metadata_missing"]),
     }
     summary = {
@@ -133,7 +133,9 @@ def _audit_trace(
             row["graph_missing"] = True
         else:
             graph_result = inspect_compact_graph_positions(
-                graph_path, target_position=spec["target_position"]
+                graph_path,
+                target_position=spec["target_position"],
+                expected_step_idx=spec["generated_index"],
             )
             row.update(graph_result)
     except Exception as exc:
@@ -143,7 +145,7 @@ def _audit_trace(
 
 
 def inspect_compact_graph_positions(
-    graph_path: Path, *, target_position: int
+    graph_path: Path, *, target_position: int, expected_step_idx: int | None = None
 ) -> dict[str, Any]:
     """Inspect compact graph feature positions for prefix-view leakage.
 
@@ -153,27 +155,18 @@ def inspect_compact_graph_positions(
     leakage into a per-token graph.
     """
     try:
-        data = np.load(str(graph_path), allow_pickle=False)
-        if "feature_ids" not in data:
-            return {
-                "graph_error": "missing feature_ids",
-                "future_position_violation": False,
-            }
-        feature_ids = data["feature_ids"]
-        if feature_ids.ndim != 2 or feature_ids.shape[1] < 2:
-            return {
-                "graph_error": "feature_ids must have shape (n, >=2)",
-                "future_position_violation": False,
-            }
-        positions = feature_ids[:, 1].astype(np.int64, copy=False)
-        future = positions[positions >= int(target_position)]
+        graph = load_compact_graph(graph_path, expected_step_idx=expected_step_idx)
+        positions = summarize_feature_positions(
+            graph, max_position_exclusive=int(target_position)
+        )
         return {
-            "graph_feature_count": int(feature_ids.shape[0]),
-            "graph_max_feature_position": int(positions.max())
-            if positions.size
-            else None,
-            "future_position_violation": bool(future.size),
-            "future_position_count": int(future.size),
+            "graph_feature_count": positions.feature_count,
+            "graph_typed_feature_endpoint_count": (
+                positions.typed_feature_endpoint_count
+            ),
+            "graph_max_feature_position": positions.max_position,
+            "future_position_violation": positions.has_future_positions,
+            "future_position_count": positions.future_position_count,
         }
     except Exception as exc:  # pragma: no cover - defensive malformed npz path
         return {"graph_error": repr(exc), "future_position_violation": False}
@@ -185,7 +178,9 @@ def _row_ok(row: Mapping[str, Any]) -> bool:
         and not row.get("metadata_missing")
         and not row.get("metadata_mismatch")
         and not row.get("target_mismatch")
+        and not row.get("graph_missing")
         and not row.get("future_position_violation")
+        and not row.get("graph_error")
         and not row.get("errors")
     )
 

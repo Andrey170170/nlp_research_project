@@ -1,7 +1,7 @@
 # Current Project Roadmap
 
 Status: Current scratch roadmap
-Last updated: 2026-08-21
+Last updated: 2026-08-23
 
 ## Active Priority
 
@@ -12,17 +12,27 @@ in `plans/2026-07-03_governor_rearch.md` is retained as implementation history.
 
 The isolated exact-trace performance worktree has a separate active execution
 plan in
-`plans/2026-07-29_exact_trace_performance_optimization_loop.md`. It succeeds the
-completed July 27 4B/12B engineering plan and has two ordered campaigns:
-formally finish and package the current short-prefix mechanisms, then measure
-and improve prefix/prompt/model scaling with 1B as the fast development case
+`plans/2026-08-21_exact_trace_optimization_and_refactoring.md`. It succeeds the
+completed July 29 short-prefix/scaling plan in
+`plans/2026-07-29_exact_trace_performance_optimization_loop.md`. That plan's two
+ordered campaigns formally finished and packaged the short-prefix mechanisms,
+then measured and improved prefix/prompt/model scaling with 1B as the fast
+development case
 before 4B/12B transfer. SP0-SP5 and LS0-LS3 are complete. LS4 closed through
 the frozen 4B/1,024 development rung and 828/512 holdout under the
 single-forward batched-VJP regime. LS5 closed through cross-node repeat
 qualification of the frozen 12B/1,024 selected circuit and resource envelope.
-Governor
-calibration, response models, fidelity authorization, baseline-registry
-changes, and launch-default promotion remain outside that performance plan.
+The successor completed evidence hardening and the frozen profile rerun. Its
+2026-08-23 revision corrects the primary objective to memory survivability, with
+speed optimized opportunistically inside the admitted set. Step 1a makes the
+six versioned typed edge buckets the only new graph artifact. Step 1b adds
+separate structural, alias-aware numerical-stability, and behavioral-faithfulness
+verdicts plus a bounded same-process intervention probe. Later work separates
+row retention/access/reduction, selects full -> windowed -> tiled -> recompute,
+and acquires source-agnostic 2K/5K/10K stress. Governor response-model promotion,
+fidelity-scope authorization, baseline-registry changes, and launch-default
+promotion remain
+separate reviewed actions.
 
 **Isolated performance-worktree status (2026-08-18):** LS2 and LS3 are closed.
 LS4 has admitted the frozen one-lane batched-VJP 4B development curve through
@@ -133,6 +143,17 @@ inside the frozen v2 regime; it does not make the whole typed NPZ exact, prove
 cross-regime equivalence, change defaults, or establish native-12B continuation
 behavior.
 
+Evidence-hardening job `1843641` then completed the same frozen trace on
+`grn032`. Slurm marked the job `FAILED` only because the frozen post-run gate
+compared equivalent Torch UUID `b2c4...` and `nvidia-smi` UUID `GPU-b2c4...`
+spellings literally. The bounded validator repair canonicalizes the optional
+prefix, and replaying the full gate accepts the immutable output. The selected
+8,192-feature/20,000-edge compact circuit is exact against both reference jobs;
+all six typed buckets reopen, with bounded drift confined to the previously
+scoped error buckets plus one equal-weight feature cutoff tie against job
+`1832086`. The canonical trace took 617.90s and Phase 4 took 405.18s, so this is
+profile evidence rather than a new speed baseline.
+
 Bounded parallel preheat is now implemented behind a reusable module and all
 three preheated wrappers. Deterministic file discovery and inode deduplication
 are preserved; a bounded file-level worker pool uses positional reads, exact
@@ -160,24 +181,46 @@ The immediate post-repeat work splits into two parallel lanes:
    hooks, thresholds, and graph budgets fixed. Compare the selected circuit,
    typed buckets, and the CIE-consumed score/output; add an intermediate
    unoptimized-fork arm only if upstream versus current diverges materially.
-2. **Further 12B optimization.** First harden schema-owned typed-graph
-   validation, per-device GPU sampling, CUDA-event-aware timing, and structured
-   batched-VJP fallback evidence. Then test `cuda_full` independently at frozen
-   4B/512 before 12B/1,024; if admitted and scientifically acceptable, evaluate
-   exact ordered normalization. Use event-aware profiling to choose one concrete
-   feature-kernel, encoder-materialization, CPU-staging, or row-store-write seam.
-   Do not combine numerical mechanisms in one arm.
-3. **27B curiosity lane.** Start only after the next 12B optimization point is
-   stable. First verify that the exact model/transcoder assets and layer shapes
-   exist, then use a 129-to-256-to-512 ladder before a separate 1,024 run. Keep
-   it exploratory and do not let it interrupt the CIE handoff or 12B work.
+2. **Canonical artifact, correctness, and opportunistic 12B closure.** Step 1a
+   replaces the legacy/dual graph interface with typed-bucket-only persistence:
+   both writers use one versioned six-bucket policy, generic `max_edges` and
+   current `all_edge_*` promotion metrics disappear, and legacy reading becomes
+   explicitly historical. Step 1b defines independent structural/algorithmic,
+   repeat/reference numerical, and behavioral-faithfulness reports. Numerical
+   stability retains exact-ID evidence but adds deterministic one-to-one
+   decoder-soft matching for the selected/near-cutoff frontier; the bounded
+   same-process probe adds direct-effect closure, propagated necessity versus a
+   matched control, and sampled causal alias substitution. Full-circuit
+   sufficiency remains unknown in version one. Then run `cuda_full` directly at
+   frozen 12B/1,024, paired with its windowed control in one allocation when
+   practical. Queue latency makes a separately scheduled 4B/512 prerequisite
+   low-value; retain 4B/512 only for concrete debugging.
+3. **Survivability lane.** Separate row retention/ownership, influence
+   access/residency, and reduction execution. Qualify canonical column-tiled
+   production and then no-retention deterministic replay before extending staged
+   selection across full -> windowed -> tiled -> recompute. Memory is a hard
+   constraint; time is optimized inside the feasible set.
+4. **Long-prefix/model stress.** Freeze source-agnostic nested 2K/5K/10K Gemma
+   token prefixes from provenance-permitted long natural text, including eligible
+   Qwen/BonaFide outputs, and trace Gemma's own endpoint target. Keep native long
+   Gemma generation as a separate optional acquisition lane. Stop the 12B ladder
+   on the first architecture failure. Inspect 27B assets and permanent-state
+   demand after the survival rungs qualify; do not let this interrupt CIE.
 
-The measured Phase-4 targets behind lane 2 are refresh normalization (81.48s),
-row-store reads (45.76s), feature compute (119.26s), encoder materialization
-(52.22s), CPU staging (38.77s), and row-store writes (31.62s). The ranked
-execution order and code-quality backlog are maintained in
-`docs/exact_trace_optimization_registry.md`; incremental refresh remains a
-research direction until simpler physical mechanisms are exhausted.
+The hardened Phase-4 profile measures 405.18s total. Its sampled current-stream
+interval estimates are feature compute 157.36s, refresh row-store read 116.02s,
+encoder materialization 44.26s, ordered row-store write 37.04s, normalization
+9.58s, and CPU staging 4.69s. These intervals include host enqueue gaps and
+stream waits; they are not GPU-active/kernel-only time. The complete wall census
+shows normalization at 81.25s and CPU staging at 40.20s, locating much of their
+cost on the host/launch/wait side. Peak framebuffer use remained 48,861 MiB of
+143,771 MiB. This selects `cuda_full` as the next tactical GPU arm because it
+directly targets the row-window interval and has measured HBM headroom. It is an
+opportunistic top rung, not the scaling strategy. The ranked execution order now
+puts the correctness contract, tiled/recompute survival paths, staged selector,
+and 2K/5K/10K stress ahead of normalization and feature-kernel speed work. The
+typed-bucket-only artifact migration is the immediate prerequisite for all new
+qualification evidence; the registry owns the detailed order.
 
 Phase A is closed for implementation purposes:
 

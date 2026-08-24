@@ -7,6 +7,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from nlp_research_project.circuit_stability_analysis.signed_graph import (
+    decode_feature_endpoint,
+)
+from nlp_research_project.exact_trace_bench.compact_io import (
+    CANONICAL_TYPED_BUCKET_NAMES,
+)
 from nlp_research_project.exact_trace_bench.full_answer.temporal import (
     analyze_full_answer_temporal,
 )
@@ -72,37 +78,57 @@ def _write_bucketed_graph(
     col_id: int | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    names = list(CANONICAL_TYPED_BUCKET_NAMES)
+    feature_bucket = names.index("feature<-feature")
+    source_id = (
+        col_id
+        if col_id is not None
+        else _encode_feature_feature_id(*step.feature_ids[0], n_pos=2)
+    )
+    source = decode_feature_endpoint(source_id, 2)
+    target_id = row_id if row_id is not None else step.step_idx
+    target = decode_feature_endpoint(target_id, 2)
+    persisted_feature_ids = np.unique(
+        np.concatenate(
+            [
+                step.feature_ids,
+                np.asarray([[source.layer, source.position, source.feature_id]]),
+                np.asarray([[target.layer, target.position, target.feature_id]]),
+            ]
+        ),
+        axis=0,
+    )
     metadata = [
         {
-            "bucket": "feature<-feature",
-            "raw_total_abs_mass": weight + 1.0,
-            "retained_abs_mass": weight,
-            "retained_fraction": weight / (weight + 1.0),
-            "raw_nnz": 2,
-            "retained_nnz": 1,
+            "bucket": name,
+            "raw_total_abs_mass": weight + 1.0 if name == "feature<-feature" else 0.0,
+            "retained_abs_mass": weight if name == "feature<-feature" else 0.0,
+            "retained_fraction": (
+                weight / (weight + 1.0) if name == "feature<-feature" else None
+            ),
+            "raw_nnz": 2 if name == "feature<-feature" else 0,
+            "retained_nnz": 1 if name == "feature<-feature" else 0,
             "policy": {"top_p": 0.95, "cap": 1000000},
+            "weights_signed": True,
         }
+        for name in names
     ]
     np.savez_compressed(
         path,
         row_idx=step.row_idx,
         col_idx=step.col_idx,
         weights=step.weights,
-        feature_ids=step.feature_ids,
+        feature_ids=persisted_feature_ids,
         token_text=np.array(step.token_text),
         logprob=np.array(np.nan),
-        n_features=np.array(step.n_features, dtype=np.int32),
+        n_features=np.array(len(persisted_feature_ids), dtype=np.int32),
         step_idx=np.array(step.step_idx, dtype=np.int32),
         compact_save_format=np.array("typed_bucketed"),
-        bucket_row_idx=np.asarray(
-            [row_id if row_id is not None else step.step_idx], dtype=np.int64
-        ),
-        bucket_col_idx=np.asarray(
-            [col_id if col_id is not None else 10 + step.step_idx], dtype=np.int64
-        ),
+        bucket_row_idx=np.asarray([target_id], dtype=np.int64),
+        bucket_col_idx=np.asarray([source_id], dtype=np.int64),
         bucket_weights=np.asarray([weight], dtype=np.float32),
-        bucket_ids=np.asarray([0], dtype=np.int16),
-        bucket_names=np.asarray(["feature<-feature"]),
+        bucket_ids=np.asarray([feature_bucket], dtype=np.int16),
+        bucket_names=np.asarray(names),
         bucket_metadata_json=np.array(json.dumps(metadata)),
         error_node_shape=np.asarray([1, 2], dtype=np.int32),
         token_ids=np.asarray([1, 2], dtype=np.int64),

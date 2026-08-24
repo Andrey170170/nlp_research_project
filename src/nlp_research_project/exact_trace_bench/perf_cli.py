@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 import os
@@ -1398,8 +1399,8 @@ CANDIDATE_PROFILES = _profile_contracts()
 GPU_SAMPLE_COMMAND = (
     "nvidia-smi",
     (
-        "--query-gpu=timestamp,utilization.gpu,utilization.memory,power.draw,"
-        "memory.used,memory.total"
+        "--query-gpu=timestamp,index,uuid,name,utilization.gpu,"
+        "utilization.memory,power.draw,memory.used,memory.total"
     ),
     "--format=csv,noheader,nounits",
     "--loop=1",
@@ -2007,24 +2008,71 @@ def _percentile(values: Sequence[float], percentile: float) -> float | None:
     return float(ordered[index])
 
 
-def _gpu_resource_summary(samples_path: Path) -> dict[str, Any]:
-    if not samples_path.is_file():
-        return {"gpu_sample_count": 0}
-    rows: list[tuple[float, float, float, float, float]] = []
-    for line in samples_path.read_text(encoding="utf-8", errors="replace").splitlines():
-        fields = [field.strip() for field in line.split(",")]
-        if len(fields) != 6:
-            continue
-        try:
-            values = [float(value) for value in fields[1:]]
-        except ValueError:
-            continue
-        rows.append((values[0], values[1], values[2], values[3], values[4]))
-    if not rows:
-        return {"gpu_sample_count": 0}
-    sm, memory, power, framebuffer, total = (list(column) for column in zip(*rows))
+@dataclass(frozen=True)
+class _GpuResourceSample:
+    index: str | None
+    uuid: str | None
+    name: str | None
+    sm_utilization: float
+    memory_utilization: float
+    power_watts: float
+    framebuffer_used_mib: float
+    framebuffer_total_mib: float
+
+    @property
+    def device_key(self) -> tuple[str, str]:
+        if self.uuid:
+            return ("uuid", self.uuid)
+        if self.index:
+            return ("index", self.index)
+        return ("legacy", "unknown")
+
+
+def _parse_gpu_resource_sample(line: str) -> _GpuResourceSample | None:
+    fields = [field.strip() for field in next(csv.reader([line]))]
+    if len(fields) == 9:
+        index, uuid, name = fields[1:4]
+        numeric_fields = fields[4:]
+    elif len(fields) == 6:
+        # Explicit compatibility for sample files emitted before device identity
+        # was added. All such rows belong to one unknown device.
+        index = uuid = name = None
+        numeric_fields = fields[1:]
+    else:
+        return None
+    try:
+        sm, memory, power, framebuffer, total = (
+            float(value) for value in numeric_fields
+        )
+    except ValueError:
+        return None
+    return _GpuResourceSample(
+        index=index or None,
+        uuid=uuid or None,
+        name=name or None,
+        sm_utilization=sm,
+        memory_utilization=memory,
+        power_watts=power,
+        framebuffer_used_mib=framebuffer,
+        framebuffer_total_mib=total,
+    )
+
+
+def _summarize_gpu_device(samples: Sequence[_GpuResourceSample]) -> dict[str, Any]:
+    first = samples[0]
+    sm = [sample.sm_utilization for sample in samples]
+    memory = [sample.memory_utilization for sample in samples]
+    power = [sample.power_watts for sample in samples]
+    framebuffer = [sample.framebuffer_used_mib for sample in samples]
+    total = [sample.framebuffer_total_mib for sample in samples]
+    peak_total = max(total)
     return {
-        "gpu_sample_count": len(rows),
+        "gpu_index": int(first.index)
+        if first.index is not None and first.index.isdigit()
+        else first.index,
+        "gpu_uuid": first.uuid,
+        "gpu_name": first.name,
+        "sample_count": len(samples),
         "gpu_sm_utilization_mean_percent": sum(sm) / len(sm),
         "gpu_sm_utilization_p95_percent": _percentile(sm, 0.95),
         "gpu_sm_utilization_max_percent": max(sm),
@@ -2034,8 +2082,52 @@ def _gpu_resource_summary(samples_path: Path) -> dict[str, Any]:
         "gpu_power_mean_watts": sum(power) / len(power),
         "gpu_power_max_watts": max(power),
         "gpu_framebuffer_peak_mib": max(framebuffer),
-        "gpu_framebuffer_total_mib": max(total),
-        "gpu_framebuffer_peak_fraction": max(framebuffer) / max(total),
+        "gpu_framebuffer_total_mib": peak_total,
+        "gpu_framebuffer_peak_fraction": max(framebuffer) / peak_total
+        if peak_total > 0
+        else None,
+    }
+
+
+def _gpu_resource_summary(samples_path: Path) -> dict[str, Any]:
+    if not samples_path.is_file():
+        return {"gpu_sample_count": 0}
+    samples: list[_GpuResourceSample] = []
+    for line in samples_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        sample = _parse_gpu_resource_sample(line)
+        if sample is not None:
+            samples.append(sample)
+    if not samples:
+        return {"gpu_sample_count": 0}
+
+    by_device: dict[tuple[str, str], list[_GpuResourceSample]] = {}
+    for sample in samples:
+        by_device.setdefault(sample.device_key, []).append(sample)
+    devices = [
+        _summarize_gpu_device(device_samples)
+        for _key, device_samples in sorted(by_device.items())
+    ]
+    primary = max(
+        devices,
+        key=lambda device: (
+            float(device["gpu_framebuffer_peak_mib"]),
+            float(device["gpu_sm_utilization_mean_percent"]),
+        ),
+    )
+    compatibility_metrics = {
+        key: value
+        for key, value in primary.items()
+        if key.startswith("gpu_") and key not in {"gpu_index", "gpu_uuid", "gpu_name"}
+    }
+    return {
+        "gpu_sample_count": len(samples),
+        "gpu_device_count": len(devices),
+        "gpu_devices": devices,
+        "gpu_summary_scope": "single_device" if len(devices) == 1 else "busiest_device",
+        "gpu_summary_device_index": primary["gpu_index"],
+        "gpu_summary_device_uuid": primary["gpu_uuid"],
+        "gpu_summary_device_name": primary["gpu_name"],
+        **compatibility_metrics,
     }
 
 

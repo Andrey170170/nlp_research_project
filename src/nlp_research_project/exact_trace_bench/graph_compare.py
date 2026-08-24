@@ -23,7 +23,7 @@ TYPED_BUCKET_SCOPE = "typed_bucket_edges_only"
 @dataclass(frozen=True)
 class _LoadedCompact:
     step: "StepData"
-    bucket_graph: "SignedGraph"
+    bucket_graph: "SignedGraph | None"
 
 
 @dataclass(frozen=True)
@@ -642,10 +642,14 @@ def _load_compact_for_compare(path: Path) -> _LoadedCompact:
     )
     from nlp_research_project.exact_trace_bench.compact_io import load_compact
 
-    return _LoadedCompact(
-        step=load_compact(path),
-        bucket_graph=load_signed_graph(path),
-    )
+    step = load_compact(path)
+    try:
+        bucket_graph = load_signed_graph(path)
+    except ValueError as exc:
+        if "requires typed bucket arrays" not in str(exc):
+            raise
+        bucket_graph = None
+    return _LoadedCompact(step=step, bucket_graph=bucket_graph)
 
 
 def compare_compact_paths(left_path: Path, right_path: Path) -> dict[str, Any]:

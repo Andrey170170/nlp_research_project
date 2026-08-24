@@ -456,6 +456,57 @@ def test_gpu_resource_summary_reports_useful_utilization(
     assert summary["gpu_power_max_watts"] == 200.0
     assert summary["gpu_framebuffer_peak_mib"] == 45000.0
     assert summary["gpu_framebuffer_peak_fraction"] == pytest.approx(45000 / 143771)
+    assert summary["gpu_device_count"] == 1
+    assert summary["gpu_devices"][0]["gpu_uuid"] is None
+
+
+def test_gpu_resource_summary_preserves_per_device_identity_without_dilution(
+    tmp_path: Path,
+) -> None:
+    samples_path = tmp_path / "gpu_samples.csv"
+    samples_path.write_text(
+        "\n".join(
+            [
+                (
+                    "2026/08/21 22:00:00.000, 0, GPU-active, NVIDIA H200, "
+                    "80, 20, 500.0, 90000, 143771"
+                ),
+                (
+                    "2026/08/21 22:00:00.000, 1, GPU-idle, NVIDIA H200, "
+                    "0, 0, 75.0, 1000, 143771"
+                ),
+                (
+                    "2026/08/21 22:00:01.000, 0, GPU-active, NVIDIA H200, "
+                    "100, 30, 600.0, 100000, 143771"
+                ),
+                (
+                    "2026/08/21 22:00:01.000, 1, GPU-idle, NVIDIA H200, "
+                    "0, 0, 75.0, 1000, 143771"
+                ),
+            ]
+        )
+    )
+
+    summary = perf_cli._gpu_resource_summary(samples_path)
+
+    assert summary["gpu_sample_count"] == 4
+    assert summary["gpu_device_count"] == 2
+    assert summary["gpu_summary_scope"] == "busiest_device"
+    assert summary["gpu_summary_device_uuid"] == "GPU-active"
+    assert summary["gpu_sm_utilization_mean_percent"] == 90.0
+    assert [device["gpu_uuid"] for device in summary["gpu_devices"]] == [
+        "GPU-active",
+        "GPU-idle",
+    ]
+    assert summary["gpu_devices"][1]["gpu_sm_utilization_mean_percent"] == 0.0
+
+
+def test_gpu_sampler_command_persists_device_identity() -> None:
+    query = perf_cli.GPU_SAMPLE_COMMAND[1]
+
+    assert "index" in query
+    assert "uuid" in query
+    assert "name" in query
 
 
 def test_gpu_resource_summary_marks_empty_samples_explicitly(

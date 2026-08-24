@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import Any, cast
 
@@ -226,21 +227,81 @@ def _write_bucketed_graph(
     bucket_ids: list[int],
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    from nlp_research_project.exact_trace_bench.compact_io import (
+        CANONICAL_TYPED_BUCKET_NAMES,
+    )
+
+    persisted_names = [
+        *bucket_names,
+        *(name for name in CANONICAL_TYPED_BUCKET_NAMES if name not in bucket_names),
+    ]
+    persisted_ids = [persisted_names.index(bucket_names[value]) for value in bucket_ids]
+    persisted_features = sorted(
+        {
+            int(endpoint)
+            for name, row, col in zip(
+                (bucket_names[value] for value in bucket_ids),
+                bucket_rows,
+                bucket_cols,
+            )
+            for endpoint in (
+                ([row] if name.startswith("feature<-") else [])
+                + ([col] if name.endswith("<-feature") else [])
+            )
+        }
+    )
+    feature_ids = np.asarray(
+        [[0, 0, feature] for feature in persisted_features] or [[0, 0, 1]],
+        dtype=np.int64,
+    )
+    counts = {
+        name: sum(persisted_names[value] == name for value in persisted_ids)
+        for name in persisted_names
+    }
+    masses = {
+        name: sum(
+            abs(weight)
+            for value, weight in zip(persisted_ids, bucket_weights)
+            if persisted_names[value] == name
+        )
+        for name in persisted_names
+    }
     np.savez_compressed(
         path,
         row_idx=np.asarray([1], dtype=np.int32),
         col_idx=np.asarray([0], dtype=np.int32),
         weights=np.asarray([1.0], dtype=np.float32),
-        feature_ids=np.asarray([(0, 0, 1)], dtype=np.int64),
+        feature_ids=feature_ids,
         token_text=np.asarray("A"),
         logprob=np.asarray(-0.1),
-        n_features=np.asarray(1, dtype=np.int32),
+        n_features=np.asarray(len(feature_ids), dtype=np.int32),
         step_idx=np.asarray(0, dtype=np.int32),
+        compact_save_format=np.asarray("typed_bucketed"),
         bucket_row_idx=np.asarray(bucket_rows, dtype=np.int64),
         bucket_col_idx=np.asarray(bucket_cols, dtype=np.int64),
         bucket_weights=np.asarray(bucket_weights, dtype=np.float32),
-        bucket_ids=np.asarray(bucket_ids, dtype=np.int16),
-        bucket_names=np.asarray(bucket_names),
+        bucket_ids=np.asarray(persisted_ids, dtype=np.int16),
+        bucket_names=np.asarray(persisted_names),
+        bucket_metadata_json=np.asarray(
+            json.dumps(
+                [
+                    {
+                        "bucket": name,
+                        "raw_total_abs_mass": masses[name],
+                        "retained_abs_mass": masses[name],
+                        "retained_fraction": 1.0 if masses[name] else None,
+                        "raw_nnz": counts[name],
+                        "retained_nnz": counts[name],
+                        "policy": {"top_p": 1.0, "cap": None},
+                        "weights_signed": True,
+                    }
+                    for name in persisted_names
+                ]
+            )
+        ),
+        error_node_shape=np.asarray([1, 2], dtype=np.int32),
+        token_ids=np.asarray([100, 101], dtype=np.int64),
+        logit_token_ids=np.asarray([200], dtype=np.int64),
     )
 
 
@@ -330,8 +391,10 @@ def test_compare_artifact_dirs_ignores_auxiliary_step_npz(
         )
 
     from nlp_research_project.exact_trace_bench import compact_io
+    from nlp_research_project.circuit_stability_analysis import signed_graph
 
     monkeypatch.setattr(compact_io, "load_compact", load_compact)
+    monkeypatch.setattr(signed_graph, "load_signed_graph", lambda _path: None)
 
     result = compare_artifact_dirs(tmp_path / "left", tmp_path / "right")
 
@@ -357,6 +420,7 @@ def test_compare_artifact_dirs_reports_incomplete_step_alignment(
     _write_npz(right_completion / "step_000.npz")
 
     from nlp_research_project.exact_trace_bench import compact_io
+    from nlp_research_project.circuit_stability_analysis import signed_graph
 
     monkeypatch.setattr(
         compact_io,
@@ -373,6 +437,7 @@ def test_compare_artifact_dirs_reports_incomplete_step_alignment(
             }
         ),
     )
+    monkeypatch.setattr(signed_graph, "load_signed_graph", lambda _path: None)
 
     result = compare_artifact_dirs(tmp_path / "left", tmp_path / "right")
 
@@ -390,6 +455,7 @@ def test_compare_artifact_dirs_persists_worst_step_not_only_mean(
         _write_npz(completion / "step_001.npz")
 
     from nlp_research_project.exact_trace_bench import compact_io
+    from nlp_research_project.circuit_stability_analysis import signed_graph
 
     def load_compact(path: Path) -> SimpleStep:
         step_idx = int(path.stem.split("_")[1])
@@ -404,6 +470,7 @@ def test_compare_artifact_dirs_persists_worst_step_not_only_mean(
         )
 
     monkeypatch.setattr(compact_io, "load_compact", load_compact)
+    monkeypatch.setattr(signed_graph, "load_signed_graph", lambda _path: None)
 
     result = compare_artifact_dirs(tmp_path / "left", tmp_path / "right")
 

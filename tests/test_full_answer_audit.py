@@ -86,15 +86,31 @@ def _write_trace(run_root: Path, trace: dict) -> Path:
     return path
 
 
+def _write_graph(path: Path, *, step_idx: int, feature_ids: np.ndarray) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    n_features = int(feature_ids.shape[0])
+    np.savez(
+        path,
+        row_idx=np.asarray([], dtype=np.int32),
+        col_idx=np.asarray([], dtype=np.int32),
+        weights=np.asarray([], dtype=np.float32),
+        feature_ids=feature_ids,
+        token_text=np.asarray("token"),
+        logprob=np.asarray(np.nan),
+        n_features=np.asarray(n_features, dtype=np.int32),
+        step_idx=np.asarray(step_idx, dtype=np.int32),
+    )
+
+
 def test_audit_prefix_views_accepts_matching_artifacts(tmp_path: Path) -> None:
     trajectory = _trajectory()
     trajectory_path = tmp_path / "trajectory.json"
     run_root = tmp_path / "run"
     trajectory_path.write_text(json.dumps(trajectory), encoding="utf-8")
     graph_path = run_root / "shards" / "shard_000" / "token_000001" / "graph.npz"
-    graph_path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(
+    _write_graph(
         graph_path,
+        step_idx=1,
         feature_ids=np.asarray([[0, 0, 10], [1, 1, 11], [2, 2, 12]], dtype=np.int64),
     )
     _write_trace(run_root, _trace(trajectory, generated_index=1, graph_path=graph_path))
@@ -116,8 +132,11 @@ def test_audit_prefix_views_flags_mismatches_and_future_positions(
     run_root = tmp_path / "run"
     trajectory_path.write_text(json.dumps(trajectory), encoding="utf-8")
     graph_path = run_root / "shards" / "shard_000" / "token_000000" / "graph.npz"
-    graph_path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(graph_path, feature_ids=np.asarray([[0, 2, 10]], dtype=np.int64))
+    _write_graph(
+        graph_path,
+        step_idx=0,
+        feature_ids=np.asarray([[0, 2, 10]], dtype=np.int64),
+    )
     trace = _trace(trajectory, generated_index=0, graph_path=graph_path)
     trace["target_token_id"] = 999
     trace["prefix_view_metadata"]["prefix_token_ids_sha256"] = "bad"
@@ -129,3 +148,29 @@ def test_audit_prefix_views_flags_mismatches_and_future_positions(
     assert summary["counts"]["metadata_mismatches"] == 1
     assert summary["counts"]["target_mismatches"] == 1
     assert summary["counts"]["future_position_violations"] == 1
+
+
+def test_audit_prefix_views_rejects_structurally_invalid_graph(tmp_path: Path) -> None:
+    trajectory = _trajectory()
+    trajectory_path = tmp_path / "trajectory.json"
+    run_root = tmp_path / "run"
+    trajectory_path.write_text(json.dumps(trajectory), encoding="utf-8")
+    graph_path = run_root / "shards" / "shard_000" / "token_000000" / "graph.npz"
+    _write_graph(
+        graph_path,
+        step_idx=0,
+        feature_ids=np.asarray([[0, 0, 10]], dtype=np.int64),
+    )
+    with np.load(graph_path, allow_pickle=False) as valid:
+        payload = {name: valid[name] for name in valid.files}
+    payload["row_idx"] = np.asarray([0], dtype=np.int32)
+    np.savez(graph_path, **payload)
+    _write_trace(run_root, _trace(trajectory, generated_index=0, graph_path=graph_path))
+
+    summary = audit_prefix_views(trajectory_path=trajectory_path, run_root=run_root)
+
+    assert summary["counts"]["ok"] == 0
+    assert summary["counts"]["invalid_graph"] == 1
+    row = json.loads((run_root / "prefix_view_audit.jsonl").read_text().splitlines()[0])
+    assert row["audit_status"] == "error"
+    assert "mismatched lengths" in row["graph_error"]

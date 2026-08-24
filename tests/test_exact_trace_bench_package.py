@@ -118,6 +118,35 @@ def test_preheated_prepared_wrapper_resolves_and_preflights_bundle() -> None:
     assert "--expected-phase1-trace-batch-size-max" in text
     assert "--expected-phase1-effective-trace-batch-size" in text
     assert "validation_args+=(--require-full-completion)" in text
+    assert "validation_args+=(--require-structured-vjp-evidence)" in text
+    assert '[[ "$EXPECTED_VJP_KERNEL_MODE" == "autograd_batched" ]]' in text
+    assert "validation_args+=(--require-phase4-device-timing)" in text
+    assert 'REQUIRE_PHASE4_DEVICE_TIMING="${REQUIRE_PHASE4_DEVICE_TIMING:-0}"' in text
+    assert '"$EXPECTED_PHASE4_DEVICE_TIMING_BACKEND"' in text
+    timing_opt_in = text.index('if [[ "$REQUIRE_PHASE4_DEVICE_TIMING" == "1" ]]')
+    timing_backend = text.index(
+        'if [[ -n "${EXPECTED_PHASE4_DEVICE_TIMING_BACKEND:-}" ]]', timing_opt_in
+    )
+    timing_opt_out = text.index(
+        'elif [[ "$REQUIRE_PHASE4_DEVICE_TIMING" != "0" ]]', timing_backend
+    )
+    assert timing_opt_in < timing_backend < timing_opt_out
+    assert "validation_args+=(--require-unambiguous-per-device-gpu-evidence)" in text
+    assert (
+        'REQUIRE_UNAMBIGUOUS_PER_DEVICE_GPU_EVIDENCE="${REQUIRE_UNAMBIGUOUS_PER_DEVICE_GPU_EVIDENCE:-0}"'
+        in text
+    )
+    assert '"${EXPECTED_GRAPH_FEATURE_COUNT:-}"' in text
+    assert '--expected-graph-feature-count "$EXPECTED_GRAPH_FEATURE_COUNT"' in text
+    assert '"${EXPECTED_GRAPH_EDGE_COUNT:-}"' in text
+    assert '--expected-graph-edge-count "$EXPECTED_GRAPH_EDGE_COUNT"' in text
+    assert "validation_args+=(--require-canonical-typed-buckets)" in text
+    assert (
+        'REQUIRE_CANONICAL_TYPED_BUCKETS="${REQUIRE_CANONICAL_TYPED_BUCKETS:-0}"'
+        in text
+    )
+    assert "--expected-graph-feature-count 8192" not in text
+    assert "--expected-graph-edge-count 20000" not in text
     assert "--expected-decoder-active-row-residency" in text
     assert "--expected-decoder-active-row-safety-margin-bytes" in text
     assert (

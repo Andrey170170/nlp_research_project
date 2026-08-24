@@ -12,6 +12,9 @@ from nlp_research_project.circuit_stability_analysis.metrics import run_metrics
 from nlp_research_project.circuit_stability_analysis.signed_graph import (
     encode_feature_endpoint,
 )
+from nlp_research_project.exact_trace_bench.compact_io import (
+    CANONICAL_TYPED_BUCKET_NAMES,
+)
 
 
 def _fid(fid: int) -> int:
@@ -20,17 +23,29 @@ def _fid(fid: int) -> int:
 
 def _graph(path: Path, fid: int, *, token_id: int, logit_id: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    names = ["feature<-token", "logit<-feature", "feature<-feature"]
+    names = list(CANONICAL_TYPED_BUCKET_NAMES)
+    name_id = {name: index for index, name in enumerate(names)}
     edges = [
-        (0, _fid(fid), 0, 1.0),
-        (1, 0, _fid(fid), 1.0),
-        (2, _fid(fid), _fid(99), 1.0),
+        (name_id["feature<-token"], _fid(fid), 0, 1.0),
+        (name_id["logit<-feature"], 0, _fid(fid), 1.0),
+        (name_id["feature<-feature"], _fid(fid), _fid(99), 1.0),
     ]
+    counts = {name: 0 for name in names}
+    masses = {name: 0.0 for name in names}
+    for bucket_id, _row, _col, _weight in edges:
+        counts[names[bucket_id]] += 1
+        masses[names[bucket_id]] += abs(_weight)
     np.savez_compressed(
         path,
-        step_idx=np.array(0),
+        step_idx=np.array(0, dtype=np.int32),
         token_text=np.array("x"),
-        token_ids=np.asarray([token_id]),
+        logprob=np.array(np.nan),
+        n_features=np.array(2, dtype=np.int32),
+        row_idx=np.asarray([], dtype=np.int32),
+        col_idx=np.asarray([], dtype=np.int32),
+        weights=np.asarray([], dtype=np.float32),
+        compact_save_format=np.asarray("typed_bucketed"),
+        token_ids=np.asarray([token_id, 999]),
         logit_token_ids=np.asarray([logit_id]),
         feature_ids=np.asarray([[1, 0, fid], [1, 0, 99]]),
         error_node_shape=np.asarray([1, 2]),
@@ -39,6 +54,23 @@ def _graph(path: Path, fid: int, *, token_id: int, logit_id: int) -> None:
         bucket_row_idx=np.asarray([e[1] for e in edges]),
         bucket_col_idx=np.asarray([e[2] for e in edges]),
         bucket_weights=np.asarray([e[3] for e in edges], dtype=np.float32),
+        bucket_metadata_json=np.asarray(
+            json.dumps(
+                [
+                    {
+                        "bucket": name,
+                        "raw_total_abs_mass": masses[name],
+                        "retained_abs_mass": masses[name],
+                        "retained_fraction": 1.0 if masses[name] else None,
+                        "raw_nnz": counts[name],
+                        "retained_nnz": counts[name],
+                        "policy": {"top_p": 1.0, "cap": None},
+                        "weights_signed": True,
+                    }
+                    for name in names
+                ]
+            )
+        ),
     )
 
 

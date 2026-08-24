@@ -3,12 +3,12 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from functools import cached_property
-import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, cast
+from typing import Any, Iterable, cast
 
 import numpy as np
 
+from ..compact_io import CompactGraph, load_compact_graph
 from ..graph_compare import (
     _all_edge_map,
     _edge_map,
@@ -17,9 +17,6 @@ from ..graph_compare import (
     _weighted_edge_jaccard,
 )
 from ..io_utils import ensure_dir, write_json, write_jsonl
-
-if TYPE_CHECKING:
-    from nlp_research_project.exact_trace_bench.compact_io import StepData
 
 DEFAULT_WINDOWS = (5, 10, 25)
 DEFAULT_LAGS = (1, 2, 4, 8, 16, 32)
@@ -49,18 +46,6 @@ class GraphSnapshot:
         return _feature_feature_collapsed_flows(self)
 
 
-@dataclass(frozen=True)
-class CompactStep:
-    step_idx: int
-    row_idx: np.ndarray
-    col_idx: np.ndarray
-    weights: np.ndarray
-    feature_ids: np.ndarray
-    token_text: str
-    logprob: float | None
-    n_features: int
-
-
 def _graph_path_index(path: Path) -> int:
     return int(path.parent.name.removeprefix("token_"))
 
@@ -78,54 +63,38 @@ def discover_graph_paths(
 
 
 def _load_snapshot(path: Path) -> GraphSnapshot:
-    data = np.load(str(path), allow_pickle=False)
-    logprob = float(data["logprob"])
-    step = CompactStep(
-        step_idx=int(data["step_idx"]),
-        row_idx=data["row_idx"],
-        col_idx=data["col_idx"],
-        weights=data["weights"],
-        feature_ids=data["feature_ids"],
-        token_text=str(data["token_text"]),
-        logprob=logprob if not np.isnan(logprob) else None,
-        n_features=int(data["n_features"]),
-    )
+    graph = load_compact_graph(path)
+    step = graph.step
     generated_index = int(step.step_idx)
-    path_index = _graph_path_index(path)
-    if generated_index != path_index:
-        raise ValueError(
-            f"graph step_idx {generated_index} does not match path index {path_index}: {path}"
-        )
-    step_for_compare = cast("StepData", step)
-    bucket_edges, bucket_metadata = _load_bucket_edges(data)
+    bucket_edges, bucket_metadata = _load_bucket_edges(graph)
     return GraphSnapshot(
         generated_index=generated_index,
         token_text=str(getattr(step, "token_text", "")),
-        features=_feature_set(step_for_compare),
-        edges=_edge_map(step_for_compare),
-        all_edges=_all_edge_map(step_for_compare),
+        features=_feature_set(step),
+        edges=_edge_map(step),
+        all_edges=_all_edge_map(step),
         bucket_edges=bucket_edges,
         bucket_metadata=bucket_metadata,
-        error_node_shape=tuple(int(x) for x in data["error_node_shape"])
-        if "error_node_shape" in data.files
-        else None,
+        error_node_shape=graph.error_node_shape,
     )
 
 
 def _load_bucket_edges(
-    data: Any,
+    graph: CompactGraph,
 ) -> tuple[dict[str, dict[tuple[object, object], float]], dict[str, dict[str, Any]]]:
-    if "bucket_row_idx" not in data.files:
+    if graph.bucket_row_idx is None:
         return {}, {}
-    names = [str(x) for x in data["bucket_names"].tolist()]
-    metadata_rows = json.loads(str(data["bucket_metadata_json"]))
-    metadata = {str(row["bucket"]): row for row in metadata_rows}
+    assert graph.bucket_col_idx is not None
+    assert graph.bucket_weights is not None
+    assert graph.bucket_ids is not None
+    names = list(graph.bucket_names)
+    metadata = graph.bucket_metadata
     out = {name: {} for name in names}
     for row, col, weight, bucket_id in zip(
-        data["bucket_row_idx"],
-        data["bucket_col_idx"],
-        data["bucket_weights"],
-        data["bucket_ids"],
+        graph.bucket_row_idx,
+        graph.bucket_col_idx,
+        graph.bucket_weights,
+        graph.bucket_ids,
     ):
         name = names[int(bucket_id)]
         out[name][(int(row), int(col))] = float(abs(weight))

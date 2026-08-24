@@ -1,10 +1,11 @@
 # Exact-trace performance optimization loop: short-prefix promotion and scaling
 
-Status: active optimization follow-on; SP0-SP5 and LS0-LS3 are complete; LS4
-closed through the frozen 4B/1,024 development point and 828/512 holdout; LS5
-completed the 12B ladder through a cross-node-repeat-qualified 1,024-token
-selected circuit. The qualified library point is handed to CIE while evidence
-hardening and further 12B optimization continue independently.
+Status: complete through LS5. SP0-SP5 and LS0-LS3 are complete; LS4 closed
+through the frozen 4B/1,024 development point and 828/512 holdout; LS5 completed
+the 12B ladder through a cross-node-repeat-qualified 1,024-token selected
+circuit. The qualified library point is handed to CIE. Evidence hardening and
+further 12B optimization continue under the successor plan
+`plans/2026-08-21_exact_trace_optimization_and_refactoring.md`.
 
 Date: 2026-07-29
 
