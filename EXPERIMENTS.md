@@ -154,7 +154,8 @@ both writers share schema v2 and `typed_top_p_v1`, active consumers no longer
 use the generic global `max_edges` projection, and legacy loading is explicit
 and historical-only. The profiled artifact itself remains a historical dual-
 format reference. The atomic migration has passed focused CPU integration and
-awaits one frozen 12B/1,024 GPU persistence qualification. The canonical
+frozen 12B/1,024 GPU persistence qualification job `1850118` is submitted and
+pending. The canonical
 trace took 617.90s and Phase 4 took 405.18s, so this is profiling evidence rather
 than a new speed baseline. Current-stream interval estimates locate 157.36s in
 feature compute, 116.02s in refresh row-store reads, and 44.26s in encoder

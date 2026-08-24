@@ -263,8 +263,9 @@ The full-answer and canonical multi-step writers share schema v2 and policy
 `typed_top_p_v1`; active consumers and gates use the six named buckets; generic
 `max_edges` is absent from canonical configuration; and legacy loading is an
 explicit historical adapter. The focused CPU integration gate passed. Step 1a
-remains qualification-pending until one frozen 12B/1,024 full run writes,
-strictly reopens, and validates the new artifact on the real GPU path. This run
+remains qualification-pending; frozen 12B/1,024 full-run job `1850118` is
+submitted and must write, strictly reopen, and validate the new artifact on the
+real GPU path. This run
 qualifies persistence and packaging only; it does not supply Step 1b stability
 or faithfulness evidence.
 
