@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shutil
 
 import pytest
 
@@ -973,6 +974,15 @@ def test_prepare_campaign_workload_uses_existing_full_answer_runner(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    snapshot_root = tmp_path / "snapshot"
+    for relative_path in (
+        "experiments/generated/performance_campaigns/ls0/fixture_catalog.json",
+        "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt",
+        "experiments/generated/performance_campaigns/ls0/361_trajectory.json",
+    ):
+        destination = snapshot_root / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPO_ROOT / relative_path, destination)
     output_dir = tmp_path / "prepared"
     assert (
         perf_cli.main(
@@ -990,6 +1000,8 @@ def test_prepare_campaign_workload_uses_existing_full_answer_runner(
                 "required",
                 "--correctness-probe-mode",
                 "smoke",
+                "--workspace-project-root",
+                str(snapshot_root),
                 "--preheat-policy",
                 "file_cache",
                 "--preheat-path",
@@ -1019,6 +1031,9 @@ def test_prepare_campaign_workload_uses_existing_full_answer_runner(
     assert prepared["launcher"] == "existing_full_answer_shard_runner"
     assert prepared["profile_name"] == "sp5-selective-phase0-finalist-plt-v1"
     assert prepared["prefix_token_count"] == 512
+    assert prepared["trajectory_path"] == str(
+        (snapshot_root / "experiments/generated/performance_campaigns/ls0/361_trajectory.json").resolve()
+    )
     assert prepared["launch_command"][:4] == [
         "uv",
         "run",

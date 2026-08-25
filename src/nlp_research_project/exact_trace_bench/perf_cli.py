@@ -3621,7 +3621,16 @@ def _full_answer_shard_command(
 
 
 def _prepare_campaign_workload(args: argparse.Namespace) -> int:
-    resolved = resolve_frozen_campaign_workload(args.manifest, args.workload_id)
+    campaign_repo_root = (
+        REPO_ROOT
+        if args.workspace_project_root is None
+        else args.workspace_project_root.resolve()
+    )
+    resolved = resolve_frozen_campaign_workload(
+        args.manifest,
+        args.workload_id,
+        repo_root=campaign_repo_root,
+    )
     workload = resolved.workload
     comparison_policy = workload.get("comparison_policy")
     if not isinstance(comparison_policy, Mapping):
