@@ -10,6 +10,7 @@ from nlp_research_project.exact_trace_bench.full_answer.schemas import (
     load_trace_selection,
     load_trace_specs,
     load_trajectory,
+    normalize_trace_spec,
     validate_trace_spec,
     write_trace_selection,
     write_trace_specs,
@@ -148,6 +149,11 @@ def test_schema_and_trace_spec_round_trip(tmp_path: Path) -> None:
     assert specs[0]["estimated_cost"] == 13
     assert specs[0]["graph_knobs"]["exact_trace_internal_dtype"] == "fp32"
     assert specs[0]["graph_knobs"]["edge_retention_policy_id"] == "typed_top_p_v1"
+    assert specs[0]["graph_knobs"]["correctness_probe_mode"] == "off"
+    assert (
+        specs[0]["graph_knobs"]["correctness_policy_id"]
+        == "behavioral_closure_v1"
+    )
     assert (
         specs[0]["graph_knobs"]["row_store_cache_control"]
         == "fadvise_dontneed_after_append_and_read_v1"
@@ -164,6 +170,62 @@ def test_trace_spec_generation_rejects_mismatched_selection() -> None:
 
     with pytest.raises(ValueError, match="trajectory_id"):
         build_trace_specs(tiny_trajectory(), selection)
+
+
+def test_trace_spec_normalization_makes_legacy_off_selection_explicit() -> None:
+    selection = select_tokens(tiny_trajectory(), explicit_indices=[3])
+    spec = build_trace_specs(tiny_trajectory(), selection)[0]
+    del spec["graph_knobs"]["correctness_probe_mode"]
+    del spec["graph_knobs"]["correctness_policy_id"]
+
+    normalized = normalize_trace_spec(spec)
+
+    assert normalized["graph_knobs"]["correctness_probe_mode"] == "off"
+    assert (
+        normalized["graph_knobs"]["correctness_policy_id"]
+        == "behavioral_closure_v1"
+    )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"correctness_probe_mode": "unknown"}, "correctness_probe_mode"),
+        ({"correctness_policy_id": "unknown_v1"}, "correctness_policy_id"),
+        (
+            {
+                "correctness_probe_mode": "required",
+                "correctness_policy_id": None,
+            },
+            "correctness_policy_id",
+        ),
+    ],
+)
+def test_trace_spec_rejects_unadmitted_correctness_selection(
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    selection = select_tokens(tiny_trajectory(), explicit_indices=[3])
+    spec = build_trace_specs(
+        tiny_trajectory(),
+        selection,
+        graph_knob_overrides=overrides,
+    )[0]
+
+    with pytest.raises(ValueError, match=message):
+        validate_trace_spec(spec)
+
+
+@pytest.mark.parametrize("mode", ["smoke", "required"])
+def test_trace_spec_accepts_admitted_correctness_policy(mode: str) -> None:
+    selection = select_tokens(tiny_trajectory(), explicit_indices=[3])
+    spec = build_trace_specs(
+        tiny_trajectory(),
+        selection,
+        graph_knob_overrides={"correctness_probe_mode": mode},
+    )[0]
+
+    validate_trace_spec(spec)
 
 
 def test_trace_spec_rejects_ambiguous_required_feature_row_selection() -> None:

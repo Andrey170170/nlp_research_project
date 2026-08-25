@@ -45,6 +45,11 @@ DEFAULT_WAVE0_BASELINE_REGISTRY = (
 )
 DEFAULT_LOGS_DIR = REPO_ROOT / "logs"
 
+CORRECTNESS_PROBE_MODES = frozenset({"off", "smoke", "required"})
+CORRECTNESS_POLICY_IDS = frozenset({"behavioral_closure_v1"})
+DEFAULT_CORRECTNESS_PROBE_MODE = "off"
+DEFAULT_CORRECTNESS_POLICY_ID = "behavioral_closure_v1"
+
 
 def base_trace_defaults() -> dict[str, Any]:
     return {
@@ -53,6 +58,8 @@ def base_trace_defaults() -> dict[str, Any]:
         "temperature": 0.0,
         "max_feature_nodes": 8192,
         "edge_retention_policy_id": "typed_top_p_v1",
+        "correctness_probe_mode": DEFAULT_CORRECTNESS_PROBE_MODE,
+        "correctness_policy_id": DEFAULT_CORRECTNESS_POLICY_ID,
         "max_n_logits": 3,
         "desired_logit_prob": 0.8,
         "verbose_attribution": False,

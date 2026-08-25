@@ -1,7 +1,7 @@
 # Current Project Roadmap
 
 Status: Current scratch roadmap
-Last updated: 2026-08-23
+Last updated: 2026-08-25
 
 ## Active Priority
 
@@ -26,8 +26,9 @@ The successor completed evidence hardening and the frozen profile rerun. Its
 2026-08-23 revision corrects the primary objective to memory survivability, with
 speed optimized opportunistically inside the admitted set. Step 1a's atomic
 code migration now makes the six versioned typed edge buckets the only new graph
-artifact; frozen 12B/1,024 GPU qualification job `1850118` is submitted and
-pending. Step 1b adds
+artifact. Frozen 12B/1,024 GPU qualification job `1850118` completed and
+strictly reopened the schema-v2 `typed_compact_graph_v2` artifact, closing
+Step 1a persistence and packaging qualification. Step 1b adds
 separate structural, alias-aware numerical-stability, and behavioral-faithfulness
 verdicts plus a bounded same-process intervention probe. Later work separates
 row retention/access/reduction, selects full -> windowed -> tiled -> recompute,
@@ -156,6 +157,17 @@ scoped error buckets plus one equal-weight feature cutoff tie against job
 `1832086`. The canonical trace took 617.90s and Phase 4 took 405.18s, so this is
 profile evidence rather than a new speed baseline.
 
+Typed-only qualification job `1850118` subsequently completed with Slurm state
+`COMPLETED`, exit `0:0`, and 14m33s allocation wall. Preheat took 253.02s and
+the trace took 508.31s. Strict reopen accepted schema 2
+`typed_compact_graph_v2` with 8,192 features and 1,323,157 edges across the six
+canonical buckets: 1,000,000 `feature<-feature`, 16,000 `feature<-error`,
+250,000 `feature<-token`, 8,192 `logit<-feature`, 47,941 `logit<-error`, and
+1,024 `logit<-token`. Required mechanisms completed with no fallback, Phase 4
+performed zero decoder page loads, peak HBM was 48,861 MiB, and mechanism
+validation completed. This closes Step 1a only: it supplies no Step 1b
+repeat/reference numerical-stability or behavioral-faithfulness verdict.
+
 Bounded parallel preheat is now implemented behind a reusable module and all
 three preheated wrappers. Deterministic file discovery and inode deduplication
 are preserved; a bounded file-level worker pool uses positional reads, exact
@@ -185,7 +197,7 @@ The immediate post-repeat work splits into two parallel lanes:
    unoptimized-fork arm only if upstream versus current diverges materially.
 2. **Canonical artifact, correctness, and opportunistic 12B closure.** Step 1a
    has replaced the legacy/dual graph interface with typed-bucket-only persistence
-   in code; frozen 12B/1,024 GPU qualification job `1850118` is pending:
+   and job `1850118` completed the frozen 12B/1,024 GPU qualification:
    both writers use one versioned six-bucket policy, generic `max_edges` and
    current `all_edge_*` promotion metrics disappear, and legacy reading becomes
    explicitly historical. Step 1b defines independent structural/algorithmic,

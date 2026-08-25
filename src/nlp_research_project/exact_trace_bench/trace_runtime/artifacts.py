@@ -17,6 +17,18 @@ import torch
 ArtifactSaver = Callable[[Mapping[str, Any], Path], None]
 ArtifactValidator = Callable[[Mapping[str, np.ndarray]], None]
 
+_SEMANTIC_DESCRIPTOR_TRANSIENT_POLICY_ID = "bounded_seed_frontier_handoff_v1"
+_SEMANTIC_DESCRIPTOR_TRANSIENT_MAX_BYTES = 64 * 1024 * 1024
+_SEMANTIC_DESCRIPTOR_TRANSIENT_ARRAY_COUNT = 3
+_SEMANTIC_DESCRIPTOR_TRANSIENT_RECEIPT_FIELDS = (
+    "semantic_descriptor_transient_policy_id",
+    "semantic_descriptor_transient_max_bytes",
+    "semantic_descriptor_transient_required_bytes",
+    "semantic_descriptor_transient_admitted",
+    "semantic_descriptor_transient_released",
+    "semantic_descriptor_transient_array_count",
+)
+
 
 @dataclass(frozen=True)
 class CaptureArtifactCodec:
@@ -198,6 +210,15 @@ def save_phase3_row_bundle(payload: Mapping[str, Any], path: Path) -> None:
 
 
 def save_feature_semantic_descriptors(payload: Mapping[str, Any], path: Path) -> None:
+    transient_fields = sorted(
+        str(name) for name in payload if str(name).startswith("_transient_")
+    )
+    if transient_fields:
+        raise ValueError(
+            "feature semantic descriptor transients must be finalized before "
+            f"persistence: {transient_fields}"
+        )
+    _validate_semantic_descriptor_transient_receipt(payload)
     array_fields = (
         "candidate_features",
         "candidate_row_indices",
@@ -234,6 +255,14 @@ def save_feature_semantic_descriptors(payload: Mapping[str, Any], path: Path) ->
         semantic_descriptor_top_k=np.array(
             payload.get("semantic_descriptor_top_k", 0), dtype=np.int64
         ),
+        candidate_bound_kind=np.array(
+            ""
+            if payload.get("candidate_bound_kind") is None
+            else str(payload["candidate_bound_kind"])
+        ),
+        semantic_descriptor_control_limit=np.array(
+            payload.get("semantic_descriptor_control_limit", 0), dtype=np.int64
+        ),
         candidate_count=np.array(payload.get("candidate_count", 0), dtype=np.int64),
         total_active_features=np.array(
             payload.get("total_active_features", 0), dtype=np.int64
@@ -243,6 +272,42 @@ def save_feature_semantic_descriptors(payload: Mapping[str, Any], path: Path) ->
         ),
         seed_influence_available=np.array(
             bool(payload.get("seed_influence_available", False))
+        ),
+        semantic_descriptor_transient_policy_id=np.array(
+            _text(payload["semantic_descriptor_transient_policy_id"])
+        ),
+        semantic_descriptor_transient_max_bytes=np.array(
+            _strict_int_scalar(
+                payload["semantic_descriptor_transient_max_bytes"],
+                "semantic_descriptor_transient_max_bytes",
+            ),
+            dtype=np.int64,
+        ),
+        semantic_descriptor_transient_required_bytes=np.array(
+            _strict_int_scalar(
+                payload["semantic_descriptor_transient_required_bytes"],
+                "semantic_descriptor_transient_required_bytes",
+            ),
+            dtype=np.int64,
+        ),
+        semantic_descriptor_transient_admitted=np.array(
+            _strict_bool_scalar(
+                payload["semantic_descriptor_transient_admitted"],
+                "semantic_descriptor_transient_admitted",
+            )
+        ),
+        semantic_descriptor_transient_released=np.array(
+            _strict_bool_scalar(
+                payload["semantic_descriptor_transient_released"],
+                "semantic_descriptor_transient_released",
+            )
+        ),
+        semantic_descriptor_transient_array_count=np.array(
+            _strict_int_scalar(
+                payload["semantic_descriptor_transient_array_count"],
+                "semantic_descriptor_transient_array_count",
+            ),
+            dtype=np.int64,
         ),
     )
 
@@ -379,6 +444,20 @@ def _int(value: Any) -> int:
     if isinstance(scalar, bool):
         raise ValueError("expected an integer, got bool")
     return int(scalar)
+
+
+def _strict_int_scalar(value: Any, label: str) -> int:
+    scalar = _scalar(value)
+    if isinstance(scalar, bool) or not isinstance(scalar, (int, np.integer)):
+        raise TypeError(f"{label} must be an integer scalar")
+    return int(scalar)
+
+
+def _strict_bool_scalar(value: Any, label: str) -> bool:
+    scalar = _scalar(value)
+    if not isinstance(scalar, (bool, np.bool_)):
+        raise TypeError(f"{label} must be a boolean scalar")
+    return bool(scalar)
 
 
 def _blake2s(raw: bytes) -> str:
@@ -689,6 +768,7 @@ def _validate_phase3_row_capture(payload: Mapping[str, np.ndarray]) -> None:
 def _validate_semantic_descriptor_capture(
     payload: Mapping[str, np.ndarray],
 ) -> None:
+    _validate_semantic_descriptor_transient_receipt(payload)
     candidates = np.asarray(payload["candidate_features"])
     indices = np.asarray(payload["candidate_row_indices"]).reshape(-1)
     sketch = np.asarray(payload["semantic_sketch"])
@@ -700,6 +780,50 @@ def _validate_semantic_descriptor_capture(
     if sketch.ndim != 2 or int(sketch.shape[0]) != candidate_count:
         raise ValueError("semantic_sketch must have one row per candidate")
     _require_finite(payload, "semantic_sketch")
+
+
+def _validate_semantic_descriptor_transient_receipt(
+    payload: Mapping[str, Any],
+) -> None:
+    missing = [
+        field for field in _SEMANTIC_DESCRIPTOR_TRANSIENT_RECEIPT_FIELDS if field not in payload
+    ]
+    if missing:
+        raise ValueError(
+            "feature semantic descriptor payload missing bounded transient receipt "
+            f"fields: {missing}"
+        )
+    policy_id = _text(payload["semantic_descriptor_transient_policy_id"])
+    max_bytes = _strict_int_scalar(
+        payload["semantic_descriptor_transient_max_bytes"],
+        "semantic_descriptor_transient_max_bytes",
+    )
+    required_bytes = _strict_int_scalar(
+        payload["semantic_descriptor_transient_required_bytes"],
+        "semantic_descriptor_transient_required_bytes",
+    )
+    admitted = _strict_bool_scalar(
+        payload["semantic_descriptor_transient_admitted"],
+        "semantic_descriptor_transient_admitted",
+    )
+    released = _strict_bool_scalar(
+        payload["semantic_descriptor_transient_released"],
+        "semantic_descriptor_transient_released",
+    )
+    array_count = _strict_int_scalar(
+        payload["semantic_descriptor_transient_array_count"],
+        "semantic_descriptor_transient_array_count",
+    )
+    if policy_id != _SEMANTIC_DESCRIPTOR_TRANSIENT_POLICY_ID:
+        raise ValueError("unsupported semantic descriptor transient policy_id")
+    if max_bytes != _SEMANTIC_DESCRIPTOR_TRANSIENT_MAX_BYTES:
+        raise ValueError("semantic descriptor transient max_bytes must be exactly 64 MiB")
+    if required_bytes < 0 or required_bytes > max_bytes:
+        raise ValueError("semantic descriptor transient required_bytes exceeds its bound")
+    if not admitted or not released:
+        raise ValueError("semantic descriptor transient receipt must be admitted and released")
+    if array_count != _SEMANTIC_DESCRIPTOR_TRANSIENT_ARRAY_COUNT:
+        raise ValueError("semantic descriptor transient array_count must be exactly 3")
 
 
 CAPTURE_ARTIFACT_CODECS: tuple[CaptureArtifactCodec, ...] = (
@@ -827,6 +951,7 @@ CAPTURE_ARTIFACT_CODECS: tuple[CaptureArtifactCodec, ...] = (
             "candidate_features",
             "candidate_row_indices",
             "semantic_sketch",
+            *_SEMANTIC_DESCRIPTOR_TRANSIENT_RECEIPT_FIELDS,
         ),
         nonempty_fields=(),
         validator=_validate_semantic_descriptor_capture,

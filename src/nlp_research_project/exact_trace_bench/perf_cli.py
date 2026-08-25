@@ -3694,6 +3694,8 @@ def _prepare_campaign_workload(args: argparse.Namespace) -> int:
             "profile_log_interval": 1,
             "runtime_resource_policy": args.runtime_resource_policy,
             "resource_planning_envelope": dict(workload["resource_envelope"]),
+            "correctness_probe_mode": args.correctness_probe_mode,
+            "correctness_policy_id": args.correctness_policy_id,
         }
     )
     if args.feature_row_influence_requirement is not None:
@@ -4184,6 +4186,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--runtime-resource-policy",
         choices=("off", "measure_only", "enforce"),
         default="measure_only",
+    )
+    prepare_campaign.add_argument(
+        "--correctness-probe-mode",
+        choices=("off", "smoke", "required"),
+        default="off",
+        help=(
+            "Run the versioned post-trace correctness probe. Smoke records evidence "
+            "without failing an otherwise successful trace; required fails closed."
+        ),
+    )
+    prepare_campaign.add_argument(
+        "--correctness-policy-id",
+        choices=("behavioral_closure_v1",),
+        default="behavioral_closure_v1",
+        help="Versioned correctness policy identity (default: behavioral_closure_v1)",
     )
     prepare_campaign.add_argument(
         "--runtime-resource-override-rationale",

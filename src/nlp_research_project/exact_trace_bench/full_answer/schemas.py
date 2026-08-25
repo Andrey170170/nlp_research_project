@@ -9,7 +9,13 @@ from ..backward_selection import (
     normalize_backward_overrides,
     resolve_backward_execution_selection,
 )
-from ..config import base_trace_defaults
+from ..config import (
+    CORRECTNESS_POLICY_IDS,
+    CORRECTNESS_PROBE_MODES,
+    DEFAULT_CORRECTNESS_POLICY_ID,
+    DEFAULT_CORRECTNESS_PROBE_MODE,
+    base_trace_defaults,
+)
 from ..io_utils import iter_jsonl, read_json, write_json, write_jsonl
 from ..transcoder_config import resolve_transcoder_load_config
 
@@ -210,6 +216,18 @@ def validate_trace_spec(spec: Mapping[str, Any]) -> None:
         raise ValueError(
             "trace spec graph_knobs.edge_retention_policy_id must be one of "
             f"{sorted(EDGE_RETENTION_POLICY_IDS)!r}"
+        )
+    correctness_probe_mode = spec["graph_knobs"].get("correctness_probe_mode")
+    if correctness_probe_mode not in CORRECTNESS_PROBE_MODES:
+        raise ValueError(
+            "trace spec graph_knobs.correctness_probe_mode must be one of "
+            f"{sorted(CORRECTNESS_PROBE_MODES)!r}"
+        )
+    correctness_policy_id = spec["graph_knobs"].get("correctness_policy_id")
+    if correctness_policy_id not in CORRECTNESS_POLICY_IDS:
+        raise ValueError(
+            "trace spec graph_knobs.correctness_policy_id must be one of "
+            f"{sorted(CORRECTNESS_POLICY_IDS)!r}"
         )
     try:
         backward_selection = resolve_backward_execution_selection(spec["graph_knobs"])
@@ -446,16 +464,27 @@ def validate_trace_spec(spec: Mapping[str, Any]) -> None:
 
 
 def normalize_trace_spec(spec: Mapping[str, Any]) -> TraceSpec:
-    """Return a current trace spec, accepting pre-target-position v1 rows.
+    """Return a current trace spec, accepting older v1 rows.
 
     Early full-answer v1 specs did not persist ``target_position`` because the
     independent-prefix target is numerically identical to ``prefix_token_count``.
-    Keep those provenance artifacts loadable while ensuring every in-memory spec
-    now carries the explicit target-position metadata.
+    Specs predating the correctness bridge also imply the compatibility-off
+    selection. Keep those provenance artifacts loadable while ensuring every
+    in-memory spec now carries both explicit contracts.
     """
     payload = dict(spec)
     if "target_position" not in payload:
         payload["target_position"] = payload.get("prefix_token_count")
+    graph_knobs = payload.get("graph_knobs")
+    if isinstance(graph_knobs, Mapping):
+        normalized_knobs = dict(graph_knobs)
+        normalized_knobs.setdefault(
+            "correctness_probe_mode", DEFAULT_CORRECTNESS_PROBE_MODE
+        )
+        normalized_knobs.setdefault(
+            "correctness_policy_id", DEFAULT_CORRECTNESS_POLICY_ID
+        )
+        payload["graph_knobs"] = normalized_knobs
     validate_trace_spec(payload)
     return cast(TraceSpec, payload)
 

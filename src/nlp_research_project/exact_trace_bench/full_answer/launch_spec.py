@@ -10,6 +10,12 @@ from pathlib import Path
 from typing import Any, Literal
 
 from ..backward_selection import backward_mechanism_record
+from ..config import (
+    CORRECTNESS_POLICY_IDS,
+    CORRECTNESS_PROBE_MODES,
+    DEFAULT_CORRECTNESS_POLICY_ID,
+    DEFAULT_CORRECTNESS_PROBE_MODE,
+)
 from .schemas import TraceSpec
 
 RuntimeResourcePolicyName = Literal["off", "measure_only", "enforce"]
@@ -45,6 +51,13 @@ def _config_selections(specs: Sequence[TraceSpec]) -> tuple[dict[str, Any], ...]
     return tuple(grouped.values())
 
 
+def _validate_correctness_selection(selection: Mapping[str, Any]) -> None:
+    if selection.get("correctness_probe_mode") not in CORRECTNESS_PROBE_MODES:
+        raise ValueError("mechanism selection has invalid correctness_probe_mode")
+    if selection.get("correctness_policy_id") not in CORRECTNESS_POLICY_IDS:
+        raise ValueError("mechanism selection has invalid correctness_policy_id")
+
+
 @dataclass(frozen=True)
 class FullAnswerLaunchSpec:
     """One renderer-independent statement of the selected execution."""
@@ -68,6 +81,10 @@ class FullAnswerLaunchSpec:
     def __post_init__(self) -> None:
         if not self.selected_configs:
             raise ValueError("launch specification requires selected configs")
+        if not self.mechanism_selections:
+            raise ValueError("launch specification requires mechanism selections")
+        for selection in self.mechanism_selections:
+            _validate_correctness_selection(selection)
         if self.runtime_resource_policy not in {"off", "measure_only", "enforce"}:
             raise ValueError("invalid runtime resource policy")
         if self.runtime_resource_policy == "enforce" and not any(
@@ -116,6 +133,12 @@ def build_full_answer_launch_spec(
             ),
             "feature_row_influence_requirement": entry["selected_config"].get(
                 "feature_row_influence_requirement", "preferred"
+            ),
+            "correctness_probe_mode": entry["selected_config"].get(
+                "correctness_probe_mode", DEFAULT_CORRECTNESS_PROBE_MODE
+            ),
+            "correctness_policy_id": entry["selected_config"].get(
+                "correctness_policy_id", DEFAULT_CORRECTNESS_POLICY_ID
             ),
             **backward_mechanism_record(entry["selected_config"]),
         }
@@ -211,3 +234,10 @@ def validate_full_answer_launch_record(record: Mapping[str, Any]) -> None:
         raise ValueError("launch specification scheduler_request must be an object")
     if not isinstance(record.get("planning_envelope"), Mapping):
         raise ValueError("launch specification planning_envelope must be an object")
+    mechanism_selections = record.get("mechanism_selections")
+    if not isinstance(mechanism_selections, (list, tuple)) or not mechanism_selections:
+        raise ValueError("launch specification mechanism_selections must be non-empty")
+    for selection in mechanism_selections:
+        if not isinstance(selection, Mapping):
+            raise ValueError("launch specification mechanism selections must be objects")
+        _validate_correctness_selection(selection)

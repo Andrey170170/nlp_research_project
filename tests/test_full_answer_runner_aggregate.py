@@ -18,6 +18,7 @@ from nlp_research_project.exact_trace_bench.full_answer.aggregate import (
     aggregate_shards,
 )
 from nlp_research_project.exact_trace_bench.full_answer.runner import (
+    _shard_windows,
     _trace_request,
     dry_run_shard,
     forced_target_payload,
@@ -36,18 +37,60 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PROJECT_ROOT / "src"
 
 
+def test_correctness_enabled_shard_windows_are_bounded_to_one_trace() -> None:
+    specs = cast(
+        Any,
+        [
+            {
+                "generated_index": 3,
+                "target_position": 8,
+                "graph_knobs": {"correctness_probe_mode": "smoke"},
+            },
+            {
+                "generated_index": 4,
+                "target_position": 9,
+                "graph_knobs": {"correctness_probe_mode": "smoke"},
+            },
+        ],
+    )
+    shard = {
+        "spec_indices": [10, 11],
+        "windows": [
+            {
+                "spec_indices": [10, 11],
+                "window_start_generated_index": 3,
+                "window_end_generated_index": 4,
+            }
+        ],
+    }
+
+    windows = _shard_windows(specs, shard)
+
+    assert [len(window["specs"]) for window in windows] == [1, 1]
+    assert [window["target_positions"] for window in windows] == [[8], [9]]
+    assert all(window["correctness_single_trace_window"] is True for window in windows)
+
+
 def _stub_compact_packager(monkeypatch) -> None:
-    monkeypatch.setattr(
-        runner_module,
-        "_build_typed_compact_graph",
-        lambda *_args, **_kwargs: types.SimpleNamespace(
+    def build_graph(request):
+        return types.SimpleNamespace(
+            step_idx=request.step_idx,
             compact_save_format="typed_compact_graph_v2",
             edge_count=0,
             n_features=0,
             retention_policy_id="typed_top_p_v1",
             retention_policy_fingerprint="sha256:" + "1" * 64,
             graph_fingerprint="sha256:" + "2" * 64,
-        ),
+            target_fingerprint="sha256:" + "3" * 64,
+            provider_fingerprint="sha256:" + "4" * 64,
+            trace_fingerprint="sha256:" + "5" * 64,
+            step_fingerprint="sha256:" + "6" * 64,
+        )
+
+    monkeypatch.setattr(
+        runner_module,
+        "_build_typed_compact_graph",
+        build_graph,
     )
     monkeypatch.setattr(
         runner_module,
@@ -164,7 +207,11 @@ def test_dry_run_shard_writes_expected_files_and_metadata(tmp_path: Path) -> Non
         (shard_dir / "selected_execution.json").read_text(encoding="utf-8")
     )
     assert selected["selection_fingerprint"]
-    assert selected["selected_config"] == {"edge_retention_policy_id": "typed_top_p_v1"}
+    assert selected["selected_config"] == {
+        "edge_retention_policy_id": "typed_top_p_v1",
+        "correctness_probe_mode": "off",
+        "correctness_policy_id": "behavioral_closure_v1",
+    }
     assert selected["mechanism_selection"] == {
         "feature_row_influence_mode": "cpu_exact",
         "feature_row_influence_requirement": "preferred",
@@ -355,6 +402,68 @@ def test_trace_request_uses_legacy_phase4_rows_when_canonical_default_is_none() 
     assert request.execution.session.phase4_execution_batch_max_rows == 23
 
 
+def test_trace_request_correctness_capture_adds_bounded_descriptor_controls(
+    tmp_path: Path,
+) -> None:
+    spec = cast(
+        Any,
+        {
+            "trace_id": "trace-1",
+            "trajectory_id": "trajectory-1",
+            "generated_index": 0,
+            "target_token_id": 7,
+            "target_position": 3,
+            "graph_knobs": {
+                "correctness_probe_mode": "smoke",
+                "max_feature_nodes": 20,
+                "semantic_descriptor_top_k": 4,
+            },
+        },
+    )
+    sink_path = tmp_path / "telemetry_live.jsonl"
+
+    request = _trace_request(
+        model=types.SimpleNamespace(backend="nnsight"),
+        prompt_token_ids=[101, 102, 201],
+        spec=spec,
+        prefix_metadata={"mode": "independent_prefix"},
+        full_sequence_mode=False,
+        telemetry_jsonl_path=sink_path,
+    )
+
+    observability = request.execution.observability
+    assert observability.capture_feature_semantic_descriptors is True
+    assert observability.semantic_descriptor_top_k == 28
+    assert observability.telemetry_jsonl_path == sink_path
+    assert observability.telemetry_context == {
+        "trace_id": "trace-1",
+        "trajectory_id": "trajectory-1",
+        "generated_index": 0,
+        "target_position": 3,
+        "target_token_id": 7,
+    }
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_status"),
+    [("smoke", "ok"), ("required", "error")],
+)
+def test_correctness_requirement_only_fails_closed_in_required_mode(
+    mode: str,
+    expected_status: str,
+) -> None:
+    trace = {
+        "status": "ok",
+        "correctness": {"required_policy_satisfied": False},
+    }
+
+    runner_module._apply_correctness_requirement(trace, mode=mode)
+
+    assert trace["status"] == expected_status
+    if mode == "required":
+        assert trace["error_type"] == "RuntimeError"
+
+
 def test_prefix_view_metadata_matches_reconstructed_prefix(tmp_path: Path) -> None:
     trajectory_path, specs_path, shards_path = _write_tiny_inputs(tmp_path)
     trajectory, specs, _shard = load_shard_inputs(
@@ -491,6 +600,12 @@ def test_real_shard_forwards_prefix_view_metadata_without_model_load(
                 "candidate_features": [[0, 0, 1]],
                 "candidate_row_indices": [0],
                 "semantic_sketch": [[0.25]],
+                "semantic_descriptor_transient_policy_id": "bounded_seed_frontier_handoff_v1",
+                "semantic_descriptor_transient_max_bytes": 64 * 1024 * 1024,
+                "semantic_descriptor_transient_required_bytes": 24,
+                "semantic_descriptor_transient_admitted": True,
+                "semantic_descriptor_transient_released": True,
+                "semantic_descriptor_transient_array_count": 3,
             },
         }
         return types.SimpleNamespace(output=output, telemetry_summary={})

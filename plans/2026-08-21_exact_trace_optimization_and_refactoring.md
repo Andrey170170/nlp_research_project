@@ -6,6 +6,8 @@ Date: 2026-08-21
 
 Major revision: 2026-08-23
 
+Step 1a qualification closeout: 2026-08-25
+
 Scope: exact-trace memory survivability, correctness evidence, opportunistic
 performance, staged physical-plan selection, long-prefix/model stress, and the
 refactoring needed to keep one canonical typed runtime. This plan does not by
@@ -93,7 +95,7 @@ staged full-resident -> windowed -> tiled -> no-retention/recompute ladder.
 | Priority | Target | Smallest implementation/experiment | Exit gate |
 |---:|---|---|---|
 | 0 | Evidence hardening and frozen profile rerun — complete | Strict graph validation, per-device identity, event timing, structured VJP evidence, and job `1843641` classification | Preserve this evidence contract in every later arm |
-| 1a | Typed-bucket-only canonical artifact | Remove the legacy global-top-K edge payload and `max_edges` launch control from all new writers; migrate validation, comparison, temporal analysis, and promotion atomically to the six typed buckets | New artifacts contain no legacy edge arrays; both full-answer and multi-step writers round-trip the versioned bucket policy; new-run acceptance refuses legacy-only graphs |
+| 1a | Typed-bucket-only canonical artifact — complete | Remove the legacy global-top-K edge payload and `max_edges` launch control from all new writers; migrate validation, comparison, temporal analysis, and promotion atomically to the six typed buckets | Job `1850118` completed the frozen 12B/1,024 strict-reopen GPU qualification; preserve the accepted schema/policy contract in later work |
 | 1b | Three-axis, alias-aware correctness contract and automatic behavioral probe | Specify separate structural, stability, and faithfulness reports; add exact plus decoder-soft frontier comparison and a bounded same-process intervention probe | CPU-safe contract/calibration tests plus one frozen GPU run producing all three explicit verdicts, frontier-equivalence evidence, and bounded intervention evidence within the admitted two-minute probe budget |
 | 2 | `OPT-CUDA-FULL-01` opportunistic closure | In one scheduled 12B/1,024 allocation, run the frozen `cuda_windowed` control and an independently admitted `cuda_full` candidate when practical | No 4B prerequisite; combined HBM admission, no fallback, all correctness reports, resource/timing comparison, and no default promotion |
 | 3 | Separate retention, access, and reduction planning axes | Replace the mixed feature-row mode with subsystem-owned row retention, influence access/residency, and reduction-execution policies | Residency can vary without implicitly changing FP grouping; every axis has owner, fidelity class, freeze epoch, requirements, and provenance |
@@ -258,16 +260,21 @@ remain explicitly readable, and the strict new-run gate refuses legacy-only or
 mixed-schema drift. Existing 12B references remain usable because their typed
 buckets are already present; no trace rerun is required merely to recover them.
 
-**Implementation status (2026-08-23):** the atomic code migration is complete.
+**Qualification status (2026-08-25):** Step 1a is complete. The atomic code
+migration and focused CPU integration gate passed, and frozen 12B/1,024 job
+`1850118` completed with Slurm state `COMPLETED`, exit `0:0`, and 14m33s
+allocation wall. Preheat took 253.02s and the trace took 508.31s.
 The full-answer and canonical multi-step writers share schema v2 and policy
 `typed_top_p_v1`; active consumers and gates use the six named buckets; generic
 `max_edges` is absent from canonical configuration; and legacy loading is an
-explicit historical adapter. The focused CPU integration gate passed. Step 1a
-remains qualification-pending; frozen 12B/1,024 full-run job `1850118` is
-submitted and must write, strictly reopen, and validate the new artifact on the
-real GPU path. This run
-qualifies persistence and packaging only; it does not supply Step 1b stability
-or faithfulness evidence.
+explicit historical adapter. The real GPU path strictly reopened schema 2
+`typed_compact_graph_v2` with 8,192 features and 1,323,157 edges across the
+canonical buckets: 1,000,000 `feature<-feature`, 16,000 `feature<-error`,
+250,000 `feature<-token`, 8,192 `logit<-feature`, 47,941 `logit<-error`, and
+1,024 `logit<-token`. Required mechanisms completed with no fallback, Phase 4
+performed zero decoder page loads, peak HBM was 48,861 MiB, and mechanism
+validation completed. This qualifies persistence and packaging only; it does
+not supply Step 1b numerical-stability or behavioral-faithfulness evidence.
 
 ### 6.2 Step 1b: three independent correctness verdicts
 
@@ -391,6 +398,38 @@ baseline capture and batching isolation, and the initial calibration protocol.
 These are bounded Step-1b implementation decisions; they do not reopen the
 correctness axes, artifact format, or execution order.
 
+**Version-one semantic decisions (2026-08-25):** the full-answer probe reuses
+the attribution functional exactly: the forced target logit minus the
+vocabulary-mean logit at the traced output position, evaluated with the output
+softcap disabled. Feature interventions use pre-activation values. Direct
+closure constrains every feature-output layer, freezes attention and LayerNorm
+denominators, and doubles a sampled feature's baseline activation so the
+expected delta is exactly one graph column. For a CLT source, this retains its
+complete downstream decoder block; for a PLT source, it retains the same-layer
+write. Propagated necessity removes the layer constraint but keeps attention
+frozen, allowing later feature activations and LayerNorms to respond while
+remaining inside the tracer's current intervention convention. A later
+full-attention response is a separately calibrated behavioral variant, not an
+implicit change to version one.
+
+One reusable baseline capture is outside the eight-variant count; the explicit
+no-op control is a variant. Alias substitution sets A to zero and adds to B the
+least-squares activation-scaled decoder write that best replaces A's removed
+downstream write, using the baseline B activation as the absolute-value origin.
+It is compared with A-only ablation and a same-layer low-cosine control. Each
+variant is isolated in its own invocation until batched isolation is proved.
+The 120-second limit is cooperatively hard: measure baseline/no-op cost, reserve
+cleanup time, and never start a variant predicted not to fit; because an
+in-flight same-process CUDA call cannot be safely preempted, record any single-
+call overrun explicitly rather than claiming a literal kill deadline.
+
+Initial cosine, activation/effect, neighborhood, closure, necessity-separation,
+and recovered-mass thresholds are fit and frozen only from declared within-mode
+repeats. Before that calibration exists, the verifier may persist raw evidence
+and an `unknown` or `inconclusive` verdict, but it cannot issue a qualifying
+faithfulness or alias-stability verdict. Calibration observations, report
+generation, and promotion/default decisions remain separate reviewed actions.
+
 ## 7. Immediate opportunistic arm: direct 12B/1,024 `cuda_full`
 
 Queue latency dominates the difference between a roughly five-minute 4B/512
@@ -491,8 +530,9 @@ the strongest already-qualified prefix/rung that its irreducible floor admits.
   code exists.
 - Record the 2026-08-23 plan correction as a planning decision, not an experiment
   result or default promotion.
-- Complete typed-bucket-only Step 1a before generating another qualification
-  artifact or treating any edge comparison as a current promotion metric.
+- Preserve the completed typed-bucket-only Step 1a schema, policy, strict-reopen,
+  and provenance contract in every later qualification artifact; do not treat
+  Step 1a completion as a current promotion metric or Step 1b evidence.
 - Implement the three-axis report contract before relying on behavioral
   faithfulness for a numerical-mode decision.
 - The next tactical GPU arm is direct paired 12B/1,024 `cuda_full`; it remains an

@@ -154,10 +154,17 @@ both writers share schema v2 and `typed_top_p_v1`, active consumers no longer
 use the generic global `max_edges` projection, and legacy loading is explicit
 and historical-only. The profiled artifact itself remains a historical dual-
 format reference. The atomic migration has passed focused CPU integration and
-frozen 12B/1,024 GPU persistence qualification job `1850118` is submitted and
-pending. The canonical
-trace took 617.90s and Phase 4 took 405.18s, so this is profiling evidence rather
-than a new speed baseline. Current-stream interval estimates locate 157.36s in
+frozen 12B/1,024 GPU persistence qualification job `1850118` subsequently
+completed (`COMPLETED`, exit `0:0`) in 14m33s. Its 253.02s preheat preceded a
+508.31s trace. Strict reopen accepted schema 2 `typed_compact_graph_v2` with
+8,192 features and 1,323,157 typed edges: 1,000,000/16,000/250,000/8,192/
+47,941/1,024 in canonical bucket order. Required mechanisms completed with no
+fallback, Phase 4 performed zero decoder page loads, peak HBM was 48,861 MiB,
+and mechanism validation completed. This closes Step 1a persistence and
+packaging only; numerical stability and behavioral faithfulness remain Step 1b.
+The earlier profile's canonical trace took 617.90s and Phase 4 took 405.18s, so
+that run is profiling evidence rather than a new speed baseline. Current-stream
+interval estimates locate 157.36s in
 feature compute, 116.02s in refresh row-store reads, and 44.26s in encoder
 materialization. Normalization was 81.25s wall but only 9.58s of sampled stream
 interval, pointing to host launch/synchronization structure rather than one long

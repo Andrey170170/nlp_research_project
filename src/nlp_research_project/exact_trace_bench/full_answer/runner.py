@@ -363,26 +363,63 @@ def _shard_windows(
                 payload["window_id"] = window_id
                 payload["specs"] = window_specs
                 result.append(payload)
-    if result:
-        return result
-    if not specs:
-        return []
-    return [
-        {
-            "window_id": 0,
-            "window_start_generated_index": min(
-                int(spec["generated_index"]) for spec in specs
-            ),
-            "window_end_generated_index": max(
-                int(spec["generated_index"]) for spec in specs
-            ),
-            "window_max_target_position": max(
-                int(spec["target_position"]) for spec in specs
-            ),
-            "target_positions": [int(spec["target_position"]) for spec in specs],
-            "specs": specs,
-        }
-    ]
+    if not result:
+        if not specs:
+            return []
+        result = [
+            {
+                "window_id": 0,
+                "window_start_generated_index": min(
+                    int(spec["generated_index"]) for spec in specs
+                ),
+                "window_end_generated_index": max(
+                    int(spec["generated_index"]) for spec in specs
+                ),
+                "window_max_target_position": max(
+                    int(spec["target_position"]) for spec in specs
+                ),
+                "target_positions": [int(spec["target_position"]) for spec in specs],
+                "specs": specs,
+            }
+        ]
+    return _bound_correctness_windows(result)
+
+
+def _bound_correctness_windows(
+    windows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Keep live correctness evidence bounded to one completed trace at a time."""
+
+    bounded: list[dict[str, Any]] = []
+    for window in windows:
+        window_specs = cast(list[TraceSpec], window["specs"])
+        correctness_enabled = any(
+            spec.get("graph_knobs", {}).get("correctness_probe_mode", "off")
+            != "off"
+            for spec in window_specs
+        )
+        if not correctness_enabled:
+            bounded.append(window)
+            continue
+        source_window_id = window.get("window_id")
+        for spec in window_specs:
+            generated_index = int(spec["generated_index"])
+            target_position = int(spec["target_position"])
+            payload = dict(window)
+            payload.update(
+                {
+                    "window_id": len(bounded),
+                    "source_window_id": source_window_id,
+                    "window_start_generated_index": generated_index,
+                    "window_end_generated_index": generated_index,
+                    "window_max_target_position": target_position,
+                    "target_positions": [target_position],
+                    "specs": [spec],
+                    "correctness_single_trace_window": True,
+                }
+            )
+            bounded.append(payload)
+    return bounded
 
 
 def _validate_window_session_specs(window_specs: list[TraceSpec]) -> None:
@@ -709,6 +746,15 @@ def _trace_request(
     )
 
     knobs = spec["graph_knobs"]
+    correctness_capture = knobs.get("correctness_probe_mode", "off") != "off"
+    semantic_descriptor_top_k = int(knobs.get("semantic_descriptor_top_k", 2048))
+    if correctness_capture:
+        from ..correctness.behavioral import MAX_UNSELECTED_CONTROLS
+
+        semantic_descriptor_top_k = max(
+            semantic_descriptor_top_k,
+            int(knobs.get("max_feature_nodes", 8192)) + MAX_UNSELECTED_CONTROLS,
+        )
     semantics = TraceSemantics(
         source_batch_size=int(knobs.get("attribution_batch_size", 256)),
         feature_batch_size=knobs.get("feature_batch_size"),
@@ -874,6 +920,17 @@ def _trace_request(
             profile_log_interval=int(knobs.get("profile_log_interval", 1)),
             telemetry_max_events=knobs.get("telemetry_max_events"),
             telemetry_jsonl_path=telemetry_jsonl_path,
+            telemetry_context={
+                key: (str(value) if key in {"trace_id", "trajectory_id"} else int(value))
+                for key in (
+                    "trace_id",
+                    "trajectory_id",
+                    "generated_index",
+                    "target_position",
+                    "target_token_id",
+                )
+                if (value := spec.get(key)) is not None
+            },
             phase4_anomaly_debug=bool(knobs.get("phase4_anomaly_debug", False)),
             cross_cluster_debug=bool(knobs.get("cross_cluster_debug", False)),
             capture_phase0_donor_bundle=bool(
@@ -890,8 +947,9 @@ def _trace_request(
             ),
             capture_feature_semantic_descriptors=bool(
                 knobs.get("capture_feature_semantic_descriptors", False)
+                or correctness_capture
             ),
-            semantic_descriptor_top_k=int(knobs.get("semantic_descriptor_top_k", 2048)),
+            semantic_descriptor_top_k=semantic_descriptor_top_k,
             semantic_descriptor_dim=int(knobs.get("semantic_descriptor_dim", 64)),
         ),
         diagnostic_stop=DiagnosticStopPolicy(
@@ -1058,6 +1116,10 @@ def _persist_successful_result_artifacts(
     capture_artifacts = write_capture_artifacts(
         requested={
             sidecar_key: bool(selected_config.get(knob_key, False))
+            or (
+                sidecar_key == "feature_semantic_descriptors"
+                and selected_config.get("correctness_probe_mode", "off") != "off"
+            )
             for sidecar_key, knob_key in _CAPTURE_SIDECAR_KNOBS.items()
         },
         payloads=compact_output or {},
@@ -1144,6 +1206,29 @@ def _exception_telemetry_payload(exc: BaseException) -> dict[str, Any] | None:
             "telemetry_exception_type": type(candidate).__name__,
         }
     return None
+
+
+def _apply_correctness_requirement(
+    trace: dict[str, Any],
+    *,
+    mode: str,
+) -> None:
+    correctness = trace.get("correctness")
+    required_policy_satisfied = (
+        correctness.get("required_policy_satisfied")
+        if isinstance(correctness, Mapping)
+        else False
+    )
+    if mode != "required" or required_policy_satisfied is True:
+        return
+    error = RuntimeError("required correctness policy did not fully qualify the trace")
+    trace.update(
+        {
+            "status": "error",
+            "error": repr(error),
+            "error_type": type(error).__name__,
+        }
+    )
 
 
 def run_real_shard(
@@ -1275,6 +1360,9 @@ def run_real_shard(
         window_specs = cast(list[TraceSpec], window["specs"])
         _validate_window_session_specs(window_specs)
         window_session = None
+        pending_records: list[
+            tuple[Path, dict[str, Any], dict[str, Any] | None]
+        ] = []
         if any(
             spec.get("graph_knobs", {}).get("trajectory_session_mode")
             == "window_reuse_v1"
@@ -1309,6 +1397,7 @@ def run_real_shard(
                 trace["window_session"] = {
                     key: value for key, value in window.items() if key != "specs"
                 }
+                correctness_context: dict[str, Any] | None = None
                 started = time.perf_counter()
                 try:
                     prefix_token_ids = reconstruct_prefix_token_ids(trajectory, spec)
@@ -1362,7 +1451,10 @@ def run_real_shard(
                         full_sequence_mode=full_sequence_mode,
                         telemetry_jsonl_path=(
                             token_dir / "telemetry_live.jsonl"
-                            if knobs.get("incremental_telemetry_jsonl", False)
+                            if (
+                                knobs.get("incremental_telemetry_jsonl", False)
+                                or knobs.get("correctness_probe_mode", "off") != "off"
+                            )
                             else None
                         ),
                     )
@@ -1510,6 +1602,23 @@ def run_real_shard(
                             )
                         )
                         _save_typed_compact_graph(graph, graph_path)
+                        if knobs.get("correctness_probe_mode", "off") != "off":
+                            from ..correctness.contracts import ExpectedGraphIdentity
+
+                            correctness_context = {
+                                "graph_path": graph_path,
+                                "compact_result": compact_result,
+                                "graph_identity": ExpectedGraphIdentity(
+                                    step_idx=graph.step_idx,
+                                    graph_fingerprint=graph.graph_fingerprint,
+                                    target_fingerprint=graph.target_fingerprint,
+                                    provider_fingerprint=graph.provider_fingerprint,
+                                    trace_fingerprint=graph.trace_fingerprint,
+                                    step_fingerprint=graph.step_fingerprint,
+                                ),
+                                "trace_result": trace_result,
+                                "spec": spec,
+                            }
                         graph_summary = _graph_summary(graph, graph_path)
                         graph_summary.update(
                             {
@@ -1614,36 +1723,143 @@ def run_real_shard(
                             },
                         }
                     )
-                if resource_policy is not RuntimeResourcePolicy.OFF:
-                    token_sample = resource_sample(
-                        boundary=f"token_{spec['generated_index']:06d}_terminal",
-                        started_monotonic=resource_started,
-                    )
-                    try:
-                        validate_resource_policy(
-                            policy=resource_policy,
-                            envelope=planning_envelope,
-                            sample=token_sample,
-                        )
-                    except RuntimeError as resource_error:
-                        trace.update(
-                            {
-                                "status": "error",
-                                "resource_policy_error": str(resource_error),
-                                "error": repr(resource_error),
-                                "error_type": type(resource_error).__name__,
-                            }
-                        )
-                    trace["resource_sample"] = token_sample
-                    with resource_samples_path.open("a", encoding="utf-8") as handle:
-                        handle.write(json.dumps(token_sample, sort_keys=True) + "\n")
-                write_json(token_dir / "trace.json", trace)
-                rows.append(trace)
-                with trace_results_path.open("a", encoding="utf-8") as handle:
-                    handle.write(json.dumps(trace, sort_keys=True) + "\n")
+                pending_records.append((token_dir, trace, correctness_context))
         finally:
             if window_session is not None:
                 window_session.close()
+        envelope_cleanup = None
+        if window_session is not None:
+            from ..correctness.contracts import EnvelopeCleanupEvidence
+
+            envelope_cleanup = EnvelopeCleanupEvidence(
+                complete=True,
+                envelope_id=(
+                    f"shard-{shard_id}:"
+                    f"{window.get('window_start_generated_index')}:"
+                    f"{window.get('window_end_generated_index')}"
+                ),
+                detail="Reusable tracing session closed before correctness probes.",
+            )
+        for token_dir, trace, correctness_context in pending_records:
+            correctness_started = time.perf_counter()
+            correctness_mode = str(
+                trace.get("graph_knobs", {}).get(
+                    "correctness_probe_mode",
+                    "off",
+                )
+            )
+            correctness_policy_id = str(
+                trace.get("graph_knobs", {}).get(
+                    "correctness_policy_id",
+                    "behavioral_closure_v1",
+                )
+            )
+            if correctness_mode == "off":
+                trace["correctness"] = {
+                    "mode": "off",
+                    "policy_id": correctness_policy_id,
+                    "status": "not_applicable",
+                    "required_policy_satisfied": False,
+                    "axes": {
+                        "structural": "not_applicable",
+                        "numerical": "not_applicable",
+                        "behavioral": "not_applicable",
+                    },
+                    "artifacts": {},
+                    "errors": [],
+                }
+            elif correctness_context is None or trace.get("status") != "ok":
+                trace["correctness"] = {
+                    "mode": correctness_mode,
+                    "policy_id": correctness_policy_id,
+                    "status": "unavailable",
+                    "required_policy_satisfied": False,
+                    "axes": {
+                        "structural": "invalid",
+                        "numerical": ["unknown"],
+                        "behavioral": "unknown",
+                    },
+                    "artifacts": {},
+                    "errors": [
+                        {
+                            "stage": "trace",
+                            "error_type": "TraceArtifactUnavailable",
+                            "detail": (
+                                "Correctness evidence requires a successful typed "
+                                "compact graph trace."
+                            ),
+                        }
+                    ],
+                }
+            else:
+                try:
+                    from .correctness_gate import run_full_answer_correctness_gate
+
+                    outcome = run_full_answer_correctness_gate(
+                        token_dir=token_dir,
+                        model=model,
+                        transcoder_metadata=transcoder_metadata,
+                        envelope_cleanup=envelope_cleanup,
+                        **correctness_context,
+                    )
+                    trace["correctness"] = outcome.trace_payload
+                except Exception as error:  # correctness evidence is mode-governed
+                    trace["correctness"] = {
+                        "mode": correctness_mode,
+                        "policy_id": correctness_policy_id,
+                        "status": "unavailable",
+                        "required_policy_satisfied": False,
+                        "axes": {
+                            "structural": "invalid",
+                            "numerical": ["unknown"],
+                            "behavioral": "unknown",
+                        },
+                        "artifacts": {},
+                        "errors": [
+                            {
+                                "stage": "correctness_gate",
+                                "error_type": type(error).__name__,
+                                "detail": str(error),
+                            }
+                        ],
+                    }
+            _apply_correctness_requirement(trace, mode=correctness_mode)
+            correctness_seconds = time.perf_counter() - correctness_started
+            trace_timings = trace.setdefault("timings", {})
+            trace_timings["correctness_probe_seconds"] = correctness_seconds
+            trace_timings["total_token_seconds"] = (
+                float(trace_timings.get("trace_seconds", 0.0))
+                + correctness_seconds
+            )
+            if resource_policy is not RuntimeResourcePolicy.OFF:
+                token_sample = resource_sample(
+                    boundary=(
+                        f"token_{int(trace['generated_index']):06d}_terminal"
+                    ),
+                    started_monotonic=resource_started,
+                )
+                try:
+                    validate_resource_policy(
+                        policy=resource_policy,
+                        envelope=planning_envelope,
+                        sample=token_sample,
+                    )
+                except RuntimeError as resource_error:
+                    trace.update(
+                        {
+                            "status": "error",
+                            "resource_policy_error": str(resource_error),
+                            "error": repr(resource_error),
+                            "error_type": type(resource_error).__name__,
+                        }
+                    )
+                trace["resource_sample"] = token_sample
+                with resource_samples_path.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(token_sample, sort_keys=True) + "\n")
+            write_json(token_dir / "trace.json", trace)
+            rows.append(trace)
+            with trace_results_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(trace, sort_keys=True) + "\n")
     row_statuses = {str(row.get("status")) for row in rows}
     if row_statuses == {"probe_completed"}:
         final_status = "probe_completed"
@@ -1654,7 +1870,7 @@ def run_real_shard(
     else:
         final_status = "error"
     token_seconds = [
-        float(r.get("timings", {}).get("trace_seconds", 0.0)) for r in rows
+        float(r.get("timings", {}).get("total_token_seconds", 0.0)) for r in rows
     ]
     health = {
         "actual_total_seconds": sum(token_seconds),

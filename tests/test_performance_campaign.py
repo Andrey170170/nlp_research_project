@@ -988,6 +988,8 @@ def test_prepare_campaign_workload_uses_existing_full_answer_runner(
                 "4",
                 "--feature-row-influence-requirement",
                 "required",
+                "--correctness-probe-mode",
+                "smoke",
                 "--preheat-policy",
                 "file_cache",
                 "--preheat-path",
@@ -1032,11 +1034,17 @@ def test_prepare_campaign_workload_uses_existing_full_answer_runner(
         "required"
     )
     assert trace_spec["graph_knobs"]["runtime_resource_policy"] == "measure_only"
+    assert trace_spec["graph_knobs"]["correctness_probe_mode"] == "smoke"
+    assert (
+        trace_spec["graph_knobs"]["correctness_policy_id"]
+        == "behavioral_closure_v1"
+    )
     assert launch_spec["runtime_resource_policy"] == "measure_only"
     assert (
         launch_spec["mechanism_selections"][0]["feature_row_influence_requirement"]
         == "required"
     )
+    assert launch_spec["mechanism_selections"][0]["correctness_probe_mode"] == "smoke"
     assert launch_spec["scheduler_request"] == {
         "account": None,
         "cluster": "granite",

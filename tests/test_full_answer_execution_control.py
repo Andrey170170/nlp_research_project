@@ -22,6 +22,8 @@ def _spec(**knob_overrides: Any) -> Any:
         "feature_row_influence_mode": "cuda_windowed",
         "feature_row_influence_requirement": "required",
         "backward_engine_mode": "single_forward_batched_vjp",
+        "correctness_probe_mode": "off",
+        "correctness_policy_id": "behavioral_closure_v1",
         "runtime_resource_policy": "measure_only",
         "resource_planning_envelope": {
             "host_memory_stop_gib": 400.0,
@@ -179,8 +181,55 @@ def test_launch_spec_fingerprint_rejects_renderer_side_mutation() -> None:
         monitoring={"gpu_sampler": True},
     )
     record = launch.to_record()
+    assert launch.mechanism_selections[0]["correctness_probe_mode"] == "off"
+    assert (
+        launch.mechanism_selections[0]["correctness_policy_id"]
+        == "behavioral_closure_v1"
+    )
     validate_full_answer_launch_record(record)
 
     record["scheduler_request"]["memory"] = "400G"
     with pytest.raises(ValueError, match="fingerprint mismatch"):
+        validate_full_answer_launch_record(record)
+
+
+def test_launch_record_rejects_missing_correctness_policy_identity() -> None:
+    spec = _spec()
+    launch = build_full_answer_launch_spec(
+        trajectory_path=Path("trajectory.json"),
+        trace_specs_path=Path("trace_specs.jsonl"),
+        shards_path=Path("shards.json"),
+        output_root=Path("output"),
+        shard_selection="0",
+        run={"run_id": "run"},
+        specs=[spec],
+        planning_envelope=spec["graph_knobs"]["resource_planning_envelope"],
+        scheduler_request={"memory": "600G", "walltime": "08:00:00"},
+        runtime_resource_policy="measure_only",
+        runtime_resource_override_rationale="optimization measurement",
+        preheat={"policy": "file_cache", "paths": ["weights"]},
+        workspace={"policy": "immutable_snapshot"},
+        monitoring={"gpu_sampler": True},
+    )
+    record = launch.to_record()
+    del record["mechanism_selections"][0]["correctness_policy_id"]
+    selection = {
+        key: value
+        for key, value in record.items()
+        if key != "selection_fingerprint"
+    }
+    import hashlib
+    import json
+
+    record["selection_fingerprint"] = hashlib.sha256(
+        json.dumps(
+            selection,
+            ensure_ascii=True,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+
+    with pytest.raises(ValueError, match="correctness_policy_id"):
         validate_full_answer_launch_record(record)
