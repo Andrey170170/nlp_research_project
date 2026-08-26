@@ -1032,7 +1032,10 @@ def test_prepare_campaign_workload_uses_existing_full_answer_runner(
     assert prepared["profile_name"] == "sp5-selective-phase0-finalist-plt-v1"
     assert prepared["prefix_token_count"] == 512
     assert prepared["trajectory_path"] == str(
-        (snapshot_root / "experiments/generated/performance_campaigns/ls0/361_trajectory.json").resolve()
+        (
+            snapshot_root
+            / "experiments/generated/performance_campaigns/ls0/361_trajectory.json"
+        ).resolve()
     )
     assert prepared["launch_command"][:4] == [
         "uv",
@@ -1050,10 +1053,7 @@ def test_prepare_campaign_workload_uses_existing_full_answer_runner(
     )
     assert trace_spec["graph_knobs"]["runtime_resource_policy"] == "measure_only"
     assert trace_spec["graph_knobs"]["correctness_probe_mode"] == "smoke"
-    assert (
-        trace_spec["graph_knobs"]["correctness_policy_id"]
-        == "behavioral_closure_v1"
-    )
+    assert trace_spec["graph_knobs"]["correctness_policy_id"] == "behavioral_closure_v1"
     assert launch_spec["runtime_resource_policy"] == "measure_only"
     assert (
         launch_spec["mechanism_selections"][0]["feature_row_influence_requirement"]
@@ -1079,6 +1079,54 @@ def test_prepare_campaign_workload_uses_existing_full_answer_runner(
     assert "Launch: uv run exact-trace-bench run-full-answer-shard" in (
         capsys.readouterr().out
     )
+
+
+def test_prepare_campaign_workload_rejects_misrooted_snapshot_pair(
+    tmp_path: Path,
+) -> None:
+    snapshot_container = tmp_path / "workspace"
+    workspace_parent = snapshot_container / "exact-trace-perf"
+    project_root = workspace_parent / "nlp_research_project"
+    library_root = workspace_parent / "circuit-tracer_chunked"
+    for relative_path in (
+        "experiments/generated/performance_campaigns/ls0/fixture_catalog.json",
+        "experiments/generated/performance_campaigns/ls0/361_length_v1/prompt.txt",
+        "experiments/generated/performance_campaigns/ls0/361_trajectory.json",
+    ):
+        destination = project_root / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPO_ROOT / relative_path, destination)
+    library_root.mkdir(parents=True)
+    (snapshot_container / ".exact_trace_bench_snapshot.json").write_text(
+        json.dumps(
+            {
+                "snapshot_root": str(workspace_parent),
+                "read_only": True,
+                "uv_source_snapshots": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Snapshot manifest does not exist",
+    ):
+        perf_cli.main(
+            [
+                "prepare-campaign-workload",
+                str(CAMPAIGN),
+                "ls0-361-dev-512",
+                "--profile-role",
+                "candidate",
+                "--workspace-project-root",
+                str(project_root),
+                "--workspace-library-root",
+                str(library_root),
+                "--output-dir",
+                str(tmp_path / "prepared"),
+            ]
+        )
 
 
 def test_prepare_campaign_workload_accepts_registered_profile_override(

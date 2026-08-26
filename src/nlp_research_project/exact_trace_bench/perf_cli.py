@@ -49,6 +49,7 @@ from .performance_campaign import (
 from .scenarios.chpc_baseline import build_chpc_baseline_config
 from .transcoder_config import PUBLIC_TRANSCODER_KNOB_KEYS
 from .typed_compact_graph import CANONICAL_BUCKET_NAMES, DEFAULT_RETENTION_POLICY_ID
+from .workspace import validate_launch_snapshot
 
 DEFAULT_OUTPUT_ROOT = (
     DEFAULT_SCRATCH_ROOT / "granite" / "sweep" / "performance_optimization"
@@ -3621,6 +3622,19 @@ def _full_answer_shard_command(
 
 
 def _prepare_campaign_workload(args: argparse.Namespace) -> int:
+    if (
+        args.workspace_project_root is not None
+        and args.workspace_library_root is not None
+    ):
+        validate_launch_snapshot(
+            workspace_root=args.workspace_project_root,
+            library_root=args.workspace_library_root,
+            import_roots=(
+                args.workspace_project_root / "src",
+                args.workspace_project_root,
+                args.workspace_library_root,
+            ),
+        )
     campaign_repo_root = (
         REPO_ROOT
         if args.workspace_project_root is None
