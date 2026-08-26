@@ -14,11 +14,67 @@ from nlp_research_project.exact_trace_bench.full_answer.correctness_gate import 
     _qualified_alias_pairs,
     _required_numerical_policy_satisfied,
     _row_denominator_evidence_from_compact_result,
+    _run_declared_numerical_comparison,
+)
+from nlp_research_project.exact_trace_bench.correctness.numerical import (
+    build_reference_identity_receipt,
+    file_sha256,
+    prepare_numerical_manifest_declaration,
 )
 
 
 def _fingerprint(value: str) -> str:
     return f"sha256:{hashlib.sha256(value.encode()).hexdigest()}"
+
+
+def test_gate_persists_declared_numerical_comparison_sidecar(tmp_path: Path) -> None:
+    from typed_graph_fixtures import write_typed_graph
+
+    candidate = tmp_path / "candidate.npz"
+    reference = tmp_path / "reference.npz"
+    write_typed_graph(candidate)
+    write_typed_graph(reference)
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "format": "exact_trace_numerical_reference_manifest_v1",
+                "references": [
+                    {
+                        "reference_id": "repeat-1",
+                        "role": "repeat",
+                        "graph_path": str(reference.resolve()),
+                        "graph_sha256": file_sha256(reference),
+                        "identity": build_reference_identity_receipt(reference),
+                    }
+                ],
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    declaration = prepare_numerical_manifest_declaration(manifest)
+    token_dir = tmp_path / "token"
+    token_dir.mkdir()
+
+    result = _run_declared_numerical_comparison(
+        knobs={
+            "correctness_numerical_manifest_path": declaration["manifest_path"],
+            "correctness_numerical_manifest_sha256": declaration["manifest_sha256"],
+        },
+        graph_path=candidate,
+        token_dir=token_dir,
+    )
+
+    assert result is not None
+    report, artifact = result
+    assert report.scopes[0].status is NumericalStabilityStatus.EXACT_STABLE
+    assert report.scopes[1].reason_codes == ("declared_repeat_frontier_absent",)
+    assert report.scopes[2].reason_codes == ("declared_canonical_reference_absent",)
+    sidecar = Path(str(artifact["path"]))
+    assert sidecar.name == "correctness_numerical_details.json"
+    assert artifact["artifact_sha256"] == file_sha256(sidecar)
 
 
 def test_full_answer_alias_seam_accepts_only_explicit_bounded_comparison_evidence() -> None:

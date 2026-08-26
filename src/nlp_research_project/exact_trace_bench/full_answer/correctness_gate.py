@@ -53,6 +53,11 @@ from ..correctness.frontier_artifact import (
 )
 from ..correctness.frontier import FeatureKey
 from ..correctness.persistence import save_correctness_report
+from ..correctness.numerical import (
+    declaration_from_graph_knobs,
+    evaluate_declared_numerical_stability,
+    file_sha256,
+)
 from ..correctness.structural import evaluate_structural_conformance
 from ..io_utils import write_json
 from ..trace_runtime.artifacts import load_and_validate_capture_artifact
@@ -188,6 +193,30 @@ def run_full_answer_correctness_gate(
     except Exception as error:
         _record_error(errors, "frontier", error)
         artifacts["frontier"] = {"status": "unavailable", "path": None}
+
+    try:
+        numerical_result = _run_declared_numerical_comparison(
+            knobs=knobs,
+            graph_path=graph_path,
+            token_dir=token_dir,
+            frontier_available=frontier is not None,
+        )
+        if numerical_result is not None:
+            numerical, numerical_artifact = numerical_result
+            artifacts["numerical_details"] = numerical_artifact
+    except Exception as error:
+        _record_error(errors, "declared_numerical_comparison", error)
+        numerical = NumericalStabilityReport(
+            scopes=(
+                NumericalScopeReport(
+                    scope_id="typed_graph",
+                    status=NumericalStabilityStatus.UNKNOWN,
+                    metrics={"reference_count": 0, "repeat_count": 0},
+                    reason_codes=("declared_numerical_comparison_failed",),
+                ),
+            )
+        )
+        artifacts["numerical_details"] = {"status": "unavailable", "path": None}
 
     if frontier is not None and (
         envelope_cleanup is None or envelope_cleanup.complete
@@ -366,6 +395,38 @@ def run_full_answer_correctness_gate(
         },
         required_policy_satisfied=required_policy_satisfied,
     )
+
+
+def _run_declared_numerical_comparison(
+    *,
+    knobs: Mapping[str, Any],
+    graph_path: Path,
+    token_dir: Path,
+    frontier_available: bool = False,
+) -> tuple[NumericalStabilityReport, dict[str, Any]] | None:
+    declaration = declaration_from_graph_knobs(knobs)
+    if declaration is None:
+        return None
+    evaluation = evaluate_declared_numerical_stability(
+        candidate_graph_path=graph_path,
+        declaration=declaration,
+        candidate_frontier_path=(
+            token_dir / "correctness_frontier.json" if frontier_available else None
+        ),
+        candidate_descriptor_path=(
+            token_dir / "feature_semantic_descriptors.npz"
+            if frontier_available
+            else None
+        ),
+    )
+    numerical_path = token_dir / "correctness_numerical_details.json"
+    write_json(numerical_path, dict(evaluation.details))
+    return evaluation.report, {
+        "status": "persisted",
+        "path": str(numerical_path),
+        "artifact_sha256": file_sha256(numerical_path),
+        "manifest_sha256": declaration["manifest_sha256"],
+    }
 
 
 def _completed_trace_evidence(

@@ -28,10 +28,14 @@ from .frontier import (
     build_frontier_evidence,
 )
 
-FRONTIER_ARTIFACT_SCHEMA_VERSION = 1
-FRONTIER_ARTIFACT_FORMAT = "bounded_frontier_evidence_v1"
+LEGACY_FRONTIER_ARTIFACT_SCHEMA_VERSION = 1
+LEGACY_FRONTIER_ARTIFACT_FORMAT = "bounded_frontier_evidence_v1"
+FRONTIER_ARTIFACT_SCHEMA_VERSION = 2
+FRONTIER_ARTIFACT_FORMAT = "bounded_frontier_evidence_v2"
 CUTOFF_BASIS = "captured_seed_selection_cutoff_v1"
 FALLBACK_DESCRIPTOR_KIND = "fallback_identity_metadata_v1"
+DECODER_DESCRIPTOR_KIND = "active_decoder_countsketch_v1"
+DECODER_DESCRIPTOR_SCOPE = "active_occurrence_downstream_decoder_rows_v1"
 _SEMANTIC_DESCRIPTOR_TRANSIENT_POLICY_ID = "bounded_seed_frontier_handoff_v1"
 _SEMANTIC_DESCRIPTOR_TRANSIENT_MAX_BYTES = 64 * 1024 * 1024
 _SEMANTIC_DESCRIPTOR_TRANSIENT_ARRAY_COUNT = 3
@@ -53,14 +57,27 @@ class BoundedFrontierArtifact:
     cutoff_basis: str
     max_typed_neighborhood_edges: int
     content_fingerprint: str
+    descriptor_is_decoder_evidence: bool = True
+    descriptor_scope: str | None = None
+    decoder_source_fingerprint: str | None = None
+    decoder_evidence_fingerprint: str | None = None
+    projection_fingerprint: str | None = None
     schema_version: int = FRONTIER_ARTIFACT_SCHEMA_VERSION
     artifact_format: str = FRONTIER_ARTIFACT_FORMAT
 
     def __post_init__(self) -> None:
-        if self.schema_version != FRONTIER_ARTIFACT_SCHEMA_VERSION:
+        if self.schema_version not in {
+            LEGACY_FRONTIER_ARTIFACT_SCHEMA_VERSION,
+            FRONTIER_ARTIFACT_SCHEMA_VERSION,
+        }:
             raise ValueError("unsupported frontier artifact schema_version")
-        if self.artifact_format != FRONTIER_ARTIFACT_FORMAT:
-            raise ValueError("unsupported frontier artifact format")
+        expected_format = (
+            LEGACY_FRONTIER_ARTIFACT_FORMAT
+            if self.schema_version == LEGACY_FRONTIER_ARTIFACT_SCHEMA_VERSION
+            else FRONTIER_ARTIFACT_FORMAT
+        )
+        if self.artifact_format != expected_format:
+            raise ValueError("frontier artifact format does not match its schema")
         if not self.descriptor_kind or not self.descriptor_version:
             raise ValueError("descriptor kind and version are required")
         if self.cutoff_basis != CUTOFF_BASIS:
@@ -68,22 +85,67 @@ class BoundedFrontierArtifact:
         if self.max_typed_neighborhood_edges <= 0:
             raise ValueError("max_typed_neighborhood_edges must be positive")
         _require_fingerprint("content_fingerprint", self.content_fingerprint)
+        if self.schema_version == LEGACY_FRONTIER_ARTIFACT_SCHEMA_VERSION:
+            if self.descriptor_is_decoder_evidence or any(
+                value is not None
+                for value in (
+                    self.descriptor_scope,
+                    self.decoder_source_fingerprint,
+                    self.decoder_evidence_fingerprint,
+                    self.projection_fingerprint,
+                )
+            ):
+                raise ValueError("legacy frontier artifacts cannot claim decoder evidence")
+            return
+        if not self.descriptor_is_decoder_evidence:
+            raise ValueError("v2 frontier artifacts require decoder evidence")
+        if self.descriptor_scope != DECODER_DESCRIPTOR_SCOPE:
+            raise ValueError("unsupported frontier decoder descriptor scope")
+        for field, value in (
+            ("decoder_source_fingerprint", self.decoder_source_fingerprint),
+            ("decoder_evidence_fingerprint", self.decoder_evidence_fingerprint),
+            ("projection_fingerprint", self.projection_fingerprint),
+        ):
+            if value is None:
+                raise ValueError(f"{field} is required")
+            _require_fingerprint(field, value)
+        if self.decoder_source_fingerprint != self.evidence.decoder_fingerprint:
+            raise ValueError("frontier decoder source does not match selection evidence")
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        payload = {
             "schema_version": self.schema_version,
             "artifact_format": self.artifact_format,
             "content_fingerprint": self.content_fingerprint,
             "descriptor_kind": self.descriptor_kind,
             "descriptor_version": self.descriptor_version,
-            "descriptor_is_decoder_evidence": False,
+            "descriptor_is_decoder_evidence": self.descriptor_is_decoder_evidence,
             "cutoff_basis": self.cutoff_basis,
             "max_typed_neighborhood_edges": self.max_typed_neighborhood_edges,
             "evidence": _evidence_to_json(self.evidence),
         }
+        if self.schema_version == FRONTIER_ARTIFACT_SCHEMA_VERSION:
+            payload.update(
+                {
+                    "descriptor_scope": self.descriptor_scope,
+                    "decoder_source_fingerprint": self.decoder_source_fingerprint,
+                    "decoder_evidence_fingerprint": self.decoder_evidence_fingerprint,
+                    "projection_fingerprint": self.projection_fingerprint,
+                }
+            )
+        return payload
 
     @classmethod
     def from_json(cls, value: Mapping[str, Any]) -> Self:
+        schema_version = _integer(value.get("schema_version"), "schema_version")
+        v2_fields: tuple[str, ...] = ()
+        if schema_version == FRONTIER_ARTIFACT_SCHEMA_VERSION:
+            v2_fields = (
+                "descriptor_scope",
+                "decoder_source_fingerprint",
+                "decoder_evidence_fingerprint",
+                "projection_fingerprint",
+            )
         _require_fields(
             value,
             (
@@ -96,13 +158,29 @@ class BoundedFrontierArtifact:
                 "cutoff_basis",
                 "max_typed_neighborhood_edges",
                 "evidence",
+                *v2_fields,
             ),
             label="frontier artifact",
         )
-        if value["descriptor_is_decoder_evidence"] is not False:
-            raise ValueError("descriptor metadata cannot be decoder evidence")
+        is_decoder_evidence = value["descriptor_is_decoder_evidence"]
+        if not isinstance(is_decoder_evidence, bool):
+            raise ValueError("descriptor_is_decoder_evidence must be a bool")
+        extra: dict[str, Any] = {}
+        if schema_version == FRONTIER_ARTIFACT_SCHEMA_VERSION:
+            extra = {
+                "descriptor_scope": _string(value["descriptor_scope"], "descriptor_scope"),
+                "decoder_source_fingerprint": _string(
+                    value["decoder_source_fingerprint"], "decoder_source_fingerprint"
+                ),
+                "decoder_evidence_fingerprint": _string(
+                    value["decoder_evidence_fingerprint"], "decoder_evidence_fingerprint"
+                ),
+                "projection_fingerprint": _string(
+                    value["projection_fingerprint"], "projection_fingerprint"
+                ),
+            }
         artifact = cls(
-            schema_version=_integer(value["schema_version"], "schema_version"),
+            schema_version=schema_version,
             artifact_format=_string(value["artifact_format"], "artifact_format"),
             content_fingerprint=_string(
                 value["content_fingerprint"], "content_fingerprint"
@@ -119,6 +197,8 @@ class BoundedFrontierArtifact:
             evidence=_evidence_from_json(
                 _mapping(value["evidence"], "evidence")
             ),
+            descriptor_is_decoder_evidence=is_decoder_evidence,
+            **extra,
         )
         expected = _content_fingerprint(artifact)
         if artifact.content_fingerprint != expected:
@@ -158,6 +238,8 @@ def build_bounded_frontier_artifact(
         feature_semantic_descriptors,
         active_features=active,
     )
+    if descriptors.decoder_source_fingerprint != decoder_fingerprint:
+        raise ValueError("descriptor decoder source fingerprint mismatch")
     selected_rows = descriptors.rows_for_features(selected_features)
     if any(not descriptors.is_selected[row] for row in selected_rows):
         raise ValueError("descriptor payload does not mark every graph feature selected")
@@ -261,6 +343,10 @@ def build_bounded_frontier_artifact(
         cutoff_basis=CUTOFF_BASIS,
         max_typed_neighborhood_edges=max_typed_neighborhood_edges,
         content_fingerprint="sha256:" + "0" * 64,
+        descriptor_scope=descriptors.descriptor_scope,
+        decoder_source_fingerprint=descriptors.decoder_source_fingerprint,
+        decoder_evidence_fingerprint=descriptors.decoder_evidence_fingerprint,
+        projection_fingerprint=descriptors.projection_fingerprint,
     )
     return replace(artifact, content_fingerprint=_content_fingerprint(artifact))
 
@@ -310,6 +396,10 @@ class _DescriptorTable:
     is_top_seed: np.ndarray
     is_selected: np.ndarray
     final_selected_rank: np.ndarray
+    decoder_source_fingerprint: str
+    decoder_evidence_fingerprint: str
+    projection_fingerprint: str
+    descriptor_scope: str
 
     @classmethod
     def from_payload(
@@ -318,6 +408,9 @@ class _DescriptorTable:
         *,
         active_features: np.ndarray,
     ) -> Self:
+        descriptor_kind = _string_scalar(payload.get("descriptor_kind"), "descriptor_kind")
+        if descriptor_kind != DECODER_DESCRIPTOR_KIND:
+            raise ValueError("frontier qualification requires qualification-grade decoder evidence")
         required = (
             "descriptor_kind",
             "descriptor_version",
@@ -330,14 +423,68 @@ class _DescriptorTable:
             "is_top_seed",
             "is_selected_phase4",
             "phase4_selected_rank",
+            "semantic_sketch",
             "phase4_selection_available",
             "seed_influence_available",
+            "descriptor_scope",
+            "descriptor_is_decoder_evidence",
+            "decoder_source_fingerprint",
+            "decoder_evidence_fingerprint",
+            "projection_id",
+            "projection_fingerprint",
+            "semantic_descriptor_projection_max_bytes",
+            "semantic_descriptor_projection_required_bytes",
+            "semantic_descriptor_projection_workspace_peak_bytes",
+            "semantic_descriptor_projection_admitted",
+            "semantic_descriptor_projection_released",
             *_SEMANTIC_DESCRIPTOR_TRANSIENT_RECEIPT_FIELDS,
         )
         missing = [name for name in required if name not in payload]
         if missing:
             raise ValueError(f"descriptor payload missing required fields: {missing}")
         _validate_descriptor_transient_receipt(payload)
+        if descriptor_kind != DECODER_DESCRIPTOR_KIND or not _boolean_scalar(
+            payload["descriptor_is_decoder_evidence"]
+        ):
+            raise ValueError("frontier qualification requires qualification-grade decoder evidence")
+        if _string_scalar(payload["descriptor_scope"], "descriptor_scope") != DECODER_DESCRIPTOR_SCOPE:
+            raise ValueError("unsupported decoder descriptor scope")
+        decoder_source_fingerprint = _string_scalar(
+            payload["decoder_source_fingerprint"], "decoder_source_fingerprint"
+        )
+        _require_fingerprint("decoder_source_fingerprint", decoder_source_fingerprint)
+        decoder_evidence_fingerprint = _string_scalar(
+            payload["decoder_evidence_fingerprint"], "decoder_evidence_fingerprint"
+        )
+        projection_fingerprint = _string_scalar(
+            payload["projection_fingerprint"], "projection_fingerprint"
+        )
+        for field, value in (
+            ("decoder_evidence_fingerprint", decoder_evidence_fingerprint),
+            ("projection_fingerprint", projection_fingerprint),
+        ):
+            _require_fingerprint(field, value)
+        projection_max = _integer_scalar(
+            payload["semantic_descriptor_projection_max_bytes"],
+            "semantic_descriptor_projection_max_bytes",
+        )
+        projection_required = _integer_scalar(
+            payload["semantic_descriptor_projection_required_bytes"],
+            "semantic_descriptor_projection_required_bytes",
+        )
+        projection_workspace = _integer_scalar(
+            payload["semantic_descriptor_projection_workspace_peak_bytes"],
+            "semantic_descriptor_projection_workspace_peak_bytes",
+        )
+        if projection_max != _SEMANTIC_DESCRIPTOR_TRANSIENT_MAX_BYTES or not (
+            0 <= projection_required <= projection_max
+            and 0 <= projection_workspace <= projection_max
+        ):
+            raise ValueError("decoder descriptor projection exceeds its byte bound")
+        if not _boolean_scalar(payload["semantic_descriptor_projection_admitted"]) or not (
+            _boolean_scalar(payload["semantic_descriptor_projection_released"])
+        ):
+            raise ValueError("decoder descriptor projection must be admitted and released")
         if not _boolean_scalar(payload["phase4_selection_available"]):
             raise ValueError("descriptor Phase4 selection annotation is required")
         if not _boolean_scalar(payload["seed_influence_available"]):
@@ -358,6 +505,18 @@ class _DescriptorTable:
         feature_keys = tuple(_feature_key(row) for row in features)
         if len(set(feature_keys)) != count:
             raise ValueError("descriptor candidate features must be unique")
+        semantic_sketch = _array(payload["semantic_sketch"], dtype=np.float32)
+        if semantic_sketch.ndim != 2 or semantic_sketch.shape[0] != count:
+            raise ValueError("semantic_sketch must align with descriptor candidates")
+        if not np.isfinite(semantic_sketch).all():
+            raise ValueError("semantic_sketch must be finite")
+        evidence_digest = hashlib.sha256()
+        evidence_digest.update(decoder_source_fingerprint.encode("ascii"))
+        evidence_digest.update(projection_fingerprint.encode("ascii"))
+        evidence_digest.update(np.ascontiguousarray(features).tobytes())
+        evidence_digest.update(np.ascontiguousarray(semantic_sketch).tobytes())
+        if decoder_evidence_fingerprint != f"sha256:{evidence_digest.hexdigest()}":
+            raise ValueError("decoder_evidence_fingerprint does not match descriptor arrays")
         activation = _aligned_array(
             payload["activation_value"], count, np.float64, "activation_value"
         )
@@ -389,7 +548,7 @@ class _DescriptorTable:
         if total != len(active_features):
             raise ValueError("descriptor total_active_features does not match compact")
         return cls(
-            descriptor_kind=_string_scalar(payload["descriptor_kind"], "descriptor_kind"),
+            descriptor_kind=descriptor_kind,
             descriptor_version=_string_scalar(
                 payload["descriptor_version"], "descriptor_version"
             ),
@@ -402,6 +561,10 @@ class _DescriptorTable:
             is_top_seed=is_top_seed,
             is_selected=is_selected,
             final_selected_rank=final_rank,
+            decoder_source_fingerprint=decoder_source_fingerprint,
+            decoder_evidence_fingerprint=decoder_evidence_fingerprint,
+            projection_fingerprint=projection_fingerprint,
+            descriptor_scope=DECODER_DESCRIPTOR_SCOPE,
         )
 
     def rows_for_features(self, features: np.ndarray) -> tuple[int, ...]:

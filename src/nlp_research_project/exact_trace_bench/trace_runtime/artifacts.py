@@ -28,6 +28,15 @@ _SEMANTIC_DESCRIPTOR_TRANSIENT_RECEIPT_FIELDS = (
     "semantic_descriptor_transient_released",
     "semantic_descriptor_transient_array_count",
 )
+_DECODER_DESCRIPTOR_KIND = "active_decoder_countsketch_v1"
+_DECODER_DESCRIPTOR_SCOPE = "active_occurrence_downstream_decoder_rows_v1"
+_SEMANTIC_DESCRIPTOR_PROJECTION_RECEIPT_FIELDS = (
+    "semantic_descriptor_projection_max_bytes",
+    "semantic_descriptor_projection_required_bytes",
+    "semantic_descriptor_projection_workspace_peak_bytes",
+    "semantic_descriptor_projection_admitted",
+    "semantic_descriptor_projection_released",
+)
 
 
 @dataclass(frozen=True)
@@ -219,6 +228,9 @@ def save_feature_semantic_descriptors(payload: Mapping[str, Any], path: Path) ->
             f"persistence: {transient_fields}"
         )
     _validate_semantic_descriptor_transient_receipt(payload)
+    is_decoder_evidence = _text(payload.get("descriptor_kind")) == _DECODER_DESCRIPTOR_KIND
+    if is_decoder_evidence:
+        _validate_decoder_descriptor_projection_receipt(payload)
     array_fields = (
         "candidate_features",
         "candidate_row_indices",
@@ -250,6 +262,20 @@ def save_feature_semantic_descriptors(payload: Mapping[str, Any], path: Path) ->
             ""
             if payload.get("descriptor_kind") is None
             else str(payload["descriptor_kind"])
+        ),
+        descriptor_scope=np.array(_text(payload.get("descriptor_scope"))),
+        descriptor_is_decoder_evidence=np.array(
+            bool(payload.get("descriptor_is_decoder_evidence", is_decoder_evidence))
+        ),
+        decoder_source_fingerprint=np.array(
+            _text(payload.get("decoder_source_fingerprint"))
+        ),
+        decoder_evidence_fingerprint=np.array(
+            _text(payload.get("decoder_evidence_fingerprint"))
+        ),
+        projection_id=np.array(_text(payload.get("projection_id"))),
+        projection_fingerprint=np.array(
+            _text(payload.get("projection_fingerprint"))
         ),
         descriptor_dim=np.array(payload.get("descriptor_dim", 0), dtype=np.int64),
         semantic_descriptor_top_k=np.array(
@@ -308,6 +334,24 @@ def save_feature_semantic_descriptors(payload: Mapping[str, Any], path: Path) ->
                 "semantic_descriptor_transient_array_count",
             ),
             dtype=np.int64,
+        ),
+        semantic_descriptor_projection_max_bytes=np.array(
+            int(payload.get("semantic_descriptor_projection_max_bytes", 0)),
+            dtype=np.int64,
+        ),
+        semantic_descriptor_projection_required_bytes=np.array(
+            int(payload.get("semantic_descriptor_projection_required_bytes", 0)),
+            dtype=np.int64,
+        ),
+        semantic_descriptor_projection_workspace_peak_bytes=np.array(
+            int(payload.get("semantic_descriptor_projection_workspace_peak_bytes", 0)),
+            dtype=np.int64,
+        ),
+        semantic_descriptor_projection_admitted=np.array(
+            bool(payload.get("semantic_descriptor_projection_admitted", False))
+        ),
+        semantic_descriptor_projection_released=np.array(
+            bool(payload.get("semantic_descriptor_projection_released", False))
         ),
     )
 
@@ -769,6 +813,8 @@ def _validate_semantic_descriptor_capture(
     payload: Mapping[str, np.ndarray],
 ) -> None:
     _validate_semantic_descriptor_transient_receipt(payload)
+    if _text(payload.get("descriptor_kind")) == _DECODER_DESCRIPTOR_KIND:
+        _validate_decoder_descriptor_projection_receipt(payload)
     candidates = np.asarray(payload["candidate_features"])
     indices = np.asarray(payload["candidate_row_indices"]).reshape(-1)
     sketch = np.asarray(payload["semantic_sketch"])
@@ -780,6 +826,88 @@ def _validate_semantic_descriptor_capture(
     if sketch.ndim != 2 or int(sketch.shape[0]) != candidate_count:
         raise ValueError("semantic_sketch must have one row per candidate")
     _require_finite(payload, "semantic_sketch")
+    if _text(payload.get("descriptor_kind")) == _DECODER_DESCRIPTOR_KIND:
+        expected = _decoder_descriptor_evidence_fingerprint(
+            candidates,
+            sketch,
+            decoder_source_fingerprint=_text(payload["decoder_source_fingerprint"]),
+            projection_fingerprint=_text(payload["projection_fingerprint"]),
+        )
+        if _text(payload["decoder_evidence_fingerprint"]) != expected:
+            raise ValueError("decoder_evidence_fingerprint does not match descriptor arrays")
+
+
+def _decoder_descriptor_evidence_fingerprint(
+    candidate_features: Any,
+    semantic_sketch: Any,
+    *,
+    decoder_source_fingerprint: str,
+    projection_fingerprint: str,
+) -> str:
+    digest = hashlib.sha256()
+    digest.update(decoder_source_fingerprint.encode("ascii"))
+    digest.update(projection_fingerprint.encode("ascii"))
+    digest.update(
+        np.ascontiguousarray(candidate_features, dtype=np.int64).tobytes()
+    )
+    digest.update(np.ascontiguousarray(semantic_sketch, dtype=np.float32).tobytes())
+    return f"sha256:{digest.hexdigest()}"
+
+
+def _validate_decoder_descriptor_projection_receipt(payload: Mapping[str, Any]) -> None:
+    missing = [
+        field
+        for field in _SEMANTIC_DESCRIPTOR_PROJECTION_RECEIPT_FIELDS
+        if field not in payload
+    ]
+    if missing:
+        raise ValueError(
+            "feature semantic descriptor payload missing decoder projection receipt "
+            f"fields: {missing}"
+        )
+    if _text(payload.get("descriptor_kind")) != _DECODER_DESCRIPTOR_KIND or not (
+        _strict_bool_scalar(
+            payload.get("descriptor_is_decoder_evidence"),
+            "descriptor_is_decoder_evidence",
+        )
+    ):
+        raise ValueError("feature semantic descriptors require qualification-grade decoder evidence")
+    if _text(payload.get("descriptor_scope")) != _DECODER_DESCRIPTOR_SCOPE:
+        raise ValueError("unsupported decoder descriptor scope")
+    for field in (
+        "decoder_source_fingerprint",
+        "decoder_evidence_fingerprint",
+        "projection_fingerprint",
+    ):
+        value = _text(payload.get(field))
+        if not value.startswith("sha256:") or len(value) != 71:
+            raise ValueError(f"{field} must be a sha256 fingerprint")
+    if not _text(payload.get("projection_id")):
+        raise ValueError("projection_id is required")
+    max_bytes = _strict_int_scalar(
+        payload["semantic_descriptor_projection_max_bytes"],
+        "semantic_descriptor_projection_max_bytes",
+    )
+    required_bytes = _strict_int_scalar(
+        payload["semantic_descriptor_projection_required_bytes"],
+        "semantic_descriptor_projection_required_bytes",
+    )
+    workspace_bytes = _strict_int_scalar(
+        payload["semantic_descriptor_projection_workspace_peak_bytes"],
+        "semantic_descriptor_projection_workspace_peak_bytes",
+    )
+    if max_bytes != _SEMANTIC_DESCRIPTOR_TRANSIENT_MAX_BYTES:
+        raise ValueError("semantic descriptor projection max_bytes must be exactly 64 MiB")
+    if min(required_bytes, workspace_bytes) < 0 or max(required_bytes, workspace_bytes) > max_bytes:
+        raise ValueError("semantic descriptor projection exceeds its byte bound")
+    if not _strict_bool_scalar(
+        payload["semantic_descriptor_projection_admitted"],
+        "semantic_descriptor_projection_admitted",
+    ) or not _strict_bool_scalar(
+        payload["semantic_descriptor_projection_released"],
+        "semantic_descriptor_projection_released",
+    ):
+        raise ValueError("semantic descriptor projection must be admitted and released")
 
 
 def _validate_semantic_descriptor_transient_receipt(

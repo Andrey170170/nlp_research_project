@@ -228,6 +228,35 @@ def test_trace_spec_accepts_admitted_correctness_policy(mode: str) -> None:
     validate_trace_spec(spec)
 
 
+def test_trace_spec_requires_paired_numerical_manifest_declaration() -> None:
+    selection = select_tokens(tiny_trajectory(), explicit_indices=[3])
+    spec = build_trace_specs(
+        tiny_trajectory(),
+        selection,
+        graph_knob_overrides={
+            "correctness_numerical_manifest_path": "/tmp/numerical.json",
+            "correctness_numerical_manifest_sha256": None,
+        },
+    )[0]
+
+    with pytest.raises(ValueError, match="declared together"):
+        validate_trace_spec(spec)
+
+
+def test_trace_spec_accepts_pinned_numerical_manifest_declaration() -> None:
+    selection = select_tokens(tiny_trajectory(), explicit_indices=[3])
+    spec = build_trace_specs(
+        tiny_trajectory(),
+        selection,
+        graph_knob_overrides={
+            "correctness_numerical_manifest_path": "/tmp/numerical.json",
+            "correctness_numerical_manifest_sha256": "sha256:" + "a" * 64,
+        },
+    )[0]
+
+    validate_trace_spec(spec)
+
+
 def test_trace_spec_rejects_ambiguous_required_feature_row_selection() -> None:
     selection = select_tokens(tiny_trajectory(), explicit_indices=[3])
     spec = build_trace_specs(

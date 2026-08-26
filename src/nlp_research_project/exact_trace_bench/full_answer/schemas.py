@@ -44,6 +44,15 @@ BACKWARD_ENGINE_MODES = frozenset(BACKWARD_ENGINE_PRESETS)
 EDGE_RETENTION_POLICY_IDS = {"typed_top_p_v1"}
 
 
+def _is_sha256_fingerprint(value: object) -> bool:
+    if not isinstance(value, str) or not value.startswith("sha256:"):
+        return False
+    digest = value.removeprefix("sha256:")
+    return len(digest) == 64 and all(
+        character in "0123456789abcdef" for character in digest
+    )
+
+
 class GeneratedToken(TypedDict, total=False):
     generated_index: int
     absolute_token_position: int
@@ -229,6 +238,32 @@ def validate_trace_spec(spec: Mapping[str, Any]) -> None:
             "trace spec graph_knobs.correctness_policy_id must be one of "
             f"{sorted(CORRECTNESS_POLICY_IDS)!r}"
         )
+    numerical_manifest_path = spec["graph_knobs"].get(
+        "correctness_numerical_manifest_path"
+    )
+    numerical_manifest_sha256 = spec["graph_knobs"].get(
+        "correctness_numerical_manifest_sha256"
+    )
+    if (numerical_manifest_path is None) != (numerical_manifest_sha256 is None):
+        raise ValueError(
+            "trace spec numerical correctness manifest path and sha256 must be "
+            "declared together"
+        )
+    if numerical_manifest_path is not None:
+        if (
+            not isinstance(numerical_manifest_path, str)
+            or not numerical_manifest_path
+            or not Path(numerical_manifest_path).is_absolute()
+        ):
+            raise ValueError(
+                "trace spec graph_knobs.correctness_numerical_manifest_path "
+                "must be an absolute path"
+            )
+        if not _is_sha256_fingerprint(numerical_manifest_sha256):
+            raise ValueError(
+                "trace spec graph_knobs.correctness_numerical_manifest_sha256 "
+                "must be a sha256 fingerprint"
+            )
     try:
         backward_selection = resolve_backward_execution_selection(spec["graph_knobs"])
     except ValueError as error:

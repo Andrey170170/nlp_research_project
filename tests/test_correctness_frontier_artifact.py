@@ -11,6 +11,7 @@ import torch
 
 from nlp_research_project.exact_trace_bench.correctness.frontier_artifact import (
     CUTOFF_BASIS,
+    DECODER_DESCRIPTOR_KIND,
     FALLBACK_DESCRIPTOR_KIND,
     build_bounded_frontier_artifact,
     load_bounded_frontier_artifact,
@@ -79,10 +80,21 @@ def _reopened_graph(tmp_path: Path, compact: dict[str, object]):
 
 
 def _descriptors() -> dict[str, object]:
-    return {
+    descriptors: dict[str, object] = {
         "status": "captured",
-        "descriptor_kind": FALLBACK_DESCRIPTOR_KIND,
-        "descriptor_version": "v1",
+        "descriptor_kind": DECODER_DESCRIPTOR_KIND,
+        "descriptor_version": "v2",
+        "descriptor_scope": "active_occurrence_downstream_decoder_rows_v1",
+        "descriptor_is_decoder_evidence": True,
+        "decoder_source_fingerprint": _fingerprint("decoder"),
+        "decoder_evidence_fingerprint": _fingerprint("pending"),
+        "projection_id": "fixed_width_countsketch_l2_v1",
+        "projection_fingerprint": _fingerprint("projection"),
+        "semantic_descriptor_projection_max_bytes": 64 * 1024 * 1024,
+        "semantic_descriptor_projection_required_bytes": 4096,
+        "semantic_descriptor_projection_workspace_peak_bytes": 2048,
+        "semantic_descriptor_projection_admitted": True,
+        "semantic_descriptor_projection_released": True,
         "candidate_bound_kind": "final_selected_plus_seed_near_cutoff_controls_v1",
         "semantic_descriptor_control_limit": 2,
         "total_active_features": 4,
@@ -105,9 +117,40 @@ def _descriptors() -> dict[str, object]:
         "semantic_descriptor_transient_admitted": True,
         "semantic_descriptor_transient_released": True,
         "semantic_descriptor_transient_array_count": 3,
-        # This fallback sketch is deliberately unrelated to decoder evidence.
-        "semantic_sketch": np.full((4, 8), 999.0, dtype=np.float32),
+        "semantic_sketch": np.eye(4, 8, dtype=np.float32),
     }
+    _refresh_decoder_evidence_fingerprint(descriptors)
+    return descriptors
+
+
+def _refresh_decoder_evidence_fingerprint(descriptors: dict[str, object]) -> None:
+    digest = hashlib.sha256()
+    digest.update(str(descriptors["decoder_source_fingerprint"]).encode("ascii"))
+    digest.update(str(descriptors["projection_fingerprint"]).encode("ascii"))
+    digest.update(np.ascontiguousarray(descriptors["candidate_features"]).tobytes())
+    digest.update(np.ascontiguousarray(descriptors["semantic_sketch"]).tobytes())
+    descriptors["decoder_evidence_fingerprint"] = f"sha256:{digest.hexdigest()}"
+
+
+def _fallback_descriptors() -> dict[str, object]:
+    descriptors = _descriptors()
+    descriptors["descriptor_kind"] = FALLBACK_DESCRIPTOR_KIND
+    descriptors["descriptor_version"] = "v1"
+    for field in (
+        "descriptor_scope",
+        "descriptor_is_decoder_evidence",
+        "decoder_source_fingerprint",
+        "decoder_evidence_fingerprint",
+        "projection_id",
+        "projection_fingerprint",
+        "semantic_descriptor_projection_max_bytes",
+        "semantic_descriptor_projection_required_bytes",
+        "semantic_descriptor_projection_workspace_peak_bytes",
+        "semantic_descriptor_projection_admitted",
+        "semantic_descriptor_projection_released",
+    ):
+        descriptors.pop(field)
+    return descriptors
 
 
 def test_builds_and_round_trips_bounded_frontier_sidecar(tmp_path: Path) -> None:
@@ -124,7 +167,7 @@ def test_builds_and_round_trips_bounded_frontier_sidecar(tmp_path: Path) -> None
     )
 
     assert artifact.cutoff_basis == CUTOFF_BASIS
-    assert artifact.descriptor_kind == FALLBACK_DESCRIPTOR_KIND
+    assert artifact.descriptor_kind == DECODER_DESCRIPTOR_KIND
     assert artifact.evidence.cutoff_score == pytest.approx(0.8)
     assert artifact.evidence.relative_cutoff_gap == pytest.approx(0.01 / 0.8)
     assert artifact.evidence.cutoff_tie_count == 1
@@ -154,7 +197,7 @@ def test_builds_and_round_trips_bounded_frontier_sidecar(tmp_path: Path) -> None
     assert path.read_bytes() == first_bytes
     assert load_bounded_frontier_artifact(path) == artifact
     serialized = json.loads(path.read_text(encoding="utf-8"))
-    assert serialized["descriptor_is_decoder_evidence"] is False
+    assert serialized["descriptor_is_decoder_evidence"] is True
     assert "semantic_sketch" not in serialized
 
 
@@ -175,6 +218,10 @@ def test_refuses_missing_selected_or_near_cutoff_descriptor_coverage(
         "phase4_selected_rank",
     ):
         missing_selected[name] = np.asarray(missing_selected[name])[[0, 2, 3]]
+    missing_selected["semantic_sketch"] = np.asarray(
+        missing_selected["semantic_sketch"]
+    )[[0, 2, 3]]
+    _refresh_decoder_evidence_fingerprint(missing_selected)
     missing_selected["total_active_features"] = 4
 
     with pytest.raises(ValueError, match="does not cover selected features"):
@@ -198,6 +245,10 @@ def test_refuses_missing_selected_or_near_cutoff_descriptor_coverage(
         "phase4_selected_rank",
     ):
         insufficient_band[name] = np.asarray(insufficient_band[name])[[0, 1, 2]]
+    insufficient_band["semantic_sketch"] = np.asarray(
+        insufficient_band["semantic_sketch"]
+    )[[0, 1, 2]]
+    _refresh_decoder_evidence_fingerprint(insufficient_band)
     with pytest.raises(ValueError, match="required bounded near-cutoff band"):
         build_bounded_frontier_artifact(
             graph=graph,
@@ -276,10 +327,74 @@ def test_capture_writer_refuses_transients_and_persists_bound_metadata(
         assert bool(payload["semantic_descriptor_transient_admitted"])
         assert bool(payload["semantic_descriptor_transient_released"])
         assert int(payload["semantic_descriptor_transient_array_count"]) == 3
+        assert str(payload["descriptor_scope"]) == (
+            "active_occurrence_downstream_decoder_rows_v1"
+        )
+        assert bool(payload["descriptor_is_decoder_evidence"])
+        assert str(payload["decoder_source_fingerprint"]) == _fingerprint("decoder")
+        assert int(payload["semantic_descriptor_projection_required_bytes"]) == 4096
         assert not any(name.startswith("_transient_") for name in payload.files)
 
     reopened = load_and_validate_capture_artifact("feature_semantic_descriptors", path)
     assert bool(reopened["semantic_descriptor_transient_released"])
+
+
+def test_frontier_refuses_fallback_identity_descriptors(tmp_path: Path) -> None:
+    descriptors = _fallback_descriptors()
+
+    with pytest.raises(ValueError, match="qualification-grade decoder evidence"):
+        build_bounded_frontier_artifact(
+            graph=_reopened_graph(tmp_path, _compact_result()),
+            compact_result=_compact_result(),
+            feature_semantic_descriptors=descriptors,
+            decoder_fingerprint=_fingerprint("decoder"),
+            max_near_cutoff=1,
+        )
+
+
+def test_fallback_capture_and_legacy_frontier_remain_readable(tmp_path: Path) -> None:
+    fallback_path = tmp_path / "fallback.npz"
+    save_feature_semantic_descriptors(_fallback_descriptors(), fallback_path)
+    fallback = load_and_validate_capture_artifact(
+        "feature_semantic_descriptors", fallback_path
+    )
+    assert str(fallback["descriptor_kind"]) == FALLBACK_DESCRIPTOR_KIND
+    assert not bool(fallback["descriptor_is_decoder_evidence"])
+
+    graph = _reopened_graph(tmp_path, _compact_result())
+    artifact = build_bounded_frontier_artifact(
+        graph=graph,
+        compact_result=_compact_result(),
+        feature_semantic_descriptors=_descriptors(),
+        decoder_fingerprint=_fingerprint("decoder"),
+        max_near_cutoff=1,
+    )
+    legacy = artifact.to_json()
+    legacy["schema_version"] = 1
+    legacy["artifact_format"] = "bounded_frontier_evidence_v1"
+    legacy["descriptor_kind"] = FALLBACK_DESCRIPTOR_KIND
+    legacy["descriptor_version"] = "v1"
+    legacy["descriptor_is_decoder_evidence"] = False
+    for field in (
+        "descriptor_scope",
+        "decoder_source_fingerprint",
+        "decoder_evidence_fingerprint",
+        "projection_fingerprint",
+    ):
+        legacy.pop(field)
+    legacy["content_fingerprint"] = None
+    canonical = json.dumps(
+        legacy, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
+    legacy["content_fingerprint"] = (
+        f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()}"
+    )
+    legacy_path = tmp_path / "legacy-frontier.json"
+    legacy_path.write_text(json.dumps(legacy), encoding="utf-8")
+
+    reopened = load_bounded_frontier_artifact(legacy_path)
+    assert reopened.schema_version == 1
+    assert reopened.descriptor_is_decoder_evidence is False
 
 
 @pytest.mark.parametrize(

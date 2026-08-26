@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import DEFAULT_SCRATCH_ROOT, REPO_ROOT, base_trace_defaults
+from .correctness.numerical import prepare_numerical_manifest_declaration
 from .full_answer.launch_spec import (
     build_full_answer_launch_spec,
     render_local_full_answer_command,
@@ -3721,6 +3722,21 @@ def _prepare_campaign_workload(args: argparse.Namespace) -> int:
             "correctness_policy_id": args.correctness_policy_id,
         }
     )
+    numerical_declaration = None
+    if args.correctness_numerical_manifest is not None:
+        numerical_declaration = prepare_numerical_manifest_declaration(
+            args.correctness_numerical_manifest
+        )
+        graph_overrides.update(
+            {
+                "correctness_numerical_manifest_path": numerical_declaration[
+                    "manifest_path"
+                ],
+                "correctness_numerical_manifest_sha256": numerical_declaration[
+                    "manifest_sha256"
+                ],
+            }
+        )
     if args.feature_row_influence_requirement is not None:
         graph_overrides["feature_row_influence_requirement"] = (
             args.feature_row_influence_requirement
@@ -3935,6 +3951,7 @@ def _prepare_campaign_workload(args: argparse.Namespace) -> int:
             "diagnostic_stop_phase4_batches": diagnostic_stop_phase4_batches,
             "resource_envelope": workload["resource_envelope"],
             "comparison_policy": workload["comparison_policy"],
+            "correctness_numerical_manifest": numerical_declaration,
             "trace_specs_path": str(specs_path),
             "shards_path": str(shards_path),
             "launch_output_root": str(launch_output_root),
@@ -4224,6 +4241,14 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("behavioral_closure_v1",),
         default="behavioral_closure_v1",
         help="Versioned correctness policy identity (default: behavioral_closure_v1)",
+    )
+    prepare_campaign.add_argument(
+        "--correctness-numerical-manifest",
+        type=Path,
+        help=(
+            "Versioned repeat/canonical numerical reference manifest. Preparation "
+            "hash-checks the manifest and every transitive graph artifact."
+        ),
     )
     prepare_campaign.add_argument(
         "--runtime-resource-override-rationale",

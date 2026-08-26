@@ -60,6 +60,8 @@ def base_trace_defaults() -> dict[str, Any]:
         "edge_retention_policy_id": "typed_top_p_v1",
         "correctness_probe_mode": DEFAULT_CORRECTNESS_PROBE_MODE,
         "correctness_policy_id": DEFAULT_CORRECTNESS_POLICY_ID,
+        "correctness_numerical_manifest_path": None,
+        "correctness_numerical_manifest_sha256": None,
         "max_n_logits": 3,
         "desired_logit_prob": 0.8,
         "verbose_attribution": False,
