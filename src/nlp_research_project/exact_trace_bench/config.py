@@ -4,8 +4,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .transcoder_config import transcoder_config_to_json, TranscoderLoadConfig
-
+from .transcoder_config import TranscoderLoadConfig, transcoder_config_to_json
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -62,6 +61,8 @@ def base_trace_defaults() -> dict[str, Any]:
         "correctness_policy_id": DEFAULT_CORRECTNESS_POLICY_ID,
         "correctness_numerical_manifest_path": None,
         "correctness_numerical_manifest_sha256": None,
+        "correctness_calibration_manifest_path": None,
+        "correctness_calibration_manifest_sha256": None,
         "max_n_logits": 3,
         "desired_logit_prob": 0.8,
         "verbose_attribution": False,

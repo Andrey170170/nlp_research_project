@@ -8,6 +8,9 @@ Major revision: 2026-08-23
 
 Step 1a qualification closeout: 2026-08-25
 
+Step 1b implementation and calibration freeze: 2026-08-28; held-out GPU
+qualification pending
+
 Scope: exact-trace memory survivability, correctness evidence, opportunistic
 performance, staged physical-plan selection, long-prefix/model stress, and the
 refactoring needed to keep one canonical typed runtime. This plan does not by
@@ -96,7 +99,7 @@ staged full-resident -> windowed -> tiled -> no-retention/recompute ladder.
 |---:|---|---|---|
 | 0 | Evidence hardening and frozen profile rerun — complete | Strict graph validation, per-device identity, event timing, structured VJP evidence, and job `1843641` classification | Preserve this evidence contract in every later arm |
 | 1a | Typed-bucket-only canonical artifact — complete | Remove the legacy global-top-K edge payload and `max_edges` launch control from all new writers; migrate validation, comparison, temporal analysis, and promotion atomically to the six typed buckets | Job `1850118` completed the frozen 12B/1,024 strict-reopen GPU qualification; preserve the accepted schema/policy contract in later work |
-| 1b | Three-axis, alias-aware correctness contract and automatic behavioral probe | Specify separate structural, stability, and faithfulness reports; add exact plus decoder-soft frontier comparison and a bounded same-process intervention probe | CPU-safe contract/calibration tests plus one frozen GPU run producing all three explicit verdicts, frontier-equivalence evidence, and bounded intervention evidence within the admitted two-minute probe budget |
+| 1b | Three-axis, alias-aware correctness contract and automatic behavioral probe — implemented and locally validated; held-out 12B/1,024 qualification pending | Specify separate structural, stability, and faithfulness reports; add exact plus decoder-soft frontier comparison and a bounded same-process intervention probe | CPU-safe contract/calibration tests plus one frozen GPU run producing all three explicit verdicts, frontier-equivalence evidence, and bounded intervention evidence within the admitted two-minute probe budget |
 | 2 | `OPT-CUDA-FULL-01` opportunistic closure | In one scheduled 12B/1,024 allocation, run the frozen `cuda_windowed` control and an independently admitted `cuda_full` candidate when practical | No 4B prerequisite; combined HBM admission, no fallback, all correctness reports, resource/timing comparison, and no default promotion |
 | 3 | Separate retention, access, and reduction planning axes | Replace the mixed feature-row mode with subsystem-owned row retention, influence access/residency, and reduction-execution policies | Residency can vary without implicitly changing FP grouping; every axis has owner, fidelity class, freeze epoch, requirements, and provenance |
 | 4 | Qualify the survivability mechanisms | First column-tiled bounded production/full retention, then no-retention deterministic recompute/replay | Complete artifacts with bounded materialization; no full `K x N` allocation in the recompute rung; three-axis correctness reports |
@@ -306,6 +309,19 @@ Reports describe evidence; a separate versioned promotion policy maps those
 reports to an admission/default decision. No report contains an aggregate
 `correct` flag, and an unknown axis cannot be hidden by success on another.
 
+**Version-one qualification status (2026-08-28):** the code and frozen
+calibration are locally validated, but Step 1b remains scientifically open
+until a held-out GPU run passes. Required mode accepts only the strict
+`exact_trace_correctness_calibration_v1` declaration and verifies its own hash,
+the nested numerical-reference manifest hash, and every transitive source
+receipt before model work. Missing or drifted calibration fails closed.
+Numerical scopes report `exact_stable`, `alias_stable`, `bounded`, `review`,
+`divergent`, or `unknown`; only exact, alias, or bounded evidence admits a
+required scope. Version one requires `typed_graph.repeat`,
+`typed_graph.canonical`, and `feature_frontier.repeat`. It intentionally makes
+no canonical-frontier claim because the Step 1a canonical reference has no
+frontier sidecar.
+
 ### 6.3 Equivalence-aware selection-frontier stability
 
 The expected numerical failure mode is churn near the 8,192-feature selection
@@ -377,7 +393,7 @@ Version-one probe contract:
 - retain the exact intervention recipe, selected nodes/edges, baseline and
   intervened logits, raw effects, aggregate metrics, uncertainty/status, and all
   refusal/failure reasons;
-- cap the first implementation at at most eight intervention variants and 120
+- cap the first implementation at at most ten intervention variants and 120
   seconds after the trace. A later evidence-backed limit may change separately;
 - expose `off | smoke | required`. Serious optimization/scaling campaigns use
   `required`; a timeout, unsupported provider, or failed intervention leaves the
@@ -412,7 +428,7 @@ remaining inside the tracer's current intervention convention. A later
 full-attention response is a separately calibrated behavioral variant, not an
 implicit change to version one.
 
-One reusable baseline capture is outside the eight-variant count; the explicit
+One reusable baseline capture is outside the ten-variant count; the explicit
 no-op control is a variant. Alias substitution sets A to zero and adds to B the
 least-squares activation-scaled decoder write that best replaces A's removed
 downstream write, using the baseline B activation as the absolute-value origin.
@@ -429,6 +445,36 @@ repeats. Before that calibration exists, the verifier may persist raw evidence
 and an `unknown` or `inconclusive` verdict, but it cannot issue a qualifying
 faithfulness or alias-stability verdict. Calibration observations, report
 generation, and promotion/default decisions remain separate reviewed actions.
+
+**Frozen v1 calibration and probe contract (2026-08-28):** r4, r5, and r6 are
+the development calibration corpus. All three contribute numerical receipts;
+only r6 supplies a complete behavioral observation. These are accepted frozen
+engineering thresholds informed by that corpus, not estimates fitted from
+repeated complete behavioral probes. The next required-mode 12B/1,024 run, r7,
+is the first held-out qualification and thresholds must not be changed after
+seeing it.
+
+- Selected-feature Jaccard must be at least `0.995` (`0.990` review).
+- `feature<-error` normalized L1 must be at most `0.03` (`0.05` review),
+  weighted Jaccard at least `0.97` (`0.95` review), and shared-sign agreement
+  at least `0.995` (`0.990` review). The corresponding `logit<-error` limits
+  are `0.01` (`0.02` review), `0.97` (`0.95` review), and `0.995` (`0.990`
+  review). The other four typed buckets must be exact.
+- Frontier selected recovery must be at least `0.995` (`0.990` review) and
+  unmatched influence mass at most `0.005` (`0.010` review). Bounded scalar,
+  cutoff, and typed-edge deltas remain frozen in the versioned manifest.
+- Behavioral schema v2 requires no-op absolute error at most `1e-6`, direct
+  mean/worst relative closure at most `0.05`/`0.10`, direct sign agreement at
+  least `0.95`, downstream mean/p95 relative closure at most `0.05`/`0.10`,
+  necessity Spearman at least `0.80`, and median high/control effect ratio at
+  least `2.0`. Conditional alias relative-effect error is at most `0.20`.
+
+The admitted standard probe is no-op plus up to three direct interventions and
+three matched high-influence/control pairs: at most ten variants under the hard
+120-second budget. A churn plan reuses the alias source's necessity ablation
+and adds one substitution, for at most eight variants. Alias evidence is
+`not_applicable` when there is no qualified frontier churn; no synthetic alias
+is introduced merely to populate that axis.
 
 ## 7. Immediate opportunistic arm: direct 12B/1,024 `cuda_full`
 

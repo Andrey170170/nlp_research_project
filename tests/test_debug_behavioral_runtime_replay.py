@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,6 +18,64 @@ _REPLAY_SPEC = importlib.util.spec_from_file_location(
 assert _REPLAY_SPEC is not None and _REPLAY_SPEC.loader is not None
 replay = importlib.util.module_from_spec(_REPLAY_SPEC)
 _REPLAY_SPEC.loader.exec_module(replay)
+
+
+def _write_behavioral_report(
+    tmp_path: Path,
+    *,
+    schema_version: object,
+    payload: object | None = None,
+) -> Path:
+    report_payload = {"trace_identity": {"trace_id": "trace-1"}} if payload is None else payload
+    fingerprint = hashlib.sha256(
+        replay._canonical(report_payload).encode("utf-8")
+    ).hexdigest()
+    path = tmp_path / "behavioral.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema": replay.REPORT_SCHEMA,
+                "schema_version": schema_version,
+                "evidence_fingerprint": fingerprint,
+                "report": report_payload,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.mark.parametrize("schema_version", [1, 2])
+def test_behavioral_loader_accepts_current_and_historical_schema_versions(
+    tmp_path: Path,
+    schema_version: int,
+) -> None:
+    path = _write_behavioral_report(tmp_path, schema_version=schema_version)
+
+    payload = replay.load_behavioral_payload(path)
+
+    assert payload["trace_identity"]["trace_id"] == "trace-1"
+
+
+@pytest.mark.parametrize("schema_version", [0, 3, True, "2", None])
+def test_behavioral_loader_refuses_unsupported_or_untyped_schema_versions(
+    tmp_path: Path,
+    schema_version: object,
+) -> None:
+    path = _write_behavioral_report(tmp_path, schema_version=schema_version)
+
+    with pytest.raises(replay.ReplayRefusal, match="unsupported.*schema_version"):
+        replay.load_behavioral_payload(path)
+
+
+def test_behavioral_loader_checks_fingerprint_for_current_schema(tmp_path: Path) -> None:
+    path = _write_behavioral_report(tmp_path, schema_version=2)
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["report"]["trace_identity"]["trace_id"] = "changed"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(replay.ReplayRefusal, match="evidence_fingerprint mismatch"):
+        replay.load_behavioral_payload(path)
 
 
 def _request(

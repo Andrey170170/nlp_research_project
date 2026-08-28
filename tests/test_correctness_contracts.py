@@ -58,6 +58,7 @@ def test_axis_status_values_are_explicit_and_independent() -> None:
         "exact_stable",
         "alias_stable",
         "bounded",
+        "review",
         "divergent",
         "unknown",
     }

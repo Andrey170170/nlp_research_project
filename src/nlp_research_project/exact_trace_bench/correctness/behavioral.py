@@ -33,6 +33,7 @@ from circuit_tracer.verification import (
     FeatureValue,
     TraceIdentity,
     select_direct_features,
+    select_necessity_features,
 )
 
 from nlp_research_project.exact_trace_bench.typed_compact_graph import (
@@ -48,6 +49,7 @@ from .frontier import FeatureKey, FrontierEvidence, FrontierRecord
 
 
 MAX_UNSELECTED_CONTROLS = 8
+MAX_NECESSITY_CONTROLS = 3
 MAX_DOWNSTREAM_DELTAS_PER_SELECTED = 8
 MAX_QUALIFIED_ALIASES = 2
 ALIAS_COSINE_ABS_TOLERANCE = 1e-6
@@ -323,6 +325,20 @@ def map_sibling_behavioral_report(
         "alias_substitution_advantage": report.metrics.alias_substitution_advantage,
         "downstream_mean_abs_closure": report.metrics.downstream_mean_abs_closure,
     }
+    # New calibrated aggregates are additive to the sibling report contract. Keep
+    # this adapter able to summarize reports produced by either side of an atomic
+    # paired-workspace rollout; absent fields remain explicit rather than being
+    # inferred from the older absolute-error aggregates.
+    for name in (
+        "direct_mean_relative_closure",
+        "direct_max_relative_closure",
+        "downstream_mean_relative_closure",
+        "downstream_p95_relative_closure",
+        "necessity_predicted_realized_spearman",
+        "necessity_median_high_control_effect_ratio",
+        "alias_relative_effect_error",
+    ):
+        metrics[name] = getattr(report.metrics, name, None)
     reasons = [_reason_code(reason) for reason in report.reasons]
     if report.refusal is not None:
         reasons.append(f"runtime_refusal_{_slug(report.refusal.code)}")
@@ -398,6 +414,17 @@ def _accepted_graph_view(
     active = _integer_array(compact, "active_features", ndim=2)
     if active.shape[1:] != (3,):
         raise _EvidenceRefusal("invalid_compact_field", "active_features")
+    active_keys = tuple(_feature_key(row) for row in active)
+    if len(set(active_keys)) != len(active_keys):
+        raise _EvidenceRefusal("invalid_compact_field", "active_features")
+    activation_values = _floating_vector(compact, "activation_values")
+    if len(activation_values) != len(active) or not np.isfinite(
+        activation_values
+    ).all():
+        raise _EvidenceRefusal("invalid_compact_field", "activation_values")
+    activation_by_key = {
+        key: float(activation_values[index]) for index, key in enumerate(active_keys)
+    }
     selected_indices = _integer_array(compact, "selected_features", ndim=1)
     feature_rows = _integer_array(compact, "feature_row_node_indices", ndim=1)
     if (
@@ -423,6 +450,10 @@ def _accepted_graph_view(
     frontier_selected = {record.key: record for record in candidate.frontier.selected}
     if set(frontier_selected) != set(selected_keys):
         raise _EvidenceRefusal("frontier_selected_graph_mismatch")
+    _validate_frontier_active_values(
+        candidate.frontier.selected + candidate.frontier.near_cutoff,
+        activation_by_key=activation_by_key,
+    )
 
     feature_matrix = _floating_matrix(compact, "feature_feature_edges")
     logit_matrix = _floating_matrix(compact, "logit_feature_edges")
@@ -442,63 +473,69 @@ def _accepted_graph_view(
     selected_features_without_closure = tuple(
         FeatureEvidence(
             node=_to_sibling_node(key),
-            baseline_preactivation=frontier_selected[key].activation,
+            baseline_preactivation=activation_by_key[key],
             target_influence=float(target_influences[column]),
             selected=True,
             selection_rank=frontier_selected[key].rank,
         )
         for column, key in enumerate(selected_keys)
     )
-    selected_layers = {key.layer for key in selected_keys}
-    active_keys = {_feature_key(row) for row in active}
-    if any(item.key not in active_keys for item in candidate.frontier.near_cutoff):
-        raise _EvidenceRefusal("frontier_feature_not_in_active_features")
-    control_records = sorted(
-        (
-            item
-            for item in candidate.frontier.near_cutoff
-            if item.key.layer in selected_layers
-        ),
-        key=_control_order,
+    selected_only_view = AcceptedGraphView(
+        graph_fingerprint=graph.graph_fingerprint,
+        features=selected_features_without_closure,
     )
-    records_by_key = {record.key: record for record in control_records}
-    required_substitutes = tuple(
-        alias.substitute for alias in candidate.qualified_aliases
+    selection_kwargs: dict[str, float] = {}
+    if candidate.policy.calibration is not None:
+        selection_kwargs["min_abs_predicted_target_delta"] = (
+            candidate.policy.calibration.direct_min_abs_predicted_target_delta
+        )
+    direct_features = select_direct_features(
+        selected_only_view,
+        sample_count=candidate.policy.direct_sample_count,
+        **selection_kwargs,
     )
-    if any(key not in records_by_key for key in required_substitutes):
-        raise _EvidenceRefusal("qualified_alias_substitute_not_in_frontier")
-    bounded_control_records: list[FrontierRecord] = []
-    for key in required_substitutes:
-        record = records_by_key[key]
-        if record not in bounded_control_records:
-            bounded_control_records.append(record)
-    for record in control_records:
-        if record not in bounded_control_records:
-            bounded_control_records.append(record)
-        if len(bounded_control_records) >= MAX_UNSELECTED_CONTROLS:
-            break
-    controls = tuple(
+    necessity_sample_count = min(
+        candidate.policy.necessity_sample_count,
+        MAX_NECESSITY_CONTROLS,
+    )
+    required_necessity_nodes: list[FeatureNode] = []
+    for alias in candidate.qualified_aliases[: candidate.policy.alias_sample_count]:
+        source_node = _to_sibling_node(alias.source)
+        if (
+            source_node not in required_necessity_nodes
+            and len(required_necessity_nodes) < necessity_sample_count
+        ):
+            required_necessity_nodes.append(source_node)
+    necessity_features = select_necessity_features(
+        selected_only_view,
+        sample_count=necessity_sample_count,
+        required_nodes=tuple(required_necessity_nodes),
+        **selection_kwargs,
+    )
+    alias_records = _alias_frontier_control_records(candidate)
+    reserved_alias_keys = {record.key for record in alias_records}
+    matched_controls = _matched_necessity_controls(
+        necessity_features=necessity_features,
+        active_keys=active_keys,
+        activation_by_key=activation_by_key,
+        selected_keys=set(selected_keys),
+        reserved_keys=reserved_alias_keys,
+    )
+    alias_controls = tuple(
         FeatureEvidence(
             node=_to_sibling_node(record.key),
-            baseline_preactivation=record.activation,
+            baseline_preactivation=activation_by_key[record.key],
             target_influence=record.signed_target_effect,
             selected=False,
         )
-        for record in bounded_control_records[:MAX_UNSELECTED_CONTROLS]
+        for record in alias_records
     )
+    controls = matched_controls + alias_controls
+    if len(controls) > MAX_UNSELECTED_CONTROLS:
+        raise _EvidenceRefusal("bounded_unselected_control_budget_exceeded")
     if not controls:
         raise _EvidenceRefusal("missing_same_layer_unselected_control")
-    provisional_view = AcceptedGraphView(
-        graph_fingerprint=graph.graph_fingerprint,
-        features=selected_features_without_closure + controls,
-    )
-    direct_nodes = {
-        feature.node
-        for feature in select_direct_features(
-            provisional_view,
-            sample_count=candidate.policy.direct_sample_count,
-        )
-    }
+    direct_nodes = {feature.node for feature in direct_features}
     selected_features = tuple(
         replace(
             feature,
@@ -636,7 +673,12 @@ def _alias_controls(
     candidates: list[AliasControlCandidate] = []
     for node, feature in features.items():
         key = FeatureKey(node.layer, node.position, node.feature)
-        if feature.selected or key.layer != source.layer or key in {source, substitute}:
+        if (
+            feature.selected
+            or feature.necessity_control_for is not None
+            or key.layer != source.layer
+            or key in {source, substitute}
+        ):
             continue
         vector = _decoder_vector(decoder_source, key)
         norm = float(np.linalg.norm(vector))
@@ -699,6 +741,96 @@ def _downstream_deltas(
     )
 
 
+def _matched_necessity_controls(
+    *,
+    necessity_features: tuple[FeatureEvidence, ...],
+    active_keys: tuple[FeatureKey, ...],
+    activation_by_key: Mapping[FeatureKey, float],
+    selected_keys: set[FeatureKey],
+    reserved_keys: set[FeatureKey],
+) -> tuple[FeatureEvidence, ...]:
+    """Choose one explicit, unique null control for each necessity anchor."""
+
+    available = set(active_keys) - selected_keys - reserved_keys
+    controls: list[FeatureEvidence] = []
+    for high in necessity_features:
+        high_key = FeatureKey(high.node.layer, high.node.position, high.node.feature)
+        candidates = (key for key in available if key.layer == high_key.layer)
+        control = min(
+            candidates,
+            key=lambda key: (
+                key.position != high_key.position,
+                abs(
+                    abs(activation_by_key[key])
+                    - abs(high.baseline_preactivation)
+                ),
+                key,
+            ),
+            default=None,
+        )
+        if control is None:
+            raise _EvidenceRefusal("missing_matched_necessity_control")
+        available.remove(control)
+        controls.append(
+            FeatureEvidence(
+                node=_to_sibling_node(control),
+                baseline_preactivation=activation_by_key[control],
+                # This is an intentionally declared null prediction. Unselected
+                # active features have no accepted target-logit graph column.
+                target_influence=0.0,
+                selected=False,
+                necessity_control_for=high.node,
+            )
+        )
+    return tuple(controls)
+
+
+def _alias_frontier_control_records(
+    candidate: LiveBehavioralCandidate,
+) -> tuple[FrontierRecord, ...]:
+    """Retain frontier controls only when a pre-qualified alias needs them."""
+
+    if not candidate.qualified_aliases:
+        return ()
+    records = {record.key: record for record in candidate.frontier.near_cutoff}
+    substitutes = {alias.substitute for alias in candidate.qualified_aliases}
+    chosen: list[FrontierRecord] = []
+    for alias in candidate.qualified_aliases:
+        substitute = records.get(alias.substitute)
+        if substitute is None:
+            raise _EvidenceRefusal("qualified_alias_substitute_not_in_frontier")
+        if substitute not in chosen:
+            chosen.append(substitute)
+        comparator = min(
+            (
+                record
+                for record in records.values()
+                if record.key.layer == alias.source.layer
+                and record.key not in substitutes
+                and record not in chosen
+            ),
+            key=_control_order,
+            default=None,
+        )
+        if comparator is None:
+            raise _EvidenceRefusal("missing_alias_frontier_control")
+        chosen.append(comparator)
+    return tuple(chosen)
+
+
+def _validate_frontier_active_values(
+    records: tuple[FrontierRecord, ...],
+    *,
+    activation_by_key: Mapping[FeatureKey, float],
+) -> None:
+    for record in records:
+        active_value = activation_by_key.get(record.key)
+        if active_value is None:
+            raise _EvidenceRefusal("frontier_feature_not_in_active_features")
+        if active_value != record.activation:
+            raise _EvidenceRefusal("frontier_activation_value_mismatch")
+
+
 def _integer_array(value: Mapping[str, Any], key: str, *, ndim: int) -> np.ndarray:
     array = _array(value, key)
     if array.ndim != ndim or not np.issubdtype(array.dtype, np.integer):
@@ -712,6 +844,13 @@ def _floating_matrix(value: Mapping[str, Any], key: str) -> np.ndarray:
         array.ndim != 2
         or not np.issubdtype(array.dtype, np.floating)
     ):
+        raise _EvidenceRefusal("invalid_compact_field", key)
+    return array
+
+
+def _floating_vector(value: Mapping[str, Any], key: str) -> np.ndarray:
+    array = _array(value, key)
+    if array.ndim != 1 or not np.issubdtype(array.dtype, np.floating):
         raise _EvidenceRefusal("invalid_compact_field", key)
     return array
 

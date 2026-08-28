@@ -15,7 +15,7 @@ import json
 import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from circuit_tracer.verification import (
     FeatureNode,
@@ -47,7 +47,11 @@ from nlp_research_project.exact_trace_bench.typed_compact_graph import (
 
 
 REPORT_SCHEMA = "behavioral_faithfulness_report"
-REPORT_SCHEMA_VERSION = 1
+CURRENT_REPORT_SCHEMA_VERSION = 2
+HISTORICAL_REPORT_SCHEMA_VERSIONS = frozenset({1})
+SUPPORTED_REPORT_SCHEMA_VERSIONS = frozenset(
+    {CURRENT_REPORT_SCHEMA_VERSION, *HISTORICAL_REPORT_SCHEMA_VERSIONS}
+)
 DEFAULT_DEADLINE_SECONDS = 120.0
 DEFAULT_CLEANUP_RESERVE_SECONDS = 1.0
 DEFAULT_PREDICTED_BASELINE_SECONDS = 1.0
@@ -62,7 +66,7 @@ class ReplayRefusal(ValueError):
 def _mapping(value: object, label: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise ReplayRefusal(f"{label} must be an object")
-    return value
+    return cast(Mapping[str, Any], value)
 
 
 def _sequence(value: object, label: str) -> Sequence[Any]:
@@ -94,6 +98,12 @@ def _number(value: object, label: str, *, optional: bool = False) -> float | Non
     return result
 
 
+def _required_number(value: object, label: str) -> float:
+    result = _number(value, label)
+    assert result is not None
+    return result
+
+
 def _canonical(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
@@ -105,7 +115,12 @@ def load_behavioral_payload(path: Path) -> Mapping[str, Any]:
         raise ReplayRefusal(f"cannot load behavioral report: {path}") from exc
     if document.get("schema") != REPORT_SCHEMA:
         raise ReplayRefusal("unsupported behavioral report schema")
-    if document.get("schema_version") != REPORT_SCHEMA_VERSION:
+    schema_version = document.get("schema_version")
+    if (
+        isinstance(schema_version, bool)
+        or not isinstance(schema_version, int)
+        or schema_version not in SUPPORTED_REPORT_SCHEMA_VERSIONS
+    ):
         raise ReplayRefusal("unsupported behavioral report schema_version")
     payload = _mapping(document.get("report"), "report.report")
     expected = _string(document.get("evidence_fingerprint"), "evidence_fingerprint")
@@ -163,11 +178,9 @@ def _variant(value: object, label: str) -> InterventionVariant:
     interventions = tuple(
         PreactivationIntervention(
             node=_feature_node(raw.get("node"), f"{label}.interventions[{index}].node"),
-            absolute_value=float(
-                _number(
-                    raw.get("absolute_value"),
-                    f"{label}.interventions[{index}].absolute_value",
-                )
+            absolute_value=_required_number(
+                raw.get("absolute_value"),
+                f"{label}.interventions[{index}].absolute_value",
             ),
             graph_baseline_value=_number(
                 raw.get("graph_baseline_value"),

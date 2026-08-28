@@ -41,6 +41,7 @@ class NumericalStabilityStatus(str, Enum):
     EXACT_STABLE = "exact_stable"
     ALIAS_STABLE = "alias_stable"
     BOUNDED = "bounded"
+    REVIEW = "review"
     DIVERGENT = "divergent"
     UNKNOWN = "unknown"
 

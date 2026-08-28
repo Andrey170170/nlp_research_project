@@ -17,6 +17,8 @@ from circuit_tracer.verification import (
     BehavioralProbePolicy,
     EvidenceCompleteness,
     FaithfulnessVerdict,
+    FeatureNode,
+    FrozenBehavioralCalibration,
     RuntimeExecutionStatus,
     VariantKind,
     plan_behavioral_variants,
@@ -79,6 +81,7 @@ def _candidate(tmp_path: Path, *, controls: int = 1) -> LiveBehavioralCandidate:
     write_typed_graph(graph_path)
     graph = load_typed_compact_graph(graph_path)
     selected_keys = (FeatureKey(0, 0, 4), FeatureKey(1, 1, 9))
+    matched_keys = (FeatureKey(0, 0, 200), FeatureKey(1, 1, 201))
     control_keys = tuple(FeatureKey(0, 1, 100 + index) for index in range(controls))
     active = np.asarray(
         [
@@ -86,6 +89,7 @@ def _candidate(tmp_path: Path, *, controls: int = 1) -> LiveBehavioralCandidate:
                 tuple((key.layer, key.position, key.feature_id))
                 for key in selected_keys
             ),
+            *(tuple((key.layer, key.position, key.feature_id)) for key in matched_keys),
             *(tuple((key.layer, key.position, key.feature_id)) for key in control_keys),
         ],
         dtype=np.int64,
@@ -119,7 +123,7 @@ def _candidate(tmp_path: Path, *, controls: int = 1) -> LiveBehavioralCandidate:
                 key,
                 selected=False,
                 rank=2 + index,
-                activation=2.1 + index,
+                activation=float(np.float32(2.1 + index)),
                 effect=0.01 + index / 100,
             )
             for index, key in enumerate(control_keys)
@@ -128,6 +132,16 @@ def _candidate(tmp_path: Path, *, controls: int = 1) -> LiveBehavioralCandidate:
     )
     compact_result = {
         "active_features": active,
+        "activation_values": np.asarray(
+            [
+                2.0,
+                -3.0,
+                1.9,
+                -2.9,
+                *(2.1 + index for index in range(controls)),
+            ],
+            dtype=np.float32,
+        ),
         "selected_features": np.asarray([0, 1], dtype=np.int64),
         "feature_row_node_indices": np.asarray([0, 1], dtype=np.int64),
         "feature_feature_edges": np.asarray([[1.0, 0.2], [0.5, 1.0]], dtype=np.float32),
@@ -178,13 +192,96 @@ def test_builds_bounded_accepted_view_from_strictly_bound_evidence(
     selected = tuple(item for item in features if item.selected)
     controls = tuple(item for item in features if not item.selected)
     assert len(selected) == 2
-    assert len(controls) == 8
+    assert len(controls) == 2
     assert selected[0].baseline_preactivation == 2.0
     assert selected[0].target_influence == np.float32(0.8)
     assert selected[0].predicted_downstream_feature_deltas[0].node.layer == 1
     assert selected[0].predicted_downstream_feature_deltas[0].preactivation == 0.5
     assert selected[1].predicted_downstream_feature_deltas == ()
-    assert tuple(item.node.feature for item in controls) == tuple(range(100, 108))
+    assert tuple(item.node.feature for item in controls) == (200, 201)
+    assert all(item.target_influence == 0.0 for item in controls)
+    assert tuple(item.necessity_control_for for item in controls) == tuple(
+        item.node for item in selected
+    )
+
+
+def test_matched_controls_prefer_same_position_then_activation_and_are_unique(
+    tmp_path: Path,
+) -> None:
+    initial = _candidate(tmp_path, controls=1)
+    compact = dict(initial.compact_result)
+    compact["active_features"] = np.concatenate(
+        (
+            np.asarray(compact["active_features"]),
+            np.asarray([[0, 9, 202], [1, 9, 203]], dtype=np.int64),
+        ),
+        axis=0,
+    )
+    compact["activation_values"] = np.concatenate(
+        (
+            np.asarray(compact["activation_values"]),
+            np.asarray([2.0, -3.0], dtype=np.float32),
+        )
+    )
+
+    prepared = prepare_live_behavioral_request(
+        replace(initial, compact_result=compact)
+    )
+
+    assert prepared.status is BehavioralRequestStatus.READY
+    assert prepared.request is not None
+    controls = tuple(
+        feature
+        for feature in prepared.request.graph.features
+        if feature.necessity_control_for is not None
+    )
+    # Exact activation matches exist at another position, but same-position
+    # controls are the first matching dimension and each anchor owns one control.
+    assert tuple(feature.node.feature for feature in controls) == (200, 201)
+    assert len({feature.node for feature in controls}) == len(controls)
+
+
+def test_active_activation_mismatch_refuses_before_planning(tmp_path: Path) -> None:
+    initial = _candidate(tmp_path)
+    compact = dict(initial.compact_result)
+    activation_values = np.asarray(compact["activation_values"]).copy()
+    activation_values[0] = 2.5
+    compact["activation_values"] = activation_values
+
+    prepared = prepare_live_behavioral_request(
+        replace(initial, compact_result=compact)
+    )
+
+    assert prepared.status is BehavioralRequestStatus.UNKNOWN
+    assert prepared.assessment.reason_codes == ("frontier_activation_value_mismatch",)
+
+
+def test_calibrated_eligibility_is_shared_by_anchor_and_control_selection(
+    tmp_path: Path,
+) -> None:
+    initial = _candidate(tmp_path)
+    calibration = FrozenBehavioralCalibration(
+        calibration_id="correctness-calibration-v1",
+        policy_id=initial.policy.policy_id,
+        direct_min_abs_predicted_target_delta=0.5,
+        direct_max_mean_relative_closure=0.05,
+    )
+    candidate = replace(
+        initial,
+        policy=replace(initial.policy, calibration=calibration),
+    )
+
+    prepared = prepare_live_behavioral_request(candidate)
+
+    assert prepared.status is BehavioralRequestStatus.READY
+    assert prepared.request is not None
+    controls = tuple(
+        feature
+        for feature in prepared.request.graph.features
+        if feature.necessity_control_for is not None
+    )
+    assert len(controls) == 1
+    assert controls[0].necessity_control_for == prepared.request.graph.features[0].node
 
 
 def test_8192_selected_view_reads_only_policy_bounded_downstream_columns(
@@ -193,13 +290,21 @@ def test_8192_selected_view_reads_only_policy_bounded_downstream_columns(
 ) -> None:
     selected_count = 8192
     selected_keys = tuple(FeatureKey(0, 0, index) for index in range(selected_count))
-    control_key = FeatureKey(0, 0, selected_count)
+    control_keys = tuple(
+        FeatureKey(0, 0, selected_count + index) for index in range(3)
+    )
     selected_rows = np.asarray(
         [(key.layer, key.position, key.feature_id) for key in selected_keys],
         dtype=np.int64,
     )
     active = np.concatenate(
-        (selected_rows, np.asarray([[0, 0, selected_count]], dtype=np.int64)),
+        (
+            selected_rows,
+            np.asarray(
+                [(key.layer, key.position, key.feature_id) for key in control_keys],
+                dtype=np.int64,
+            ),
+        ),
         axis=0,
     )
     matrix_storage = np.zeros((selected_count, 1), dtype=np.float32)
@@ -227,7 +332,7 @@ def test_8192_selected_view_reads_only_policy_bounded_downstream_columns(
         ),
         near_cutoff=(
             _record(
-                control_key,
+                control_keys[0],
                 selected=False,
                 rank=selected_count,
                 activation=1.0,
@@ -240,6 +345,7 @@ def test_8192_selected_view_reads_only_policy_bounded_downstream_columns(
         graph_path=tmp_path / "unused.npz",
         compact_result={
             "active_features": active,
+            "activation_values": np.ones(len(active), dtype=np.float32),
             "selected_features": np.arange(selected_count, dtype=np.int64),
             "feature_row_node_indices": np.arange(selected_count, dtype=np.int64),
             "feature_feature_edges": feature_matrix,
@@ -281,7 +387,7 @@ def test_8192_selected_view_reads_only_policy_bounded_downstream_columns(
 
     view = _accepted_graph_view(candidate, cast(TypedCompactGraph, graph))
 
-    assert len(view.features) == selected_count + 1
+    assert len(view.features) == selected_count + 3
     assert len(columns) == candidate.policy.direct_sample_count
     assert len(set(columns)) == candidate.policy.direct_sample_count
     assert np.shares_memory(feature_matrix, matrix_storage)
@@ -299,7 +405,7 @@ class _FakeDecoderSource:
         return np.asarray(self._vectors[feature], dtype=np.float32)
 
 
-def test_qualified_alias_uses_exact_decoder_geometry_and_plans_triplet(
+def test_qualified_alias_uses_exact_decoder_geometry_and_reuses_necessity_pair(
     tmp_path: Path,
 ) -> None:
     initial = _candidate(tmp_path, controls=2)
@@ -336,17 +442,120 @@ def test_qualified_alias_uses_exact_decoder_geometry_and_plans_triplet(
     assert prepared.request is not None
     assert len(prepared.request.aliases) == 1
     alias = prepared.request.aliases[0]
-    assert alias.substitute_absolute_preactivation == 4.1
+    assert alias.substitute_absolute_preactivation == pytest.approx(4.1)
     assert alias.selection_evidence.decoder_fingerprint == _fingerprint("decoder")
     assert alias.selection_evidence.least_squares_coefficient == 1.0
     assert alias.control_candidates[0].node.feature == 101
     assert alias.control_candidates[0].similarity_to_source == 0.0
     kinds = {item.kind for item in plan_behavioral_variants(prepared.request)}
     assert {
-        VariantKind.ALIAS_SOURCE_ABLATION,
+        VariantKind.NECESSITY_HIGH,
+        VariantKind.NECESSITY_CONTROL,
         VariantKind.ALIAS_SUBSTITUTION,
-        VariantKind.ALIAS_CONTROL,
     }.issubset(kinds)
+
+
+def test_alias_source_outside_ordinary_cohort_is_forced_into_necessity_pair(
+    tmp_path: Path,
+) -> None:
+    initial = _candidate(tmp_path, controls=2)
+    graph = load_typed_compact_graph(initial.graph_path)
+    source = FeatureKey(1, 1, 9)
+    substitute = FeatureKey(1, 1, 201)
+    matched_control = FeatureKey(1, 1, 202)
+    alias_control = FeatureKey(1, 2, 203)
+    compact = dict(initial.compact_result)
+    compact["active_features"] = np.concatenate(
+        (
+            np.asarray(compact["active_features"]),
+            np.asarray(
+                [
+                    (
+                        matched_control.layer,
+                        matched_control.position,
+                        matched_control.feature_id,
+                    ),
+                    (
+                        alias_control.layer,
+                        alias_control.position,
+                        alias_control.feature_id,
+                    ),
+                ],
+                dtype=np.int64,
+            ),
+        ),
+        axis=0,
+    )
+    compact["activation_values"] = np.concatenate(
+        (
+            np.asarray(compact["activation_values"]),
+            np.asarray([-2.8, -2.7], dtype=np.float32),
+        )
+    )
+    alias_frontier = replace(
+        initial.frontier,
+        near_cutoff=(
+            _record(
+                substitute,
+                selected=False,
+                rank=2,
+                activation=float(np.float32(-2.9)),
+                effect=0.01,
+            ),
+            _record(
+                alias_control,
+                selected=False,
+                rank=3,
+                activation=float(np.float32(-2.7)),
+                effect=0.0,
+            ),
+        ),
+        near_cutoff_count=2,
+    )
+    candidate = replace(
+        initial,
+        compact_result=compact,
+        frontier=alias_frontier,
+        policy=replace(initial.policy, necessity_sample_count=1),
+        qualified_aliases=(
+            QualifiedAliasPair(
+                source=source,
+                substitute=substitute,
+                selection_policy_id="frontier_alias_calibration_v1",
+                calibration_fingerprint=_fingerprint("calibration"),
+                comparison_evidence_fingerprint=_fingerprint("comparison"),
+                baseline_graph_fingerprint=_fingerprint("baseline-graph"),
+                candidate_graph_fingerprint=graph.graph_fingerprint,
+                qualified_decoder_cosine=1.0,
+            ),
+        ),
+        decoder_source=_FakeDecoderSource(
+            {
+                source: (1.0, 0.0),
+                substitute: (1.0, 0.0),
+                alias_control: (0.0, 1.0),
+            }
+        ),
+    )
+
+    prepared = prepare_live_behavioral_request(candidate)
+
+    assert prepared.status is BehavioralRequestStatus.READY
+    assert prepared.request is not None
+    owned_controls = tuple(
+        feature
+        for feature in prepared.request.graph.features
+        if feature.necessity_control_for is not None
+    )
+    assert len(owned_controls) == 1
+    assert owned_controls[0].node.feature == matched_control.feature_id
+    assert owned_controls[0].necessity_control_for == FeatureNode(
+        source.layer,
+        source.position,
+        source.feature_id,
+    )
+    kinds = {item.kind for item in plan_behavioral_variants(prepared.request)}
+    assert VariantKind.ALIAS_SUBSTITUTION in kinds
 
 
 def test_live_provider_decoder_source_uses_clt_and_plt_authoritative_rows() -> None:
@@ -479,14 +688,21 @@ def test_maps_sibling_verdict_metrics_reasons_and_evidence_identity() -> None:
             no_op_passed=True,
             metrics=BehavioralAggregateMetrics(
                 direct_mean_abs_closure=0.01,
+                direct_mean_relative_closure=0.02,
+                direct_max_relative_closure=0.04,
                 direct_sign_agreement=1.0,
                 necessity_high_vs_control_separation=0.5,
+                necessity_predicted_realized_spearman=0.9,
+                necessity_median_high_control_effect_ratio=2.5,
                 alias_mean_abs_target_delta=None,
                 alias_mean_abs_closure=None,
+                alias_relative_effect_error=None,
                 alias_substitution_vs_source_ablation=None,
                 alias_control_vs_source_ablation=None,
                 alias_substitution_advantage=None,
                 downstream_mean_abs_closure=0.02,
+                downstream_mean_relative_closure=0.03,
+                downstream_p95_relative_closure=0.05,
             ),
             reasons=("Frozen threshold satisfied",),
             refusal=None,
@@ -498,6 +714,8 @@ def test_maps_sibling_verdict_metrics_reasons_and_evidence_identity() -> None:
 
     assert mapped.status is BehavioralFaithfulnessStatus.SUPPORTED
     assert mapped.metrics["variants_completed"] == 4
+    assert mapped.metrics["direct_mean_relative_closure"] == 0.02
+    assert mapped.metrics["necessity_predicted_realized_spearman"] == 0.9
     assert mapped.metrics["alias_substitution_advantage"] is None
     assert mapped.reason_codes == ("sibling_frozen_threshold_satisfied",)
     assert mapped.evidence_fingerprint == _fingerprint("behavioral-evidence")

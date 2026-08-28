@@ -1,7 +1,7 @@
 # Current Project Roadmap
 
 Status: Current scratch roadmap
-Last updated: 2026-08-25
+Last updated: 2026-08-28
 
 ## Active Priority
 
@@ -28,9 +28,12 @@ speed optimized opportunistically inside the admitted set. Step 1a's atomic
 code migration now makes the six versioned typed edge buckets the only new graph
 artifact. Frozen 12B/1,024 GPU qualification job `1850118` completed and
 strictly reopened the schema-v2 `typed_compact_graph_v2` artifact, closing
-Step 1a persistence and packaging qualification. Step 1b adds
-separate structural, alias-aware numerical-stability, and behavioral-faithfulness
-verdicts plus a bounded same-process intervention probe. Later work separates
+Step 1a persistence and packaging qualification. Step 1b's code and frozen
+calibration are now locally validated and bound through immutable
+prepared-workload knobs. It adds separate structural, alias-aware
+numerical-stability, and behavioral-faithfulness verdicts plus a bounded
+same-process intervention probe; held-out scientific qualification remains
+open. Later work separates
 row retention/access/reduction, selects full -> windowed -> tiled -> recompute,
 and acquires source-agnostic 2K/5K/10K stress. Governor response-model promotion,
 fidelity-scope authorization, baseline-registry changes, and launch-default
@@ -168,6 +171,20 @@ performed zero decoder page loads, peak HBM was 48,861 MiB, and mechanism
 validation completed. This closes Step 1a only: it supplies no Step 1b
 repeat/reference numerical-stability or behavioral-faithfulness verdict.
 
+Step 1b development jobs r4 `1861310`, r5 `1862192`, and r6 `1862432` form the
+declared calibration corpus and cannot also serve as held-out qualification.
+All three contribute immutable numerical receipts; r4 and r5 were behavioral
+debug iterations and are not successful faithfulness evidence. R6 completed
+the raw four-variant probe in 94.78 seconds and supplies the sole complete
+behavioral calibration observation, but its live verdict correctly remained
+`unknown` because no frozen calibration was yet declared. The implementation
+now verifies the versioned calibration, nested numerical-reference manifest,
+and transitive receipt hashes before required-mode execution. Its v1 required
+scopes are repeat and canonical typed-graph stability plus repeat-frontier
+stability; canonical-frontier stability is not claimed because the Step 1a
+reference has no frontier sidecar. The next evidence gate is a held-out
+required-mode 12B/1,024 r7 run from an immutable paired snapshot.
+
 Bounded parallel preheat is now implemented behind a reusable module and all
 three preheated wrappers. Deterministic file discovery and inode deduplication
 are preserved; a bounded file-level worker pool uses positional reads, exact
@@ -200,13 +217,15 @@ The immediate post-repeat work splits into two parallel lanes:
    and job `1850118` completed the frozen 12B/1,024 GPU qualification:
    both writers use one versioned six-bucket policy, generic `max_edges` and
    current `all_edge_*` promotion metrics disappear, and legacy reading becomes
-   explicitly historical. Step 1b defines independent structural/algorithmic,
+   explicitly historical. Step 1b now implements independent structural/algorithmic,
    repeat/reference numerical, and behavioral-faithfulness reports. Numerical
    stability retains exact-ID evidence but adds deterministic one-to-one
    decoder-soft matching for the selected/near-cutoff frontier; the bounded
-   same-process probe adds direct-effect closure, propagated necessity versus a
-   matched control, and sampled causal alias substitution. Full-circuit
-   sufficiency remains unknown in version one. Then run `cuda_full` directly at
+   same-process probe adds direct-effect closure, three propagated-necessity
+   samples versus matched controls, and conditional sampled causal alias
+   substitution under a ten-variant/120-second ceiling. Full-circuit
+   sufficiency remains unknown in version one. First qualify the frozen gate on
+   held-out r7; then run `cuda_full` directly at
    frozen 12B/1,024, paired with its windowed control in one allocation when
    practical. Queue latency makes a separately scheduled 4B/512 prerequisite
    low-value; retain 4B/512 only for concrete debugging.

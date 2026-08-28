@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-import time
 from typing import Any
 
 from circuit_tracer.verification import (
@@ -21,12 +21,17 @@ from ..correctness.behavioral import (
     MAX_UNSELECTED_CONTROLS,
     BehavioralProbeMode,
     BehavioralRequestStatus,
-    LiveProviderDecoderSource,
     LiveBehavioralCandidate,
+    LiveProviderDecoderSource,
     QualifiedAliasPair,
     map_sibling_behavioral_report,
     persist_sibling_behavioral_report,
     prepare_live_behavioral_request,
+)
+from ..correctness.calibration import (
+    FrozenCorrectnessCalibration,
+    calibration_declaration_from_graph_knobs,
+    load_declared_correctness_calibration,
 )
 from ..correctness.contracts import (
     BehavioralFaithfulnessReport,
@@ -47,23 +52,23 @@ from ..correctness.contracts import (
     TerminalSuccessEvidence,
     TraceScopeCleanupEvidence,
 )
+from ..correctness.frontier import FeatureKey
 from ..correctness.frontier_artifact import (
     build_bounded_frontier_artifact,
     save_bounded_frontier_artifact,
 )
-from ..correctness.frontier import FeatureKey
-from ..correctness.persistence import save_correctness_report
 from ..correctness.numerical import (
+    DeclaredNumericalEvaluation,
     declaration_from_graph_knobs,
     evaluate_declared_numerical_stability,
     file_sha256,
 )
+from ..correctness.persistence import save_correctness_report
 from ..correctness.structural import evaluate_structural_conformance
 from ..io_utils import write_json
 from ..trace_runtime.artifacts import load_and_validate_capture_artifact
 from ..typed_compact_graph import load_typed_compact_graph
 from .execution_control import execution_resolution
-
 
 _ROW_DENOMINATOR_POLICY_ID = "canonical_scaled_l1_row_evidence_sha256_v2"
 _REQUIRED_NUMERICAL_STATUSES_BY_POLICY = {
@@ -85,6 +90,42 @@ class CorrectnessGateOutcome:
 
 class _BehavioralPreparationDeadlineExhausted(RuntimeError):
     """Internal control flow after a fail-closed preparation budget refusal."""
+
+
+def _behavioral_probe_policy(
+    *,
+    policy_id: str,
+    calibration: FrozenCorrectnessCalibration | None,
+) -> BehavioralProbePolicy:
+    kwargs = (
+        {}
+        if calibration is None
+        else calibration.behavioral_probe_policy_kwargs()
+    )
+    return BehavioralProbePolicy(policy_id=policy_id, **kwargs)
+
+
+def _behavioral_calibration_admitted(
+    *,
+    mode: BehavioralProbeMode,
+    calibration: FrozenCorrectnessCalibration | None,
+) -> bool:
+    return mode is not BehavioralProbeMode.REQUIRED or calibration is not None
+
+
+def _behavioral_alias_handoff(
+    *,
+    mode: BehavioralProbeMode,
+    calibration: FrozenCorrectnessCalibration | None,
+    numerical_aliases: tuple[QualifiedAliasPair, ...],
+    compact_result: Mapping[str, Any],
+    required_alias: bool = True,
+) -> tuple[QualifiedAliasPair, ...]:
+    if calibration is not None:
+        return numerical_aliases if required_alias else ()
+    if mode is BehavioralProbeMode.SMOKE:
+        return _qualified_alias_pairs(compact_result)
+    return ()
 
 
 def run_full_answer_correctness_gate(
@@ -124,6 +165,28 @@ def run_full_answer_correctness_gate(
 
     errors: list[dict[str, str]] = []
     artifacts: dict[str, dict[str, Any]] = {}
+    calibration: FrozenCorrectnessCalibration | None = None
+    try:
+        calibration_declaration = calibration_declaration_from_graph_knobs(knobs)
+        if calibration_declaration is None:
+            artifacts["calibration"] = {"status": "not_declared", "path": None}
+        else:
+            calibration = load_declared_correctness_calibration(
+                calibration_declaration,
+                graph_knobs=knobs,
+            )
+            artifacts["calibration"] = {
+                "status": "validated",
+                "path": str(calibration.manifest_path),
+                "calibration_id": calibration.calibration_id,
+                "calibration_fingerprint": calibration.calibration_fingerprint,
+                "required_numerical_scopes": list(
+                    calibration.required_numerical_scopes
+                ),
+            }
+    except (OSError, TypeError, ValueError) as error:
+        _record_error(errors, "correctness_calibration", error)
+        artifacts["calibration"] = {"status": "unavailable", "path": None}
     reopened_graph = None
     try:
         reopened_graph = load_typed_compact_graph(
@@ -166,6 +229,9 @@ def run_full_answer_correctness_gate(
         metrics={"policy_id": policy_id},
         reason_codes=("behavioral_probe_unavailable",),
     )
+    alias_comparator_status: str | None = None
+    behavioral_alias_selection_count = 0
+    numerical_aliases: tuple[QualifiedAliasPair, ...] = ()
 
     frontier = None
     try:
@@ -200,9 +266,12 @@ def run_full_answer_correctness_gate(
             graph_path=graph_path,
             token_dir=token_dir,
             frontier_available=frontier is not None,
+            calibration=calibration,
         )
         if numerical_result is not None:
-            numerical, numerical_artifact = numerical_result
+            numerical_evaluation, numerical_artifact = numerical_result
+            numerical = numerical_evaluation.report
+            numerical_aliases = numerical_evaluation.qualified_alias_pairs
             artifacts["numerical_details"] = numerical_artifact
     except Exception as error:
         _record_error(errors, "declared_numerical_comparison", error)
@@ -218,16 +287,46 @@ def run_full_answer_correctness_gate(
         )
         artifacts["numerical_details"] = {"status": "unavailable", "path": None}
 
-    if frontier is not None and (
-        envelope_cleanup is None or envelope_cleanup.complete
+    behavioral_calibration_admitted = _behavioral_calibration_admitted(
+        mode=mode,
+        calibration=calibration,
+    )
+    required_alias_scope_ids = _required_alias_scope_ids(
+        scopes=numerical.scopes,
+        required_scope_ids=(
+            None if calibration is None else calibration.required_numerical_scopes
+        ),
+    )
+    required_alias_handoff_admitted = not required_alias_scope_ids or (
+        calibration is not None
+        and _qualified_alias_handoff_satisfied(
+            policy_id=policy_id,
+            calibration_fingerprint=calibration.calibration_fingerprint,
+            qualified_aliases=numerical_aliases,
+        )
+    )
+    if (
+        frontier is not None
+        and (envelope_cleanup is None or envelope_cleanup.complete)
+        and behavioral_calibration_admitted
+        and required_alias_handoff_admitted
     ):
         try:
             graph = load_typed_compact_graph(
                 graph_path,
                 expected_step_idx=int(spec["generated_index"]),
             )
-            qualified_aliases = _qualified_alias_pairs(compact_result)
-            probe_policy = BehavioralProbePolicy(policy_id=policy_id)
+            qualified_aliases = _behavioral_alias_handoff(
+                mode=mode,
+                calibration=calibration,
+                numerical_aliases=numerical_aliases,
+                compact_result=compact_result,
+                required_alias=bool(required_alias_scope_ids),
+            )
+            probe_policy = _behavioral_probe_policy(
+                policy_id=policy_id,
+                calibration=calibration,
+            )
             candidate = LiveBehavioralCandidate(
                 graph_path=graph_path,
                 compact_result=compact_result,
@@ -315,6 +414,8 @@ def run_full_answer_correctness_gate(
                     "status": "persisted",
                     "path": str(sibling_path),
                     "evidence_fingerprint": sibling.evidence_fingerprint,
+                    "alias_comparator_status": sibling.alias_comparator_status.value,
+                    "alias_selection_count": len(sibling.alias_selections),
                     "ordering_admission": (
                         "candidate_smoke"
                         if mode is BehavioralProbeMode.SMOKE
@@ -322,6 +423,8 @@ def run_full_answer_correctness_gate(
                     ),
                     **budget_evidence,
                 }
+                alias_comparator_status = sibling.alias_comparator_status.value
+                behavioral_alias_selection_count = len(sibling.alias_selections)
                 mapped = map_sibling_behavioral_report(sibling)
                 behavioral = replace(
                     mapped,
@@ -347,11 +450,14 @@ def run_full_answer_correctness_gate(
                 reason_codes=("behavioral_probe_failed",),
             )
     else:
-        reason = (
-            "outer_session_cleanup_incomplete"
-            if envelope_cleanup is not None and not envelope_cleanup.complete
-            else "frontier_evidence_unavailable"
-        )
+        if not behavioral_calibration_admitted:
+            reason = "frozen_correctness_calibration_unavailable"
+        elif not required_alias_handoff_admitted:
+            reason = "required_alias_handoff_unavailable"
+        elif envelope_cleanup is not None and not envelope_cleanup.complete:
+            reason = "outer_session_cleanup_incomplete"
+        else:
+            reason = "frontier_evidence_unavailable"
         artifacts["behavioral_sibling"] = {"status": "unavailable", "path": None}
         behavioral = BehavioralFaithfulnessReport(
             status=BehavioralFaithfulnessStatus.UNKNOWN,
@@ -370,19 +476,45 @@ def run_full_answer_correctness_gate(
         "status": "persisted",
         "path": str(report_path),
         "report_fingerprint": report.report_fingerprint,
+        "calibration_id": (
+            None if calibration is None else calibration.calibration_id
+        ),
+        "calibration_fingerprint": (
+            None if calibration is None else calibration.calibration_fingerprint
+        ),
     }
     required_policy_satisfied = (
-        structural.verdict is StructuralVerdict.CONFORMANT
+        calibration is not None
+        and structural.verdict is StructuralVerdict.CONFORMANT
         and _required_numerical_policy_satisfied(
             policy_id=policy_id,
             scopes=numerical.scopes,
+            required_scope_ids=calibration.required_numerical_scopes,
+            calibration_fingerprint=calibration.calibration_fingerprint,
         )
         and behavioral.status is BehavioralFaithfulnessStatus.SUPPORTED
+        and _required_alias_policy_satisfied(
+            policy_id=policy_id,
+            scopes=numerical.scopes,
+            required_scope_ids=calibration.required_numerical_scopes,
+            calibration_id=calibration.calibration_id,
+            calibration_fingerprint=calibration.calibration_fingerprint,
+            qualified_aliases=numerical_aliases,
+            behavioral=behavioral,
+            alias_comparator_status=alias_comparator_status,
+            behavioral_alias_selection_count=behavioral_alias_selection_count,
+        )
     )
     return CorrectnessGateOutcome(
         trace_payload={
             "mode": mode.value,
             "policy_id": policy_id,
+            "calibration_id": (
+                None if calibration is None else calibration.calibration_id
+            ),
+            "calibration_fingerprint": (
+                None if calibration is None else calibration.calibration_fingerprint
+            ),
             "status": "evidence_recorded",
             "required_policy_satisfied": required_policy_satisfied,
             "axes": {
@@ -403,10 +535,18 @@ def _run_declared_numerical_comparison(
     graph_path: Path,
     token_dir: Path,
     frontier_available: bool = False,
-) -> tuple[NumericalStabilityReport, dict[str, Any]] | None:
-    declaration = declaration_from_graph_knobs(knobs)
+    calibration: FrozenCorrectnessCalibration | None = None,
+) -> tuple[DeclaredNumericalEvaluation, dict[str, Any]] | None:
+    declaration = (
+        calibration.numerical_reference_declaration
+        if calibration is not None
+        else declaration_from_graph_knobs(knobs)
+    )
     if declaration is None:
         return None
+    evaluation_kwargs: dict[str, Any] = {}
+    if calibration is not None:
+        evaluation_kwargs["calibration"] = calibration
     evaluation = evaluate_declared_numerical_stability(
         candidate_graph_path=graph_path,
         declaration=declaration,
@@ -418,15 +558,24 @@ def _run_declared_numerical_comparison(
             if frontier_available
             else None
         ),
+        **evaluation_kwargs,
     )
     numerical_path = token_dir / "correctness_numerical_details.json"
     write_json(numerical_path, dict(evaluation.details))
-    return evaluation.report, {
+    artifact = {
         "status": "persisted",
         "path": str(numerical_path),
         "artifact_sha256": file_sha256(numerical_path),
         "manifest_sha256": declaration["manifest_sha256"],
     }
+    if calibration is not None:
+        artifact.update(
+            {
+                "calibration_id": calibration.calibration_id,
+                "calibration_fingerprint": calibration.calibration_fingerprint,
+            }
+        )
+    return evaluation, artifact
 
 
 def _completed_trace_evidence(
@@ -740,24 +889,129 @@ def _required_numerical_policy_satisfied(
     *,
     policy_id: str,
     scopes: tuple[NumericalScopeReport, ...],
+    required_scope_ids: tuple[str, ...] | None = None,
+    calibration_fingerprint: str | None = None,
 ) -> bool:
     allowed = _REQUIRED_NUMERICAL_STATUSES_BY_POLICY.get(policy_id)
     if allowed is None or not scopes:
         return False
-    for scope in scopes:
+    scopes_by_id = {scope.scope_id: scope for scope in scopes}
+    if len(scopes_by_id) != len(scopes):
+        return False
+    admitted_scopes = scopes
+    if required_scope_ids is not None:
+        if not required_scope_ids or len(set(required_scope_ids)) != len(
+            required_scope_ids
+        ):
+            return False
+        if any(scope_id not in scopes_by_id for scope_id in required_scope_ids):
+            return False
+        admitted_scopes = tuple(
+            scopes_by_id[scope_id] for scope_id in required_scope_ids
+        )
+    for scope in admitted_scopes:
         if scope.status not in allowed:
             return False
-        if scope.status is NumericalStabilityStatus.BOUNDED:
+        if scope.status in {
+            NumericalStabilityStatus.ALIAS_STABLE,
+            NumericalStabilityStatus.BOUNDED,
+        }:
             classification_policy_id = scope.metrics.get("classification_policy_id")
-            calibration_fingerprint = scope.metrics.get("calibration_fingerprint")
+            scope_calibration_fingerprint = scope.metrics.get(
+                "calibration_fingerprint"
+            )
             if (
                 not isinstance(classification_policy_id, str)
                 or not classification_policy_id
+                or (
+                    scope.status is NumericalStabilityStatus.ALIAS_STABLE
+                    and classification_policy_id != policy_id
+                )
+                or (
+                    calibration_fingerprint is not None
+                    and classification_policy_id != policy_id
+                )
             ):
                 return False
-            if not _is_sha256_fingerprint(calibration_fingerprint):
+            if not _is_sha256_fingerprint(scope_calibration_fingerprint):
+                return False
+            if (
+                calibration_fingerprint is not None
+                and scope_calibration_fingerprint != calibration_fingerprint
+            ):
                 return False
     return True
+
+
+def _required_alias_scope_ids(
+    *,
+    scopes: tuple[NumericalScopeReport, ...],
+    required_scope_ids: tuple[str, ...] | None,
+) -> tuple[str, ...]:
+    if required_scope_ids is None:
+        return tuple(
+            scope.scope_id
+            for scope in scopes
+            if scope.status is NumericalStabilityStatus.ALIAS_STABLE
+        )
+    required = set(required_scope_ids)
+    return tuple(
+        scope.scope_id
+        for scope in scopes
+        if scope.scope_id in required
+        and scope.status is NumericalStabilityStatus.ALIAS_STABLE
+    )
+
+
+def _qualified_alias_handoff_satisfied(
+    *,
+    policy_id: str,
+    calibration_fingerprint: str,
+    qualified_aliases: tuple[QualifiedAliasPair, ...],
+) -> bool:
+    return bool(qualified_aliases) and all(
+        alias.selection_policy_id == policy_id
+        and alias.calibration_fingerprint == calibration_fingerprint
+        for alias in qualified_aliases
+    )
+
+
+def _required_alias_policy_satisfied(
+    *,
+    policy_id: str,
+    scopes: tuple[NumericalScopeReport, ...],
+    required_scope_ids: tuple[str, ...],
+    calibration_id: str,
+    calibration_fingerprint: str,
+    qualified_aliases: tuple[QualifiedAliasPair, ...],
+    behavioral: BehavioralFaithfulnessReport,
+    alias_comparator_status: str | None,
+    behavioral_alias_selection_count: int,
+) -> bool:
+    """Bind required numerical alias churn to its executed behavioral comparator."""
+
+    if not _required_alias_scope_ids(
+        scopes=scopes,
+        required_scope_ids=required_scope_ids,
+    ):
+        return True
+    if not calibration_id or not _is_sha256_fingerprint(calibration_fingerprint):
+        return False
+    if not _qualified_alias_handoff_satisfied(
+        policy_id=policy_id,
+        calibration_fingerprint=calibration_fingerprint,
+        qualified_aliases=qualified_aliases,
+    ):
+        return False
+    return (
+        behavioral.status is BehavioralFaithfulnessStatus.SUPPORTED
+        and behavioral.metrics.get("policy_id") == policy_id
+        and behavioral.metrics.get("calibration_id") == calibration_id
+        and behavioral.metrics.get("evidence_completeness") == "complete"
+        and behavioral.metrics.get("runtime_status") == "complete"
+        and alias_comparator_status == "complete"
+        and behavioral_alias_selection_count >= 1
+    )
 
 
 def _is_sha256_fingerprint(value: object) -> bool:

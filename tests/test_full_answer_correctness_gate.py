@@ -1,25 +1,38 @@
-import json
 import hashlib
+import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from circuit_tracer.verification import FrozenBehavioralCalibration
 
+from nlp_research_project.exact_trace_bench.correctness.behavioral import (
+    BehavioralProbeMode,
+    QualifiedAliasPair,
+)
 from nlp_research_project.exact_trace_bench.correctness.contracts import (
+    BehavioralFaithfulnessReport,
+    BehavioralFaithfulnessStatus,
     NumericalScopeReport,
     NumericalStabilityStatus,
 )
-from nlp_research_project.exact_trace_bench.full_answer.correctness_gate import (
-    _closed_telemetry_evidence,
-    _qualified_alias_pairs,
-    _required_numerical_policy_satisfied,
-    _row_denominator_evidence_from_compact_result,
-    _run_declared_numerical_comparison,
-)
+from nlp_research_project.exact_trace_bench.correctness.frontier import FeatureKey
 from nlp_research_project.exact_trace_bench.correctness.numerical import (
     build_reference_identity_receipt,
     file_sha256,
     prepare_numerical_manifest_declaration,
+)
+from nlp_research_project.exact_trace_bench.full_answer.correctness_gate import (
+    _behavioral_alias_handoff,
+    _behavioral_calibration_admitted,
+    _behavioral_probe_policy,
+    _closed_telemetry_evidence,
+    _qualified_alias_pairs,
+    _required_alias_policy_satisfied,
+    _required_numerical_policy_satisfied,
+    _row_denominator_evidence_from_compact_result,
+    _run_declared_numerical_comparison,
 )
 
 
@@ -68,7 +81,8 @@ def test_gate_persists_declared_numerical_comparison_sidecar(tmp_path: Path) -> 
     )
 
     assert result is not None
-    report, artifact = result
+    evaluation, artifact = result
+    report = evaluation.report
     assert report.scopes[0].status is NumericalStabilityStatus.EXACT_STABLE
     assert report.scopes[1].reason_codes == ("declared_repeat_frontier_absent",)
     assert report.scopes[2].reason_codes == ("declared_canonical_reference_absent",)
@@ -99,6 +113,35 @@ def test_full_answer_alias_seam_accepts_only_explicit_bounded_comparison_evidenc
         _qualified_alias_pairs(
             {"correctness_qualified_alias_pairs": [row, row, row]}
         )
+
+
+def test_calibrated_churn_handoff_uses_typed_numerical_aliases() -> None:
+    numerical_alias = QualifiedAliasPair(
+        source=FeatureKey(layer=3, position=5, feature_id=7),
+        substitute=FeatureKey(layer=3, position=5, feature_id=11),
+        selection_policy_id="behavioral_closure_v1",
+        calibration_fingerprint=_fingerprint("calibration"),
+        comparison_evidence_fingerprint=_fingerprint("comparison"),
+        baseline_graph_fingerprint=_fingerprint("baseline"),
+        candidate_graph_fingerprint=_fingerprint("candidate"),
+        qualified_decoder_cosine=0.97,
+    )
+
+    aliases = _behavioral_alias_handoff(
+        mode=BehavioralProbeMode.REQUIRED,
+        calibration=SimpleNamespace(),
+        numerical_aliases=(numerical_alias,),
+        compact_result={"correctness_qualified_alias_pairs": "must-not-be-read"},
+    )
+
+    assert aliases == (numerical_alias,)
+    assert _behavioral_alias_handoff(
+        mode=BehavioralProbeMode.REQUIRED,
+        calibration=SimpleNamespace(),
+        numerical_aliases=(numerical_alias,),
+        compact_result={},
+        required_alias=False,
+    ) == ()
 
 
 def _telemetry_spec() -> dict[str, object]:
@@ -326,7 +369,15 @@ def test_closed_telemetry_evidence_requires_explicit_refresh_count(
         (NumericalStabilityStatus.UNKNOWN, {}, False),
         (NumericalStabilityStatus.DIVERGENT, {}, False),
         (NumericalStabilityStatus.EXACT_STABLE, {}, True),
-        (NumericalStabilityStatus.ALIAS_STABLE, {}, True),
+        (NumericalStabilityStatus.ALIAS_STABLE, {}, False),
+        (
+            NumericalStabilityStatus.ALIAS_STABLE,
+            {
+                "classification_policy_id": "behavioral_closure_v1",
+                "calibration_fingerprint": "sha256:" + "a" * 64,
+            },
+            True,
+        ),
         (NumericalStabilityStatus.BOUNDED, {}, False),
         (
             NumericalStabilityStatus.BOUNDED,
@@ -362,6 +413,208 @@ def test_required_numerical_policy_uses_versioned_admission(
             scopes=(scope,),
         )
         is False
+    )
+
+
+def test_calibrated_numerical_admission_ignores_optional_unknown_scope() -> None:
+    fingerprint = "sha256:" + "a" * 64
+    required = (
+        NumericalScopeReport(
+            scope_id="typed_graph.repeat",
+            status=NumericalStabilityStatus.BOUNDED,
+            metrics={
+                "classification_policy_id": "behavioral_closure_v1",
+                "calibration_fingerprint": fingerprint,
+            },
+        ),
+        NumericalScopeReport(
+            scope_id="typed_graph.canonical",
+            status=NumericalStabilityStatus.EXACT_STABLE,
+        ),
+        NumericalScopeReport(
+            scope_id="feature_frontier.repeat",
+            status=NumericalStabilityStatus.ALIAS_STABLE,
+            metrics={
+                "classification_policy_id": "behavioral_closure_v1",
+                "calibration_fingerprint": fingerprint,
+            },
+        ),
+    )
+    optional = NumericalScopeReport(
+        scope_id="feature_frontier.canonical",
+        status=NumericalStabilityStatus.UNKNOWN,
+        reason_codes=("declared_canonical_frontier_absent",),
+    )
+
+    assert _required_numerical_policy_satisfied(
+        policy_id="behavioral_closure_v1",
+        scopes=(*required, optional),
+        required_scope_ids=tuple(scope.scope_id for scope in required),
+        calibration_fingerprint=fingerprint,
+    )
+    assert not _required_numerical_policy_satisfied(
+        policy_id="behavioral_closure_v1",
+        scopes=(required[0], required[2], optional),
+        required_scope_ids=tuple(scope.scope_id for scope in required),
+        calibration_fingerprint=fingerprint,
+    )
+    mismatched_policy = NumericalScopeReport(
+        scope_id="typed_graph.repeat",
+        status=NumericalStabilityStatus.BOUNDED,
+        metrics={
+            "classification_policy_id": "different_policy_v1",
+            "calibration_fingerprint": fingerprint,
+        },
+    )
+    assert not _required_numerical_policy_satisfied(
+        policy_id="behavioral_closure_v1",
+        scopes=(mismatched_policy, required[1], required[2]),
+        required_scope_ids=tuple(scope.scope_id for scope in required),
+        calibration_fingerprint=fingerprint,
+    )
+
+
+def test_required_alias_policy_requires_bound_pair_and_complete_comparator() -> None:
+    fingerprint = _fingerprint("calibration")
+    alias_scope = NumericalScopeReport(
+        scope_id="feature_frontier.repeat",
+        status=NumericalStabilityStatus.ALIAS_STABLE,
+        metrics={
+            "classification_policy_id": "behavioral_closure_v1",
+            "calibration_fingerprint": fingerprint,
+        },
+    )
+    alias = QualifiedAliasPair(
+        source=FeatureKey(layer=3, position=5, feature_id=7),
+        substitute=FeatureKey(layer=3, position=5, feature_id=11),
+        selection_policy_id="behavioral_closure_v1",
+        calibration_fingerprint=fingerprint,
+        comparison_evidence_fingerprint=_fingerprint("comparison"),
+        baseline_graph_fingerprint=_fingerprint("baseline"),
+        candidate_graph_fingerprint=_fingerprint("candidate"),
+        qualified_decoder_cosine=0.97,
+    )
+    supported = BehavioralFaithfulnessReport(
+        status=BehavioralFaithfulnessStatus.SUPPORTED,
+        metrics={
+            "policy_id": "behavioral_closure_v1",
+            "calibration_id": "correctness_calibration_v1",
+            "evidence_completeness": "complete",
+            "runtime_status": "complete",
+        },
+    )
+    kwargs = {
+        "policy_id": "behavioral_closure_v1",
+        "scopes": (alias_scope,),
+        "required_scope_ids": (alias_scope.scope_id,),
+        "calibration_id": "correctness_calibration_v1",
+        "calibration_fingerprint": fingerprint,
+        "behavioral": supported,
+        "alias_comparator_status": "complete",
+        "behavioral_alias_selection_count": 1,
+    }
+
+    assert not _required_alias_policy_satisfied(
+        **kwargs,
+        qualified_aliases=(),
+    )
+    assert _required_alias_policy_satisfied(
+        **kwargs,
+        qualified_aliases=(alias,),
+    )
+    assert not _required_alias_policy_satisfied(
+        **{**kwargs, "alias_comparator_status": "not_applicable"},
+        qualified_aliases=(alias,),
+    )
+    assert not _required_alias_policy_satisfied(
+        **{**kwargs, "behavioral_alias_selection_count": 0},
+        qualified_aliases=(alias,),
+    )
+    assert not _required_alias_policy_satisfied(
+        **kwargs,
+        qualified_aliases=(
+            replace(alias, calibration_fingerprint=_fingerprint("other")),
+        ),
+    )
+    assert not _required_alias_policy_satisfied(
+        **kwargs,
+        qualified_aliases=(
+            replace(alias, selection_policy_id="different_policy_v1"),
+        ),
+    )
+    assert not _required_alias_policy_satisfied(
+        **{
+            **kwargs,
+            "behavioral": replace(
+                supported,
+                metrics={
+                    **supported.metrics,
+                    "calibration_id": "other_calibration_v1",
+                },
+            ),
+        },
+        qualified_aliases=(alias,),
+    )
+
+
+def test_required_alias_policy_ignores_optional_alias_scope() -> None:
+    optional_alias = NumericalScopeReport(
+        scope_id="feature_frontier.canonical",
+        status=NumericalStabilityStatus.ALIAS_STABLE,
+    )
+    required_exact = NumericalScopeReport(
+        scope_id="typed_graph.repeat",
+        status=NumericalStabilityStatus.EXACT_STABLE,
+    )
+
+    assert _required_alias_policy_satisfied(
+        policy_id="behavioral_closure_v1",
+        scopes=(required_exact, optional_alias),
+        required_scope_ids=(required_exact.scope_id,),
+        calibration_id="correctness_calibration_v1",
+        calibration_fingerprint=_fingerprint("calibration"),
+        qualified_aliases=(),
+        behavioral=BehavioralFaithfulnessReport(
+            status=BehavioralFaithfulnessStatus.SUPPORTED,
+            metrics={},
+        ),
+        alias_comparator_status="not_applicable",
+        behavioral_alias_selection_count=0,
+    )
+
+
+def test_behavioral_probe_policy_receives_frozen_calibration_projection() -> None:
+    sibling_calibration = FrozenBehavioralCalibration(
+        calibration_id="correctness_calibration_v1",
+        policy_id="behavioral_closure_v1",
+        direct_max_mean_relative_closure=0.05,
+    )
+    calibration = SimpleNamespace(
+        behavioral_probe_policy_kwargs=lambda: {
+            "calibration": sibling_calibration,
+            "no_op_absolute_tolerance": 1e-6,
+            "no_op_relative_tolerance": 0.0,
+        }
+    )
+
+    policy = _behavioral_probe_policy(
+        policy_id="behavioral_closure_v1",
+        calibration=calibration,
+    )
+
+    assert policy.calibration is sibling_calibration
+    assert policy.no_op_absolute_tolerance == 1e-6
+    assert policy.no_op_relative_tolerance == 0.0
+
+
+def test_required_behavioral_preparation_fails_closed_without_calibration() -> None:
+    assert _behavioral_calibration_admitted(
+        mode=BehavioralProbeMode.SMOKE,
+        calibration=None,
+    )
+    assert not _behavioral_calibration_admitted(
+        mode=BehavioralProbeMode.REQUIRED,
+        calibration=None,
     )
 
 

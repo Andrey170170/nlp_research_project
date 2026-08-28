@@ -18,16 +18,14 @@ from pathlib import Path
 from typing import Any
 
 from .config import DEFAULT_SCRATCH_ROOT, REPO_ROOT, base_trace_defaults
+from .correctness.calibration import (
+    load_declared_correctness_calibration,
+    prepare_correctness_calibration_declaration,
+)
 from .correctness.numerical import prepare_numerical_manifest_declaration
 from .full_answer.launch_spec import (
     build_full_answer_launch_spec,
     render_local_full_answer_command,
-)
-from .full_answer.schemas import (
-    build_trace_specs,
-    write_shards,
-    write_trace_selection,
-    write_trace_specs,
 )
 from .full_answer.prepared_sequence import (
     PreparedSequenceEntry,
@@ -37,6 +35,12 @@ from .full_answer.prepared_sequence import (
     write_prepared_sequence,
 )
 from .full_answer.prepared_workload import validate_prepared_workload
+from .full_answer.schemas import (
+    build_trace_specs,
+    write_shards,
+    write_trace_selection,
+    write_trace_specs,
+)
 from .full_answer.selection import select_tokens
 from .full_answer.sharding import build_lpt_shards
 from .io_utils import read_json, write_json
@@ -3737,6 +3741,40 @@ def _prepare_campaign_workload(args: argparse.Namespace) -> int:
                 ],
             }
         )
+    calibration_declaration = None
+    if args.correctness_calibration_manifest is not None:
+        calibration_declaration = prepare_correctness_calibration_declaration(
+            args.correctness_calibration_manifest
+        )
+        calibration = load_declared_correctness_calibration(
+            calibration_declaration,
+        )
+        calibration_numerical = dict(calibration.numerical_reference_declaration)
+        if (
+            numerical_declaration is not None
+            and numerical_declaration != calibration_numerical
+        ):
+            raise ValueError(
+                "--correctness-calibration-manifest references a different "
+                "numerical manifest than --correctness-numerical-manifest"
+            )
+        numerical_declaration = calibration_numerical
+        graph_overrides.update(
+            {
+                "correctness_numerical_manifest_path": numerical_declaration[
+                    "manifest_path"
+                ],
+                "correctness_numerical_manifest_sha256": numerical_declaration[
+                    "manifest_sha256"
+                ],
+                "correctness_calibration_manifest_path": calibration_declaration[
+                    "manifest_path"
+                ],
+                "correctness_calibration_manifest_sha256": calibration_declaration[
+                    "manifest_sha256"
+                ],
+            }
+        )
     if args.feature_row_influence_requirement is not None:
         graph_overrides["feature_row_influence_requirement"] = (
             args.feature_row_influence_requirement
@@ -3952,6 +3990,7 @@ def _prepare_campaign_workload(args: argparse.Namespace) -> int:
             "resource_envelope": workload["resource_envelope"],
             "comparison_policy": workload["comparison_policy"],
             "correctness_numerical_manifest": numerical_declaration,
+            "correctness_calibration_manifest": calibration_declaration,
             "trace_specs_path": str(specs_path),
             "shards_path": str(shards_path),
             "launch_output_root": str(launch_output_root),
@@ -4248,6 +4287,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Versioned repeat/canonical numerical reference manifest. Preparation "
             "hash-checks the manifest and every transitive graph artifact."
+        ),
+    )
+    prepare_campaign.add_argument(
+        "--correctness-calibration-manifest",
+        type=Path,
+        help=(
+            "Frozen correctness_calibration_v1 manifest. Preparation hash-checks "
+            "the calibration, its numerical reference closure, and every source "
+            "receipt without changing the default correctness mode."
         ),
     )
     prepare_campaign.add_argument(

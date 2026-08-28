@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "format": "exact_trace_correctness_calibration_v1",
+  "calibration_id": "correctness_calibration_v1",
+  "policy_id": "behavioral_closure_v1",
+  "numerical_reference": {
+    "schema_version": 1,
+    "format": "exact_trace_numerical_reference_manifest_v1",
+    "manifest_path": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/long_trace/correctness_gate/cq-step1b-12b1024-smoke-r6-01-20260827-01/inputs/numerical_reference_manifest.json",
+    "manifest_sha256": "sha256:4dd9f25e5fc99fce2010e6e42fa51e3fa598a6d963f936ba29a856d03b82b5be"
+  },
+  "required_numerical_scopes": [
+    "typed_graph.repeat",
+    "typed_graph.canonical",
+    "feature_frontier.repeat"
+  ],
+  "numerical": {
+    "feature_jaccard": {
+      "pass_min": 0.995,
+      "review_min": 0.99
+    },
+    "buckets": {
+      "feature<-error": {
+        "normalized_l1_deviation": {
+          "pass_max": 0.03,
+          "review_max": 0.05
+        },
+        "weighted_jaccard": {
+          "pass_min": 0.97,
+          "review_min": 0.95
+        },
+        "shared_sign_agreement": {
+          "pass_min": 0.995,
+          "review_min": 0.99
+        }
+      },
+      "logit<-error": {
+        "normalized_l1_deviation": {
+          "pass_max": 0.01,
+          "review_max": 0.02
+        },
+        "weighted_jaccard": {
+          "pass_min": 0.97,
+          "review_min": 0.95
+        },
+        "shared_sign_agreement": {
+          "pass_min": 0.995,
+          "review_min": 0.99
+        }
+      }
+    },
+    "exact_buckets": [
+      "feature<-feature",
+      "feature<-token",
+      "logit<-feature",
+      "logit<-token"
+    ],
+    "frontier": {
+      "selected_recovery": {
+        "pass_min": 0.995,
+        "review_min": 0.99
+      },
+      "unmatched_influence_mass_fraction": {
+        "pass_max": 0.005,
+        "review_max": 0.01
+      },
+      "alias_min_decoder_cosine": 0.95,
+      "bounded_deltas": {
+        "max_cutoff_score_abs_delta": 1e-08,
+        "max_relative_cutoff_gap_abs_delta": 1e-08,
+        "max_cutoff_tie_count_abs_delta": 0,
+        "max_record_scalar_abs_delta": 5e-06,
+        "max_typed_edge_weight_abs_delta": 1e-06
+      }
+    }
+  },
+  "behavioral": {
+    "no_op_absolute_tolerance": 1e-06,
+    "no_op_relative_tolerance": 0.0,
+    "direct_min_abs_predicted_target_delta": 0.25,
+    "relative_error_epsilon": 1e-06,
+    "direct_max_mean_relative_closure": 0.05,
+    "direct_max_relative_closure": 0.1,
+    "direct_min_sign_agreement": 0.95,
+    "downstream_max_mean_relative_closure": 0.05,
+    "downstream_max_p95_relative_closure": 0.1,
+    "necessity_min_predicted_realized_spearman": 0.8,
+    "necessity_min_median_high_control_effect_ratio": 2.0,
+    "alias_max_relative_effect_error": 0.2
+  },
+  "source_receipts": [
+    {
+      "source_id": "step1b_r4_numerical",
+      "artifact_kind": "exact_trace_numerical_comparison_details_v1",
+      "path": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/long_trace/correctness_gate/cq-step1b-12b1024-smoke-r4-01-20260827-01/runs/run/shards/shard_000/token_000895/correctness_numerical_details.json",
+      "sha256": "sha256:758ea92498ba46199e1d90a6423c52e60d9f23b86b9860b7bf882458501d9a07"
+    },
+    {
+      "source_id": "step1b_r5_numerical",
+      "artifact_kind": "exact_trace_numerical_comparison_details_v1",
+      "path": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/long_trace/correctness_gate/cq-step1b-12b1024-smoke-r5-01-20260827-01/runs/run/shards/shard_000/token_000895/correctness_numerical_details.json",
+      "sha256": "sha256:d6ab042fcb599842c88ab49cd5df8dcbca8d12a44a5c694bc704054ba23bf4ec"
+    },
+    {
+      "source_id": "step1b_r6_numerical",
+      "artifact_kind": "exact_trace_numerical_comparison_details_v1",
+      "path": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/long_trace/correctness_gate/cq-step1b-12b1024-smoke-r6-01-20260827-01/runs/run/shards/shard_000/token_000895/correctness_numerical_details.json",
+      "sha256": "sha256:2fc466523d848b3b4402e785071bef7ac2e9dca332ca674a8ec05c9643482928"
+    },
+    {
+      "source_id": "step1b_r6_behavioral",
+      "artifact_kind": "circuit_tracer_behavioral_faithfulness_report_v1",
+      "path": "/scratch/general/vast/u1653998/nlp_research_project/exact_trace_bench/granite/long_trace/correctness_gate/cq-step1b-12b1024-smoke-r6-01-20260827-01/runs/run/shards/shard_000/token_000895/correctness_behavioral_sibling.json",
+      "sha256": "sha256:9137aa3b51075171fc7e149030ca6322ed57c90d38a0da1a23a1daed12b8beec"
+    }
+  ]
+}

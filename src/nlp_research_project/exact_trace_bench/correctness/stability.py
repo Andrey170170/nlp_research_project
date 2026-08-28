@@ -513,7 +513,10 @@ def _classification_metrics(
 
 
 def _meets_recovery(observed: float | None, minimum: float) -> bool:
-    return observed is not None and observed >= minimum
+    # A zero floor explicitly disables that recovery dimension. Empty evidence
+    # then has no mass to recover and must not turn an otherwise qualified
+    # comparison into an unknown/failure.
+    return minimum == 0.0 if observed is None else observed >= minimum
 
 
 def _require_sha256_fingerprint(label: str, value: str) -> None:
