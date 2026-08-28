@@ -450,10 +450,14 @@ generation, and promotion/default decisions remain separate reviewed actions.
 the development calibration corpus. All three contribute numerical receipts;
 only r6 supplies a complete behavioral observation. These are accepted frozen
 engineering thresholds informed by that corpus, not estimates fitted from
-repeated complete behavioral probes. The next required-mode 12B/1,024 run, r7,
-is the first held-out qualification and thresholds must not be changed after
-seeing it. R7 was submitted as immutable Slurm job `1864164` on 2026-08-28 and
-was initially `PENDING (Priority)`; submission is not qualification evidence.
+repeated complete behavioral probes. R7, immutable Slurm job `1864164`, was the
+first held-out qualification attempt. Its trace completed, structural
+conformance passed, and all three required numerical scopes were admitted as
+bounded without changing the frozen thresholds. The required gate then failed
+closed before behavioral execution because the project adapter passed a live
+BF16 compact tensor directly to NumPy. This is an implementation failure, not
+behavioral contradiction or qualification evidence. R8 repeats the same frozen
+contract after the bounded adapter repair.
 
 - Selected-feature Jaccard must be at least `0.995` (`0.990` review).
 - `feature<-error` normalized L1 must be at most `0.03` (`0.05` review),

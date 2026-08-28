@@ -182,10 +182,13 @@ now verifies the versioned calibration, nested numerical-reference manifest,
 and transitive receipt hashes before required-mode execution. Its v1 required
 scopes are repeat and canonical typed-graph stability plus repeat-frontier
 stability; canonical-frontier stability is not claimed because the Step 1a
-reference has no frontier sidecar. The next evidence gate is a held-out
-required-mode 12B/1,024 r7 run from an immutable paired snapshot. It was
-submitted as Slurm job `1864164` on 2026-08-28 and was initially
-`PENDING (Priority)`; no correctness result is yet available.
+reference has no frontier sidecar. Held-out r7 job `1864164` completed its
+12B/1,024 trace: structural conformance passed and all three required numerical
+scopes were bounded within the frozen calibration. The gate then correctly
+failed closed before behavioral execution because the project adapter attempted
+direct NumPy conversion of a live BF16 compact tensor. R7 therefore supplies
+held-out numerical evidence but does not qualify Step 1b. The next evidence
+gate is an otherwise unchanged immutable r8 after the bounded adapter repair.
 
 Bounded parallel preheat is now implemented behind a reusable module and all
 three preheated wrappers. Deterministic file discovery and inode deduplication

@@ -860,7 +860,10 @@ def _array(value: Mapping[str, Any], key: str) -> np.ndarray:
         raise _EvidenceRefusal("missing_compact_field", key)
     item = value[key]
     if isinstance(item, torch.Tensor):
-        return item.detach().cpu().numpy()
+        tensor = item.detach().cpu()
+        if tensor.dtype is torch.bfloat16:
+            tensor = tensor.to(dtype=torch.float32)
+        return tensor.numpy()
     return np.asarray(item)
 
 

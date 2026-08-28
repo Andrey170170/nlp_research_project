@@ -205,6 +205,60 @@ def test_builds_bounded_accepted_view_from_strictly_bound_evidence(
     )
 
 
+def test_live_bfloat16_compact_tensors_prepare_an_accepted_graph_view(
+    tmp_path: Path,
+) -> None:
+    initial = _candidate(tmp_path)
+    compact = {
+        key: torch.from_numpy(value)
+        if isinstance(value, np.ndarray) and np.issubdtype(value.dtype, np.integer)
+        else value
+        for key, value in initial.compact_result.items()
+    }
+    for key in (
+        "activation_values",
+        "feature_feature_edges",
+        "logit_feature_edges",
+    ):
+        compact[key] = torch.as_tensor(compact[key], dtype=torch.bfloat16)
+    frontier = replace(
+        initial.frontier,
+        selected=tuple(
+            replace(
+                record,
+                activation=float(
+                    torch.tensor(record.activation, dtype=torch.bfloat16).float()
+                ),
+            )
+            for record in initial.frontier.selected
+        ),
+        near_cutoff=tuple(
+            replace(
+                record,
+                activation=float(
+                    torch.tensor(record.activation, dtype=torch.bfloat16).float()
+                ),
+            )
+            for record in initial.frontier.near_cutoff
+        ),
+    )
+
+    prepared = prepare_live_behavioral_request(
+        replace(initial, compact_result=compact, frontier=frontier)
+    )
+
+    assert prepared.status is BehavioralRequestStatus.READY
+    assert prepared.request is not None
+    selected = tuple(
+        feature for feature in prepared.request.graph.features if feature.selected
+    )
+    assert tuple(feature.baseline_preactivation for feature in selected) == (2.0, -3.0)
+    assert tuple(feature.target_influence for feature in selected) == (
+        0.80078125,
+        -0.400390625,
+    )
+
+
 def test_matched_controls_prefer_same_position_then_activation_and_are_unique(
     tmp_path: Path,
 ) -> None:
