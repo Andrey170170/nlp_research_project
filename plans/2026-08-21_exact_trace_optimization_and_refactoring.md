@@ -457,7 +457,16 @@ bounded without changing the frozen thresholds. The required gate then failed
 closed before behavioral execution because the project adapter passed a live
 BF16 compact tensor directly to NumPy. This is an implementation failure, not
 behavioral contradiction or qualification evidence. R8 repeats the same frozen
-contract after the bounded adapter repair.
+contract after the bounded adapter repair. The adapter-only fix is committed at
+`13d69ac` and is covered at the actual behavioral-request preparation seam;
+the integrated correctness suite passes 162 tests. Immutable r8 Slurm job
+`1864886` was submitted from clean project/library commits `13d69ac` and
+`76666c7` and was pending for priority when recorded. Its prepared workload
+passed fail-closed validation and matches r7 semantically after excluding run
+identity, snapshot paths, and derived fingerprints. R8 retains the frozen
+calibration, 12B/1,024 workload, full preheat, H200, 32 CPUs, 600 GB memory,
+and one-hour walltime. No correctness or scaling claim follows from submission;
+inspect the completed required-mode report before closing Step 1b.
 
 - Selected-feature Jaccard must be at least `0.995` (`0.990` review).
 - `feature<-error` normalized L1 must be at most `0.03` (`0.05` review),

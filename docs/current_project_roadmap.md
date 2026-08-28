@@ -189,6 +189,19 @@ failed closed before behavioral execution because the project adapter attempted
 direct NumPy conversion of a live BF16 compact tensor. R7 therefore supplies
 held-out numerical evidence but does not qualify Step 1b. The next evidence
 gate is an otherwise unchanged immutable r8 after the bounded adapter repair.
+That repair is committed at `13d69ac`: the project adapter now casts only live
+BF16 tensors to FP32 at the Torch-to-NumPy evidence boundary, and an end-to-end
+preparation-seam regression covers BF16 compact activation and edge tensors.
+The focused integrated correctness suite passed 162 tests, with Ruff, focused
+typing, and strict review also clean. R8 job `1864886` is submitted from the
+clean read-only paired snapshot rooted at
+`workspace_20260828_171112_cq-step1b-12b1024-required-r8-20260828-01`; it was
+pending for priority when recorded. Its validated prepared contract is
+semantically identical to r7 after excluding run identity, immutable paths,
+and derived fingerprints, and it keeps the same calibration hash, 12B/1,024
+workload, H200, 32 CPUs, 600 GB memory, and one-hour walltime. Submission is
+not qualification evidence; Step 1b remains open until r8 finishes and the
+required behavioral gate is inspected.
 
 Bounded parallel preheat is now implemented behind a reusable module and all
 three preheated wrappers. Deterministic file discovery and inode deduplication
