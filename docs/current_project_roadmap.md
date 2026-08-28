@@ -183,7 +183,9 @@ and transitive receipt hashes before required-mode execution. Its v1 required
 scopes are repeat and canonical typed-graph stability plus repeat-frontier
 stability; canonical-frontier stability is not claimed because the Step 1a
 reference has no frontier sidecar. The next evidence gate is a held-out
-required-mode 12B/1,024 r7 run from an immutable paired snapshot.
+required-mode 12B/1,024 r7 run from an immutable paired snapshot. It was
+submitted as Slurm job `1864164` on 2026-08-28 and was initially
+`PENDING (Priority)`; no correctness result is yet available.
 
 Bounded parallel preheat is now implemented behind a reusable module and all
 three preheated wrappers. Deterministic file discovery and inode deduplication

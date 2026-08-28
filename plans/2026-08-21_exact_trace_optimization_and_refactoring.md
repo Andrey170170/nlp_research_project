@@ -452,7 +452,8 @@ only r6 supplies a complete behavioral observation. These are accepted frozen
 engineering thresholds informed by that corpus, not estimates fitted from
 repeated complete behavioral probes. The next required-mode 12B/1,024 run, r7,
 is the first held-out qualification and thresholds must not be changed after
-seeing it.
+seeing it. R7 was submitted as immutable Slurm job `1864164` on 2026-08-28 and
+was initially `PENDING (Priority)`; submission is not qualification evidence.
 
 - Selected-feature Jaccard must be at least `0.995` (`0.990` review).
 - `feature<-error` normalized L1 must be at most `0.03` (`0.05` review),
