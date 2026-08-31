@@ -193,15 +193,29 @@ That repair is committed at `13d69ac`: the project adapter now casts only live
 BF16 tensors to FP32 at the Torch-to-NumPy evidence boundary, and an end-to-end
 preparation-seam regression covers BF16 compact activation and edge tensors.
 The focused integrated correctness suite passed 162 tests, with Ruff, focused
-typing, and strict review also clean. R8 job `1864886` is submitted from the
-clean read-only paired snapshot rooted at
-`workspace_20260828_171112_cq-step1b-12b1024-required-r8-20260828-01`; it was
-pending for priority when recorded. Its validated prepared contract is
-semantically identical to r7 after excluding run identity, immutable paths,
-and derived fingerprints, and it keeps the same calibration hash, 12B/1,024
-workload, H200, 32 CPUs, 600 GB memory, and one-hour walltime. Submission is
-not qualification evidence; Step 1b remains open until r8 finishes and the
-required behavioral gate is inspected.
+typing, and strict review also clean. R8 job `1864886` then ran from the clean
+read-only paired snapshot rooted at
+`workspace_20260828_171112_cq-step1b-12b1024-required-r8-20260828-01`. It
+completed the unchanged 12B/1,024 trace in 559.17 seconds and spent a further
+101.70 seconds in correctness evaluation. Structural conformance and all three
+required numerical scopes remained supported, while the optional canonical
+frontier scope remained explicitly unknown. Required behavioral execution
+failed closed before its baseline forward with `ordering_unqualified`; no
+variant ran and the result is neither behavioral support nor contradiction.
+
+The next evidence gate is therefore a qualification-only H200 job, not another
+full trace. It reuses r8's immutable production artifacts to select exactly one
+leading no-op, the earliest eligible one-source direct-frozen case with strictly
+later observations, and its matched propagated-frozen-attention case. A sibling-
+owned eager PyTorch-hook oracle and the production selective NNSight runtime are
+compared twice in-process and again across two fresh processes. Qualification
+requires no-op recovery, BF16-aware agreement, material post-intervention
+downstream response for both semantics, cleanup, stable runtime identity, and
+tamper-evident recomputable receipts. This gate makes only the narrow capture-
+ordering claim; it does not independently qualify all intervention arithmetic,
+promote a class-wide capability, or close Step 1b. A passing receipt must first
+be bound to the exact model/provider/runtime scope before an unchanged r9 can
+exercise required behavioral mode.
 
 Bounded parallel preheat is now implemented behind a reusable module and all
 three preheated wrappers. Deterministic file discovery and inode deduplication
@@ -242,8 +256,11 @@ The immediate post-repeat work splits into two parallel lanes:
    same-process probe adds direct-effect closure, three propagated-necessity
    samples versus matched controls, and conditional sampled causal alias
    substitution under a ten-variant/120-second ceiling. Full-circuit
-   sufficiency remains unknown in version one. First qualify the frozen gate on
-   held-out r7; then run `cuda_full` directly at
+   sufficiency remains unknown in version one. R7 and r8 preserved the frozen
+   structural/numerical result but exposed implementation and ordering-admission
+   blockers before behavioral evidence. First qualify and bind the targeted
+   intervened-forward ordering receipt, then rerun the unchanged required-mode
+   workload as r9; only after that run `cuda_full` directly at
    frozen 12B/1,024, paired with its windowed control in one allocation when
    practical. Queue latency makes a separately scheduled 4B/512 prerequisite
    low-value; retain 4B/512 only for concrete debugging.

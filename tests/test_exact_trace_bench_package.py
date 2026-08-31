@@ -56,7 +56,7 @@ def test_granite_templates_source_snapshot_guard_without_submit_dir_fallback() -
     paths = sorted(
         (PROJECT_ROOT / "slurm" / "exact_trace_bench").glob("*.granite.sbatch")
     )
-    assert len(paths) == 12
+    assert len(paths) == 13
     for path in paths:
         text = path.read_text(encoding="utf-8")
         assert (
@@ -267,11 +267,17 @@ def test_wrapper_scripts_call_console_entrypoint() -> None:
         assert f"uv run exact-trace-bench submit-preset --preset {preset}" in text
 
 
-def test_root_scripts_directory_only_contains_archive_and_readme() -> None:
+def test_root_scripts_directory_contains_only_bounded_helpers_and_archive() -> None:
     entries = {
         path.name for path in SCRIPTS_ROOT.iterdir() if path.name != "__pycache__"
     }
-    assert entries == {"README.md", "archive", "transfer_scratch_pas2836.sh"}
+    assert entries == {
+        "README.md",
+        "archive",
+        "debug_behavioral_runtime_replay.py",
+        "qualify_nnsight_ordering.py",
+        "transfer_scratch_pas2836.sh",
+    }
 
 
 def test_module_entrypoint_help_is_login_safe() -> None:
