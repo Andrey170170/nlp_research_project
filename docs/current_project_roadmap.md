@@ -215,7 +215,11 @@ tamper-evident recomputable receipts. This gate makes only the narrow capture-
 ordering claim; it does not independently qualify all intervention arithmetic,
 promote a class-wide capability, or close Step 1b. A passing receipt must first
 be bound to the exact model/provider/runtime scope before an unchanged r9 can
-exercise required behavioral mode.
+exercise required behavioral mode. Qualification job `1875143` was submitted
+from project commit `2ae5cdc`, sibling commit `ab40054`, and read-only snapshot
+`workspace_20260831_134248_cq-ordering-qualification-12b1024-r8-20260831-01`.
+It requests one H200, 12 CPUs, 200 GB host RAM, and two hours on the short QoS;
+it was pending for resources when recorded. Submission is not ordering evidence.
 
 Bounded parallel preheat is now implemented behind a reusable module and all
 three preheated wrappers. Deterministic file discovery and inode deduplication
