@@ -62,7 +62,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--deadline-seconds",
         type=float,
-        default=300.0,
+        default=120.0,
         help="Per-request cooperative deadline forwarded to the sibling diagnostic",
     )
     return parser

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import importlib.util
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -374,3 +376,33 @@ def test_granite_launcher_is_single_run_snapshot_bound_h200_diagnostic() -> None
     assert "--compare" not in text
     assert "run-prepared-campaign-workload" not in text
     assert "run-full-answer" not in text
+
+
+def test_cli_default_deadline_respects_sibling_request_contract() -> None:
+    root = Path(__file__).parents[1]
+    script = root / "scripts/diagnose_nnsight_propagation.py"
+    spec = importlib.util.spec_from_file_location("diagnose_nnsight_propagation", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(root))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(str(root))
+
+    args = module._parser().parse_args(
+        [
+            "--behavioral-report",
+            "behavioral.json",
+            "--trace-specs",
+            "trace-specs.jsonl",
+            "--graph",
+            "graph.npz",
+            "--frontier",
+            "frontier.json",
+            "--output",
+            "diagnostic.json",
+        ]
+    )
+
+    assert 0.0 < args.deadline_seconds <= 120.0
