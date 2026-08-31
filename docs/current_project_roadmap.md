@@ -219,7 +219,28 @@ exercise required behavioral mode. Qualification job `1875143` was submitted
 from project commit `2ae5cdc`, sibling commit `ab40054`, and read-only snapshot
 `workspace_20260831_134248_cq-ordering-qualification-12b1024-r8-20260831-01`.
 It requests one H200, 12 CPUs, 200 GB host RAM, and two hours on the short QoS;
-it was pending for resources when recorded. Submission is not ordering evidence.
+it completed in 159 seconds but rejected the ordering claim. The run was
+deterministic within each runtime and passed 193 of 195 comparisons. The two
+failures were propagated downstream features from the layer-34 source: layer 35
+feature 30246 differed by seven BF16 ULPs and layer 37 feature 12103 by three.
+The source itself was 816 in the eager oracle and 812 in NNSight. Native
+zeroing therefore applied unequal physical deltas (`-816` versus `-812`), while
+the direct arm used the same graph-pinned delta in both runtimes. This makes the
+qualification rejection valid but causally ambiguous: it may reflect source
+computation-form drift rather than capture ordering.
+
+A separate non-promoting propagation diagnostic now compares that native arm
+with a common graph-pinned delta while preserving the same NNSight source
+prepass, two-party barrier, attention-freeze path, and intervention invoke. It
+captures source pre/write/contribution/post identity plus layer-by-layer
+feature-input response deltas, persists only scalar summaries and hashes, and
+reports both any difference and material divergence under the unchanged
+two-BF16-ULP tolerance. Project commit `f93854b`, sibling commit `08d485b`, and
+read-only snapshot
+`workspace_20260831_162406_cq-ordering-propagation-diagnostic-12b1024-r8-20260831-01`
+bind diagnostic job `1875372`. It requests one H200, 12 CPUs, 200 GB host RAM,
+and two hours on the short QoS and was pending for resources when recorded.
+The receipt cannot qualify or promote the runtime; r9 remains unauthorized.
 
 Bounded parallel preheat is now implemented behind a reusable module and all
 three preheated wrappers. Deterministic file discovery and inode deduplication
