@@ -239,8 +239,17 @@ two-BF16-ULP tolerance. Project commit `f93854b`, sibling commit `08d485b`, and
 read-only snapshot
 `workspace_20260831_162406_cq-ordering-propagation-diagnostic-12b1024-r8-20260831-01`
 bind diagnostic job `1875372`. It requests one H200, 12 CPUs, 200 GB host RAM,
-and two hours on the short QoS and was pending for resources when recorded.
-The receipt cannot qualify or promote the runtime; r9 remains unauthorized.
+and two hours on the short QoS. That first attempt reached an H200 but failed in
+31 seconds before model loading or receipt creation because the project CLI's
+300-second default exceeded the sibling request contract's 120-second maximum.
+Project commit `03840a3` changes only that default to 120 seconds and adds a
+red-capable CLI-contract regression; 43 focused project tests plus Ruff, typing,
+shell syntax, and diff checks pass. Corrected job `1875419` was submitted from
+read-only snapshot
+`workspace_20260831_170226_cq-ordering-propagation-diagnostic-12b1024-r8-r2-20260831-02`
+and was pending for resources when recorded. The failed attempt directory is
+preserved. Neither attempt can qualify or promote the runtime; r9 remains
+unauthorized until a complete diagnostic receipt is interpreted.
 
 Bounded parallel preheat is now implemented behind a reusable module and all
 three preheated wrappers. Deterministic file discovery and inode deduplication
