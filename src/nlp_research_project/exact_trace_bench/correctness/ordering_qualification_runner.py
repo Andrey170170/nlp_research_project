@@ -21,11 +21,14 @@ from ..workspace import validate_launch_snapshot
 
 GATE_SCHEMA = "nnsight_ordering_qualification_gate"
 GATE_SCHEMA_VERSION = 1
-REQUIRED_SIBLING_SCHEMA_VERSION = 2
+REQUIRED_SIBLING_SCHEMA_VERSION = 3
 REQUIRED_QUALIFICATION_CLAIM = (
-    "intervened_forward_capture_ordering_with_graph_pinned_mutations_only"
+    "intervened_forward_capture_ordering_with_joint_canonical_feature_projection"
 )
 REQUIRED_PROPAGATED_MUTATION_POLICY = "graph_pinned_preactivation_v1"
+REQUIRED_FEATURE_INPUT_CAPTURE_POLICY = "selected_feature_input_vectors_v1"
+REQUIRED_FEATURE_PROJECTION_POLICY = "joint_canonical_provider_preactivation_v1"
+REQUIRED_NATIVE_FEATURE_VALUES_POLICY = "diagnostic_only_v1"
 
 
 class QualificationGateError(ValueError):
@@ -255,9 +258,15 @@ def _validated_repeat_receipt(
         or not isinstance(qualification_policy, Mapping)
         or qualification_policy.get("propagated_mutation")
         != REQUIRED_PROPAGATED_MUTATION_POLICY
+        or qualification_policy.get("feature_input_capture")
+        != REQUIRED_FEATURE_INPUT_CAPTURE_POLICY
+        or qualification_policy.get("feature_projection")
+        != REQUIRED_FEATURE_PROJECTION_POLICY
+        or qualification_policy.get("native_feature_values")
+        != REQUIRED_NATIVE_FEATURE_VALUES_POLICY
     ):
         raise QualificationGateError(
-            "repeat sibling receipt lacks the required graph-pinned mutation policy"
+            "repeat sibling receipt lacks the required canonical projection policy"
         )
     qualification_fingerprint = sibling.get("qualification_fingerprint")
     if not isinstance(qualification_fingerprint, str) or not qualification_fingerprint:

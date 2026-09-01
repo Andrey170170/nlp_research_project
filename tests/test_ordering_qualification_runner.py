@@ -26,7 +26,7 @@ class _FakeSiblingReceipt:
         status: str = "qualified",
         mutation: str | None = None,
         science_marker: str = "same",
-        schema_version: int = 2,
+        schema_version: int = 3,
     ) -> None:
         self._status = status
         self._mutation = mutation
@@ -59,6 +59,14 @@ class _FakeSiblingReceipt:
             request_evidence["qualification_policy"] = {
                 "propagated_mutation": "graph_pinned_preactivation_v1"
             }
+        if self._schema_version >= 3:
+            request_evidence["qualification_policy"].update(
+                {
+                    "feature_input_capture": "selected_feature_input_vectors_v1",
+                    "feature_projection": "joint_canonical_provider_preactivation_v1",
+                    "native_feature_values": "diagnostic_only_v1",
+                }
+            )
         request_fingerprint = _sibling_fingerprint(request_evidence)
         science_request_evidence = {
             key: request_evidence[key]
@@ -85,9 +93,13 @@ class _FakeSiblingReceipt:
             "schema": "nnsight_intervened_forward_ordering_qualification",
             "schema_version": self._schema_version,
             "qualification_claim": (
-                "intervened_forward_capture_ordering_with_graph_pinned_mutations_only"
-                if self._schema_version >= 2
-                else "intervened_forward_capture_ordering_only"
+                "intervened_forward_capture_ordering_with_joint_canonical_feature_projection"
+                if self._schema_version >= 3
+                else (
+                    "intervened_forward_capture_ordering_with_graph_pinned_mutations_only"
+                    if self._schema_version >= 2
+                    else "intervened_forward_capture_ordering_only"
+                )
             ),
             "science_request_fingerprint": _sibling_fingerprint(
                 science_request_evidence
@@ -377,9 +389,13 @@ def _repeat_receipt(
     *,
     fingerprint: str,
     torch_version: str = "2.10.0",
+    schema_version: int = 3,
 ) -> dict[str, Any]:
     receipt = build_gate_receipt(
-        sibling_receipt=_FakeSiblingReceipt(science_marker=fingerprint),
+        sibling_receipt=_FakeSiblingReceipt(
+            science_marker=fingerprint,
+            schema_version=schema_version,
+        ),
         request_binding={"trace_id": "trace-1"},
         input_artifacts={"graph": {"sha256": "a" * 64}},
         workspace_provenance={
@@ -466,7 +482,17 @@ def test_compare_gate_receipts_refuses_legacy_native_mutation_claim() -> None:
             )
         )
 
-    with pytest.raises(QualificationGateError, match="graph-pinned mutation policy"):
+    with pytest.raises(QualificationGateError, match="canonical projection policy"):
+        compare_gate_receipts(tuple(receipts))
+
+
+def test_compare_gate_receipts_refuses_v2_without_canonical_projection_policy() -> None:
+    receipts = [
+        _repeat_receipt(1, fingerprint="same", schema_version=2),
+        _repeat_receipt(2, fingerprint="same", schema_version=2),
+    ]
+
+    with pytest.raises(QualificationGateError, match="canonical projection policy"):
         compare_gate_receipts(tuple(receipts))
 
 

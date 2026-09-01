@@ -270,8 +270,33 @@ the new graph-pinned claim and policy. Project commit `0aaf36a`, sibling commit
 `workspace_20260901_102631_cq-ordering-qualification-graph-pinned-12b1024-r8-20260901-01`
 bind revised qualification job `1877497`. It reuses unchanged r8 artifacts,
 runs the same two fresh-process experiment on one H200 with 200 GB host RAM,
-and was pending for resources when recorded. Inspect and bind a qualified
-summary before authorizing r9.
+and terminated after 211 seconds with a rejected first repeat, so the launcher
+correctly withheld repeat two and the summary. The gate passed 193 of 195
+comparisons. The same propagated downstream nodes failed at layers 35 and 37,
+even though the propagation diagnostic had already shown exact cross-engine
+hidden-state deltas under the common graph-pinned mutation. Inspection then
+found a second computation-form confound: the eager oracle encoded only the
+selected positions, while NNSight encoded the full 1,024-token prefix before
+selecting them. Their baseline native feature values already differed at the
+source and failed downstream layers, so schema v2 still mixed capture-ordering
+evidence with shape-dependent encoder execution.
+
+Schema v3 moves the qualification boundary before that encoder-form split.
+Each existing eager and NNSight baseline/variant forward now retains only the
+selected `(layer, position)` feature-input vectors. The four A-B-B-A executions
+are stacked together and passed through one jointly shaped provider projection
+per layer. Hidden-vector agreement, canonical projected feature agreement,
+objectives, cleanup, no-op recovery, and canonical downstream non-vacuity are
+verdict-bearing; the engine-native feature values remain explicit diagnostics
+only. Missing, duplicated, malformed, or non-finite captures fail closed, raw
+vectors are cleared after bounded scalar evidence is formed, and ordinary
+behavioral execution retains native live-zeroing without qualification capture.
+Historical v1/v2 receipts remain offline-verifiable, but project admission now
+requires the exact v3 claim and all four bound policies. Focused sibling tests
+pass 62 cases, focused project tests pass 45 cases, lint and focused typing are
+clean, both historical receipts validate, and strict review found no blockers.
+The next action is one fresh immutable H200 v3 qualification; r9 remains
+unauthorized until both child receipts and the summary are inspected and bound.
 
 Bounded parallel preheat is now implemented behind a reusable module and all
 three preheated wrappers. Deterministic file discovery and inode deduplication
