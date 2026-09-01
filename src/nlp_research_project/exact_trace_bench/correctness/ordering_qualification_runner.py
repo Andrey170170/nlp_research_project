@@ -21,6 +21,11 @@ from ..workspace import validate_launch_snapshot
 
 GATE_SCHEMA = "nnsight_ordering_qualification_gate"
 GATE_SCHEMA_VERSION = 1
+REQUIRED_SIBLING_SCHEMA_VERSION = 2
+REQUIRED_QUALIFICATION_CLAIM = (
+    "intervened_forward_capture_ordering_with_graph_pinned_mutations_only"
+)
+REQUIRED_PROPAGATED_MUTATION_POLICY = "graph_pinned_preactivation_v1"
 
 
 class QualificationGateError(ValueError):
@@ -238,6 +243,22 @@ def _validated_repeat_receipt(
     if not isinstance(sibling, Mapping):
         raise QualificationGateError("repeat sibling receipt must be an object")
     _validate_serialized_sibling_receipt(sibling)
+    request_evidence = sibling.get("request_evidence")
+    qualification_policy = (
+        request_evidence.get("qualification_policy")
+        if isinstance(request_evidence, Mapping)
+        else None
+    )
+    if (
+        sibling.get("schema_version") != REQUIRED_SIBLING_SCHEMA_VERSION
+        or sibling.get("qualification_claim") != REQUIRED_QUALIFICATION_CLAIM
+        or not isinstance(qualification_policy, Mapping)
+        or qualification_policy.get("propagated_mutation")
+        != REQUIRED_PROPAGATED_MUTATION_POLICY
+    ):
+        raise QualificationGateError(
+            "repeat sibling receipt lacks the required graph-pinned mutation policy"
+        )
     qualification_fingerprint = sibling.get("qualification_fingerprint")
     if not isinstance(qualification_fingerprint, str) or not qualification_fingerprint:
         raise QualificationGateError(

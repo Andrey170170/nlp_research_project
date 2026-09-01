@@ -26,10 +26,12 @@ class _FakeSiblingReceipt:
         status: str = "qualified",
         mutation: str | None = None,
         science_marker: str = "same",
+        schema_version: int = 2,
     ) -> None:
         self._status = status
         self._mutation = mutation
         self._science_marker = science_marker
+        self._schema_version = schema_version
 
     def to_dict(self) -> dict[str, object]:
         scope = {
@@ -53,6 +55,10 @@ class _FakeSiblingReceipt:
                 "predicted_variant_seconds": 1.0,
             },
         }
+        if self._schema_version >= 2:
+            request_evidence["qualification_policy"] = {
+                "propagated_mutation": "graph_pinned_preactivation_v1"
+            }
         request_fingerprint = _sibling_fingerprint(request_evidence)
         science_request_evidence = {
             key: request_evidence[key]
@@ -65,6 +71,10 @@ class _FakeSiblingReceipt:
                 "observed_downstream_nodes",
             )
         }
+        if self._schema_version >= 2:
+            science_request_evidence["qualification_policy"] = request_evidence[
+                "qualification_policy"
+            ]
         result = {
             "verdict": self._status,
             "comparisons": [],
@@ -73,8 +83,12 @@ class _FakeSiblingReceipt:
         }
         qualification_evidence = {
             "schema": "nnsight_intervened_forward_ordering_qualification",
-            "schema_version": 1,
-            "qualification_claim": "intervened_forward_capture_ordering_only",
+            "schema_version": self._schema_version,
+            "qualification_claim": (
+                "intervened_forward_capture_ordering_with_graph_pinned_mutations_only"
+                if self._schema_version >= 2
+                else "intervened_forward_capture_ordering_only"
+            ),
             "science_request_fingerprint": _sibling_fingerprint(
                 science_request_evidence
             ),
@@ -92,7 +106,7 @@ class _FakeSiblingReceipt:
         payload: dict[str, object] = {
             **qualification_evidence,
             "request_fingerprint": request_fingerprint,
-            "schema_version": 1,
+            "schema_version": self._schema_version,
             "status": self._status,
             "evidence_fingerprint": _sibling_fingerprint(bound_evidence),
             "qualification_fingerprint": qualification_fingerprint,
@@ -424,6 +438,36 @@ def test_compare_gate_receipts_requires_matching_fresh_process_science() -> None
     assert summary["evidence"]["repeat_indices"] == [1, 2]
     assert summary["evidence"]["qualification_fingerprint"].startswith("sha256:")
     assert len(summary["evidence"]["repeat_gate_fingerprints"]) == 2
+
+
+def test_compare_gate_receipts_refuses_legacy_native_mutation_claim() -> None:
+    receipts = []
+    for repeat_index in (1, 2):
+        receipts.append(
+            build_gate_receipt(
+                sibling_receipt=_FakeSiblingReceipt(
+                    science_marker="same",
+                    schema_version=1,
+                ),
+                request_binding={"trace_id": "trace-1"},
+                input_artifacts={"graph": {"sha256": "a" * 64}},
+                workspace_provenance={
+                    "workspace_mode": "immutable",
+                    "read_only": True,
+                    "manifest_sha256": "b" * 64,
+                },
+                runtime_environment={
+                    "python": {},
+                    "runtime": {},
+                    "packages": {},
+                    "gpu": {},
+                },
+                repeat_index=repeat_index,
+            )
+        )
+
+    with pytest.raises(QualificationGateError, match="graph-pinned mutation policy"):
+        compare_gate_receipts(tuple(receipts))
 
 
 def test_compare_gate_receipts_refuses_scientific_fingerprint_drift() -> None:

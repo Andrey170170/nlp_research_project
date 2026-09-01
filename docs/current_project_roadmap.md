@@ -247,9 +247,27 @@ red-capable CLI-contract regression; 43 focused project tests plus Ruff, typing,
 shell syntax, and diff checks pass. Corrected job `1875419` was submitted from
 read-only snapshot
 `workspace_20260831_170226_cq-ordering-propagation-diagnostic-12b1024-r8-r2-20260831-02`
-and was pending for resources when recorded. The failed attempt directory is
-preserved. Neither attempt can qualify or promote the runtime; r9 remains
-unauthorized until a complete diagnostic receipt is interpreted.
+and completed successfully as job `1875419` in 98 seconds. Baseline feature-input
+vectors were exact across eager and NNSight for layers 34--47. Native zeroing
+retained the unequal source values and deltas (`816/-816` versus `812/-812`),
+first diverged downstream at layer 35, and reached maximum absolute error
+`0.0625` by layers 46--47. The schedule-matched common graph-pinned arm used
+`812/-812` in both runtimes; its decoder contribution, source write, and every
+downstream feature-input delta were exact across all observed layers. The
+diagnostic therefore localizes the earlier rejection to unequal mutation
+magnitude rather than capture ordering in this case. Its receipt remains
+diagnostic-only, and the failed first-attempt directory is preserved.
+
+The revised qualification gate applies the graph-pinned propagated delta in
+both engines while retaining the live source only for the existing NNSight
+activation-barrier schedule. Ordinary behavioral verification continues to use
+native live-zeroing. New receipts use sibling schema v2 and bind the explicit
+`graph_pinned_preactivation_v1` policy into request, scientific, qualification,
+and evidence fingerprints. The offline sibling validator continues to verify
+historical v1 receipts, while the project repetition gate admits only v2 plus
+the new graph-pinned claim and policy. The next action is one fresh two-process
+H200 qualification against unchanged r8 artifacts; inspect and bind a qualified
+summary before authorizing r9.
 
 Bounded parallel preheat is now implemented behind a reusable module and all
 three preheated wrappers. Deterministic file discovery and inode deduplication
