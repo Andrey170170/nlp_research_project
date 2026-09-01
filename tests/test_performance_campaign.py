@@ -973,6 +973,7 @@ def test_resolve_frozen_campaign_workload_rechecks_prefix_and_target() -> None:
 def test_prepare_campaign_workload_uses_existing_full_answer_runner(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     snapshot_root = tmp_path / "snapshot"
     for relative_path in (
@@ -984,6 +985,18 @@ def test_prepare_campaign_workload_uses_existing_full_answer_runner(
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(REPO_ROOT / relative_path, destination)
     output_dir = tmp_path / "prepared"
+    ordering_summary = tmp_path / "qualification-summary.json"
+    ordering_summary.write_text("{}", encoding="utf-8")
+    ordering_declaration = {
+        "manifest_path": str(ordering_summary.resolve()),
+        "manifest_sha256": "sha256:" + "b" * 64,
+    }
+    monkeypatch.setattr(
+        perf_cli,
+        "prepare_ordering_qualification_declaration",
+        lambda path: ordering_declaration,
+        raising=False,
+    )
     assert (
         perf_cli.main(
             [
@@ -999,7 +1012,9 @@ def test_prepare_campaign_workload_uses_existing_full_answer_runner(
                 "--feature-row-influence-requirement",
                 "required",
                 "--correctness-probe-mode",
-                "smoke",
+                "required",
+                "--correctness-ordering-qualification-summary",
+                str(ordering_summary),
                 "--workspace-project-root",
                 str(snapshot_root),
                 "--preheat-policy",
@@ -1052,14 +1067,21 @@ def test_prepare_campaign_workload_uses_existing_full_answer_runner(
         "required"
     )
     assert trace_spec["graph_knobs"]["runtime_resource_policy"] == "measure_only"
-    assert trace_spec["graph_knobs"]["correctness_probe_mode"] == "smoke"
+    assert trace_spec["graph_knobs"]["correctness_probe_mode"] == "required"
     assert trace_spec["graph_knobs"]["correctness_policy_id"] == "behavioral_closure_v1"
+    assert trace_spec["graph_knobs"][
+        "correctness_ordering_qualification_summary_path"
+    ] == ordering_declaration["manifest_path"]
+    assert trace_spec["graph_knobs"][
+        "correctness_ordering_qualification_summary_sha256"
+    ] == ordering_declaration["manifest_sha256"]
+    assert prepared["correctness_ordering_qualification_summary"] == ordering_declaration
     assert launch_spec["runtime_resource_policy"] == "measure_only"
     assert (
         launch_spec["mechanism_selections"][0]["feature_row_influence_requirement"]
         == "required"
     )
-    assert launch_spec["mechanism_selections"][0]["correctness_probe_mode"] == "smoke"
+    assert launch_spec["mechanism_selections"][0]["correctness_probe_mode"] == "required"
     assert launch_spec["scheduler_request"] == {
         "account": None,
         "cluster": "granite",

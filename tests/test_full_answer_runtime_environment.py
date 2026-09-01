@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from nlp_research_project.exact_trace_bench import runtime_provenance
 from nlp_research_project.exact_trace_bench.full_answer import runtime_environment
 
 
@@ -12,7 +13,7 @@ def test_runtime_environment_is_bounded_and_records_execution_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        runtime_environment,
+        runtime_provenance,
         "gpu_provenance",
         lambda environ: {
             "slurm_job_id": environ.get("SLURM_JOB_ID"),
@@ -20,7 +21,7 @@ def test_runtime_environment_is_bounded_and_records_execution_identity(
         },
     )
     monkeypatch.setattr(
-        runtime_environment,
+        runtime_provenance,
         "_package_versions",
         lambda: {"torch": "test-torch", "nnsight": "test-nnsight"},
     )
@@ -33,7 +34,7 @@ def test_runtime_environment_is_bounded_and_records_execution_identity(
         "UNRELATED_SECRET": "must-not-be-recorded",
     }
 
-    payload = runtime_environment.capture_runtime_environment(environment)
+    payload = runtime_provenance.capture_runtime_environment(environment)
 
     assert payload["gpu"] == {
         "slurm_job_id": "123",

@@ -286,6 +286,35 @@ def test_trace_spec_accepts_pinned_correctness_calibration_declaration() -> None
     validate_trace_spec(spec)
 
 
+def test_trace_spec_requires_paired_ordering_qualification_declaration() -> None:
+    selection = select_tokens(tiny_trajectory(), explicit_indices=[3])
+    spec = build_trace_specs(
+        tiny_trajectory(),
+        selection,
+        graph_knob_overrides={
+            "correctness_ordering_qualification_summary_path": "/tmp/summary.json",
+            "correctness_ordering_qualification_summary_sha256": None,
+        },
+    )[0]
+
+    with pytest.raises(ValueError, match="ordering qualification summary"):
+        validate_trace_spec(spec)
+
+
+def test_trace_spec_accepts_pinned_ordering_qualification_declaration() -> None:
+    selection = select_tokens(tiny_trajectory(), explicit_indices=[3])
+    spec = build_trace_specs(
+        tiny_trajectory(),
+        selection,
+        graph_knob_overrides={
+            "correctness_ordering_qualification_summary_path": "/tmp/summary.json",
+            "correctness_ordering_qualification_summary_sha256": "sha256:" + "a" * 64,
+        },
+    )[0]
+
+    validate_trace_spec(spec)
+
+
 def test_trace_spec_rejects_ambiguous_required_feature_row_selection() -> None:
     selection = select_tokens(tiny_trajectory(), explicit_indices=[3])
     spec = build_trace_specs(

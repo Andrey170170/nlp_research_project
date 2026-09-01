@@ -23,6 +23,9 @@ from .correctness.calibration import (
     prepare_correctness_calibration_declaration,
 )
 from .correctness.numerical import prepare_numerical_manifest_declaration
+from .correctness.ordering_admission import (
+    prepare_ordering_qualification_declaration,
+)
 from .full_answer.launch_spec import (
     build_full_answer_launch_spec,
     render_local_full_answer_command,
@@ -51,6 +54,7 @@ from .performance_campaign import (
     render_campaign_workloads,
     resolve_frozen_campaign_workload,
 )
+from .runtime_provenance import gpu_provenance
 from .scenarios.chpc_baseline import build_chpc_baseline_config
 from .transcoder_config import PUBLIC_TRANSCODER_KNOB_KEYS
 from .typed_compact_graph import CANONICAL_BUCKET_NAMES, DEFAULT_RETENTION_POLICY_ID
@@ -1589,41 +1593,6 @@ def capture_source_state() -> dict[str, Any]:
             "project": project_state,
             "sibling": sibling_state,
         }
-
-
-def gpu_provenance(environ: dict[str, str] | None = None) -> dict[str, Any]:
-    env = os.environ if environ is None else environ
-    completed = subprocess.run(
-        [
-            "nvidia-smi",
-            "--query-gpu=name,uuid,driver_version,memory.total",
-            "--format=csv,noheader,nounits",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    gpu_rows = [
-        {
-            "name": fields[0],
-            "uuid": fields[1],
-            "driver_version": fields[2],
-            "memory_total_mib": int(fields[3]),
-        }
-        for line in completed.stdout.splitlines()
-        if line.strip()
-        for fields in ([field.strip() for field in line.split(",", maxsplit=3)],)
-        if len(fields) == 4
-    ]
-    return {
-        "slurm_job_id": env.get("SLURM_JOB_ID"),
-        "slurm_job_name": env.get("SLURM_JOB_NAME"),
-        "slurm_cluster_name": env.get("SLURM_CLUSTER_NAME"),
-        "slurm_job_partition": env.get("SLURM_JOB_PARTITION"),
-        "cuda_visible_devices": env.get("CUDA_VISIBLE_DEVICES"),
-        "nvidia_smi_returncode": completed.returncode,
-        "gpus": gpu_rows,
-    }
 
 
 def assert_h200_allocation(
@@ -3775,6 +3744,23 @@ def _prepare_campaign_workload(args: argparse.Namespace) -> int:
                 ],
             }
         )
+    ordering_qualification_declaration = None
+    if args.correctness_ordering_qualification_summary is not None:
+        ordering_qualification_declaration = (
+            prepare_ordering_qualification_declaration(
+                args.correctness_ordering_qualification_summary
+            )
+        )
+        graph_overrides.update(
+            {
+                "correctness_ordering_qualification_summary_path": (
+                    ordering_qualification_declaration["manifest_path"]
+                ),
+                "correctness_ordering_qualification_summary_sha256": (
+                    ordering_qualification_declaration["manifest_sha256"]
+                ),
+            }
+        )
     if args.feature_row_influence_requirement is not None:
         graph_overrides["feature_row_influence_requirement"] = (
             args.feature_row_influence_requirement
@@ -3991,6 +3977,9 @@ def _prepare_campaign_workload(args: argparse.Namespace) -> int:
             "comparison_policy": workload["comparison_policy"],
             "correctness_numerical_manifest": numerical_declaration,
             "correctness_calibration_manifest": calibration_declaration,
+            "correctness_ordering_qualification_summary": (
+                ordering_qualification_declaration
+            ),
             "trace_specs_path": str(specs_path),
             "shards_path": str(shards_path),
             "launch_output_root": str(launch_output_root),
@@ -4296,6 +4285,15 @@ def build_parser() -> argparse.ArgumentParser:
             "Frozen correctness_calibration_v1 manifest. Preparation hash-checks "
             "the calibration, its numerical reference closure, and every source "
             "receipt without changing the default correctness mode."
+        ),
+    )
+    prepare_campaign.add_argument(
+        "--correctness-ordering-qualification-summary",
+        type=Path,
+        help=(
+            "Qualified two-repeat NNSight ordering summary. Preparation revalidates "
+            "its embedded receipts and pins its path and SHA256 without changing "
+            "smoke-mode ordering admission."
         ),
     )
     prepare_campaign.add_argument(

@@ -33,6 +33,7 @@ from nlp_research_project.exact_trace_bench.full_answer.correctness_gate import 
     _required_numerical_policy_satisfied,
     _row_denominator_evidence_from_compact_result,
     _run_declared_numerical_comparison,
+    _verify_behavior_with_ordering_admission,
 )
 
 
@@ -616,6 +617,65 @@ def test_required_behavioral_preparation_fails_closed_without_calibration() -> N
         mode=BehavioralProbeMode.REQUIRED,
         calibration=None,
     )
+
+
+def test_smoke_behavioral_verification_does_not_consume_ordering_qualification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[str] = []
+    monkeypatch.setattr(
+        "nlp_research_project.exact_trace_bench.full_answer.correctness_gate.admitted_nnsight_ordering",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("must not be called")),
+    )
+    monkeypatch.setattr(
+        "nlp_research_project.exact_trace_bench.full_answer.correctness_gate.verify_behavior",
+        lambda request, runtime: observed.append("forward") or "sibling-report",
+    )
+
+    sibling, admission = _verify_behavior_with_ordering_admission(
+        request=object(),
+        model=object(),
+        mode=BehavioralProbeMode.SMOKE,
+        graph_knobs={"correctness_ordering_qualification_summary_path": "/invalid"},
+        transcoder_metadata={},
+    )
+
+    assert sibling == "sibling-report"
+    assert admission is None
+    assert observed == ["forward"]
+
+
+def test_required_behavioral_verification_runs_zero_forwards_when_admission_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nlp_research_project.exact_trace_bench.correctness.ordering_admission import (
+        OrderingAdmissionError,
+    )
+
+    observed: list[str] = []
+    monkeypatch.setattr(
+        "nlp_research_project.exact_trace_bench.full_answer.correctness_gate.admitted_nnsight_ordering",
+        lambda **kwargs: (_ for _ in ()).throw(
+            OrderingAdmissionError("qualification missing")
+        ),
+    )
+    monkeypatch.setattr(
+        "nlp_research_project.exact_trace_bench.full_answer.correctness_gate.verify_behavior",
+        lambda request, runtime: observed.append("forward"),
+    )
+
+    with pytest.raises(OrderingAdmissionError, match="qualification missing"):
+        _verify_behavior_with_ordering_admission(
+            request=SimpleNamespace(
+                identity=SimpleNamespace(execution_fingerprint="execution")
+            ),
+            model=object(),
+            mode=BehavioralProbeMode.REQUIRED,
+            graph_knobs={},
+            transcoder_metadata={},
+        )
+
+    assert observed == []
 
 
 def test_row_denominator_evidence_uses_only_explicit_compact_receipt() -> None:

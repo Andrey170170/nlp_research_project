@@ -290,6 +290,32 @@ def validate_trace_spec(spec: Mapping[str, Any]) -> None:
                 "trace spec graph_knobs.correctness_calibration_manifest_sha256 "
                 "must be a sha256 fingerprint"
             )
+    ordering_summary_path = spec["graph_knobs"].get(
+        "correctness_ordering_qualification_summary_path"
+    )
+    ordering_summary_sha256 = spec["graph_knobs"].get(
+        "correctness_ordering_qualification_summary_sha256"
+    )
+    if (ordering_summary_path is None) != (ordering_summary_sha256 is None):
+        raise ValueError(
+            "trace spec ordering qualification summary path and sha256 must be "
+            "declared together"
+        )
+    if ordering_summary_path is not None:
+        if (
+            not isinstance(ordering_summary_path, str)
+            or not ordering_summary_path
+            or not Path(ordering_summary_path).is_absolute()
+        ):
+            raise ValueError(
+                "trace spec graph_knobs.correctness_ordering_qualification_summary_path "
+                "must be an absolute path"
+            )
+        if not _is_sha256_fingerprint(ordering_summary_sha256):
+            raise ValueError(
+                "trace spec graph_knobs.correctness_ordering_qualification_summary_sha256 "
+                "must be a sha256 fingerprint"
+            )
     try:
         backward_selection = resolve_backward_execution_selection(spec["graph_knobs"])
     except ValueError as error:

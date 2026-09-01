@@ -42,6 +42,7 @@ from ..correctness.contracts import (
     ExpectedGraphIdentity,
     FiniteValueEvidence,
     FrontierRefreshSequenceEvidence,
+    fingerprint_json,
     MechanismRequirementObservation,
     NumericalScopeReport,
     NumericalStabilityReport,
@@ -62,6 +63,10 @@ from ..correctness.numerical import (
     declaration_from_graph_knobs,
     evaluate_declared_numerical_stability,
     file_sha256,
+)
+from ..correctness.ordering_admission import (
+    OrderingAdmissionError,
+    admitted_nnsight_ordering,
 )
 from ..correctness.persistence import save_correctness_report
 from ..correctness.structural import evaluate_structural_conformance
@@ -126,6 +131,49 @@ def _behavioral_alias_handoff(
     if mode is BehavioralProbeMode.SMOKE:
         return _qualified_alias_pairs(compact_result)
     return ()
+
+
+def _verify_behavior_with_ordering_admission(
+    *,
+    request: Any,
+    model: Any,
+    mode: BehavioralProbeMode,
+    graph_knobs: Mapping[str, Any],
+    transcoder_metadata: Mapping[str, Any],
+) -> tuple[Any, dict[str, Any] | None]:
+    """Run one behavioral request with required-only, model-local admission."""
+
+    if mode is BehavioralProbeMode.SMOKE:
+        return (
+            verify_behavior(
+                request,
+                NNSightInterventionRuntime(
+                    model,
+                    ordering_admission_mode=OrderingAdmissionMode.CANDIDATE_SMOKE,
+                ),
+            ),
+            None,
+        )
+    identity = getattr(request, "identity", None)
+    execution_fingerprint = getattr(identity, "execution_fingerprint", None)
+    if not isinstance(execution_fingerprint, str) or not execution_fingerprint:
+        raise OrderingAdmissionError(
+            "required behavioral request lacks execution_fingerprint"
+        )
+    with admitted_nnsight_ordering(
+        model=model,
+        graph_knobs=graph_knobs,
+        transcoder_metadata=transcoder_metadata,
+        execution_fingerprint=execution_fingerprint,
+    ) as admission_evidence:
+        sibling = verify_behavior(
+            request,
+            NNSightInterventionRuntime(
+                model,
+                ordering_admission_mode=OrderingAdmissionMode.QUALIFIED,
+            ),
+        )
+    return sibling, admission_evidence
 
 
 def run_full_answer_correctness_gate(
@@ -393,20 +441,44 @@ def run_full_answer_correctness_gate(
                         max_seconds=runtime_budget_seconds,
                     ),
                 )
-                sibling = verify_behavior(
-                    bounded_request,
-                    NNSightInterventionRuntime(
-                        model,
-                        # Smoke mode is the explicit qualification lane for a new
-                        # selective NNSight ordering.  Its verdict remains UNKNOWN
-                        # without frozen calibration.  Required mode never bypasses
-                        # the model's qualified-ordering declaration.
-                        ordering_admission_mode=(
-                            OrderingAdmissionMode.CANDIDATE_SMOKE
-                            if mode is BehavioralProbeMode.SMOKE
-                            else OrderingAdmissionMode.QUALIFIED
+                sibling, ordering_admission_evidence = (
+                    _verify_behavior_with_ordering_admission(
+                        request=bounded_request,
+                        model=model,
+                        mode=mode,
+                        graph_knobs=knobs,
+                        transcoder_metadata=transcoder_metadata,
+                    )
+                )
+                artifacts["ordering_admission"] = (
+                    {
+                        "status": "not_applicable",
+                        "reason": "candidate_smoke_uses_unqualified_lane",
+                    }
+                    if ordering_admission_evidence is None
+                    else {
+                        "status": "validated",
+                        "evidence": ordering_admission_evidence,
+                    }
+                )
+                ordering_admission_metrics = (
+                    {
+                        "ordering_admission_status": "not_applicable",
+                        "ordering_admission_evidence_fingerprint": None,
+                        "ordering_admission_behavioral_execution_fingerprint": None,
+                    }
+                    if ordering_admission_evidence is None
+                    else {
+                        "ordering_admission_status": "validated",
+                        "ordering_admission_evidence_fingerprint": fingerprint_json(
+                            ordering_admission_evidence
                         ),
-                    ),
+                        "ordering_admission_behavioral_execution_fingerprint": (
+                            ordering_admission_evidence[
+                                "behavioral_execution_fingerprint"
+                            ]
+                        ),
+                    }
                 )
                 sibling_path = token_dir / "correctness_behavioral_sibling.json"
                 persist_sibling_behavioral_report(sibling, sibling_path)
@@ -428,7 +500,11 @@ def run_full_answer_correctness_gate(
                 mapped = map_sibling_behavioral_report(sibling)
                 behavioral = replace(
                     mapped,
-                    metrics={**mapped.metrics, **budget_evidence},
+                    metrics={
+                        **mapped.metrics,
+                        **budget_evidence,
+                        **ordering_admission_metrics,
+                    },
                 )
             else:
                 artifacts["behavioral_sibling"] = {
@@ -438,6 +514,25 @@ def run_full_answer_correctness_gate(
                 }
         except _BehavioralPreparationDeadlineExhausted:
             pass
+        except OrderingAdmissionError as error:
+            _record_error(errors, "ordering_admission", error)
+            artifacts["ordering_admission"] = {
+                "status": "refused",
+                "evidence": None,
+            }
+            artifacts["behavioral_sibling"] = {
+                "status": "unavailable",
+                "path": None,
+            }
+            behavioral = BehavioralFaithfulnessReport(
+                status=BehavioralFaithfulnessStatus.UNKNOWN,
+                metrics={
+                    "policy_id": policy_id,
+                    "ordering_admission_status": "refused",
+                    "ordering_admission_evidence_fingerprint": None,
+                },
+                reason_codes=("ordering_qualification_unavailable",),
+            )
         except Exception as error:
             _record_error(errors, "behavioral", error)
             artifacts["behavioral_sibling"] = {
