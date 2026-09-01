@@ -299,8 +299,40 @@ Project commit `59fd827`, sibling commit `742a32a`, and read-only snapshot
 `workspace_20260901_113659_cq-ordering-qualification-canonical-v3-12b1024-r8-20260901-01`
 bind fresh qualification job `1877900`. It reuses the unchanged r8 inputs and
 requests one H200, 12 CPUs, 200 GB host RAM, and two hours on the short QoS. It
-was pending for resources when recorded. R9 remains unauthorized until both v3
-child receipts and the repetition summary are inspected and bound.
+completed successfully in 237 seconds. Both fresh-process repeats passed all
+270 verdict-bearing comparisons with identical qualification, binding, and
+runtime-contract evidence; each repeat included 72 exact hidden-vector and 156
+exact jointly projected feature comparisons. The two engine-native feature
+differences remained diagnostic-only, as required by schema v3. The immutable
+summary is pinned by SHA-256
+`4dda341b793bf81cfa47bd6fd314adc9867315dd2b710b618f43a6d2f31c905c`;
+its evidence fingerprint is `ecdce2fe5beea5b3b454c569e12c3ba70712c1a176fc07f7b24537cab115d828`,
+and it qualifies only the exact Gemma3 12B / GemmaScope PLT / same-layer BF16
+ordering mechanism at sibling commit `742a32a`.
+
+Project commit `8012639` adds the evidence-bound admission seam for r9 without
+changing the sibling default. Required mode reads, hashes, and parses the pinned
+summary from one byte buffer, recomputes both embedded receipts, matches the
+model, requested and loaded provider fingerprints, normalized software/H200
+runtime, and immutable sibling commit, then enables the qualified ordering only
+on the loaded model instance for the single behavioral verification call. The
+instance attribute is removed in `finally`; missing or mismatched evidence runs
+zero behavioral forwards, and smoke mode remains on its independent candidate
+lane. Runtime capture was extracted from the CLI into a neutral provenance
+module. Strict review found and closed the single-buffer TOCTOU issue; the final
+focused suite passed 188 tests independently, with lint, focused typing, shell
+syntax, and diff checks clean.
+
+R9 job `1878968` now runs the otherwise frozen r8 scientific workload from the
+clean read-only paired snapshot
+`workspace_20260901_144020_cq-step1b-12b1024-required-r9-20260901-01`
+(manifest SHA-256 `663c3c69dae209586e865d90dd117782016a032952425efd2e9c850c27b1991f`).
+Prepared-workload validation passed, and normalized comparison against r8 is
+exact after removing only run/snapshot paths, the new pinned admission
+declaration, its derived fingerprints, and the updated rationale. The submitted
+request is one H200, 32 CPUs, 600 GB host RAM, and one hour on `rai-gpu-grn`;
+it was pending for priority when recorded. Step 1b remains open until r9's
+structural, numerical, and behavioral reports are inspected together.
 
 Bounded parallel preheat is now implemented behind a reusable module and all
 three preheated wrappers. Deterministic file discovery and inode deduplication
