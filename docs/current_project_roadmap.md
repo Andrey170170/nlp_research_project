@@ -265,8 +265,12 @@ native live-zeroing. New receipts use sibling schema v2 and bind the explicit
 `graph_pinned_preactivation_v1` policy into request, scientific, qualification,
 and evidence fingerprints. The offline sibling validator continues to verify
 historical v1 receipts, while the project repetition gate admits only v2 plus
-the new graph-pinned claim and policy. The next action is one fresh two-process
-H200 qualification against unchanged r8 artifacts; inspect and bind a qualified
+the new graph-pinned claim and policy. Project commit `0aaf36a`, sibling commit
+`7cd8a3e`, and read-only snapshot
+`workspace_20260901_102631_cq-ordering-qualification-graph-pinned-12b1024-r8-20260901-01`
+bind revised qualification job `1877497`. It reuses unchanged r8 artifacts,
+runs the same two fresh-process experiment on one H200 with 200 GB host RAM,
+and was pending for resources when recorded. Inspect and bind a qualified
 summary before authorizing r9.
 
 Bounded parallel preheat is now implemented behind a reusable module and all
