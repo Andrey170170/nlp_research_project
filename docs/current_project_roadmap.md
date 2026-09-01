@@ -295,8 +295,12 @@ Historical v1/v2 receipts remain offline-verifiable, but project admission now
 requires the exact v3 claim and all four bound policies. Focused sibling tests
 pass 62 cases, focused project tests pass 45 cases, lint and focused typing are
 clean, both historical receipts validate, and strict review found no blockers.
-The next action is one fresh immutable H200 v3 qualification; r9 remains
-unauthorized until both child receipts and the summary are inspected and bound.
+Project commit `59fd827`, sibling commit `742a32a`, and read-only snapshot
+`workspace_20260901_113659_cq-ordering-qualification-canonical-v3-12b1024-r8-20260901-01`
+bind fresh qualification job `1877900`. It reuses the unchanged r8 inputs and
+requests one H200, 12 CPUs, 200 GB host RAM, and two hours on the short QoS. It
+was pending for resources when recorded. R9 remains unauthorized until both v3
+child receipts and the repetition summary are inspected and bound.
 
 Bounded parallel preheat is now implemented behind a reusable module and all
 three preheated wrappers. Deterministic file discovery and inode deduplication
